@@ -1673,9 +1673,16 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                       className="w-full px-3 py-2 border rounded-md"
                     >
                       <option value="">-- Select Stage --</option>
-                      {[...new Set(tasks.map(t => t.stage).filter(s => s && s.trim() !== ''))].sort().map(stage => (
-                        <option key={stage} value={stage}>{stage}</option>
-                      ))}
+                      <option value="Contract Signature">Contract Signature</option>
+                      <option value="Project Kick Off & Stakeholder Alignment">Project Kick Off & Stakeholder Alignment</option>
+                      <option value="Launch Data & Systems Prep">Launch Data & Systems Prep</option>
+                      <option value="Sprint 1: Core System Setups">Sprint 1: Core System Setups</option>
+                      <option value="Sprint 2: Lab & QUA Pilot Prep">Sprint 2: Lab & QUA Pilot Prep</option>
+                      <option value="Sprint 3: Soft-Pilot">Sprint 3: Soft-Pilot</option>
+                      <option value="Training/Validation">Training/Validation</option>
+                      <option value="Go-Live">Go-Live</option>
+                      <option value="KPIs">KPIs</option>
+                      <option value="Monitoring & Customer Support">Monitoring & Customer Support</option>
                     </select>
                   </div>
                 </div>
@@ -1964,10 +1971,21 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
   const [newTemplateName, setNewTemplateName] = useState('');
   const [newTemplateDesc, setNewTemplateDesc] = useState('');
 
+  const STANDARD_STAGES = [
+    'Contract Signature',
+    'Project Kick Off & Stakeholder Alignment',
+    'Launch Data & Systems Prep',
+    'Sprint 1: Core System Setups',
+    'Sprint 2: Lab & QUA Pilot Prep',
+    'Sprint 3: Soft-Pilot',
+    'Training/Validation',
+    'Go-Live',
+    'KPIs',
+    'Monitoring & Customer Support'
+  ];
+
   const getUniqueStages = () => {
-    if (!selectedTemplate) return [];
-    const stages = [...new Set(selectedTemplate.tasks.map(t => t.stage).filter(s => s))];
-    return stages.sort();
+    return STANDARD_STAGES;
   };
 
   const handleSaveName = async () => {
