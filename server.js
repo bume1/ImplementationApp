@@ -267,6 +267,128 @@ app.delete('/api/users/:userId', authenticateToken, requireAdmin, async (req, re
   }
 });
 
+// ============== TEAM MEMBERS (for owner selection) ==============
+app.get('/api/team-members', authenticateToken, async (req, res) => {
+  try {
+    const users = await getUsers();
+    const teamMembers = users.map(u => ({
+      email: u.email,
+      name: u.name
+    }));
+    res.json(teamMembers);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============== SUBTASKS ==============
+app.post('/api/projects/:projectId/tasks/:taskId/subtasks', authenticateToken, async (req, res) => {
+  try {
+    const { projectId, taskId } = req.params;
+    const { title, owner } = req.body;
+    if (!title) return res.status(400).json({ error: 'Subtask title is required' });
+    
+    const tasks = await getTasks(projectId);
+    const idx = tasks.findIndex(t => t.id === parseInt(taskId));
+    if (idx === -1) return res.status(404).json({ error: 'Task not found' });
+    
+    const subtask = {
+      id: uuidv4(),
+      title,
+      owner: owner || '',
+      completed: false,
+      createdAt: new Date().toISOString(),
+      createdBy: req.user.id
+    };
+    
+    if (!tasks[idx].subtasks) tasks[idx].subtasks = [];
+    tasks[idx].subtasks.push(subtask);
+    await db.set(`tasks_${projectId}`, tasks);
+    
+    res.json(subtask);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.put('/api/projects/:projectId/tasks/:taskId/subtasks/:subtaskId', authenticateToken, async (req, res) => {
+  try {
+    const { projectId, taskId, subtaskId } = req.params;
+    const { title, owner, completed } = req.body;
+    
+    const tasks = await getTasks(projectId);
+    const taskIdx = tasks.findIndex(t => t.id === parseInt(taskId));
+    if (taskIdx === -1) return res.status(404).json({ error: 'Task not found' });
+    
+    if (!tasks[taskIdx].subtasks) return res.status(404).json({ error: 'Subtask not found' });
+    const subtaskIdx = tasks[taskIdx].subtasks.findIndex(s => s.id === subtaskId);
+    if (subtaskIdx === -1) return res.status(404).json({ error: 'Subtask not found' });
+    
+    if (title !== undefined) tasks[taskIdx].subtasks[subtaskIdx].title = title;
+    if (owner !== undefined) tasks[taskIdx].subtasks[subtaskIdx].owner = owner;
+    if (completed !== undefined) tasks[taskIdx].subtasks[subtaskIdx].completed = completed;
+    
+    await db.set(`tasks_${projectId}`, tasks);
+    res.json(tasks[taskIdx].subtasks[subtaskIdx]);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.delete('/api/projects/:projectId/tasks/:taskId/subtasks/:subtaskId', authenticateToken, async (req, res) => {
+  try {
+    const { projectId, taskId, subtaskId } = req.params;
+    
+    const tasks = await getTasks(projectId);
+    const taskIdx = tasks.findIndex(t => t.id === parseInt(taskId));
+    if (taskIdx === -1) return res.status(404).json({ error: 'Task not found' });
+    
+    if (!tasks[taskIdx].subtasks) return res.status(404).json({ error: 'Subtask not found' });
+    tasks[taskIdx].subtasks = tasks[taskIdx].subtasks.filter(s => s.id !== subtaskId);
+    
+    await db.set(`tasks_${projectId}`, tasks);
+    res.json({ message: 'Subtask deleted' });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============== BULK TASK UPDATES ==============
+app.put('/api/projects/:projectId/tasks/bulk-update', authenticateToken, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { taskIds, completed } = req.body;
+    
+    if (!taskIds || !Array.isArray(taskIds)) {
+      return res.status(400).json({ error: 'taskIds array is required' });
+    }
+    if (typeof completed !== 'boolean') {
+      return res.status(400).json({ error: 'completed boolean is required' });
+    }
+    
+    const tasks = await getTasks(projectId);
+    const updatedTasks = [];
+    
+    for (const taskId of taskIds) {
+      const idx = tasks.findIndex(t => t.id === parseInt(taskId));
+      if (idx !== -1) {
+        tasks[idx].completed = completed;
+        if (completed) {
+          tasks[idx].dateCompleted = new Date().toISOString();
+        } else {
+          tasks[idx].dateCompleted = null;
+        }
+        updatedTasks.push(tasks[idx]);
+      }
+    }
+    
+    await db.set(`tasks_${projectId}`, tasks);
+    res.json({ message: `${updatedTasks.length} tasks updated`, updatedTasks });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ============== TASK NOTES ==============
 app.post('/api/projects/:projectId/tasks/:taskId/notes', authenticateToken, async (req, res) => {
   try {
@@ -588,9 +710,18 @@ app.get('/api/client/:linkId', async (req, res) => {
     if (!project) return res.status(404).json({ error: 'Project not found' });
     const allTasks = await getTasks(project.id);
     const clientTasks = allTasks.filter(t => t.showToClient);
+    
+    const users = await getUsers();
+    const tasksWithOwnerNames = clientTasks.map(task => ({
+      ...task,
+      ownerDisplayName: task.owner 
+        ? (users.find(u => u.email === task.owner)?.name || task.owner)
+        : null
+    }));
+    
     res.json({
       project: { name: project.name, clientName: project.clientName },
-      tasks: clientTasks
+      tasks: tasksWithOwnerNames
     });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });

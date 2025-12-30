@@ -123,3 +123,21 @@ Note: Adding notes to tasks in the webapp does NOT trigger HubSpot sync (to avoi
 ### Per-Stage Task Addition
 - Each stage in the list view has an "+ Add Task" button
 - Clicking pre-fills the phase and stage for the new task
+
+### Owner Assignment
+- **Email-Based Assignment**: Task owners are assigned by email address (stored internally as email)
+- **Name Display**: Owner names are displayed in the UI by looking up the user's name from their email
+- **Team Members Dropdown**: Owner selection uses a dropdown of registered team members (by email, showing name)
+- **Client Portal**: Server resolves owner emails to names before sending to client portal (ownerDisplayName field)
+
+### Subtasks
+- Each task can have multiple subtasks with their own owners
+- Subtasks have title, owner (email), and completed status
+- Subtasks are NOT synced to HubSpot (only parent tasks sync)
+- Access subtasks by expanding a task's details (Notes section)
+
+### Bulk Task Operations
+- "Bulk Select" mode allows selecting multiple tasks via checkboxes
+- "Select All" and "Deselect All" buttons for quick selection
+- "Mark X Complete" and "Mark X Incomplete" bulk action buttons
+- Bulk updates do NOT sync to HubSpot (to prevent overloading)

@@ -88,6 +88,47 @@ const api = {
       headers: { 'Authorization': `Bearer ${token}` }
     }).then(r => r.json()),
 
+  getTeamMembers: (token) =>
+    fetch(`${API_URL}/api/team-members`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.json()),
+
+  addSubtask: (token, projectId, taskId, subtask) =>
+    fetch(`${API_URL}/api/projects/${projectId}/tasks/${taskId}/subtasks`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(subtask)
+    }).then(r => r.json()),
+
+  updateSubtask: (token, projectId, taskId, subtaskId, updates) =>
+    fetch(`${API_URL}/api/projects/${projectId}/tasks/${taskId}/subtasks/${subtaskId}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(updates)
+    }).then(r => r.json()),
+
+  deleteSubtask: (token, projectId, taskId, subtaskId) =>
+    fetch(`${API_URL}/api/projects/${projectId}/tasks/${taskId}/subtasks/${subtaskId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.json()),
+
+  bulkUpdateTasks: (token, projectId, taskIds, completed) =>
+    fetch(`${API_URL}/api/projects/${projectId}/tasks/bulk-update`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ taskIds, completed })
+    }).then(r => r.json()),
+
   forgotPassword: (email) =>
     fetch(`${API_URL}/api/auth/forgot-password`, {
       method: 'POST',
@@ -848,7 +889,7 @@ const TimelineView = ({ tasks, getPhaseColor, viewMode }) => {
                                 {task.dateCompleted && (
                                   <span className="text-green-600">Completed: {task.dateCompleted}</span>
                                 )}
-                                {task.owner && <span>Owner: {task.owner}</span>}
+                                {task.owner && <span>Owner: {getOwnerName ? getOwnerName(task.owner) : task.owner}</span>}
                               </div>
                             )}
                             {viewMode === 'client' && task.dateCompleted && (
@@ -1127,7 +1168,7 @@ const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
                       {task.taskTitle}
                     </h4>
                     <div className="mt-1 text-sm text-gray-500 flex flex-wrap gap-3">
-                      {task.owner && <span>Owner: {task.owner}</span>}
+                      {task.owner && <span>Owner: {getOwnerName ? getOwnerName(task.owner) : task.owner}</span>}
                       {task.dueDate && <span>Due: {task.dueDate}</span>}
                       {task.dateCompleted && <span className="text-green-600">Completed: {task.dateCompleted}</span>}
                     </div>
@@ -1167,11 +1208,16 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
   const [newNote, setNewNote] = useState('');
   const [showAddTask, setShowAddTask] = useState(false);
   const [newTask, setNewTask] = useState({ taskTitle: '', owner: '', dueDate: '', phase: 'Phase 1', stage: '', showToClient: false, clientName: '', dependencies: [] });
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [selectedTasks, setSelectedTasks] = useState([]);
+  const [bulkMode, setBulkMode] = useState(false);
+  const [newSubtask, setNewSubtask] = useState({ taskId: null, title: '', owner: '' });
 
   const isAdmin = user.role === 'admin';
 
   useEffect(() => {
     loadTasks();
+    loadTeamMembers();
   }, []);
 
   const loadTasks = async () => {
@@ -1183,6 +1229,83 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
       console.error('Failed to load tasks:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadTeamMembers = async () => {
+    try {
+      const data = await api.getTeamMembers(token);
+      setTeamMembers(data);
+    } catch (err) {
+      console.error('Failed to load team members:', err);
+    }
+  };
+
+  const getOwnerName = (email) => {
+    if (!email) return 'Unassigned';
+    const member = teamMembers.find(m => m.email === email);
+    return member ? member.name : email;
+  };
+
+  const handleBulkComplete = async (completed) => {
+    if (selectedTasks.length === 0) return;
+    try {
+      await api.bulkUpdateTasks(token, project.id, selectedTasks, completed);
+      await loadTasks();
+      setSelectedTasks([]);
+      setBulkMode(false);
+    } catch (err) {
+      console.error('Failed to bulk update tasks:', err);
+    }
+  };
+
+  const toggleTaskSelection = (taskId) => {
+    if (selectedTasks.includes(taskId)) {
+      setSelectedTasks(selectedTasks.filter(id => id !== taskId));
+    } else {
+      setSelectedTasks([...selectedTasks, taskId]);
+    }
+  };
+
+  const selectAllTasks = () => {
+    const filteredTaskIds = getFilteredTasks().map(t => t.id);
+    setSelectedTasks(filteredTaskIds);
+  };
+
+  const deselectAllTasks = () => {
+    setSelectedTasks([]);
+  };
+
+  const handleAddSubtask = async (taskId) => {
+    if (!newSubtask.title.trim()) return;
+    try {
+      await api.addSubtask(token, project.id, taskId, {
+        title: newSubtask.title,
+        owner: newSubtask.owner
+      });
+      await loadTasks();
+      setNewSubtask({ taskId: null, title: '', owner: '' });
+    } catch (err) {
+      console.error('Failed to add subtask:', err);
+    }
+  };
+
+  const handleToggleSubtask = async (taskId, subtaskId, currentCompleted) => {
+    try {
+      await api.updateSubtask(token, project.id, taskId, subtaskId, { completed: !currentCompleted });
+      await loadTasks();
+    } catch (err) {
+      console.error('Failed to update subtask:', err);
+    }
+  };
+
+  const handleDeleteSubtask = async (taskId, subtaskId) => {
+    if (!confirm('Delete this subtask?')) return;
+    try {
+      await api.deleteSubtask(token, project.id, taskId, subtaskId);
+      await loadTasks();
+    } catch (err) {
+      console.error('Failed to delete subtask:', err);
     }
   };
 
@@ -1570,7 +1693,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                     <option value="all">All Owners</option>
                     <option value="unassigned">Unassigned</option>
                     {owners.map(owner => (
-                      <option key={owner} value={owner}>{owner}</option>
+                      <option key={owner} value={owner}>{getOwnerName(owner)}</option>
                     ))}
                   </select>
                 </div>
@@ -1590,14 +1713,72 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
               </div>
               
               {viewMode === 'internal' && (
-                <div className="ml-auto">
-                  <label className="block text-xs text-gray-500 mb-1">&nbsp;</label>
-                  <button
-                    onClick={() => setShowAddTask(true)}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
-                  >
-                    + Add Task
-                  </button>
+                <div className="ml-auto flex gap-2">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">&nbsp;</label>
+                    <button
+                      onClick={() => {
+                        setBulkMode(!bulkMode);
+                        if (bulkMode) setSelectedTasks([]);
+                      }}
+                      className={`px-4 py-2 rounded-md text-sm ${bulkMode ? 'bg-gray-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                    >
+                      {bulkMode ? 'Exit Bulk Mode' : 'Bulk Select'}
+                    </button>
+                  </div>
+                  {bulkMode && selectedTasks.length > 0 && (
+                    <>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">&nbsp;</label>
+                        <button
+                          onClick={() => handleBulkComplete(true)}
+                          className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm"
+                        >
+                          Mark {selectedTasks.length} Complete
+                        </button>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">&nbsp;</label>
+                        <button
+                          onClick={() => handleBulkComplete(false)}
+                          className="px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 text-sm"
+                        >
+                          Mark {selectedTasks.length} Incomplete
+                        </button>
+                      </div>
+                    </>
+                  )}
+                  {bulkMode && (
+                    <>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">&nbsp;</label>
+                        <button
+                          onClick={selectAllTasks}
+                          className="px-3 py-2 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 text-sm"
+                        >
+                          Select All
+                        </button>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">&nbsp;</label>
+                        <button
+                          onClick={deselectAllTasks}
+                          className="px-3 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 text-sm"
+                        >
+                          Deselect All
+                        </button>
+                      </div>
+                    </>
+                  )}
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">&nbsp;</label>
+                    <button
+                      onClick={() => setShowAddTask(true)}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+                    >
+                      + Add Task
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -1686,9 +1867,17 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                     </div>
                     <div className="divide-y divide-gray-200">
                       {stageTasks.map(task => (
-                    <div key={task.id} id={`task-${task.id}`} className={`p-4 ${viewMode === 'internal' && isOverdue(task) ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'}`}>
+                    <div key={task.id} id={`task-${task.id}`} className={`p-4 ${viewMode === 'internal' && isOverdue(task) ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'} ${selectedTasks.includes(task.id) ? 'bg-blue-50' : ''}`}>
                       <div className="flex items-start gap-4">
-                        {viewMode === 'internal' && (
+                        {viewMode === 'internal' && bulkMode && (
+                          <input
+                            type="checkbox"
+                            checked={selectedTasks.includes(task.id)}
+                            onChange={() => toggleTaskSelection(task.id)}
+                            className="mt-2 w-5 h-5 flex-shrink-0"
+                          />
+                        )}
+                        {viewMode === 'internal' && !bulkMode && (
                           <button
                             onClick={() => handleToggleComplete(task.id)}
                             className="mt-1 flex-shrink-0"
@@ -1732,15 +1921,19 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                               <div className="grid grid-cols-2 gap-3">
                                 {(isAdmin || !task.owner || task.owner.trim() === '') && (
                                   <div>
-                                    <label className="block text-xs text-gray-500 mb-1">Owner (First and Last Name)</label>
-                                    <input
-                                      placeholder="e.g., John Smith"
+                                    <label className="block text-xs text-gray-500 mb-1">Owner</label>
+                                    <select
                                       value={editingTask.owner}
                                       onChange={(e) =>
                                         setEditingTask({...editingTask, owner: e.target.value})
                                       }
                                       className="w-full px-3 py-2 border rounded-md"
-                                    />
+                                    >
+                                      <option value="">Unassigned</option>
+                                      {teamMembers.map(member => (
+                                        <option key={member.email} value={member.email}>{member.name}</option>
+                                      ))}
+                                    </select>
                                   </div>
                                 )}
                                 {(isAdmin || !task.dueDate || task.dueDate.trim() === '') && (
@@ -1861,7 +2054,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                               {viewMode === 'internal' && (
                                 <div className="mt-2 space-y-1 text-sm text-gray-600">
                                   <p>
-                                    <span className="font-medium">Owner:</span> {task.owner || 'Unassigned'}
+                                    <span className="font-medium">Owner:</span> {getOwnerName(task.owner)}
                                     {!isAdmin && task.owner && (
                                       <span className="text-xs text-gray-400 ml-2">(Admin only can edit)</span>
                                     )}
@@ -1903,42 +2096,118 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                 </div>
                               )}
                               {viewMode === 'internal' && (
-                                <div className="mt-3">
+                                <div className="mt-3 flex flex-wrap gap-4">
                                   <button
                                     onClick={() => setExpandedTaskId(expandedTaskId === task.id ? null : task.id)}
                                     className="text-sm text-blue-600 hover:underline"
                                   >
                                     {expandedTaskId === task.id ? 'Hide Notes' : `Notes (${(task.notes || []).length})`}
                                   </button>
+                                  <span className="text-sm text-gray-500">
+                                    Subtasks: {(task.subtasks || []).filter(s => s.completed).length}/{(task.subtasks || []).length}
+                                  </span>
                                   {expandedTaskId === task.id && (
-                                    <div className="mt-2 bg-gray-50 rounded-lg p-3">
-                                      <div className="space-y-2 max-h-48 overflow-y-auto mb-3">
-                                        {(task.notes || []).length === 0 ? (
-                                          <p className="text-sm text-gray-400 italic">No notes yet</p>
-                                        ) : (
-                                          (task.notes || []).map(note => (
-                                            <div key={note.id} className="bg-white p-2 rounded border text-sm">
-                                              <p className="text-gray-800">{note.content}</p>
-                                              <p className="text-xs text-gray-400 mt-1">
-                                                {note.author} - {new Date(note.createdAt).toLocaleString()}
-                                              </p>
-                                            </div>
-                                          ))
-                                        )}
+                                    <div className="w-full mt-2 bg-gray-50 rounded-lg p-3">
+                                      <div className="mb-4">
+                                        <h4 className="text-sm font-medium text-gray-700 mb-2">Notes</h4>
+                                        <div className="space-y-2 max-h-32 overflow-y-auto mb-3">
+                                          {(task.notes || []).length === 0 ? (
+                                            <p className="text-sm text-gray-400 italic">No notes yet</p>
+                                          ) : (
+                                            (task.notes || []).map(note => (
+                                              <div key={note.id} className="bg-white p-2 rounded border text-sm">
+                                                <p className="text-gray-800">{note.content}</p>
+                                                <p className="text-xs text-gray-400 mt-1">
+                                                  {note.author} - {new Date(note.createdAt).toLocaleString()}
+                                                </p>
+                                              </div>
+                                            ))
+                                          )}
+                                        </div>
+                                        <div className="flex gap-2">
+                                          <input
+                                            value={newNote}
+                                            onChange={(e) => setNewNote(e.target.value)}
+                                            placeholder="Add a status update..."
+                                            className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                          />
+                                          <button
+                                            onClick={() => handleAddNote(task.id)}
+                                            className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700"
+                                          >
+                                            Add
+                                          </button>
+                                        </div>
                                       </div>
-                                      <div className="flex gap-2">
-                                        <input
-                                          value={newNote}
-                                          onChange={(e) => setNewNote(e.target.value)}
-                                          placeholder="Add a status update..."
-                                          className="flex-1 px-3 py-2 border rounded-md text-sm"
-                                        />
-                                        <button
-                                          onClick={() => handleAddNote(task.id)}
-                                          className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700"
-                                        >
-                                          Add
-                                        </button>
+                                      <div className="border-t pt-4">
+                                        <h4 className="text-sm font-medium text-gray-700 mb-2">Subtasks</h4>
+                                        <div className="space-y-2 mb-3">
+                                          {(task.subtasks || []).length === 0 ? (
+                                            <p className="text-sm text-gray-400 italic">No subtasks</p>
+                                          ) : (
+                                            (task.subtasks || []).map(subtask => (
+                                              <div key={subtask.id} className="flex items-center gap-2 bg-white p-2 rounded border text-sm">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={subtask.completed}
+                                                  onChange={() => handleToggleSubtask(task.id, subtask.id, subtask.completed)}
+                                                  className="w-4 h-4"
+                                                />
+                                                <span className={subtask.completed ? 'line-through text-gray-400 flex-1' : 'flex-1'}>
+                                                  {subtask.title}
+                                                </span>
+                                                {subtask.owner && (
+                                                  <span className="text-xs text-gray-500">{getOwnerName(subtask.owner)}</span>
+                                                )}
+                                                <button
+                                                  onClick={() => handleDeleteSubtask(task.id, subtask.id)}
+                                                  className="text-red-400 hover:text-red-600 text-xs"
+                                                >
+                                                  x
+                                                </button>
+                                              </div>
+                                            ))
+                                          )}
+                                        </div>
+                                        {newSubtask.taskId === task.id ? (
+                                          <div className="flex gap-2">
+                                            <input
+                                              value={newSubtask.title}
+                                              onChange={(e) => setNewSubtask({...newSubtask, title: e.target.value})}
+                                              placeholder="Subtask title..."
+                                              className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                            />
+                                            <select
+                                              value={newSubtask.owner}
+                                              onChange={(e) => setNewSubtask({...newSubtask, owner: e.target.value})}
+                                              className="px-2 py-2 border rounded-md text-sm"
+                                            >
+                                              <option value="">No owner</option>
+                                              {teamMembers.map(member => (
+                                                <option key={member.email} value={member.email}>{member.name}</option>
+                                              ))}
+                                            </select>
+                                            <button
+                                              onClick={() => handleAddSubtask(task.id)}
+                                              className="px-3 py-2 bg-green-600 text-white rounded-md text-sm hover:bg-green-700"
+                                            >
+                                              Add
+                                            </button>
+                                            <button
+                                              onClick={() => setNewSubtask({ taskId: null, title: '', owner: '' })}
+                                              className="px-3 py-2 bg-gray-300 rounded-md text-sm"
+                                            >
+                                              Cancel
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <button
+                                            onClick={() => setNewSubtask({ taskId: task.id, title: '', owner: '' })}
+                                            className="text-sm text-blue-600 hover:underline"
+                                          >
+                                            + Add Subtask
+                                          </button>
+                                        )}
                                       </div>
                                     </div>
                                   )}
@@ -2010,13 +2279,17 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium mb-1">Owner (First and Last Name)</label>
-                    <input
+                    <label className="block text-sm font-medium mb-1">Owner</label>
+                    <select
                       value={newTask.owner}
                       onChange={(e) => setNewTask({...newTask, owner: e.target.value})}
                       className="w-full px-3 py-2 border rounded-md"
-                      placeholder="e.g., John Smith"
-                    />
+                    >
+                      <option value="">Unassigned</option>
+                      {teamMembers.map(member => (
+                        <option key={member.email} value={member.email}>{member.name}</option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">Due Date</label>
@@ -2680,9 +2953,11 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
                           </td>
                           <td className="px-4 py-2">
                             <input
+                              type="email"
                               value={editingTask.owner}
                               onChange={(e) => setEditingTask({...editingTask, owner: e.target.value})}
                               className="w-full px-2 py-1 border rounded text-sm"
+                              placeholder="user@email.com"
                             />
                           </td>
                           <td className="px-4 py-2 relative">
@@ -2749,7 +3024,7 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
                           <td className="px-4 py-2 text-sm">{task.phase}</td>
                           <td className="px-4 py-2 text-sm">{task.stage}</td>
                           <td className="px-4 py-2 text-sm font-medium">{task.taskTitle}</td>
-                          <td className="px-4 py-2 text-sm text-gray-500">{task.owner || '-'}</td>
+                          <td className="px-4 py-2 text-sm text-gray-500">{getOwnerName ? getOwnerName(task.owner) : (task.owner || '-')}</td>
                           <td className="px-4 py-2 text-xs text-gray-500 relative group">
                             {task.dependencies && task.dependencies.length > 0 ? (
                               <div>

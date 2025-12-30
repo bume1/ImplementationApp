@@ -100,10 +100,10 @@
                                 }`}>
                                   {task.clientName || task.taskTitle}
                                 </h5>
-                                {(task.dateCompleted || task.owner) && (
+                                {(task.dateCompleted || task.ownerDisplayName) && (
                                   <p className="mt-1 text-xs text-gray-600">
-                                    {task.owner && <span className="text-gray-500">Owner: {task.owner}</span>}
-                                    {task.owner && task.dateCompleted && <span className="mx-1">•</span>}
+                                    {task.ownerDisplayName && <span className="text-gray-500">Owner: {task.ownerDisplayName}</span>}
+                                    {task.ownerDisplayName && task.dateCompleted && <span className="mx-1">•</span>}
                                     {task.dateCompleted && <span className="text-green-600">Completed: {task.dateCompleted}</span>}
                                   </p>
                                 )}
@@ -201,10 +201,10 @@
                               <h3 className={`font-medium ${task.completed ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
                                 {task.clientName || task.taskTitle}
                               </h3>
-                              {(task.owner || task.dateCompleted) && (
+                              {(task.ownerDisplayName || task.dateCompleted) && (
                                 <p className="text-sm text-gray-600 mt-1">
-                                  {task.owner && <span>Owner: {task.owner}</span>}
-                                  {task.owner && task.dateCompleted && <span className="mx-2">•</span>}
+                                  {task.ownerDisplayName && <span>Owner: {task.ownerDisplayName}</span>}
+                                  {task.ownerDisplayName && task.dateCompleted && <span className="mx-2">•</span>}
                                   {task.dateCompleted && <span className="text-green-600">Completed: {task.dateCompleted}</span>}
                                 </p>
                               )}
@@ -468,7 +468,7 @@
                           {task.clientName || task.taskTitle}
                         </h4>
                         <div className="mt-1 text-sm text-gray-500 flex flex-wrap gap-3">
-                          {task.owner && <span>Owner: {task.owner}</span>}
+                          {task.ownerDisplayName && <span>Owner: {task.ownerDisplayName}</span>}
                           {task.dateCompleted && <span className="text-green-600">Completed: {task.dateCompleted}</span>}
                         </div>
                       </div>
