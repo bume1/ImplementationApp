@@ -525,7 +525,8 @@
 
       const pathParts = window.location.pathname.split('/').filter(Boolean);
       const isClientRoute = pathParts[0] === 'client';
-      const linkId = isClientRoute ? pathParts[1] : pathParts[0];
+      const isThrivePath = pathParts[0]?.toLowerCase() === 'thrive365labslaunch';
+      const linkId = isClientRoute || isThrivePath ? pathParts[1] : pathParts[0];
 
       useEffect(() => {
         fetch(`/api/client/${linkId}`)
