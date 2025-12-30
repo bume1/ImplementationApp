@@ -347,12 +347,45 @@ const parseCSV = (csvText) => {
   
   if (rows.length < 2) return [];
   
-  const headers = rows[0].map(h => h.replace(/^"|"$/g, ''));
+  const headers = rows[0].map(h => h.replace(/^"|"$/g, '').trim());
+  
+  // Normalize headers to handle variations in case and naming
+  const headerMap = {
+    'showtoclient': 'showToClient',
+    'show_to_client': 'showToClient',
+    'show to client': 'showToClient',
+    'clientname': 'clientName',
+    'client_name': 'clientName',
+    'client name': 'clientName',
+    'tasktitle': 'taskTitle',
+    'task_title': 'taskTitle',
+    'task title': 'taskTitle',
+    'task': 'taskTitle',
+    'title': 'taskTitle',
+    'duedate': 'dueDate',
+    'due_date': 'dueDate',
+    'due date': 'dueDate',
+    'startdate': 'startDate',
+    'start_date': 'startDate',
+    'start date': 'startDate',
+    'issubtask': 'isSubtask',
+    'is_subtask': 'isSubtask',
+    'parenttaskid': 'parentTaskId',
+    'parent_task_id': 'parentTaskId',
+    'subtaskstatus': 'subtaskStatus',
+    'subtask_status': 'subtaskStatus'
+  };
+  
+  const normalizedHeaders = headers.map(h => {
+    const lower = h.toLowerCase();
+    return headerMap[lower] || h;
+  });
+  
   const data = [];
   
   for (let i = 1; i < rows.length; i++) {
     const row = {};
-    headers.forEach((header, idx) => {
+    normalizedHeaders.forEach((header, idx) => {
       row[header] = rows[i][idx] || '';
     });
     data.push(row);
@@ -2250,17 +2283,22 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                     <input
                                       type="checkbox"
                                       checked={editingTask.showToClient}
-                                      onChange={(e) =>
-                                        setEditingTask({...editingTask, showToClient: e.target.checked})
-                                      }
+                                      onChange={(e) => {
+                                        const checked = e.target.checked;
+                                        setEditingTask({
+                                          ...editingTask, 
+                                          showToClient: checked,
+                                          clientName: checked && !editingTask.clientName ? editingTask.taskTitle : editingTask.clientName
+                                        });
+                                      }}
                                       className="w-4 h-4"
                                     />
                                     Show to Client
                                   </label>
                                   {editingTask.showToClient && (
                                     <input
-                                      placeholder="Client-Facing Name"
-                                      value={editingTask.clientName}
+                                      placeholder="Client-Facing Name (defaults to task name)"
+                                      value={editingTask.clientName || editingTask.taskTitle}
                                       onChange={(e) =>
                                         setEditingTask({...editingTask, clientName: e.target.value})
                                       }
