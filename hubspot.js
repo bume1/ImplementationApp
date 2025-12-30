@@ -206,7 +206,7 @@ async function createTask(dealId, taskSubject, taskBody, ownerId = null) {
           types: [
             {
               associationCategory: 'HUBSPOT_DEFINED',
-              associationTypeId: 215
+              associationTypeId: 216
             }
           ]
         }
