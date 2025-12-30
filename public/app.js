@@ -299,6 +299,12 @@ const api = {
       headers: { 'Authorization': `Bearer ${token}` }
     }).then(r => r.json()),
 
+  setDefaultTemplate: (token, templateId) =>
+    fetch(`${API_URL}/api/templates/${templateId}/set-default`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.json()),
+
   testHubSpotConnection: (token) =>
     fetch(`${API_URL}/api/hubspot/test`, {
       headers: { 'Authorization': `Bearer ${token}` }
@@ -3287,6 +3293,25 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
     }
   };
 
+  const handleSetDefaultTemplate = async (templateId) => {
+    try {
+      const result = await api.setDefaultTemplate(token, templateId);
+      if (result.error) {
+        alert(result.error);
+        return;
+      }
+      // Update local state to reflect new default
+      setTemplates(templates.map(t => ({
+        ...t,
+        isDefault: t.id === templateId
+      })));
+      alert(result.message);
+    } catch (err) {
+      console.error('Failed to set default template:', err);
+      alert('Failed to set default template');
+    }
+  };
+
   const handleSaveTask = async () => {
     if (!selectedTemplate || !editingTask) return;
     setSaving(true);
@@ -3526,6 +3551,14 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
                         >
                           Clone
                         </button>
+                        {!template.isDefault && (
+                          <button
+                            onClick={() => handleSetDefaultTemplate(template.id)}
+                            className="text-blue-600 hover:underline"
+                          >
+                            Set Default
+                          </button>
+                        )}
                         {!template.isDefault && (
                           <button
                             onClick={() => handleDeleteTemplate(template.id)}

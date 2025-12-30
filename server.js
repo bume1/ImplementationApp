@@ -1644,6 +1644,27 @@ app.post('/api/projects/:id/import-csv', authenticateToken, async (req, res) => 
   }
 });
 
+app.put('/api/templates/:id/set-default', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const templates = await db.get('templates') || [];
+    const template = templates.find(t => t.id === req.params.id);
+    
+    if (!template) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+    
+    // Remove default from all templates, then set this one as default
+    templates.forEach(t => {
+      t.isDefault = (t.id === req.params.id);
+    });
+    
+    await db.set('templates', templates);
+    res.json({ message: `"${template.name}" is now the default template` });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.delete('/api/templates/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const templates = await db.get('templates') || [];
