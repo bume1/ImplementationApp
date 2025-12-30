@@ -290,22 +290,6 @@ app.post('/api/projects/:projectId/tasks/:taskId/notes', authenticateToken, asyn
     tasks[idx].notes.push(note);
     await db.set(`tasks_${projectId}`, tasks);
     
-    // Build comprehensive note activity for HubSpot
-    const task = tasks[idx];
-    let noteDetails = `Task: ${task.taskTitle}`;
-    noteDetails += `\nPhase: ${task.phase}`;
-    if (task.stage) {
-      noteDetails += `\nStage: ${task.stage}`;
-    }
-    if (task.owner) {
-      noteDetails += `\nTask Owner: ${task.owner}`;
-    }
-    noteDetails += `\nNote by: ${req.user.name}`;
-    noteDetails += `\nDate: ${new Date().toLocaleDateString()}`;
-    noteDetails += `\n\n${content}`;
-    
-    logHubSpotActivity(projectId, 'Note Added', noteDetails);
-    
     res.json(note);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
@@ -532,24 +516,8 @@ app.put('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req,
     if (!wasCompleted && tasks[idx].completed) {
       const completedTask = tasks[idx];
       
-      // Build comprehensive activity details
-      let activityDetails = `Task: ${completedTask.taskTitle}`;
-      activityDetails += `\nPhase: ${completedTask.phase}`;
-      if (completedTask.stage) {
-        activityDetails += `\nStage: ${completedTask.stage}`;
-      }
-      activityDetails += `\nCompleted by: ${req.user.name}`;
-      activityDetails += `\nDate: ${completedTask.dateCompleted || new Date().toISOString()}`;
-      
-      // Include task notes if any exist
-      if (completedTask.notes && completedTask.notes.length > 0) {
-        activityDetails += `\n\n--- Task Notes ---`;
-        completedTask.notes.forEach(note => {
-          activityDetails += `\n[${note.author} - ${new Date(note.createdAt).toLocaleDateString()}]: ${note.content}`;
-        });
-      }
-      
-      logHubSpotActivity(projectId, 'Task Completed', activityDetails);
+      // Create HubSpot task instead of logging an activity note
+      createHubSpotTask(projectId, completedTask, req.user.name);
       
       // Check for stage completion and phase completion
       checkStageAndPhaseCompletion(projectId, tasks, completedTask);
@@ -720,6 +688,52 @@ async function logHubSpotActivity(projectId, activityType, details) {
   }
 }
 
+async function createHubSpotTask(projectId, task, completedByName) {
+  try {
+    const projects = await getProjects();
+    const project = projects.find(p => p.id === projectId);
+    if (!project || !project.hubspotRecordId) return;
+    
+    // Build task subject
+    const taskSubject = `[Project Tracker] ${task.taskTitle}`;
+    
+    // Build task body with all details including notes
+    let taskBody = `Phase: ${task.phase}`;
+    if (task.stage) {
+      taskBody += `\nStage: ${task.stage}`;
+    }
+    taskBody += `\nCompleted by: ${completedByName}`;
+    taskBody += `\nCompleted: ${task.dateCompleted || new Date().toISOString()}`;
+    
+    // Include all task notes
+    if (task.notes && task.notes.length > 0) {
+      taskBody += `\n\n--- Task Notes ---`;
+      task.notes.forEach(note => {
+        const noteDate = new Date(note.createdAt);
+        taskBody += `\n[${note.author} - ${noteDate.toLocaleDateString()} ${noteDate.toLocaleTimeString()}]: ${note.content}`;
+      });
+    }
+    
+    // Try to find owner in HubSpot by name
+    let ownerId = null;
+    if (task.owner) {
+      const nameParts = task.owner.trim().split(/\s+/);
+      if (nameParts.length >= 2) {
+        const firstName = nameParts[0];
+        const lastName = nameParts.slice(1).join(' ');
+        ownerId = await hubspot.findOwnerByName(firstName, lastName);
+        if (ownerId) {
+          console.log(`📋 Found HubSpot owner for "${task.owner}": ${ownerId}`);
+        }
+      }
+    }
+    
+    await hubspot.createTask(project.hubspotRecordId, taskSubject, taskBody, ownerId);
+  } catch (error) {
+    console.error('Error creating HubSpot task:', error.message);
+  }
+}
+
 async function checkStageAndPhaseCompletion(projectId, tasks, completedTask) {
   try {
     const projects = await getProjects();
@@ -738,19 +752,24 @@ async function checkStageAndPhaseCompletion(projectId, tasks, completedTask) {
       const stageCompleted = stageTasks.every(t => t.completed);
       
       if (stageCompleted && stageTasks.length > 0) {
-        // Build comprehensive stage completion note
+        // Build comprehensive stage completion note with dates, times, and notes
         let stageDetails = `Stage "${stage}" in ${phase} is now complete!`;
-        stageDetails += `\n\nTasks completed in this stage:`;
+        stageDetails += `\n\nTasks completed in this stage (${stageTasks.length} total):`;
         
         stageTasks.forEach(task => {
-          stageDetails += `\n- ${task.taskTitle}`;
-          if (task.owner) stageDetails += ` (Owner: ${task.owner})`;
-          if (task.dateCompleted) stageDetails += ` [Completed: ${new Date(task.dateCompleted).toLocaleDateString()}]`;
+          stageDetails += `\n\n- ${task.taskTitle}`;
+          if (task.owner) stageDetails += `\n  Owner: ${task.owner}`;
+          if (task.dateCompleted) {
+            const completedDate = new Date(task.dateCompleted);
+            stageDetails += `\n  Completed: ${completedDate.toLocaleDateString()} at ${completedDate.toLocaleTimeString()}`;
+          }
           
-          // Include notes for each task
+          // Include all notes for each task
           if (task.notes && task.notes.length > 0) {
+            stageDetails += `\n  Notes:`;
             task.notes.forEach(note => {
-              stageDetails += `\n    Note: ${note.content} - ${note.author}`;
+              const noteDate = new Date(note.createdAt);
+              stageDetails += `\n    - [${note.author} - ${noteDate.toLocaleDateString()} ${noteDate.toLocaleTimeString()}]: ${note.content}`;
             });
           }
         });
@@ -775,24 +794,21 @@ async function checkStageAndPhaseCompletion(projectId, tasks, completedTask) {
         const stageId = mapping.phases[phase];
         console.log(`📤 Phase ${phase} completed - Syncing to HubSpot stage: ${stageId}`);
         
-        // Log phase completion with comprehensive details
+        // Log phase completion with stage-by-stage breakdown only (no individual tasks)
         let phaseDetails = `${phase} is now complete!`;
         phaseDetails += `\n\nAll ${phaseTasks.length} tasks in this phase have been completed.`;
         
-        // Group by stage for summary
+        // Group by stage for summary count only
         const stageGroups = {};
         phaseTasks.forEach(task => {
           const taskStage = task.stage || 'General';
-          if (!stageGroups[taskStage]) stageGroups[taskStage] = [];
-          stageGroups[taskStage].push(task);
+          if (!stageGroups[taskStage]) stageGroups[taskStage] = 0;
+          stageGroups[taskStage]++;
         });
         
         phaseDetails += `\n\n--- Stage Summary ---`;
         Object.keys(stageGroups).forEach(stageName => {
-          phaseDetails += `\n\n${stageName}: ${stageGroups[stageName].length} tasks`;
-          stageGroups[stageName].forEach(task => {
-            phaseDetails += `\n  - ${task.taskTitle}`;
-          });
+          phaseDetails += `\n${stageName}: ${stageGroups[stageName]} tasks completed`;
         });
         
         await hubspot.logRecordActivity(project.hubspotRecordId, 'Phase Completed', phaseDetails);
