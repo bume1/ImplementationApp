@@ -79,6 +79,17 @@ Preferred communication style: Simple, everyday language.
 - `PORT` - Server port (defaults to 5000)
 - `JWT_SECRET` - Token signing secret (has default, should be changed in production)
 
+## Branding
+- **Logo**: Thrive 365 Labs logo from thrive365labs.com
+- **Primary Color**: #045E9F (blue)
+- **Accent Color**: #00205A (dark navy)
+- **Font**: Open Sans (via Google Fonts)
+- **Designer Credit**: "Developed by Bianca G. C. Ume, MD, MBA, MS"
+
+## Clone/Duplicate Features
+- **Clone Projects**: Any user can clone a project via "Clone Project" button on project cards. Creates new project with all tasks reset to incomplete status.
+- **Clone Templates**: Admins can clone templates via "Clone" button in Template Management. Creates new template with all task definitions.
+
 ## HubSpot Integration
 
 ### Configuration
