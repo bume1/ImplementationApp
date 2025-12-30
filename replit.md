@@ -93,8 +93,10 @@ Preferred communication style: Simple, everyday language.
 ## CSV Import
 - **Template CSV Import**: Admins can bulk import tasks to templates via "Import CSV" button in Template Management
 - **Project CSV Import**: Users can bulk import tasks to projects via "Import CSV" button in Project Tracker
-- **CSV Columns**: phase, stage, taskTitle, owner, dueDate, showToClient, clientName, dependencies
+- **CSV Columns**: phase, stage, taskTitle, owner, dueDate, showToClient, clientName, completed, dateCompleted, dependencies, isSubtask, parentTaskId, subtaskStatus
 - **Parser Features**: Handles quoted fields, escaped quotes (""), commas within fields, and multiline content
+- **Completion Status**: Import 'completed' column (accepts true/yes/1) to mark tasks as complete
+- **Client-Facing Name**: When showToClient is true, clientName defaults to taskTitle if not specified
 
 ## HubSpot Integration
 

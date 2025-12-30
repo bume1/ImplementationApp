@@ -1373,28 +1373,26 @@ app.post('/api/templates/:id/import-csv', authenticateToken, requireAdmin, async
     
     // Generate new IDs for imported tasks
     const maxId = template.tasks.length > 0 ? Math.max(...template.tasks.map(t => t.id)) : 0;
-    const newTasks = csvData.map((row, index) => ({
-      id: maxId + index + 1,
-      phase: row.phase || 'Phase 1',
-      stage: row.stage || '',
-      taskTitle: row.taskTitle || row.title || row.task || '',
-      clientName: row.clientName || '',
-      owner: row.owner || '',
-      startDate: row.startDate || '',
-      dueDate: row.dueDate || '',
-      dateCompleted: '',
-      duration: parseInt(row.duration) || 0,
-      completed: false,
-      showToClient: ['true', 'yes', '1'].includes(String(row.showToClient || '').toLowerCase()),
-      dependencies: row.dependencies ? String(row.dependencies).split(',').map(d => parseInt(d.trim())).filter(d => !isNaN(d)) : []
-    })).filter(t => t.taskTitle);
-    
-    // Default clientName to taskTitle if showToClient is true but clientName is empty
-    newTasks.forEach(t => {
-      if (t.showToClient && !t.clientName) {
-        t.clientName = t.taskTitle;
-      }
-    });
+    const newTasks = csvData.map((row, index) => {
+      const taskTitle = row.taskTitle || row.title || row.task || '';
+      const showToClient = ['true', 'yes', '1'].includes(String(row.showToClient || '').toLowerCase());
+      const completed = ['true', 'yes', '1'].includes(String(row.completed || '').toLowerCase());
+      return {
+        id: maxId + index + 1,
+        phase: row.phase || 'Phase 1',
+        stage: row.stage || '',
+        taskTitle: taskTitle,
+        clientName: showToClient ? (row.clientName || taskTitle) : '',
+        owner: row.owner || '',
+        startDate: row.startDate || '',
+        dueDate: row.dueDate || '',
+        dateCompleted: completed ? (row.dateCompleted || new Date().toISOString().split('T')[0]) : '',
+        duration: parseInt(row.duration) || 0,
+        completed: completed,
+        showToClient: showToClient,
+        dependencies: row.dependencies ? String(row.dependencies).split(',').map(d => parseInt(d.trim())).filter(d => !isNaN(d)) : []
+      };
+    }).filter(t => t.taskTitle);
     
     template.tasks = [...template.tasks, ...newTasks];
     template.updatedAt = new Date().toISOString();
@@ -1436,32 +1434,30 @@ app.post('/api/projects/:id/import-csv', authenticateToken, async (req, res) => 
     });
     
     // Create parent tasks first
-    const newTasks = parentRows.map((row, index) => ({
-      id: maxId + index + 1,
-      phase: row.phase || 'Phase 1',
-      stage: row.stage || '',
-      taskTitle: row.taskTitle || row.title || row.task || '',
-      clientName: row.clientName || '',
-      owner: row.owner || '',
-      startDate: row.startDate || '',
-      dueDate: row.dueDate || '',
-      dateCompleted: '',
-      duration: parseInt(row.duration) || 0,
-      completed: false,
-      showToClient: ['true', 'yes', '1'].includes(String(row.showToClient || '').toLowerCase()),
-      dependencies: row.dependencies ? String(row.dependencies).split(',').map(d => parseInt(d.trim())).filter(d => !isNaN(d)) : [],
-      notes: [],
-      subtasks: [],
-      createdBy: req.user.id,
-      createdAt: new Date().toISOString()
-    })).filter(t => t.taskTitle);
-    
-    // Default clientName to taskTitle if showToClient is true but clientName is empty
-    newTasks.forEach(t => {
-      if (t.showToClient && !t.clientName) {
-        t.clientName = t.taskTitle;
-      }
-    });
+    const newTasks = parentRows.map((row, index) => {
+      const taskTitle = row.taskTitle || row.title || row.task || '';
+      const showToClient = ['true', 'yes', '1'].includes(String(row.showToClient || '').toLowerCase());
+      const completed = ['true', 'yes', '1'].includes(String(row.completed || '').toLowerCase());
+      return {
+        id: maxId + index + 1,
+        phase: row.phase || 'Phase 1',
+        stage: row.stage || '',
+        taskTitle: taskTitle,
+        clientName: showToClient ? (row.clientName || taskTitle) : '',
+        owner: row.owner || '',
+        startDate: row.startDate || '',
+        dueDate: row.dueDate || '',
+        dateCompleted: completed ? (row.dateCompleted || new Date().toISOString().split('T')[0]) : '',
+        duration: parseInt(row.duration) || 0,
+        completed: completed,
+        showToClient: showToClient,
+        dependencies: row.dependencies ? String(row.dependencies).split(',').map(d => parseInt(d.trim())).filter(d => !isNaN(d)) : [],
+        notes: [],
+        subtasks: [],
+        createdBy: req.user.id,
+        createdAt: new Date().toISOString()
+      };
+    }).filter(t => t.taskTitle);
     
     // Add subtasks to their parent tasks
     let subtasksAdded = 0;
