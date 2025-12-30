@@ -2067,8 +2067,8 @@ const SoftPilotChecklist = ({ token, project, tasks, teamMembers, onClose, onSub
         <div className="p-6 border-t bg-gray-50 flex justify-between items-center">
           <p className="text-sm text-gray-500">
             {isResubmission 
-              ? 'Updated checklist will be uploaded to Google Drive and noted in HubSpot.' 
-              : 'This checklist will be uploaded to Google Drive and noted in HubSpot.'}
+              ? 'Updated checklist will be saved to Drive > Operations > Installations > Client Onboarding > "Soft" Launches. HubSpot will receive notes automatically.' 
+              : 'This checklist will be saved to Drive > Operations > Installations > Client Onboarding > "Soft" Launches. HubSpot will receive notes automatically.'}
           </p>
           <div className="flex gap-3">
             <button
@@ -3655,8 +3655,8 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
             onSubmitSuccess={() => {
               loadTasks();
               alert(project.softPilotChecklistSubmitted 
-                ? 'Soft-Pilot Checklist updated and HubSpot notified!' 
-                : 'Soft-Pilot Checklist submitted successfully and uploaded to HubSpot!');
+                ? 'Soft-Pilot Checklist updated and saved to Google Drive!' 
+                : 'Soft-Pilot Checklist submitted and saved to Google Drive!');
             }}
             onTaskUpdate={async (taskId, updates) => {
               try {
