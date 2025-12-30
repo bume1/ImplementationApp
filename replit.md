@@ -1,4 +1,4 @@
-# Project Tracker - Thrive 365 Labs
+# New Client Launch Dashboard - Thrive 365 Labs
 
 ## Overview
 
@@ -87,7 +87,7 @@ Preferred communication style: Simple, everyday language.
 - Stage Mapping: Map project phases (0-4) to HubSpot deal pipeline stages
 
 ### Sync Behavior
-- **Task Completion**: Creates a HubSpot task (marked complete) associated with the deal. Assigns owner if first/last name matches HubSpot users. Task body includes phase, stage, completion details, and all task notes
+- **Task Completion**: Creates a HubSpot task (marked complete) associated with the deal. Assigns owner by email match (preferred) or first/last name match. Task body includes phase, stage, completion details, and all task notes
 - **Stage Completion Notes**: When all tasks in a stage are completed, a comprehensive note is logged to HubSpot including all task details, owners, completion dates/times, and notes
 - **Phase Completion**: When all tasks in a phase are completed, a stage-by-stage summary is logged AND the deal moves to the mapped pipeline stage
 - **Sync Indicator**: Projects with HubSpot Record IDs show last sync timestamp on the project dashboard
@@ -104,3 +104,22 @@ Note: Adding notes to tasks in the webapp does NOT trigger HubSpot sync (to avoi
 - `GET /api/hubspot/pipelines` - Fetch available deal pipelines and stages
 - `GET /api/hubspot/stage-mapping` - Get current phase-to-stage mapping
 - `PUT /api/hubspot/stage-mapping` - Save phase-to-stage mapping (admin only)
+
+## Reporting
+
+### Launch Reports Page
+- Accessible via "Reports" button on dashboard (available to all users)
+- Summary stats: Total projects, Completed, In Progress, Average weeks to launch
+
+### Charts
+1. **Launches by Client**: Stacked bar chart showing completed vs in-progress vs paused projects per client
+2. **Go-Live Timelines**: Bar chart showing implementation duration (weeks) for completed projects
+
+### Launch Duration Calculation
+- Calculated as weeks between "Contract signed" task completion and "First Live Patient Samples Processed" task completion
+- Displayed on completed project cards in the dashboard
+- Used in reporting charts and tables
+
+### Per-Stage Task Addition
+- Each stage in the list view has an "+ Add Task" button
+- Clicking pre-fills the phase and stage for the new task

@@ -83,6 +83,11 @@ const api = {
     window.open(`${API_URL}/api/projects/${projectId}/export`, '_blank');
   },
 
+  getReportingData: (token) =>
+    fetch(`${API_URL}/api/reporting`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.json()),
+
   forgotPassword: (email) =>
     fetch(`${API_URL}/api/auth/forgot-password`, {
       method: 'POST',
@@ -234,7 +239,7 @@ const AuthScreen = ({ onLogin }) => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center p-4">
       <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
-        <h1 className="text-3xl font-bold mb-2">Project Tracker</h1>
+        <h1 className="text-3xl font-bold mb-2">New Client Launch Dashboard</h1>
         <p className="text-gray-600 mb-6">Thrive 365 Labs</p>
 
 
@@ -346,7 +351,7 @@ const StatusBadge = ({ status }) => {
 };
 
 // ============== PROJECT LIST COMPONENT ==============
-const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, onManageTemplates, onManageHubSpot }) => {
+const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, onManageTemplates, onManageHubSpot, onViewReporting }) => {
   const [projects, setProjects] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -496,6 +501,14 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                   HubSpot Settings
                 </button>
               )}
+              {onViewReporting && (
+                <button
+                  onClick={onViewReporting}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700"
+                >
+                  Reports
+                </button>
+              )}
               <button
                 onClick={onLogout}
                 className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700"
@@ -616,7 +629,14 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
               >
                 <div className="flex justify-between items-start mb-2">
                   <h3 className="text-xl font-bold text-gray-900">{project.name}</h3>
-                  <StatusBadge status={project.status || 'active'} />
+                  <div className="flex items-center gap-2">
+                    {project.status === 'completed' && project.launchDurationWeeks && (
+                      <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded font-medium">
+                        {project.launchDurationWeeks} weeks
+                      </span>
+                    )}
+                    <StatusBadge status={project.status || 'active'} />
+                  </div>
                 </div>
                 <p className="text-gray-600 mb-4">{project.clientName}</p>
 
@@ -1641,11 +1661,28 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                 </div>
                 {Object.entries(groupedByPhase[phase]).map(([stageName, stageTasks]) => (
                   <div key={stageName} className={`bg-white rounded-lg shadow-sm overflow-hidden border-l-4 ${getPhaseColor(phase)}`}>
-                    <div className="bg-gray-50 p-3 border-b">
-                      <h3 className="font-semibold text-gray-700">{stageName}</h3>
-                      <p className="text-xs text-gray-500">
-                        {stageTasks.filter(t => t.completed).length} of {stageTasks.length} complete
-                      </p>
+                    <div className="bg-gray-50 p-3 border-b flex justify-between items-center">
+                      <div>
+                        <h3 className="font-semibold text-gray-700">{stageName}</h3>
+                        <p className="text-xs text-gray-500">
+                          {stageTasks.filter(t => t.completed).length} of {stageTasks.length} complete
+                        </p>
+                      </div>
+                      {viewMode === 'internal' && (
+                        <button
+                          onClick={() => {
+                            setNewTask({
+                              ...newTask,
+                              phase: phase,
+                              stage: stageName
+                            });
+                            setShowAddTask(true);
+                          }}
+                          className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                        >
+                          + Add Task
+                        </button>
+                      )}
                     </div>
                     <div className="divide-y divide-gray-200">
                       {stageTasks.map(task => (
@@ -2977,6 +3014,271 @@ const HubSpotSettings = ({ token, user, onBack, onLogout }) => {
   );
 };
 
+// ============== REPORTING COMPONENT ==============
+const Reporting = ({ token, user, onBack, onLogout }) => {
+  const [reportData, setReportData] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadReportData();
+  }, []);
+
+  const loadReportData = async () => {
+    try {
+      const data = await api.getReportingData(token);
+      setReportData(data);
+    } catch (error) {
+      console.error('Failed to load reporting data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Chart 1: Completed vs In Progress by client
+  const getStatusByClient = () => {
+    const clientMap = {};
+    reportData.forEach(project => {
+      const client = project.clientName || 'Unknown';
+      if (!clientMap[client]) {
+        clientMap[client] = { completed: 0, inProgress: 0, paused: 0 };
+      }
+      if (project.status === 'completed') {
+        clientMap[client].completed++;
+      } else if (project.status === 'paused') {
+        clientMap[client].paused++;
+      } else {
+        clientMap[client].inProgress++;
+      }
+    });
+    return clientMap;
+  };
+
+  // Chart 2: Go-live timelines by client (only completed projects with duration)
+  const getTimelinesByClient = () => {
+    return reportData
+      .filter(p => p.status === 'completed' && p.launchDurationWeeks !== null)
+      .map(p => ({
+        name: p.name,
+        clientName: p.clientName,
+        weeks: p.launchDurationWeeks,
+        contractDate: p.contractSignedDate,
+        goLiveDate: p.goLiveDate
+      }))
+      .sort((a, b) => b.weeks - a.weeks);
+  };
+
+  const statusByClient = getStatusByClient();
+  const timelines = getTimelinesByClient();
+  const maxWeeks = timelines.length > 0 ? Math.max(...timelines.map(t => t.weeks), 1) : 1;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-xl">Loading reports...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-6xl mx-auto">
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <button
+                onClick={onBack}
+                className="text-blue-600 hover:underline mb-2 flex items-center gap-1"
+              >
+                ← Back to Projects
+              </button>
+              <h1 className="text-3xl font-bold text-gray-900">Launch Reports</h1>
+              <p className="text-gray-600">New Client Launch Dashboard - Thrive 365 Labs</p>
+            </div>
+            <button
+              onClick={onLogout}
+              className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700"
+            >
+              Logout
+            </button>
+          </div>
+
+          {/* Summary Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <div className="bg-blue-50 p-4 rounded-lg text-center">
+              <div className="text-3xl font-bold text-blue-600">{reportData.length}</div>
+              <div className="text-sm text-blue-800">Total Projects</div>
+            </div>
+            <div className="bg-green-50 p-4 rounded-lg text-center">
+              <div className="text-3xl font-bold text-green-600">
+                {reportData.filter(p => p.status === 'completed').length}
+              </div>
+              <div className="text-sm text-green-800">Completed</div>
+            </div>
+            <div className="bg-yellow-50 p-4 rounded-lg text-center">
+              <div className="text-3xl font-bold text-yellow-600">
+                {reportData.filter(p => p.status === 'active' || !p.status).length}
+              </div>
+              <div className="text-sm text-yellow-800">In Progress</div>
+            </div>
+            <div className="bg-purple-50 p-4 rounded-lg text-center">
+              <div className="text-3xl font-bold text-purple-600">
+                {timelines.length > 0 ? Math.round(timelines.reduce((sum, t) => sum + t.weeks, 0) / timelines.length) : 0}
+              </div>
+              <div className="text-sm text-purple-800">Avg Weeks to Launch</div>
+            </div>
+          </div>
+
+          {/* Chart 1: Status by Client */}
+          <div className="mb-8">
+            <h2 className="text-xl font-bold mb-4">Launches by Client</h2>
+            <div className="bg-gray-50 rounded-lg p-4">
+              {Object.keys(statusByClient).length === 0 ? (
+                <p className="text-gray-500 text-center py-4">No project data available</p>
+              ) : (
+                <div className="space-y-3">
+                  {Object.entries(statusByClient).map(([client, counts]) => {
+                    const total = counts.completed + counts.inProgress + counts.paused;
+                    return (
+                      <div key={client} className="flex items-center gap-4">
+                        <div className="w-40 text-sm font-medium truncate" title={client}>{client}</div>
+                        <div className="flex-1 flex h-8 rounded overflow-hidden">
+                          {counts.completed > 0 && (
+                            <div 
+                              className="bg-green-500 flex items-center justify-center text-white text-xs font-medium"
+                              style={{ width: `${(counts.completed / total) * 100}%` }}
+                              title={`Completed: ${counts.completed}`}
+                            >
+                              {counts.completed}
+                            </div>
+                          )}
+                          {counts.inProgress > 0 && (
+                            <div 
+                              className="bg-blue-500 flex items-center justify-center text-white text-xs font-medium"
+                              style={{ width: `${(counts.inProgress / total) * 100}%` }}
+                              title={`In Progress: ${counts.inProgress}`}
+                            >
+                              {counts.inProgress}
+                            </div>
+                          )}
+                          {counts.paused > 0 && (
+                            <div 
+                              className="bg-yellow-500 flex items-center justify-center text-white text-xs font-medium"
+                              style={{ width: `${(counts.paused / total) * 100}%` }}
+                              title={`Paused: ${counts.paused}`}
+                            >
+                              {counts.paused}
+                            </div>
+                          )}
+                        </div>
+                        <div className="w-16 text-sm text-gray-600 text-right">{total} total</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <div className="flex gap-4 mt-4 text-xs justify-center">
+                <span className="flex items-center gap-1"><span className="w-3 h-3 bg-green-500 rounded"></span> Completed</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-3 bg-blue-500 rounded"></span> In Progress</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-3 bg-yellow-500 rounded"></span> Paused</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Chart 2: Go-Live Timelines */}
+          <div>
+            <h2 className="text-xl font-bold mb-4">Go-Live Timelines (Contract to First Patient)</h2>
+            <div className="bg-gray-50 rounded-lg p-4">
+              {timelines.length === 0 ? (
+                <p className="text-gray-500 text-center py-4">No completed launches with timeline data available</p>
+              ) : (
+                <div className="space-y-3">
+                  {timelines.map((project, idx) => (
+                    <div key={idx} className="flex items-center gap-4">
+                      <div className="w-48 text-sm">
+                        <div className="font-medium truncate" title={project.name}>{project.name}</div>
+                        <div className="text-gray-500 text-xs truncate" title={project.clientName}>{project.clientName}</div>
+                      </div>
+                      <div className="flex-1 bg-gray-200 rounded h-8 overflow-hidden">
+                        <div 
+                          className="bg-gradient-to-r from-indigo-500 to-purple-500 h-full flex items-center justify-end pr-2"
+                          style={{ width: `${(project.weeks / maxWeeks) * 100}%`, minWidth: '40px' }}
+                        >
+                          <span className="text-white text-xs font-bold">{project.weeks}w</span>
+                        </div>
+                      </div>
+                      <div className="w-32 text-xs text-gray-500">
+                        {project.contractDate && new Date(project.contractDate).toLocaleDateString()} →
+                        {project.goLiveDate && new Date(project.goLiveDate).toLocaleDateString()}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="text-center mt-4 text-sm text-gray-600">
+                Weeks from Contract Signature to First Live Patient Samples
+              </div>
+            </div>
+          </div>
+
+          {/* Detailed Table */}
+          <div className="mt-8">
+            <h2 className="text-xl font-bold mb-4">All Projects Details</h2>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Project</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Client</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Progress</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Duration</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {reportData.map(project => (
+                    <tr key={project.id}>
+                      <td className="px-4 py-3 text-sm font-medium">{project.name}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600">{project.clientName}</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-1 text-xs rounded ${
+                          project.status === 'completed' ? 'bg-green-100 text-green-800' :
+                          project.status === 'paused' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-blue-100 text-blue-800'
+                        }`}>
+                          {project.status === 'completed' ? 'Completed' :
+                           project.status === 'paused' ? 'Paused' : 'In Progress'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <div className="flex items-center gap-2">
+                          <div className="w-24 bg-gray-200 rounded-full h-2">
+                            <div 
+                              className="bg-blue-600 h-2 rounded-full"
+                              style={{ width: `${project.progressPercent}%` }}
+                            ></div>
+                          </div>
+                          <span className="text-gray-600">{project.progressPercent}%</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        {project.launchDurationWeeks !== null ? (
+                          <span className="font-medium text-purple-600">{project.launchDurationWeeks} weeks</span>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const App = () => {
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [user, setUser] = useState(JSON.parse(localStorage.getItem('user') || 'null'));
@@ -3058,6 +3360,17 @@ const App = () => {
     );
   }
 
+  if (view === 'reporting') {
+    return (
+      <Reporting
+        token={token}
+        user={user}
+        onBack={handleBackToList}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
   return (
     <ProjectList
       token={token}
@@ -3067,6 +3380,7 @@ const App = () => {
       onManageUsers={() => setView('users')}
       onManageTemplates={() => setView('templates')}
       onManageHubSpot={() => setView('hubspot')}
+      onViewReporting={() => setView('reporting')}
     />
   );
 };
