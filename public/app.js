@@ -99,6 +99,26 @@ const api = {
       body: JSON.stringify({ name })
     }).then(r => r.json()),
 
+  importCsvToTemplate: (token, templateId, csvData) =>
+    fetch(`${API_URL}/api/templates/${templateId}/import-csv`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ csvData })
+    }).then(r => r.json()),
+
+  importCsvToProject: (token, projectId, csvData) =>
+    fetch(`${API_URL}/api/projects/${projectId}/import-csv`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ csvData })
+    }).then(r => r.json()),
+
   exportProject: (token, projectId) => {
     window.open(`${API_URL}/api/projects/${projectId}/export`, '_blank');
   },
@@ -257,6 +277,65 @@ const api = {
       },
       body: JSON.stringify({ pipelineId, mapping })
     }).then(r => r.json())
+};
+
+// ============== CSV PARSER HELPER ==============
+const parseCSV = (csvText) => {
+  const rows = [];
+  let currentRow = [];
+  let currentField = '';
+  let inQuotes = false;
+  
+  for (let i = 0; i < csvText.length; i++) {
+    const char = csvText[i];
+    const nextChar = csvText[i + 1];
+    
+    if (inQuotes) {
+      if (char === '"' && nextChar === '"') {
+        currentField += '"';
+        i++;
+      } else if (char === '"') {
+        inQuotes = false;
+      } else {
+        currentField += char;
+      }
+    } else {
+      if (char === '"') {
+        inQuotes = true;
+      } else if (char === ',') {
+        currentRow.push(currentField.trim());
+        currentField = '';
+      } else if (char === '\n' || (char === '\r' && nextChar === '\n')) {
+        currentRow.push(currentField.trim());
+        if (currentRow.some(f => f)) rows.push(currentRow);
+        currentRow = [];
+        currentField = '';
+        if (char === '\r') i++;
+      } else if (char !== '\r') {
+        currentField += char;
+      }
+    }
+  }
+  
+  if (currentField || currentRow.length) {
+    currentRow.push(currentField.trim());
+    if (currentRow.some(f => f)) rows.push(currentRow);
+  }
+  
+  if (rows.length < 2) return [];
+  
+  const headers = rows[0].map(h => h.replace(/^"|"$/g, ''));
+  const data = [];
+  
+  for (let i = 1; i < rows.length; i++) {
+    const row = {};
+    headers.forEach((header, idx) => {
+      row[header] = rows[i][idx] || '';
+    });
+    data.push(row);
+  }
+  
+  return data;
 };
 
 // ============== LOGIN/SIGNUP COMPONENT ==============
@@ -1538,6 +1617,35 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
     }
   };
 
+  const handleImportProjectCSV = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const csvData = parseCSV(event.target.result);
+        if (csvData.length === 0) {
+          alert('No valid tasks found in CSV');
+          return;
+        }
+        const result = await api.importCsvToProject(token, project.id, csvData);
+        if (result.error) {
+          alert(result.error);
+        } else {
+          alert(result.message);
+          loadTasks();
+        }
+      } catch (err) {
+        console.error('CSV import error:', err);
+        alert('Failed to import CSV');
+      } finally {
+        e.target.value = '';
+      }
+    };
+    reader.readAsText(file);
+  };
+
   const copyClientLink = () => {
     const link = `${window.location.origin}/client/${project.clientLinkSlug || project.clientLinkId}`;
     navigator.clipboard.writeText(link);
@@ -1866,6 +1974,18 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                     >
                       + Add Task
                     </button>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">&nbsp;</label>
+                    <label className="cursor-pointer px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 text-sm inline-block">
+                      Import CSV
+                      <input
+                        type="file"
+                        accept=".csv"
+                        onChange={handleImportProjectCSV}
+                        className="hidden"
+                      />
+                    </label>
                   </div>
                 </div>
               )}
@@ -2803,6 +2923,11 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
     }
   };
 
+  const handleBackToTemplates = () => {
+    setSelectedTemplate(null);
+    loadTemplates();
+  };
+
   useEffect(() => {
     loadTemplates();
   }, []);
@@ -2944,6 +3069,38 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
     }
   };
 
+  const handleImportCSV = async (e) => {
+    const file = e.target.files[0];
+    if (!file || !selectedTemplate) return;
+    
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const csvData = parseCSV(event.target.result);
+        if (csvData.length === 0) {
+          alert('No valid tasks found in CSV');
+          return;
+        }
+        setSaving(true);
+        const result = await api.importCsvToTemplate(token, selectedTemplate.id, csvData);
+        if (result.error) {
+          alert(result.error);
+        } else {
+          alert(result.message);
+          loadTemplateDetails(selectedTemplate.id);
+          loadTemplates();
+        }
+      } catch (err) {
+        console.error('CSV import error:', err);
+        alert('Failed to import CSV');
+      } finally {
+        setSaving(false);
+        e.target.value = '';
+      }
+    };
+    reader.readAsText(file);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -2959,7 +3116,7 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
           <div className="flex justify-between items-center mb-6">
             <div>
               <button
-                onClick={selectedTemplate ? () => setSelectedTemplate(null) : onBack}
+                onClick={selectedTemplate ? handleBackToTemplates : onBack}
                 className="text-primary hover:underline mb-2 flex items-center gap-1"
               >
                 ← {selectedTemplate ? 'Back to Templates' : 'Back to Projects'}
@@ -3106,7 +3263,22 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
           </>
         ) : (
           <div className="space-y-4">
-            <div className="flex justify-end mb-4">
+            <div className="flex justify-between items-center mb-4">
+              <div className="flex items-center gap-2">
+                <label className="cursor-pointer px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700">
+                  Import CSV
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={handleImportCSV}
+                    className="hidden"
+                    disabled={saving}
+                  />
+                </label>
+                <span className="text-xs text-gray-500">
+                  CSV columns: phase, stage, taskTitle, owner, dueDate, showToClient
+                </span>
+              </div>
               <button
                 onClick={handleAddTask}
                 disabled={saving}
