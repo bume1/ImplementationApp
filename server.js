@@ -44,6 +44,26 @@ const getUsers = async () => (await db.get('users')) || [];
 const getProjects = async () => (await db.get('projects')) || [];
 const getTasks = async (projectId) => (await db.get(`tasks_${projectId}`)) || [];
 
+// Generate a URL-friendly slug from client name
+const generateClientSlug = (clientName, existingSlugs = []) => {
+  let slug = clientName
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .trim();
+  
+  if (!slug) slug = 'client';
+  
+  let finalSlug = slug;
+  let counter = 1;
+  while (existingSlugs.includes(finalSlug)) {
+    finalSlug = `${slug}-${counter}`;
+    counter++;
+  }
+  return finalSlug;
+};
+
 // Load template from JSON file
 async function loadTemplate() {
   try {
@@ -277,6 +297,8 @@ app.post('/api/projects', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
     const projects = await getProjects();
+    const existingSlugs = projects.map(p => p.clientLinkSlug).filter(Boolean);
+    const clientLinkSlug = generateClientSlug(clientName, existingSlugs);
     const newProject = {
       id: uuidv4(),
       name,
@@ -289,6 +311,7 @@ app.post('/api/projects', authenticateToken, async (req, res) => {
       template: template || 'biolis-au480-clia',
       status: 'active',
       clientLinkId: uuidv4(),
+      clientLinkSlug: clientLinkSlug,
       createdAt: new Date().toISOString(),
       createdBy: req.user.id
     };
@@ -445,7 +468,7 @@ app.get('/client/:linkId', async (req, res) => {
 app.get('/api/client/:linkId', async (req, res) => {
   try {
     const projects = await getProjects();
-    const project = projects.find(p => p.clientLinkId === req.params.linkId);
+    const project = projects.find(p => p.clientLinkSlug === req.params.linkId || p.clientLinkId === req.params.linkId);
     if (!project) return res.status(404).json({ error: 'Project not found' });
     const allTasks = await getTasks(project.id);
     const clientTasks = allTasks.filter(t => t.showToClient);

@@ -521,7 +521,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                     Open Tracker
                   </button>
                   <button
-                    onClick={() => copyClientLink(project.clientLinkId)}
+                    onClick={() => copyClientLink(project.clientLinkSlug || project.clientLinkId)}
                     className="w-full bg-gray-100 text-gray-700 py-2 rounded-md hover:bg-gray-200 text-sm"
                   >
                     Copy Client Link
@@ -1011,7 +1011,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
   };
 
   const copyClientLink = () => {
-    const link = `${window.location.origin}/client/${project.clientLinkId}`;
+    const link = `${window.location.origin}/client/${project.clientLinkSlug || project.clientLinkId}`;
     navigator.clipboard.writeText(link);
     alert('Client link copied!');
   };
@@ -1210,7 +1210,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                   onClick={copyClientLink}
                   className="text-blue-600 hover:underline font-mono text-xs"
                 >
-                  {window.location.origin}/client/{project.clientLinkId}
+                  {window.location.origin}/client/{project.clientLinkSlug || project.clientLinkId}
                 </button>
               </div>
               {project.hubspotDealId && (
