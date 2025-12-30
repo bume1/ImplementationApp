@@ -1371,14 +1371,23 @@ app.post('/api/templates/:id/import-csv', authenticateToken, requireAdmin, async
       return res.status(400).json({ error: 'CSV data is required' });
     }
     
-    // Generate new IDs for imported tasks
+    // Generate new IDs for imported tasks and create ID mapping
     const maxId = template.tasks.length > 0 ? Math.max(...template.tasks.map(t => t.id)) : 0;
+    const idMapping = {};
+    
     const newTasks = csvData.map((row, index) => {
       const taskTitle = row.taskTitle || row.title || row.task || '';
       const showToClient = ['true', 'yes', '1'].includes(String(row.showToClient || '').toLowerCase());
       const completed = ['true', 'yes', '1'].includes(String(row.completed || '').toLowerCase());
+      const newId = maxId + index + 1;
+      
+      // Store mapping from original ID to new ID
+      if (row.id) {
+        idMapping[String(row.id).trim()] = newId;
+      }
+      
       return {
-        id: maxId + index + 1,
+        id: newId,
         phase: row.phase || 'Phase 1',
         stage: row.stage || '',
         taskTitle: taskTitle,
@@ -1390,9 +1399,31 @@ app.post('/api/templates/:id/import-csv', authenticateToken, requireAdmin, async
         duration: parseInt(row.duration) || 0,
         completed: completed,
         showToClient: showToClient,
-        dependencies: row.dependencies ? String(row.dependencies).split(',').map(d => parseInt(d.trim())).filter(d => !isNaN(d)) : []
+        rawDependencies: row.dependencies || ''
       };
     }).filter(t => t.taskTitle);
+    
+    // Remap dependencies using the ID mapping
+    newTasks.forEach(task => {
+      if (task.rawDependencies) {
+        const depStrings = String(task.rawDependencies).split(',').map(d => d.trim()).filter(d => d);
+        task.dependencies = depStrings.map(depId => {
+          if (idMapping[depId]) {
+            return idMapping[depId];
+          }
+          const numId = parseInt(depId);
+          if (!isNaN(numId)) {
+            const existingTask = template.tasks.find(t => t.id === numId);
+            if (existingTask) return numId;
+            if (idMapping[depId]) return idMapping[depId];
+          }
+          return null;
+        }).filter(d => d !== null);
+      } else {
+        task.dependencies = [];
+      }
+      delete task.rawDependencies;
+    });
     
     template.tasks = [...template.tasks, ...newTasks];
     template.updatedAt = new Date().toISOString();
@@ -1433,13 +1464,26 @@ app.post('/api/projects/:id/import-csv', authenticateToken, async (req, res) => 
       return isSubtask === 'true' || isSubtask === 'yes' || isSubtask === '1';
     });
     
-    // Create parent tasks first
+    // Create ID mapping from original CSV IDs to new IDs
+    const idMapping = {};
+    
+    // Create parent tasks first (with temporary dependencies as strings)
     const newTasks = parentRows.map((row, index) => {
       const taskTitle = row.taskTitle || row.title || row.task || '';
       const showToClient = ['true', 'yes', '1'].includes(String(row.showToClient || '').toLowerCase());
       const completed = ['true', 'yes', '1'].includes(String(row.completed || '').toLowerCase());
+      const newId = maxId + index + 1;
+      
+      // Store mapping from original ID to new ID (if original ID exists)
+      if (row.id) {
+        idMapping[String(row.id).trim()] = newId;
+      }
+      // Also map by row index for position-based references
+      idMapping[`row_${index}`] = newId;
+      
       return {
-        id: maxId + index + 1,
+        id: newId,
+        originalId: row.id ? String(row.id).trim() : null,
         phase: row.phase || 'Phase 1',
         stage: row.stage || '',
         taskTitle: taskTitle,
@@ -1451,7 +1495,8 @@ app.post('/api/projects/:id/import-csv', authenticateToken, async (req, res) => 
         duration: parseInt(row.duration) || 0,
         completed: completed,
         showToClient: showToClient,
-        dependencies: row.dependencies ? String(row.dependencies).split(',').map(d => parseInt(d.trim())).filter(d => !isNaN(d)) : [],
+        rawDependencies: row.dependencies || '',
+        dependencies: [],
         notes: [],
         subtasks: [],
         createdBy: req.user.id,
@@ -1459,15 +1504,56 @@ app.post('/api/projects/:id/import-csv', authenticateToken, async (req, res) => 
       };
     }).filter(t => t.taskTitle);
     
+    // Now remap dependencies using the ID mapping
+    newTasks.forEach(task => {
+      if (task.rawDependencies) {
+        const depStrings = String(task.rawDependencies).split(',').map(d => d.trim()).filter(d => d);
+        task.dependencies = depStrings.map(depId => {
+          // First try direct mapping
+          if (idMapping[depId]) {
+            return idMapping[depId];
+          }
+          // Then try parsing as number and finding in existing tasks
+          const numId = parseInt(depId);
+          if (!isNaN(numId)) {
+            // Check if it's an existing task ID
+            const existingTask = tasks.find(t => t.id === numId);
+            if (existingTask) {
+              return numId;
+            }
+            // Check if it matches any new task's original ID
+            const mappedId = idMapping[depId];
+            if (mappedId) {
+              return mappedId;
+            }
+          }
+          return null;
+        }).filter(d => d !== null);
+      }
+      delete task.rawDependencies;
+      delete task.originalId;
+    });
+    
     // Add subtasks to their parent tasks
     let subtasksAdded = 0;
     const allTasks = [...tasks, ...newTasks];
     
     for (const row of subtaskRows) {
-      const parentId = parseInt(row.parentTaskId);
-      if (!parentId) continue;
+      const parentIdStr = String(row.parentTaskId || '').trim();
+      if (!parentIdStr) continue;
       
-      const parentTask = allTasks.find(t => t.id === parentId);
+      // Try to find parent using the ID mapping first, then direct lookup
+      let parentTask = null;
+      if (idMapping[parentIdStr]) {
+        parentTask = allTasks.find(t => t.id === idMapping[parentIdStr]);
+      }
+      if (!parentTask) {
+        const numId = parseInt(parentIdStr);
+        if (!isNaN(numId)) {
+          parentTask = allTasks.find(t => t.id === numId);
+        }
+      }
+      
       if (parentTask) {
         if (!parentTask.subtasks) parentTask.subtasks = [];
         parentTask.subtasks.push({
