@@ -1553,9 +1553,12 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
   const [viewType, setViewType] = useState('list');
   const [editingTask, setEditingTask] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [selectedPhase, setSelectedPhase] = useState('all');
-  const [selectedOwner, setSelectedOwner] = useState('all');
+  const [selectedPhases, setSelectedPhases] = useState([]);
+  const [selectedOwners, setSelectedOwners] = useState([]);
   const [selectedStatus, setSelectedStatus] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showPhaseDropdown, setShowPhaseDropdown] = useState(false);
+  const [showOwnerDropdown, setShowOwnerDropdown] = useState(false);
   const [expandedTaskId, setExpandedTaskId] = useState(null);
   const [newNote, setNewNote] = useState('');
   const [showAddTask, setShowAddTask] = useState(false);
@@ -2014,24 +2017,67 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
       ? tasks.filter(t => t.showToClient)
       : tasks;
 
-    if (selectedPhase !== 'all') {
-      filtered = filtered.filter(t => t.phase === selectedPhase);
+    // Multi-select phase filter
+    if (selectedPhases.length > 0) {
+      filtered = filtered.filter(t => selectedPhases.includes(t.phase));
     }
 
-    if (viewMode === 'internal' && selectedOwner !== 'all') {
-      if (selectedOwner === 'unassigned') {
-        filtered = filtered.filter(t => !t.owner || t.owner.trim() === '');
-      } else {
-        filtered = filtered.filter(t => t.owner === selectedOwner);
-      }
+    // Multi-select owner filter (includes subtask owners)
+    if (viewMode === 'internal' && selectedOwners.length > 0) {
+      filtered = filtered.filter(t => {
+        // Check if task owner matches
+        if (selectedOwners.includes('unassigned') && (!t.owner || t.owner.trim() === '')) {
+          return true;
+        }
+        if (t.owner && selectedOwners.includes(t.owner)) {
+          return true;
+        }
+        // Check if any subtask owner matches
+        if (t.subtasks && t.subtasks.length > 0) {
+          return t.subtasks.some(st => st.owner && selectedOwners.includes(st.owner));
+        }
+        return false;
+      });
     }
 
+    // Status filter
     if (selectedStatus !== 'all') {
       if (selectedStatus === 'completed') {
         filtered = filtered.filter(t => t.completed);
       } else if (selectedStatus === 'uncompleted') {
         filtered = filtered.filter(t => !t.completed);
       }
+    }
+
+    // Search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(t => {
+        const taskTitle = (t.taskTitle || '').toLowerCase();
+        const clientName = (t.clientName || '').toLowerCase();
+        const owner = (t.owner || '').toLowerCase();
+        const ownerName = getOwnerName(t.owner).toLowerCase();
+        const phase = (t.phase || '').toLowerCase();
+        const stage = (t.stage || '').toLowerCase();
+        
+        // Check main task fields
+        if (taskTitle.includes(query) || clientName.includes(query) || 
+            owner.includes(query) || ownerName.includes(query) ||
+            phase.includes(query) || stage.includes(query)) {
+          return true;
+        }
+        
+        // Check subtasks
+        if (t.subtasks && t.subtasks.length > 0) {
+          return t.subtasks.some(st => 
+            (st.title || '').toLowerCase().includes(query) ||
+            (st.owner || '').toLowerCase().includes(query) ||
+            getOwnerName(st.owner).toLowerCase().includes(query)
+          );
+        }
+        
+        return false;
+      });
     }
 
     return filtered;
@@ -2179,41 +2225,145 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
             </div>
           )}
 
-          {viewType === 'list' && (
-            <div className="mt-4 flex flex-wrap gap-3">
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Phase Filter</label>
-                <select
-                  value={selectedPhase}
-                  onChange={(e) => setSelectedPhase(e.target.value)}
-                  className="px-3 py-2 border rounded-md text-sm"
+          <div className="mt-4 space-y-3">
+            {/* Search bar - works across all views */}
+            <div className="flex gap-3 items-end">
+              <div className="flex-1">
+                <label className="block text-xs text-gray-500 mb-1">Search Tasks</label>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search by title, owner, phase, stage, or subtask..."
+                  className="w-full px-3 py-2 border rounded-md text-sm"
+                />
+              </div>
+              {(searchQuery || selectedPhases.length > 0 || selectedOwners.length > 0 || selectedStatus !== 'all') && (
+                <button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSelectedPhases([]);
+                    setSelectedOwners([]);
+                    setSelectedStatus('all');
+                  }}
+                  className="px-3 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 text-sm"
                 >
-                  <option value="all">All Phases</option>
-                  {phases.map(phase => (
-                    <option key={phase} value={phase}>{phase}</option>
-                  ))}
-                </select>
+                  Clear Filters
+                </button>
+              )}
+            </div>
+
+            {viewType === 'list' && (
+            <div className="flex flex-wrap gap-3">
+              {/* Phase multi-select */}
+              <div className="relative">
+                <label className="block text-xs text-gray-500 mb-1">Phases</label>
+                <div className="relative">
+                  <button
+                    onClick={() => setShowPhaseDropdown(!showPhaseDropdown)}
+                    className="px-3 py-2 border rounded-md text-sm bg-white min-w-[140px] text-left flex justify-between items-center"
+                  >
+                    <span>{selectedPhases.length === 0 ? 'All Phases' : `${selectedPhases.length} selected`}</span>
+                    <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {showPhaseDropdown && (
+                    <div className="absolute z-50 mt-1 w-48 bg-white border rounded-md shadow-lg max-h-60 overflow-y-auto">
+                      <div className="p-2 border-b">
+                        <button
+                          onClick={() => setSelectedPhases([])}
+                          className="text-xs text-primary hover:underline"
+                        >
+                          Clear All
+                        </button>
+                      </div>
+                      {phases.map(phase => (
+                        <label key={phase} className="flex items-center px-3 py-2 hover:bg-gray-100 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={selectedPhases.includes(phase)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedPhases([...selectedPhases, phase]);
+                              } else {
+                                setSelectedPhases(selectedPhases.filter(p => p !== phase));
+                              }
+                            }}
+                            className="mr-2"
+                          />
+                          <span className="text-sm">{phase}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
               
+              {/* Owner multi-select */}
               {viewMode === 'internal' && (
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Owner Filter</label>
-                  <select
-                    value={selectedOwner}
-                    onChange={(e) => setSelectedOwner(e.target.value)}
-                    className="px-3 py-2 border rounded-md text-sm"
-                  >
-                    <option value="all">All Owners</option>
-                    <option value="unassigned">Unassigned</option>
-                    {owners.map(owner => (
-                      <option key={owner} value={owner}>{getOwnerName(owner)}</option>
-                    ))}
-                  </select>
+                <div className="relative">
+                  <label className="block text-xs text-gray-500 mb-1">Owners</label>
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowOwnerDropdown(!showOwnerDropdown)}
+                      className="px-3 py-2 border rounded-md text-sm bg-white min-w-[140px] text-left flex justify-between items-center"
+                    >
+                      <span>{selectedOwners.length === 0 ? 'All Owners' : `${selectedOwners.length} selected`}</span>
+                      <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {showOwnerDropdown && (
+                      <div className="absolute z-50 mt-1 w-56 bg-white border rounded-md shadow-lg max-h-60 overflow-y-auto">
+                        <div className="p-2 border-b">
+                          <button
+                            onClick={() => setSelectedOwners([])}
+                            className="text-xs text-primary hover:underline"
+                          >
+                            Clear All
+                          </button>
+                        </div>
+                        <label className="flex items-center px-3 py-2 hover:bg-gray-100 cursor-pointer border-b">
+                          <input
+                            type="checkbox"
+                            checked={selectedOwners.includes('unassigned')}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedOwners([...selectedOwners, 'unassigned']);
+                              } else {
+                                setSelectedOwners(selectedOwners.filter(o => o !== 'unassigned'));
+                              }
+                            }}
+                            className="mr-2"
+                          />
+                          <span className="text-sm italic text-gray-500">Unassigned</span>
+                        </label>
+                        {owners.map(owner => (
+                          <label key={owner} className="flex items-center px-3 py-2 hover:bg-gray-100 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={selectedOwners.includes(owner)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedOwners([...selectedOwners, owner]);
+                                } else {
+                                  setSelectedOwners(selectedOwners.filter(o => o !== owner));
+                                }
+                              }}
+                              className="mr-2"
+                            />
+                            <span className="text-sm">{getOwnerName(owner)}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
               
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Status Filter</label>
+                <label className="block text-xs text-gray-500 mb-1">Status</label>
                 <select
                   value={selectedStatus}
                   onChange={(e) => setSelectedStatus(e.target.value)}
