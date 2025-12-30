@@ -66,5 +66,28 @@ Preferred communication style: Simple, everyday language.
 - Tailwind CSS
 
 ### Environment Variables
-- `PORT` - Server port (defaults to 3000)
+- `PORT` - Server port (defaults to 5000)
 - `JWT_SECRET` - Token signing secret (has default, should be changed in production)
+
+## HubSpot Integration
+
+### Configuration
+- HubSpot integration uses Replit's OAuth connector for secure credential management
+- Access: Admin users can configure HubSpot settings via "HubSpot Settings" button on the dashboard
+- Stage Mapping: Map project phases (0-4) to HubSpot deal pipeline stages
+
+### Sync Behavior
+- **Deal Stage Updates**: When all tasks in a phase are completed, the connected HubSpot deal automatically moves to the mapped stage
+- **Activity Logging**: Notes added to tasks and task completions are logged as activities/notes on the HubSpot deal
+- **Sync Indicator**: Projects with HubSpot Deal IDs show last sync timestamp on the project dashboard
+
+### Data Flow
+- Projects store `hubspotDealId` field to link to HubSpot deals
+- Stage mappings stored in database under `hubspot_stage_mapping` key
+- `lastHubSpotSync` timestamp updated on projects when syncs occur
+
+### API Endpoints
+- `GET /api/hubspot/test` - Test HubSpot connection status
+- `GET /api/hubspot/pipelines` - Fetch available deal pipelines and stages
+- `GET /api/hubspot/stage-mapping` - Get current phase-to-stage mapping
+- `PUT /api/hubspot/stage-mapping` - Save phase-to-stage mapping (admin only)
