@@ -624,6 +624,13 @@ app.put('/api/projects/:id', authenticateToken, async (req, res) => {
     const idx = projects.findIndex(p => p.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'Project not found' });
     
+    // Require Soft-Pilot Checklist before marking project as completed
+    if (req.body.status === 'completed' && !projects[idx].softPilotChecklistSubmitted) {
+      return res.status(400).json({ 
+        error: 'The Soft-Pilot Checklist must be submitted before marking this project as completed.' 
+      });
+    }
+    
     const allowedFields = ['name', 'clientName', 'projectManager', 'hubspotRecordId', 'status', 'clientPortalDomain'];
     allowedFields.forEach(field => {
       if (req.body[field] !== undefined) {
