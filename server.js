@@ -604,6 +604,54 @@ app.delete('/api/projects/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// Clone/Duplicate a project
+app.post('/api/projects/:id/clone', authenticateToken, async (req, res) => {
+  try {
+    const projects = await getProjects();
+    const originalProject = projects.find(p => p.id === req.params.id);
+    if (!originalProject) return res.status(404).json({ error: 'Project not found' });
+    
+    const { name } = req.body;
+    const newProjectId = uuidv4();
+    const existingSlugs = projects.map(p => p.clientLinkSlug).filter(Boolean);
+    
+    const newProject = {
+      ...originalProject,
+      id: newProjectId,
+      name: name || `${originalProject.name} (Copy)`,
+      status: 'active',
+      clientLinkId: uuidv4(),
+      clientLinkSlug: generateClientSlug(originalProject.clientName + '-copy', existingSlugs),
+      hubspotRecordId: '',
+      lastHubSpotSync: null,
+      createdAt: new Date().toISOString()
+    };
+    
+    projects.push(newProject);
+    await db.set('projects', projects);
+    
+    // Clone the tasks
+    const originalTasks = await getTasks(req.params.id);
+    const clonedTasks = originalTasks.map(task => ({
+      ...task,
+      completed: false,
+      dateCompleted: '',
+      notes: [],
+      subtasks: (task.subtasks || []).map(st => ({
+        ...st,
+        completed: false,
+        notApplicable: false
+      }))
+    }));
+    await db.set(`tasks_${newProjectId}`, clonedTasks);
+    
+    res.json(newProject);
+  } catch (error) {
+    console.error('Clone project error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ============== TASK ROUTES ==============
 app.get('/api/projects/:id/tasks', authenticateToken, async (req, res) => {
   try {
@@ -1215,6 +1263,36 @@ app.post('/api/templates', authenticateToken, requireAdmin, async (req, res) => 
     await db.set('templates', templates);
     res.status(201).json(newTemplate);
   } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Clone/Duplicate a template
+app.post('/api/templates/:id/clone', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const templates = await db.get('templates') || [];
+    const originalTemplate = templates.find(t => t.id === req.params.id);
+    
+    if (!originalTemplate) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+    
+    const { name } = req.body;
+    
+    const newTemplate = {
+      id: uuidv4(),
+      name: name || `${originalTemplate.name} (Copy)`,
+      description: originalTemplate.description || '',
+      tasks: originalTemplate.tasks.map(task => ({ ...task })),
+      createdAt: new Date().toISOString(),
+      isDefault: false
+    };
+    
+    templates.push(newTemplate);
+    await db.set('templates', templates);
+    res.status(201).json(newTemplate);
+  } catch (error) {
+    console.error('Clone template error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });

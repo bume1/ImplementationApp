@@ -4,10 +4,34 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Project Progress - Thrive 365 Labs</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#045E9F',
+            accent: '#00205A'
+          },
+          fontFamily: {
+            sans: ['Open Sans', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      font-family: 'Open Sans', sans-serif;
+    }
+  </style>
 </head>
 <body class="bg-gray-50">
   <div id="root"></div>
@@ -17,7 +41,7 @@
     const getPhaseColor = (phase) => {
       const colors = {
         'Phase 0': 'border-purple-500',
-        'Phase 1': 'border-blue-500',
+        'Phase 1': 'border-primary',
         'Phase 2': 'border-green-500',
         'Phase 3': 'border-orange-500',
         'Phase 4': 'border-pink-500'
@@ -44,7 +68,7 @@
 
       return (
         <div className="bg-white rounded-lg shadow-sm p-6">
-          <h2 className="text-2xl font-bold mb-6">Project Timeline</h2>
+          <h2 className="text-2xl font-bold mb-6 text-accent">Project Timeline</h2>
           
           <div className="space-y-8">
             {phases.map(phase => {
@@ -73,7 +97,7 @@
                             const dueDates = stageTasks.filter(t => t.dueDate).map(t => t.dueDate).sort();
                             const targetDate = dueDates.length > 0 ? dueDates[dueDates.length - 1] : null;
                             return targetDate ? (
-                              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
+                              <span className="text-xs bg-blue-100 text-primary px-2 py-1 rounded">
                                 Target Due Date: {targetDate}
                               </span>
                             ) : null;
@@ -125,7 +149,7 @@
     const getPhaseGradient = (phase) => {
       const gradients = {
         'Phase 0': 'bg-gradient-to-r from-purple-600 to-purple-700',
-        'Phase 1': 'bg-gradient-to-r from-blue-600 to-blue-700',
+        'Phase 1': 'bg-gradient-to-r from-primary to-accent',
         'Phase 2': 'bg-gradient-to-r from-green-600 to-green-700',
         'Phase 3': 'bg-gradient-to-r from-orange-600 to-orange-700',
         'Phase 4': 'bg-gradient-to-r from-pink-600 to-pink-700'
@@ -179,7 +203,7 @@
                         </p>
                       </div>
                       {targetDate && (
-                        <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
+                        <span className="text-xs bg-blue-100 text-primary px-2 py-1 rounded">
                           Target Due Date: {targetDate}
                         </span>
                       )}
@@ -295,7 +319,7 @@
         <div className="bg-white rounded-lg shadow-sm p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-4">
-              <h2 className="text-2xl font-bold">
+              <h2 className="text-2xl font-bold text-accent">
                 {calendarMode === 'month' 
                   ? `${monthNames[month]} ${year}`
                   : calendarMode === 'week'
@@ -303,7 +327,7 @@
                   : `${monthNames[selectedDate.getMonth()]} ${selectedDate.getDate()}, ${selectedDate.getFullYear()}`
                 }
               </h2>
-              <button onClick={goToToday} className="text-sm text-purple-600 hover:underline">
+              <button onClick={goToToday} className="text-sm text-primary hover:underline">
                 Today
               </button>
             </div>
@@ -364,11 +388,11 @@
                         setCalendarMode('day');
                       }}
                       className={`aspect-square border rounded-lg p-2 cursor-pointer ${
-                        isToday ? 'border-purple-500 bg-purple-50' : 'border-gray-200'
-                      } hover:border-purple-300 transition-colors`}
+                        isToday ? 'border-primary bg-blue-50' : 'border-gray-200'
+                      } hover:border-primary transition-colors`}
                     >
                       <div className={`text-sm font-semibold mb-1 ${
-                        isToday ? 'text-purple-600' : 'text-gray-700'
+                        isToday ? 'text-primary' : 'text-gray-700'
                       }`}>
                         {day}
                       </div>
@@ -377,7 +401,7 @@
                           <div
                             key={task.id}
                             className={`text-xs px-1 py-0.5 rounded truncate ${
-                              task.completed ? 'bg-green-200 text-green-800' : 'bg-purple-100 text-purple-800'
+                              task.completed ? 'bg-green-200 text-green-800' : 'bg-blue-100 text-primary'
                             }`}
                             title={task.clientName || task.taskTitle}
                           >
@@ -415,10 +439,10 @@
                         setCalendarMode('day');
                       }}
                       className={`min-h-[150px] border rounded-lg p-2 cursor-pointer ${
-                        isToday ? 'border-purple-500 bg-purple-50' : 'border-gray-200'
-                      } hover:border-purple-300 transition-colors`}
+                        isToday ? 'border-primary bg-blue-50' : 'border-gray-200'
+                      } hover:border-primary transition-colors`}
                     >
-                      <div className={`text-sm font-semibold mb-2 ${isToday ? 'text-purple-600' : 'text-gray-700'}`}>
+                      <div className={`text-sm font-semibold mb-2 ${isToday ? 'text-primary' : 'text-gray-700'}`}>
                         {date.getDate()}
                       </div>
                       <div className="space-y-1">
@@ -426,7 +450,7 @@
                           <div
                             key={task.id}
                             className={`text-xs px-1 py-0.5 rounded truncate ${
-                              task.completed ? 'bg-green-200 text-green-800' : 'bg-purple-100 text-purple-800'
+                              task.completed ? 'bg-green-200 text-green-800' : 'bg-blue-100 text-primary'
                             }`}
                             title={task.clientName || task.taskTitle}
                           >
@@ -481,7 +505,7 @@
 
           <div className="mt-6 pt-6 border-t flex items-center gap-6 text-sm">
             <div className="flex items-center gap-2">
-              <div className="w-4 h-4 bg-purple-100 rounded"></div>
+              <div className="w-4 h-4 bg-blue-100 rounded"></div>
               <span className="text-gray-600">Due Date</span>
             </div>
             <div className="flex items-center gap-2">
@@ -504,131 +528,115 @@
       useEffect(() => {
         fetch(`/api/client/${linkId}`)
           .then(r => r.json())
-          .then(data => {
-            if (data.error) {
-              setError(data.error);
+          .then(result => {
+            if (result.error) {
+              setError(result.error);
             } else {
-              setData(data);
+              setData(result);
             }
             setLoading(false);
           })
-          .catch(err => {
+          .catch(() => {
             setError('Failed to load project');
             setLoading(false);
           });
-      }, []);
+      }, [linkId]);
 
       if (loading) {
         return (
-          <div className="min-h-screen flex items-center justify-center">
-            <div className="text-xl">Loading...</div>
+          <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+            <div className="text-xl text-gray-600">Loading...</div>
           </div>
         );
       }
 
       if (error) {
         return (
-          <div className="min-h-screen flex items-center justify-center">
-            <div className="text-xl text-red-600">{error}</div>
+          <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+            <div className="bg-white p-8 rounded-lg shadow-lg text-center">
+              <div className="text-red-500 text-6xl mb-4">⚠️</div>
+              <h1 className="text-2xl font-bold text-gray-900 mb-2">Project Not Found</h1>
+              <p className="text-gray-600">{error}</p>
+            </div>
           </div>
         );
       }
 
-      const totalTasks = data.tasks.length;
-      const completedTasks = data.tasks.filter(t => t.completed).length;
-      const progressPercentage = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+      const visibleTasks = data.tasks.filter(t => t.showToClient !== false);
+      const completedTasks = visibleTasks.filter(t => t.completed);
+      const progressPercent = visibleTasks.length > 0 
+        ? Math.round((completedTasks.length / visibleTasks.length) * 100) 
+        : 0;
 
       return (
-        <div className="min-h-screen bg-gray-50 p-6">
-          <div className="max-w-6xl mx-auto">
-            <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-              <h1 className="text-3xl font-bold text-gray-900">{data.project.name}</h1>
-              <p className="text-gray-600">{data.project.clientName}</p>
-              
-              <div className="mt-4 flex gap-2">
-                <button
-                  onClick={() => setViewType('list')}
-                  className={`px-4 py-2 rounded-md ${
-                    viewType === 'list'
-                      ? 'bg-purple-600 text-white'
-                      : 'bg-gray-200 text-gray-700'
-                  }`}
-                >
-                  List View
-                </button>
-                <button
-                  onClick={() => setViewType('timeline')}
-                  className={`px-4 py-2 rounded-md ${
-                    viewType === 'timeline'
-                      ? 'bg-purple-600 text-white'
-                      : 'bg-gray-200 text-gray-700'
-                  }`}
-                >
-                  Timeline View
-                </button>
-                <button
-                  onClick={() => setViewType('calendar')}
-                  className={`px-4 py-2 rounded-md ${
-                    viewType === 'calendar'
-                      ? 'bg-purple-600 text-white'
-                      : 'bg-gray-200 text-gray-700'
-                  }`}
-                >
-                  Calendar View
-                </button>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold">Overall Progress</h3>
-                <span className="text-2xl font-bold text-purple-600">{progressPercentage}%</span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-6">
-                <div 
-                  className="bg-gradient-to-r from-purple-500 to-purple-600 h-6 rounded-full flex items-center justify-center"
-                  style={{ width: `${progressPercentage}%` }}
-                >
-                  {progressPercentage > 10 && (
-                    <span className="text-white text-sm font-medium">
-                      {completedTasks} of {totalTasks} tasks
-                    </span>
-                  )}
+        <div className="min-h-screen bg-gray-50">
+          <div className="bg-white shadow-sm border-b">
+            <div className="max-w-6xl mx-auto px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <img src="/logo.webp" alt="Thrive 365 Labs" className="h-10" />
+                  <div>
+                    <h1 className="text-xl font-bold text-accent">{data.project.name}</h1>
+                    <p className="text-sm text-gray-600">{data.project.clientName}</p>
+                  </div>
                 </div>
-              </div>
-              <p className="mt-2 text-sm text-gray-600 text-center">
-                {completedTasks} completed • {totalTasks - completedTasks} remaining
-              </p>
-            </div>
-
-            <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
-              <div className="flex flex-wrap gap-4 text-sm">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-purple-500 rounded"></div>
-                  <span>Phase 0: Contract Signature</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-blue-500 rounded"></div>
-                  <span>Phase 1: Pre-Launch</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-green-500 rounded"></div>
-                  <span>Phase 2: Implementation Sprints</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-orange-500 rounded"></div>
-                  <span>Phase 3: Go-Live</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-pink-500 rounded"></div>
-                  <span>Phase 4: Post-Launch Optimization</span>
+                <div className="flex items-center gap-4">
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-primary">{progressPercent}%</div>
+                    <div className="text-sm text-gray-500">Complete</div>
+                  </div>
+                  <div className="w-24 h-3 bg-gray-200 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-primary rounded-full transition-all duration-500"
+                      style={{ width: `${progressPercent}%` }}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
-
-            {viewType === 'list' && <ListView tasks={data.tasks} />}
-            {viewType === 'timeline' && <TimelineView tasks={data.tasks} />}
-            {viewType === 'calendar' && <CalendarView tasks={data.tasks} />}
+          </div>
+          
+          <div className="max-w-6xl mx-auto px-6 py-8">
+            <div className="flex gap-2 mb-6">
+              <button
+                onClick={() => setViewType('list')}
+                className={`px-4 py-2 rounded-md ${
+                  viewType === 'list'
+                    ? 'bg-primary text-white'
+                    : 'bg-gray-200 text-gray-700'
+                }`}
+              >
+                List View
+              </button>
+              <button
+                onClick={() => setViewType('timeline')}
+                className={`px-4 py-2 rounded-md ${
+                  viewType === 'timeline'
+                    ? 'bg-primary text-white'
+                    : 'bg-gray-200 text-gray-700'
+                }`}
+              >
+                Timeline
+              </button>
+              <button
+                onClick={() => setViewType('calendar')}
+                className={`px-4 py-2 rounded-md ${
+                  viewType === 'calendar'
+                    ? 'bg-primary text-white'
+                    : 'bg-gray-200 text-gray-700'
+                }`}
+              >
+                Calendar
+              </button>
+            </div>
+            
+            {viewType === 'list' && <ListView tasks={visibleTasks} />}
+            {viewType === 'timeline' && <TimelineView tasks={visibleTasks} />}
+            {viewType === 'calendar' && <CalendarView tasks={visibleTasks} />}
+          </div>
+          
+          <div className="text-center py-6 text-sm text-gray-500">
+            <p>Developed by Bianca G. C. Ume, MD, MBA, MS</p>
           </div>
         </div>
       );

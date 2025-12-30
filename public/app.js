@@ -79,6 +79,26 @@ const api = {
       headers: { 'Authorization': `Bearer ${token}` }
     }).then(r => r.json()),
 
+  cloneProject: (token, projectId, name) =>
+    fetch(`${API_URL}/api/projects/${projectId}/clone`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ name })
+    }).then(r => r.json()),
+
+  cloneTemplate: (token, templateId, name) =>
+    fetch(`${API_URL}/api/templates/${templateId}/clone`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ name })
+    }).then(r => r.json()),
+
   exportProject: (token, projectId) => {
     window.open(`${API_URL}/api/projects/${projectId}/export`, '_blank');
   },
@@ -290,7 +310,10 @@ const AuthScreen = ({ onLogin }) => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center p-4">
       <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
-        <h1 className="text-3xl font-bold mb-2">New Client Launch Implementation App</h1>
+        <div className="flex justify-center mb-6">
+          <img src="/logo.webp" alt="Thrive 365 Labs" className="h-16" />
+        </div>
+        <h1 className="text-2xl font-bold mb-2 text-accent">New Client Launch Implementation App</h1>
         <p className="text-gray-600 mb-6">Thrive 365 Labs</p>
 
 
@@ -354,7 +377,7 @@ const AuthScreen = ({ onLogin }) => {
           <button
             onClick={handleSubmit}
             disabled={loading}
-            className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400"
+            className="w-full bg-primary text-white py-2 rounded-md hover:bg-accent disabled:bg-gray-400"
           >
             {loading ? 'Please wait...' : mode === 'login' ? 'Login' : mode === 'signup' ? 'Create Account' : 'Reset Password'}
           </button>
@@ -374,14 +397,14 @@ const AuthScreen = ({ onLogin }) => {
                 setError('');
                 setMessage('');
               }}
-              className="text-blue-600 hover:underline text-sm"
+              className="text-primary hover:underline text-sm"
             >
               {mode === 'login' ? 'Need an account? Sign up' : mode === 'signup' ? 'Already have an account? Login' : 'Back to Login'}
             </button>
           </div>
         </div>
         <div className="mt-8 text-center text-sm text-gray-500">
-          <p>Designed by Bianca G. C. Ume, MD, MBA, MS</p>
+          <p>Developed by Bianca G. C. Ume, MD, MBA, MS</p>
         </div>
       </div>
     </div>
@@ -512,6 +535,19 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
     }
   };
 
+  const handleCloneProject = async (project) => {
+    const newName = prompt(`Enter name for the cloned project:`, `${project.name} (Copy)`);
+    if (!newName) return;
+    try {
+      await api.cloneProject(token, project.id, newName);
+      loadProjects();
+      alert('Project cloned successfully!');
+    } catch (err) {
+      console.error('Failed to clone project:', err);
+      alert('Failed to clone project');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-6xl mx-auto">
@@ -527,7 +563,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
             <div className="flex gap-3">
               <button
                 onClick={() => setShowCreate(!showCreate)}
-                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+                className="bg-primary text-white px-4 py-2 rounded-md hover:bg-accent"
               >
                 + New Project
               </button>
@@ -650,7 +686,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
               <div className="flex gap-2">
                 <button
                   onClick={handleCreate}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+                  className="bg-primary text-white px-4 py-2 rounded-md hover:bg-accent"
                 >
                   Create Project with Template
                 </button>
@@ -707,7 +743,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                 <div className="space-y-2">
                   <button
                     onClick={() => onSelectProject(project)}
-                    className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700"
+                    className="w-full bg-primary text-white py-2 rounded-md hover:bg-accent"
                   >
                     Open Tracker
                   </button>
@@ -725,14 +761,22 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                       Copy Client Link
                     </button>
                   </div>
-                  {user.role === 'admin' && (
+                  <div className="flex gap-2">
                     <button
-                      onClick={() => handleDeleteProject(project)}
-                      className="w-full bg-red-50 text-red-600 py-2 rounded-md hover:bg-red-100 text-sm"
+                      onClick={() => handleCloneProject(project)}
+                      className="flex-1 bg-purple-50 text-purple-600 py-2 rounded-md hover:bg-purple-100 text-sm"
                     >
-                      Delete Project
+                      Clone Project
                     </button>
-                  )}
+                    {user.role === 'admin' && (
+                      <button
+                        onClick={() => handleDeleteProject(project)}
+                        className="flex-1 bg-red-50 text-red-600 py-2 rounded-md hover:bg-red-100 text-sm"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
@@ -792,7 +836,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
               <div className="flex gap-2 mt-6">
                 <button
                   onClick={handleEditProject}
-                  className="flex-1 bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700"
+                  className="flex-1 bg-primary text-white py-2 rounded-md hover:bg-accent"
                 >
                   Save Changes
                 </button>
@@ -808,7 +852,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
         )}
       </div>
       <footer className="mt-8 py-4 text-center text-sm text-gray-500 border-t">
-        <p>Designed by Bianca G. C. Ume, MD, MBA, MS</p>
+        <p>Developed by Bianca G. C. Ume, MD, MBA, MS</p>
       </footer>
     </div>
   );
@@ -1606,7 +1650,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
             <div>
               <button
                 onClick={onBack}
-                className="text-blue-600 hover:underline mb-2 flex items-center gap-1"
+                className="text-primary hover:underline mb-2 flex items-center gap-1"
               >
                 ← Back to Projects
               </button>
@@ -1618,7 +1662,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                 onClick={() => setViewMode('internal')}
                 className={`px-4 py-2 rounded-md ${
                   viewMode === 'internal'
-                    ? 'bg-blue-600 text-white'
+                    ? 'bg-primary text-white'
                     : 'bg-gray-200 text-gray-700'
                 }`}
               >
@@ -1628,7 +1672,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                 onClick={() => setViewMode('client')}
                 className={`px-4 py-2 rounded-md ${
                   viewMode === 'client'
-                    ? 'bg-blue-600 text-white'
+                    ? 'bg-primary text-white'
                     : 'bg-gray-200 text-gray-700'
                 }`}
               >
@@ -1817,7 +1861,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                     <label className="block text-xs text-gray-500 mb-1">&nbsp;</label>
                     <button
                       onClick={() => setShowAddTask(true)}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+                      className="px-4 py-2 bg-primary text-white rounded-md hover:bg-accent text-sm"
                     >
                       + Add Task
                     </button>
@@ -2191,7 +2235,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                     />
                                     <button
                                       onClick={() => handleAddNote(task.id)}
-                                      className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700"
+                                      className="px-3 py-2 bg-primary text-white rounded-md text-sm hover:bg-accent"
                                     >
                                       Add
                                     </button>
@@ -2410,7 +2454,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                   </button>
                   <button
                     onClick={handleCreateTask}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                    className="px-4 py-2 bg-primary text-white rounded-md hover:bg-accent"
                   >
                     Create Task
                   </button>
@@ -2518,7 +2562,7 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
             <div>
               <button
                 onClick={onBack}
-                className="text-blue-600 hover:underline mb-2 flex items-center gap-1"
+                className="text-primary hover:underline mb-2 flex items-center gap-1"
               >
                 ← Back to Projects
               </button>
@@ -2688,7 +2732,7 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
                       <td className="px-6 py-4 text-right space-x-2">
                         <button
                           onClick={() => setEditingUser({...u, newPassword: ''})}
-                          className="text-blue-600 hover:underline text-sm"
+                          className="text-primary hover:underline text-sm"
                         >
                           Edit
                         </button>
@@ -2824,6 +2868,19 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
     }
   };
 
+  const handleCloneTemplate = async (template) => {
+    const newName = prompt(`Enter name for the cloned template:`, `${template.name} (Copy)`);
+    if (!newName) return;
+    try {
+      const cloned = await api.cloneTemplate(token, template.id, newName);
+      setTemplates([...templates, { ...cloned, taskCount: template.taskCount }]);
+      alert('Template cloned successfully!');
+    } catch (err) {
+      console.error('Failed to clone template:', err);
+      alert('Failed to clone template');
+    }
+  };
+
   const handleSaveTask = async () => {
     if (!selectedTemplate || !editingTask) return;
     setSaving(true);
@@ -2902,7 +2959,7 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
             <div>
               <button
                 onClick={selectedTemplate ? () => setSelectedTemplate(null) : onBack}
-                className="text-blue-600 hover:underline mb-2 flex items-center gap-1"
+                className="text-primary hover:underline mb-2 flex items-center gap-1"
               >
                 ← {selectedTemplate ? 'Back to Templates' : 'Back to Projects'}
               </button>
@@ -3021,9 +3078,15 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
                       <td className="px-6 py-4 whitespace-nowrap text-sm space-x-3">
                         <button
                           onClick={() => loadTemplateDetails(template.id)}
-                          className="text-blue-600 hover:underline"
+                          className="text-primary hover:underline"
                         >
                           Edit Tasks
+                        </button>
+                        <button
+                          onClick={() => handleCloneTemplate(template)}
+                          className="text-purple-600 hover:underline"
+                        >
+                          Clone
                         </button>
                         {!template.isDefault && (
                           <button
@@ -3418,7 +3481,7 @@ const HubSpotSettings = ({ token, user, onBack, onLogout }) => {
                         <button
                           onClick={handleSave}
                           disabled={saving || !selectedPipeline}
-                          className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                          className="bg-primary text-white px-6 py-2 rounded-lg hover:bg-accent disabled:opacity-50"
                         >
                           {saving ? 'Saving...' : 'Save Mapping'}
                         </button>
@@ -3523,7 +3586,7 @@ const Reporting = ({ token, user, onBack, onLogout }) => {
             <div>
               <button
                 onClick={onBack}
-                className="text-blue-600 hover:underline mb-2 flex items-center gap-1"
+                className="text-primary hover:underline mb-2 flex items-center gap-1"
               >
                 ← Back to Projects
               </button>
@@ -3689,7 +3752,7 @@ const Reporting = ({ token, user, onBack, onLogout }) => {
                         <div className="flex items-center gap-2">
                           <div className="w-24 bg-gray-200 rounded-full h-2">
                             <div 
-                              className="bg-blue-600 h-2 rounded-full"
+                              className="bg-primary h-2 rounded-full"
                               style={{ width: `${project.progressPercent}%` }}
                             ></div>
                           </div>
