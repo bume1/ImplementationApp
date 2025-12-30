@@ -1,4 +1,4 @@
-# New Client Launch Implementation App - Thrive 365 Labs
+# New Client Launch Implementation - Thrive 365 Labs Web App
 
 ## Overview
 
