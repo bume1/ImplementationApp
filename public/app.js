@@ -1200,7 +1200,7 @@ const TimelineView = ({ tasks, getPhaseColor, viewMode }) => {
                                 {task.dateCompleted && (
                                   <span className="text-green-600">Completed: {task.dateCompleted}</span>
                                 )}
-                                {task.owner && <span>Owner: {getOwnerName ? getOwnerName(task.owner) : task.owner}</span>}
+                                {task.owner && <span>Owner: {task.owner}</span>}
                               </div>
                             )}
                             {viewMode === 'client' && task.dateCompleted && (
@@ -1479,7 +1479,7 @@ const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
                       {task.taskTitle}
                     </h4>
                     <div className="mt-1 text-sm text-gray-500 flex flex-wrap gap-3">
-                      {task.owner && <span>Owner: {getOwnerName ? getOwnerName(task.owner) : task.owner}</span>}
+                      {task.owner && <span>Owner: {task.owner}</span>}
                       {task.dueDate && <span>Due: {task.dueDate}</span>}
                       {task.dateCompleted && <span className="text-green-600">Completed: {task.dateCompleted}</span>}
                     </div>

@@ -912,6 +912,31 @@ app.put('/api/hubspot/stage-mapping', authenticateToken, requireAdmin, async (re
   }
 });
 
+// ============== DATE NORMALIZATION ==============
+const normalizeDate = (dateStr) => {
+  if (!dateStr || typeof dateStr !== 'string') return '';
+  dateStr = dateStr.trim();
+  if (!dateStr) return '';
+  
+  // Already in YYYY-MM-DD format
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+  
+  // Handle MM/DD/YYYY or M/D/YYYY or MM/DD/YY or M/D/YY
+  const slashMatch = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (slashMatch) {
+    let [, month, day, year] = slashMatch;
+    month = month.padStart(2, '0');
+    day = day.padStart(2, '0');
+    if (year.length === 2) {
+      year = parseInt(year) > 50 ? '19' + year : '20' + year;
+    }
+    return `${year}-${month}-${day}`;
+  }
+  
+  // Return as-is if format not recognized
+  return dateStr;
+};
+
 // ============== FIX CLIENT NAMES (Admin utility) ==============
 app.post('/api/projects/:id/fix-client-names', authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -1434,9 +1459,9 @@ app.post('/api/templates/:id/import-csv', authenticateToken, requireAdmin, async
         taskTitle: taskTitle,
         clientName: showToClient ? (row.clientName || taskTitle) : '',
         owner: row.owner || '',
-        startDate: row.startDate || '',
-        dueDate: row.dueDate || '',
-        dateCompleted: row.dateCompleted || (completed ? new Date().toISOString().split('T')[0] : ''),
+        startDate: normalizeDate(row.startDate),
+        dueDate: normalizeDate(row.dueDate),
+        dateCompleted: normalizeDate(row.dateCompleted) || (completed ? new Date().toISOString().split('T')[0] : ''),
         duration: parseInt(row.duration) || 0,
         completed: completed,
         showToClient: showToClient,
@@ -1530,9 +1555,9 @@ app.post('/api/projects/:id/import-csv', authenticateToken, async (req, res) => 
         taskTitle: taskTitle,
         clientName: showToClient ? (row.clientName || taskTitle) : '',
         owner: row.owner || '',
-        startDate: row.startDate || '',
-        dueDate: row.dueDate || '',
-        dateCompleted: row.dateCompleted || (completed ? new Date().toISOString().split('T')[0] : ''),
+        startDate: normalizeDate(row.startDate),
+        dueDate: normalizeDate(row.dueDate),
+        dateCompleted: normalizeDate(row.dateCompleted) || (completed ? new Date().toISOString().split('T')[0] : ''),
         duration: parseInt(row.duration) || 0,
         completed: completed,
         showToClient: showToClient,
