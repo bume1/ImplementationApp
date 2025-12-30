@@ -618,6 +618,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
   const [clientPortalDomain, setClientPortalDomain] = useState('');
   const [editingDomain, setEditingDomain] = useState(false);
   const [newDomain, setNewDomain] = useState('');
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [newProject, setNewProject] = useState({
     name: '',
     clientName: '',
@@ -772,43 +773,19 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                 {user.role === 'admin' && <span className="ml-2 text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">ADMIN</span>}
               </p>
             </div>
-            <div className="flex gap-3">
+            <div className="flex gap-3 items-center">
               <button
                 onClick={() => setShowCreate(!showCreate)}
                 className="bg-primary text-white px-4 py-2 rounded-md hover:bg-accent"
               >
                 + New Project
               </button>
-              {user.role === 'admin' && onManageUsers && (
-                <button
-                  onClick={onManageUsers}
-                  className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700"
-                >
-                  Manage Users
-                </button>
-              )}
               {user.role === 'admin' && onManageTemplates && (
                 <button
                   onClick={onManageTemplates}
                   className="bg-teal-600 text-white px-4 py-2 rounded-md hover:bg-teal-700"
                 >
-                  Manage Templates
-                </button>
-              )}
-              {user.role === 'admin' && onManageHubSpot && (
-                <button
-                  onClick={onManageHubSpot}
-                  className="bg-orange-600 text-white px-4 py-2 rounded-md hover:bg-orange-700"
-                >
-                  HubSpot Settings
-                </button>
-              )}
-              {user.role === 'admin' && (
-                <button
-                  onClick={() => { setEditingDomain(true); setNewDomain(clientPortalDomain); }}
-                  className="bg-cyan-600 text-white px-4 py-2 rounded-md hover:bg-cyan-700"
-                >
-                  Portal Domain
+                  Templates
                 </button>
               )}
               {onViewReporting && (
@@ -818,6 +795,45 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                 >
                   Reports
                 </button>
+              )}
+              {user.role === 'admin' && (
+                <div className="relative">
+                  <button
+                    onClick={() => setShowSettingsMenu(!showSettingsMenu)}
+                    className="bg-gray-700 text-white px-4 py-2 rounded-md hover:bg-gray-800 flex items-center gap-2"
+                  >
+                    Settings
+                    <svg className={`w-4 h-4 transition-transform ${showSettingsMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {showSettingsMenu && (
+                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border z-50">
+                      {onManageUsers && (
+                        <button
+                          onClick={() => { onManageUsers(); setShowSettingsMenu(false); }}
+                          className="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 border-b"
+                        >
+                          Manage Users
+                        </button>
+                      )}
+                      {onManageHubSpot && (
+                        <button
+                          onClick={() => { onManageHubSpot(); setShowSettingsMenu(false); }}
+                          className="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 border-b"
+                        >
+                          HubSpot Settings
+                        </button>
+                      )}
+                      <button
+                        onClick={() => { setEditingDomain(true); setNewDomain(clientPortalDomain); setShowSettingsMenu(false); }}
+                        className="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700"
+                      >
+                        Portal Domain
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
               <button
                 onClick={onLogout}
