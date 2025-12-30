@@ -759,17 +759,10 @@ app.put('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req,
         });
       }
       
-      // Non-admins cannot modify showToClient or clientName
+      // Non-admins cannot modify showToClient, clientName, or owner
       delete updates.showToClient;
       delete updates.clientName;
-      
-      // Non-admins cannot change owner/dueDate on tasks that already have them set
-      if (task.owner && task.owner.trim() !== '') {
-        delete updates.owner;
-      }
-      if (task.dueDate && task.dueDate.trim() !== '') {
-        delete updates.dueDate;
-      }
+      delete updates.owner;
     }
 
     const wasCompleted = task.completed;
@@ -1359,9 +1352,16 @@ app.post('/api/templates/:id/import-csv', authenticateToken, requireAdmin, async
       dateCompleted: '',
       duration: parseInt(row.duration) || 0,
       completed: false,
-      showToClient: row.showToClient === 'true' || row.showToClient === true || false,
+      showToClient: ['true', 'yes', '1'].includes(String(row.showToClient || '').toLowerCase()),
       dependencies: row.dependencies ? String(row.dependencies).split(',').map(d => parseInt(d.trim())).filter(d => !isNaN(d)) : []
     })).filter(t => t.taskTitle);
+    
+    // Default clientName to taskTitle if showToClient is true but clientName is empty
+    newTasks.forEach(t => {
+      if (t.showToClient && !t.clientName) {
+        t.clientName = t.taskTitle;
+      }
+    });
     
     template.tasks = [...template.tasks, ...newTasks];
     template.updatedAt = new Date().toISOString();
@@ -1415,13 +1415,20 @@ app.post('/api/projects/:id/import-csv', authenticateToken, async (req, res) => 
       dateCompleted: '',
       duration: parseInt(row.duration) || 0,
       completed: false,
-      showToClient: row.showToClient === 'true' || row.showToClient === true || false,
+      showToClient: ['true', 'yes', '1'].includes(String(row.showToClient || '').toLowerCase()),
       dependencies: row.dependencies ? String(row.dependencies).split(',').map(d => parseInt(d.trim())).filter(d => !isNaN(d)) : [],
       notes: [],
       subtasks: [],
       createdBy: req.user.id,
       createdAt: new Date().toISOString()
     })).filter(t => t.taskTitle);
+    
+    // Default clientName to taskTitle if showToClient is true but clientName is empty
+    newTasks.forEach(t => {
+      if (t.showToClient && !t.clientName) {
+        t.clientName = t.taskTitle;
+      }
+    });
     
     // Add subtasks to their parent tasks
     let subtasksAdded = 0;
