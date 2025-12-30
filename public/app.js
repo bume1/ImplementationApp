@@ -279,7 +279,19 @@ const api = {
     }).then(r => r.json())
 };
 
-// ============== CSV PARSER HELPER ==============
+// ============== CSV HELPER FUNCTIONS ==============
+const downloadSampleCSV = () => {
+  const sampleCSV = `phase,stage,taskTitle,owner,dueDate,showToClient,clientName,dependencies
+Phase 1,Project Kick Off & Stakeholder Alignment,Schedule kickoff meeting with client,team@example.com,2025-02-15,true,Acme Labs,`;
+  const blob = new Blob([sampleCSV], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'task-import-template.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
 const parseCSV = (csvText) => {
   const rows = [];
   let currentRow = [];
@@ -1987,6 +1999,15 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                       />
                     </label>
                   </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">&nbsp;</label>
+                    <button
+                      onClick={downloadSampleCSV}
+                      className="px-3 py-2 text-purple-600 hover:text-purple-800 text-sm underline"
+                    >
+                      Download Template
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -3275,9 +3296,12 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
                     disabled={saving}
                   />
                 </label>
-                <span className="text-xs text-gray-500">
-                  CSV columns: phase, stage, taskTitle, owner, dueDate, showToClient
-                </span>
+                <button
+                  onClick={downloadSampleCSV}
+                  className="text-purple-600 hover:text-purple-800 text-sm underline"
+                >
+                  Download Template
+                </button>
               </div>
               <button
                 onClick={handleAddTask}
