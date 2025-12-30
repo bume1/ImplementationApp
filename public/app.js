@@ -281,8 +281,9 @@ const api = {
 
 // ============== CSV HELPER FUNCTIONS ==============
 const downloadSampleCSV = () => {
-  const sampleCSV = `phase,stage,taskTitle,owner,dueDate,showToClient,clientName,dependencies
-Phase 1,Project Kick Off & Stakeholder Alignment,Schedule kickoff meeting with client,team@example.com,2025-02-15,true,Acme Labs,`;
+  const sampleCSV = `phase,stage,taskTitle,owner,dueDate,showToClient,clientName,dependencies,isSubtask,parentTaskId,subtaskStatus
+Phase 1,Project Kick Off & Stakeholder Alignment,Schedule kickoff meeting with client,team@example.com,2025-02-15,true,Acme Labs,,false,,
+Phase 1,Project Kick Off & Stakeholder Alignment,Confirm attendees for kickoff,admin@example.com,2025-02-14,false,Acme Labs,,true,1,Pending`;
   const blob = new Blob([sampleCSV], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

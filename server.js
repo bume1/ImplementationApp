@@ -1359,7 +1359,18 @@ app.post('/api/projects/:id/import-csv', authenticateToken, async (req, res) => 
     const tasks = await getTasks(req.params.id);
     const maxId = tasks.length > 0 ? Math.max(...tasks.map(t => t.id)) : 0;
     
-    const newTasks = csvData.map((row, index) => ({
+    // Separate parent tasks and subtasks
+    const parentRows = csvData.filter(row => {
+      const isSubtask = String(row.isSubtask || '').toLowerCase();
+      return isSubtask !== 'true' && isSubtask !== 'yes' && isSubtask !== '1';
+    });
+    const subtaskRows = csvData.filter(row => {
+      const isSubtask = String(row.isSubtask || '').toLowerCase();
+      return isSubtask === 'true' || isSubtask === 'yes' || isSubtask === '1';
+    });
+    
+    // Create parent tasks first
+    const newTasks = parentRows.map((row, index) => ({
       id: maxId + index + 1,
       phase: row.phase || 'Phase 1',
       stage: row.stage || '',
@@ -1379,10 +1390,33 @@ app.post('/api/projects/:id/import-csv', authenticateToken, async (req, res) => 
       createdAt: new Date().toISOString()
     })).filter(t => t.taskTitle);
     
-    const updatedTasks = [...tasks, ...newTasks];
-    await db.set(`tasks_${req.params.id}`, updatedTasks);
+    // Add subtasks to their parent tasks
+    let subtasksAdded = 0;
+    const allTasks = [...tasks, ...newTasks];
     
-    res.json({ message: `Imported ${newTasks.length} tasks`, tasks: newTasks });
+    for (const row of subtaskRows) {
+      const parentId = parseInt(row.parentTaskId);
+      if (!parentId) continue;
+      
+      const parentTask = allTasks.find(t => t.id === parentId);
+      if (parentTask) {
+        if (!parentTask.subtasks) parentTask.subtasks = [];
+        parentTask.subtasks.push({
+          id: Date.now() + Math.random(),
+          title: row.taskTitle || row.title || row.task || '',
+          owner: row.owner || '',
+          status: row.subtaskStatus || 'Pending'
+        });
+        subtasksAdded++;
+      }
+    }
+    
+    await db.set(`tasks_${req.params.id}`, allTasks);
+    
+    const message = subtasksAdded > 0 
+      ? `Imported ${newTasks.length} tasks and ${subtasksAdded} subtasks`
+      : `Imported ${newTasks.length} tasks`;
+    res.json({ message, tasks: newTasks });
   } catch (error) {
     console.error('Import CSV to project error:', error);
     res.status(500).json({ error: 'Server error' });
