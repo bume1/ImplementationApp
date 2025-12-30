@@ -113,6 +113,42 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ content })
+    }).then(r => r.json()),
+
+  getTemplates: (token) =>
+    fetch(`${API_URL}/api/templates`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.json()),
+
+  getTemplate: (token, templateId) =>
+    fetch(`${API_URL}/api/templates/${templateId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.json()),
+
+  updateTemplate: (token, templateId, updates) =>
+    fetch(`${API_URL}/api/templates/${templateId}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(updates)
+    }).then(r => r.json()),
+
+  createTemplate: (token, templateData) =>
+    fetch(`${API_URL}/api/templates`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(templateData)
+    }).then(r => r.json()),
+
+  deleteTemplate: (token, templateId) =>
+    fetch(`${API_URL}/api/templates/${templateId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
     }).then(r => r.json())
 };
 
@@ -170,12 +206,6 @@ const AuthScreen = ({ onLogin }) => {
         <h1 className="text-3xl font-bold mb-2">Project Tracker</h1>
         <p className="text-gray-600 mb-6">Thrive 365 Labs</p>
 
-        {mode === 'login' && (
-          <div className="bg-blue-50 border border-blue-200 p-3 rounded mb-4 text-sm">
-            <p className="font-medium text-blue-900">Admin Login:</p>
-            <p className="text-blue-700">bianca@thrive365labs.com</p>
-          </div>
-        )}
 
         {mode === 'forgot' && (
           <div className="bg-yellow-50 border border-yellow-200 p-3 rounded mb-4 text-sm">
@@ -269,7 +299,7 @@ const AuthScreen = ({ onLogin }) => {
 };
 
 // ============== PROJECT LIST COMPONENT ==============
-const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers }) => {
+const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, onManageTemplates }) => {
   const [projects, setProjects] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -353,6 +383,14 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers }) 
                   className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700"
                 >
                   Manage Users
+                </button>
+              )}
+              {user.role === 'admin' && onManageTemplates && (
+                <button
+                  onClick={onManageTemplates}
+                  className="bg-teal-600 text-white px-4 py-2 rounded-md hover:bg-teal-700"
+                >
+                  Manage Templates
                 </button>
               )}
               <button
@@ -1095,7 +1133,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
           <div className="flex flex-wrap gap-4 text-sm">
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 bg-purple-500 rounded"></div>
-              <span>Phase 0: Contract</span>
+              <span>Phase 0: Contract Signature</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 bg-blue-500 rounded"></div>
@@ -1103,7 +1141,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
             </div>
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 bg-green-500 rounded"></div>
-              <span>Phase 2: Implementation</span>
+              <span>Phase 2: Implementation Sprints</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 bg-orange-500 rounded"></div>
@@ -1111,7 +1149,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
             </div>
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 bg-pink-500 rounded"></div>
-              <span>Phase 4: Post-Launch</span>
+              <span>Phase 4: Post-Launch Optimization</span>
             </div>
           </div>
         </div>
@@ -1400,11 +1438,11 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                       onChange={(e) => setNewTask({...newTask, phase: e.target.value})}
                       className="w-full px-3 py-2 border rounded-md"
                     >
-                      <option value="Phase 0">Phase 0</option>
-                      <option value="Phase 1">Phase 1</option>
-                      <option value="Phase 2">Phase 2</option>
-                      <option value="Phase 3">Phase 3</option>
-                      <option value="Phase 4">Phase 4</option>
+                      <option value="Phase 0">Phase 0: Contract Signature</option>
+                      <option value="Phase 1">Phase 1: Pre-Launch</option>
+                      <option value="Phase 2">Phase 2: Implementation Sprints</option>
+                      <option value="Phase 3">Phase 3: Go-Live</option>
+                      <option value="Phase 4">Phase 4: Post-Launch Optimization</option>
                     </select>
                   </div>
                   <div>
@@ -1705,6 +1743,302 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
 };
 
 // ============== MAIN APP COMPONENT ==============
+// ============== TEMPLATE MANAGEMENT COMPONENT ==============
+const TemplateManagement = ({ token, user, onBack, onLogout }) => {
+  const [templates, setTemplates] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [editingTask, setEditingTask] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    loadTemplates();
+  }, []);
+
+  const loadTemplates = async () => {
+    setLoading(true);
+    try {
+      const data = await api.getTemplates(token);
+      setTemplates(data);
+    } catch (err) {
+      console.error('Failed to load templates:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadTemplateDetails = async (templateId) => {
+    try {
+      const data = await api.getTemplate(token, templateId);
+      setSelectedTemplate(data);
+    } catch (err) {
+      console.error('Failed to load template:', err);
+    }
+  };
+
+  const handleSaveTask = async () => {
+    if (!selectedTemplate || !editingTask) return;
+    setSaving(true);
+    try {
+      const updatedTasks = selectedTemplate.tasks.map(t => 
+        t.id === editingTask.id ? editingTask : t
+      );
+      await api.updateTemplate(token, selectedTemplate.id, { tasks: updatedTasks });
+      setSelectedTemplate({ ...selectedTemplate, tasks: updatedTasks });
+      setEditingTask(null);
+    } catch (err) {
+      console.error('Failed to save task:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAddTask = async () => {
+    if (!selectedTemplate) return;
+    const newId = Math.max(...selectedTemplate.tasks.map(t => t.id)) + 1;
+    const newTask = {
+      id: newId,
+      phase: 'Phase 1',
+      stage: '',
+      taskTitle: 'New Task',
+      clientName: '',
+      owner: '',
+      startDate: '',
+      dueDate: '',
+      dateCompleted: '',
+      duration: 0,
+      completed: false,
+      showToClient: false
+    };
+    const updatedTasks = [...selectedTemplate.tasks, newTask];
+    setSaving(true);
+    try {
+      await api.updateTemplate(token, selectedTemplate.id, { tasks: updatedTasks });
+      setSelectedTemplate({ ...selectedTemplate, tasks: updatedTasks });
+      setEditingTask(newTask);
+    } catch (err) {
+      console.error('Failed to add task:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteTask = async (taskId) => {
+    if (!selectedTemplate) return;
+    if (!confirm('Are you sure you want to delete this task from the template?')) return;
+    const updatedTasks = selectedTemplate.tasks.filter(t => t.id !== taskId);
+    setSaving(true);
+    try {
+      await api.updateTemplate(token, selectedTemplate.id, { tasks: updatedTasks });
+      setSelectedTemplate({ ...selectedTemplate, tasks: updatedTasks });
+    } catch (err) {
+      console.error('Failed to delete task:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-xl">Loading templates...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-6xl mx-auto">
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <button
+                onClick={selectedTemplate ? () => setSelectedTemplate(null) : onBack}
+                className="text-blue-600 hover:underline mb-2 flex items-center gap-1"
+              >
+                ← {selectedTemplate ? 'Back to Templates' : 'Back to Projects'}
+              </button>
+              <h1 className="text-3xl font-bold text-gray-900">
+                {selectedTemplate ? `Edit Template: ${selectedTemplate.name}` : 'Template Management'}
+              </h1>
+              <p className="text-gray-600">
+                {selectedTemplate ? `${selectedTemplate.tasks.length} tasks` : 'Manage project templates'}
+              </p>
+            </div>
+            <button
+              onClick={onLogout}
+              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+
+        {!selectedTemplate ? (
+          <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Template Name</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tasks</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {templates.map(template => (
+                  <tr key={template.id}>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-medium text-gray-900">{template.name}</div>
+                      {template.isDefault && (
+                        <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">Default</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-500">{template.description}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{template.taskCount}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <button
+                        onClick={() => loadTemplateDetails(template.id)}
+                        className="text-blue-600 hover:underline"
+                      >
+                        Edit Tasks
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex justify-end mb-4">
+              <button
+                onClick={handleAddTask}
+                disabled={saving}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+              >
+                + Add Task to Template
+              </button>
+            </div>
+
+            <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phase</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stage</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Task Title</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Owner</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Client View</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {selectedTemplate.tasks.map(task => (
+                    <tr key={task.id}>
+                      {editingTask && editingTask.id === task.id ? (
+                        <>
+                          <td className="px-4 py-2 text-sm text-gray-500">{task.id}</td>
+                          <td className="px-4 py-2">
+                            <select
+                              value={editingTask.phase}
+                              onChange={(e) => setEditingTask({...editingTask, phase: e.target.value})}
+                              className="w-full px-2 py-1 border rounded text-sm"
+                            >
+                              <option value="Phase 0">Phase 0</option>
+                              <option value="Phase 1">Phase 1</option>
+                              <option value="Phase 2">Phase 2</option>
+                              <option value="Phase 3">Phase 3</option>
+                              <option value="Phase 4">Phase 4</option>
+                            </select>
+                          </td>
+                          <td className="px-4 py-2">
+                            <input
+                              value={editingTask.stage}
+                              onChange={(e) => setEditingTask({...editingTask, stage: e.target.value})}
+                              className="w-full px-2 py-1 border rounded text-sm"
+                            />
+                          </td>
+                          <td className="px-4 py-2">
+                            <input
+                              value={editingTask.taskTitle}
+                              onChange={(e) => setEditingTask({...editingTask, taskTitle: e.target.value})}
+                              className="w-full px-2 py-1 border rounded text-sm"
+                            />
+                          </td>
+                          <td className="px-4 py-2">
+                            <input
+                              value={editingTask.owner}
+                              onChange={(e) => setEditingTask({...editingTask, owner: e.target.value})}
+                              className="w-full px-2 py-1 border rounded text-sm"
+                            />
+                          </td>
+                          <td className="px-4 py-2">
+                            <input
+                              type="checkbox"
+                              checked={editingTask.showToClient}
+                              onChange={(e) => setEditingTask({...editingTask, showToClient: e.target.checked})}
+                            />
+                          </td>
+                          <td className="px-4 py-2 space-x-2">
+                            <button
+                              onClick={handleSaveTask}
+                              disabled={saving}
+                              className="text-green-600 hover:underline disabled:opacity-50"
+                            >
+                              Save
+                            </button>
+                            <button
+                              onClick={() => setEditingTask(null)}
+                              className="text-gray-600 hover:underline"
+                            >
+                              Cancel
+                            </button>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-4 py-2 text-sm text-gray-500">{task.id}</td>
+                          <td className="px-4 py-2 text-sm">{task.phase}</td>
+                          <td className="px-4 py-2 text-sm">{task.stage}</td>
+                          <td className="px-4 py-2 text-sm font-medium">{task.taskTitle}</td>
+                          <td className="px-4 py-2 text-sm text-gray-500">{task.owner || '-'}</td>
+                          <td className="px-4 py-2 text-sm">
+                            {task.showToClient ? (
+                              <span className="text-green-600">Yes</span>
+                            ) : (
+                              <span className="text-gray-400">No</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2 space-x-2">
+                            <button
+                              onClick={() => setEditingTask({...task})}
+                              className="text-blue-600 hover:underline"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteTask(task.id)}
+                              className="text-red-600 hover:underline"
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const App = () => {
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [user, setUser] = useState(JSON.parse(localStorage.getItem('user') || 'null'));
@@ -1764,6 +2098,17 @@ const App = () => {
     );
   }
 
+  if (view === 'templates' && user.role === 'admin') {
+    return (
+      <TemplateManagement
+        token={token}
+        user={user}
+        onBack={handleBackToList}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
   return (
     <ProjectList
       token={token}
@@ -1771,6 +2116,7 @@ const App = () => {
       onSelectProject={handleSelectProject}
       onLogout={handleLogout}
       onManageUsers={() => setView('users')}
+      onManageTemplates={() => setView('templates')}
     />
   );
 };

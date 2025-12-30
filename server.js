@@ -486,6 +486,126 @@ app.get('/api/projects/:id/export', authenticateToken, async (req, res) => {
   }
 });
 
+// Template Management (Admin only)
+app.get('/api/templates', authenticateToken, async (req, res) => {
+  try {
+    let templates = await db.get('templates') || [];
+    
+    // If no templates in DB, load the default one from file
+    if (templates.length === 0) {
+      const defaultTemplate = await loadTemplate();
+      templates = [{
+        id: 'biolis-au480-clia',
+        name: 'Biolis AU480 with CLIA Upgrade',
+        description: '102-task template for laboratory equipment installations',
+        tasks: defaultTemplate,
+        createdAt: new Date().toISOString(),
+        isDefault: true
+      }];
+      await db.set('templates', templates);
+    }
+    
+    // Return templates without full task lists (just metadata)
+    const templateMeta = templates.map(t => ({
+      id: t.id,
+      name: t.name,
+      description: t.description,
+      taskCount: t.tasks.length,
+      createdAt: t.createdAt,
+      isDefault: t.isDefault
+    }));
+    
+    res.json(templateMeta);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/templates/:id', authenticateToken, async (req, res) => {
+  try {
+    const templates = await db.get('templates') || [];
+    const template = templates.find(t => t.id === req.params.id);
+    
+    if (!template) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+    
+    res.json(template);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.put('/api/templates/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const templates = await db.get('templates') || [];
+    const idx = templates.findIndex(t => t.id === req.params.id);
+    
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+    
+    const { name, description, tasks } = req.body;
+    
+    if (name) templates[idx].name = name;
+    if (description) templates[idx].description = description;
+    if (tasks) templates[idx].tasks = tasks;
+    templates[idx].updatedAt = new Date().toISOString();
+    
+    await db.set('templates', templates);
+    res.json(templates[idx]);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/templates', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const templates = await db.get('templates') || [];
+    const { name, description, tasks } = req.body;
+    
+    if (!name || !tasks) {
+      return res.status(400).json({ error: 'Name and tasks are required' });
+    }
+    
+    const newTemplate = {
+      id: uuidv4(),
+      name,
+      description: description || '',
+      tasks,
+      createdAt: new Date().toISOString(),
+      isDefault: false
+    };
+    
+    templates.push(newTemplate);
+    await db.set('templates', templates);
+    res.status(201).json(newTemplate);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.delete('/api/templates/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const templates = await db.get('templates') || [];
+    const template = templates.find(t => t.id === req.params.id);
+    
+    if (!template) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+    
+    if (template.isDefault) {
+      return res.status(400).json({ error: 'Cannot delete default template' });
+    }
+    
+    const filtered = templates.filter(t => t.id !== req.params.id);
+    await db.set('templates', filtered);
+    res.json({ message: 'Template deleted' });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
   console.log(`🔐 Admin login: bianca@thrive365labs.com / Thrive2025!`);
