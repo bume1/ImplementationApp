@@ -161,3 +161,24 @@ Note: Adding notes to tasks in the webapp does NOT trigger HubSpot sync (to avoi
 - "Select All" and "Deselect All" buttons for quick selection
 - "Mark X Complete" and "Mark X Incomplete" bulk action buttons
 - Bulk updates do NOT sync to HubSpot (to prevent overloading)
+
+## Custom Domain & App URL
+
+### Application Path
+- Main app accessible at `/thrive365labsLAUNCH` path (e.g., `yourdomain.com/thrive365labsLAUNCH`)
+- This allows hosting multiple apps on the same domain
+
+### Client Portal Custom Domain
+- Admins can configure a custom domain for client portal links via "Portal Domain" button on dashboard
+- Custom domain stored in database under `client_portal_domain` key
+- Client links use format: `{custom-domain}/{slug}` (e.g., `https://deapps.pro/dallas-forth-worth-urology`)
+- Both root-level (`/slug`) and legacy (`/client/slug`) URL formats work for client portals
+- If no custom domain is set, the default app origin is used
+
+### API Endpoints
+- `GET /api/settings/client-portal-domain` - Get current custom domain
+- `PUT /api/settings/client-portal-domain` - Set custom domain (admin only)
+
+### Task Owner Editing
+- Owner field can only be edited by admins after initial assignment
+- Non-admin users cannot modify owner assignments on any tasks
