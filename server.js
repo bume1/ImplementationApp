@@ -592,11 +592,20 @@ async function checkAndUpdateHubSpotDealStage(projectId) {
   try {
     const projects = await getProjects();
     const project = projects.find(p => p.id === projectId);
-    if (!project || !project.hubspotRecordId) return;
+    if (!project || !project.hubspotRecordId) {
+      console.log('📋 HubSpot sync skipped: No project or Record ID');
+      return;
+    }
 
     const tasks = await getTasks(projectId);
     const mapping = await db.get('hubspot_stage_mapping');
-    if (!mapping || !mapping.phases) return;
+    if (!mapping || !mapping.phases) {
+      console.log('📋 HubSpot sync skipped: No stage mapping configured');
+      return;
+    }
+
+    console.log('📋 Checking phase completion for HubSpot sync...');
+    console.log('📋 Stage mapping:', JSON.stringify(mapping));
 
     const phases = ['Phase 0', 'Phase 1', 'Phase 2', 'Phase 3', 'Phase 4'];
     
@@ -605,9 +614,15 @@ async function checkAndUpdateHubSpotDealStage(projectId) {
       const phaseTasks = tasks.filter(t => t.phase === phase);
       if (phaseTasks.length === 0) continue;
       
+      const completedCount = phaseTasks.filter(t => t.completed).length;
       const allCompleted = phaseTasks.every(t => t.completed);
+      
+      console.log(`📋 ${phase}: ${completedCount}/${phaseTasks.length} tasks completed`);
+      
       if (allCompleted && mapping.phases[phase]) {
         const stageId = mapping.phases[phase];
+        console.log(`📤 Syncing to HubSpot: ${phase} -> Stage ID: ${stageId}, Pipeline: ${mapping.pipelineId}`);
+        
         await hubspot.updateRecordStage(project.hubspotRecordId, stageId, mapping.pipelineId);
         
         const idx = projects.findIndex(p => p.id === projectId);

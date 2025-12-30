@@ -97,11 +97,18 @@ async function updateRecordStage(recordId, stageId, pipelineId = null) {
     if (pipelineId) {
       properties.pipeline = pipelineId;
     }
+    
+    console.log(`📤 Updating HubSpot record ${recordId} with properties:`, JSON.stringify(properties));
+    
     const response = await client.crm.deals.basicApi.update(recordId, { properties });
-    console.log(`✅ HubSpot record ${recordId} updated to stage ${stageId}`);
+    
+    console.log(`✅ HubSpot record ${recordId} updated - Response stage: ${response.properties?.dealstage}`);
     return response;
   } catch (error) {
     console.error('Error updating record stage:', error.message);
+    if (error.body) {
+      console.error('HubSpot API error details:', JSON.stringify(error.body));
+    }
     throw error;
   }
 }
@@ -112,26 +119,33 @@ async function logRecordActivity(recordId, activityType, details) {
     
     const noteBody = `[Project Tracker] ${activityType}\n\n${details}`;
     
-    const noteProperties = {
-      hs_timestamp: Date.now(),
-      hs_note_body: noteBody
+    const noteObj = {
+      properties: {
+        hs_timestamp: Date.now().toString(),
+        hs_note_body: noteBody
+      },
+      associations: [
+        {
+          to: { id: recordId },
+          types: [
+            {
+              associationCategory: 'HUBSPOT_DEFINED',
+              associationTypeId: 214
+            }
+          ]
+        }
+      ]
     };
 
-    const noteResponse = await client.crm.objects.notes.basicApi.create({
-      properties: noteProperties
-    });
-
-    await client.crm.objects.notes.associationsApi.create(
-      noteResponse.id,
-      'deals',
-      recordId,
-      [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 214 }]
-    );
+    const noteResponse = await client.crm.objects.notes.basicApi.create(noteObj);
 
     console.log(`✅ HubSpot activity logged for record ${recordId}: ${activityType}`);
     return noteResponse;
   } catch (error) {
     console.error('Error logging record activity:', error.message);
+    if (error.body) {
+      console.error('HubSpot API error details:', JSON.stringify(error.body));
+    }
     throw error;
   }
 }
