@@ -90,6 +90,12 @@ Preferred communication style: Simple, everyday language.
 - **Clone Projects**: Any user can clone a project via "Clone Project" button on project cards. Creates new project with all tasks reset to incomplete status.
 - **Clone Templates**: Admins can clone templates via "Clone" button in Template Management. Creates new template with all task definitions.
 
+## CSV Import
+- **Template CSV Import**: Admins can bulk import tasks to templates via "Import CSV" button in Template Management
+- **Project CSV Import**: Users can bulk import tasks to projects via "Import CSV" button in Project Tracker
+- **CSV Columns**: phase, stage, taskTitle, owner, dueDate, showToClient, clientName, dependencies
+- **Parser Features**: Handles quoted fields, escaped quotes (""), commas within fields, and multiline content
+
 ## HubSpot Integration
 
 ### Configuration
