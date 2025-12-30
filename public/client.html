@@ -74,7 +74,7 @@
                             const targetDate = dueDates.length > 0 ? dueDates[dueDates.length - 1] : null;
                             return targetDate ? (
                               <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
-                                Target: {targetDate}
+                                Target Due Date: {targetDate}
                               </span>
                             ) : null;
                           })()}
@@ -180,7 +180,7 @@
                       </div>
                       {targetDate && (
                         <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
-                          Target: {targetDate}
+                          Target Due Date: {targetDate}
                         </span>
                       )}
                     </div>
@@ -465,6 +465,28 @@
         <div className="min-h-screen bg-gray-50 p-6">
           <div className="max-w-6xl mx-auto">
             <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold">Overall Progress</h3>
+                <span className="text-2xl font-bold text-purple-600">{progressPercentage}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-6">
+                <div 
+                  className="bg-gradient-to-r from-purple-500 to-purple-600 h-6 rounded-full flex items-center justify-center"
+                  style={{ width: `${progressPercentage}%` }}
+                >
+                  {progressPercentage > 10 && (
+                    <span className="text-white text-sm font-medium">
+                      {completedTasks} of {totalTasks} tasks
+                    </span>
+                  )}
+                </div>
+              </div>
+              <p className="mt-2 text-sm text-gray-600 text-center">
+                {completedTasks} completed • {totalTasks - completedTasks} remaining
+              </p>
+            </div>
+
+            <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
               <h1 className="text-3xl font-bold text-gray-900">{data.project.name}</h1>
               <p className="text-gray-600">{data.project.clientName}</p>
               
@@ -530,28 +552,6 @@
             {viewType === 'list' && <ListView tasks={data.tasks} />}
             {viewType === 'timeline' && <TimelineView tasks={data.tasks} />}
             {viewType === 'calendar' && <CalendarView tasks={data.tasks} />}
-
-            <div className="mt-8 bg-white rounded-lg shadow-sm p-6">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-lg font-semibold">Overall Progress</h3>
-                <span className="text-2xl font-bold text-blue-600">{progressPercentage}%</span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-6">
-                <div 
-                  className="bg-gradient-to-r from-blue-500 to-blue-600 h-6 rounded-full flex items-center justify-center"
-                  style={{ width: `${progressPercentage}%` }}
-                >
-                  {progressPercentage > 10 && (
-                    <span className="text-white text-sm font-medium">
-                      {completedTasks} of {totalTasks} tasks
-                    </span>
-                  )}
-                </div>
-              </div>
-              <p className="mt-3 text-sm text-gray-600 text-center">
-                {completedTasks} completed • {totalTasks - completedTasks} remaining
-              </p>
-            </div>
           </div>
         </div>
       );
