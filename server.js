@@ -128,6 +128,138 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+// ============== FORGOT PASSWORD ==============
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+    const users = await getUsers();
+    const user = users.find(u => u.email === email);
+    if (!user) {
+      return res.json({ message: 'If an account exists with this email, password reset instructions will be sent.' });
+    }
+    const resetToken = uuidv4();
+    const resetExpiry = new Date(Date.now() + 3600000).toISOString();
+    const idx = users.findIndex(u => u.email === email);
+    users[idx].resetToken = resetToken;
+    users[idx].resetExpiry = resetExpiry;
+    await db.set('users', users);
+    console.log(`Password reset requested for ${email}. Token: ${resetToken}`);
+    res.json({ message: 'If an account exists with this email, password reset instructions will be sent.' });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+    if (!token || !newPassword) {
+      return res.status(400).json({ error: 'Token and new password are required' });
+    }
+    const users = await getUsers();
+    const idx = users.findIndex(u => u.resetToken === token);
+    if (idx === -1) {
+      return res.status(400).json({ error: 'Invalid or expired reset token' });
+    }
+    const user = users[idx];
+    if (new Date(user.resetExpiry) < new Date()) {
+      return res.status(400).json({ error: 'Reset token has expired' });
+    }
+    users[idx].password = await bcrypt.hash(newPassword, 10);
+    delete users[idx].resetToken;
+    delete users[idx].resetExpiry;
+    await db.set('users', users);
+    res.json({ message: 'Password reset successful' });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============== USER MANAGEMENT (Admin Only) ==============
+app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const users = await getUsers();
+    const safeUsers = users.map(u => ({
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      role: u.role,
+      createdAt: u.createdAt
+    }));
+    res.json(safeUsers);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { name, email, role, password } = req.body;
+    const users = await getUsers();
+    const idx = users.findIndex(u => u.id === userId);
+    if (idx === -1) return res.status(404).json({ error: 'User not found' });
+    
+    if (name) users[idx].name = name;
+    if (email) users[idx].email = email;
+    if (role) users[idx].role = role;
+    if (password) users[idx].password = await bcrypt.hash(password, 10);
+    
+    await db.set('users', users);
+    res.json({ id: users[idx].id, email: users[idx].email, name: users[idx].name, role: users[idx].role });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.delete('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const users = await getUsers();
+    if (userId === req.user.id) {
+      return res.status(400).json({ error: 'Cannot delete your own account' });
+    }
+    const filtered = users.filter(u => u.id !== userId);
+    await db.set('users', filtered);
+    res.json({ message: 'User deleted' });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============== TASK NOTES ==============
+app.post('/api/projects/:projectId/tasks/:taskId/notes', authenticateToken, async (req, res) => {
+  try {
+    const { projectId, taskId } = req.params;
+    const { content } = req.body;
+    if (!content) return res.status(400).json({ error: 'Note content is required' });
+    
+    const tasks = await getTasks(projectId);
+    const idx = tasks.findIndex(t => t.id === parseInt(taskId));
+    if (idx === -1) return res.status(404).json({ error: 'Task not found' });
+    
+    const note = {
+      id: uuidv4(),
+      content,
+      author: req.user.name,
+      authorId: req.user.id,
+      createdAt: new Date().toISOString()
+    };
+    
+    if (!tasks[idx].notes) tasks[idx].notes = [];
+    tasks[idx].notes.push(note);
+    await db.set(`tasks_${projectId}`, tasks);
+    res.json(note);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ============== PROJECT ROUTES ==============
 app.get('/api/projects', authenticateToken, async (req, res) => {
   try {
@@ -208,9 +340,9 @@ app.get('/api/projects/:id/tasks', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/api/projects/:id/tasks', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/projects/:id/tasks', authenticateToken, async (req, res) => {
   try {
-    const { taskTitle, owner, dueDate, phase, stage, showToClient, clientName } = req.body;
+    const { taskTitle, owner, dueDate, phase, stage, showToClient, clientName, notes, dependencies } = req.body;
     const projectId = req.params.id;
     const tasks = await getTasks(projectId);
     const newTask = {
@@ -225,7 +357,11 @@ app.post('/api/projects/:id/tasks', authenticateToken, requireAdmin, async (req,
       duration: 0,
       completed: false,
       showToClient: showToClient || false,
-      clientName: clientName || ''
+      clientName: clientName || '',
+      notes: notes || [],
+      dependencies: dependencies || [],
+      createdBy: req.user.id,
+      createdAt: new Date().toISOString()
     };
     tasks.push(newTask);
     await db.set(`tasks_${projectId}`, tasks);
@@ -239,15 +375,48 @@ app.put('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req,
   try {
     const { projectId, taskId } = req.params;
     const updates = req.body;
-
-    // Only admin can update owner
-    if (updates.owner && req.user.role !== 'admin') {
-      delete updates.owner;
-    }
-
     const tasks = await getTasks(projectId);
     const idx = tasks.findIndex(t => t.id === parseInt(taskId));
     if (idx === -1) return res.status(404).json({ error: 'Task not found' });
+    
+    const task = tasks[idx];
+    const isAdmin = req.user.role === 'admin';
+    const isCreator = task.createdBy === req.user.id;
+    const isTemplateTask = !task.createdBy;
+
+    // Non-admins can only edit tasks they created (or template tasks for limited fields)
+    if (!isAdmin) {
+      // For template tasks (no createdBy), non-admins can only toggle completion and add notes
+      if (isTemplateTask) {
+        const allowedFields = ['completed', 'dateCompleted', 'notes'];
+        Object.keys(updates).forEach(key => {
+          if (!allowedFields.includes(key)) {
+            delete updates[key];
+          }
+        });
+      } else if (!isCreator) {
+        // Non-admins cannot edit tasks they didn't create (except completion status)
+        const allowedFields = ['completed', 'dateCompleted', 'notes'];
+        Object.keys(updates).forEach(key => {
+          if (!allowedFields.includes(key)) {
+            delete updates[key];
+          }
+        });
+      }
+      
+      // Non-admins cannot modify showToClient or clientName
+      delete updates.showToClient;
+      delete updates.clientName;
+      
+      // Non-admins cannot change owner/dueDate on tasks that already have them set
+      if (task.owner && task.owner.trim() !== '') {
+        delete updates.owner;
+      }
+      if (task.dueDate && task.dueDate.trim() !== '') {
+        delete updates.dueDate;
+      }
+    }
+
     tasks[idx] = { ...tasks[idx], ...updates };
     await db.set(`tasks_${projectId}`, tasks);
     res.json(tasks[idx]);

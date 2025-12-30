@@ -75,7 +75,45 @@ const api = {
 
   exportProject: (token, projectId) => {
     window.open(`${API_URL}/api/projects/${projectId}/export`, '_blank');
-  }
+  },
+
+  forgotPassword: (email) =>
+    fetch(`${API_URL}/api/auth/forgot-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    }).then(r => r.json()),
+
+  getUsers: (token) =>
+    fetch(`${API_URL}/api/users`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.json()),
+
+  updateUser: (token, userId, updates) =>
+    fetch(`${API_URL}/api/users/${userId}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(updates)
+    }).then(r => r.json()),
+
+  deleteUser: (token, userId) =>
+    fetch(`${API_URL}/api/users/${userId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.json()),
+
+  addNote: (token, projectId, taskId, content) =>
+    fetch(`${API_URL}/api/projects/${projectId}/tasks/${taskId}/notes`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ content })
+    }).then(r => r.json())
 };
 
 // ============== LOGIN/SIGNUP COMPONENT ==============
@@ -85,10 +123,12 @@ const AuthScreen = ({ onLogin }) => {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async () => {
     setError('');
+    setMessage('');
     setLoading(true);
 
     try {
@@ -102,6 +142,13 @@ const AuthScreen = ({ onLogin }) => {
           setLoading(false);
           return;
         }
+      } else if (mode === 'forgot') {
+        result = await api.forgotPassword(email);
+        if (result.message) {
+          setMessage(result.message);
+          setLoading(false);
+          return;
+        }
       } else {
         result = await api.login(email, password);
         if (!result.error) {
@@ -109,7 +156,7 @@ const AuthScreen = ({ onLogin }) => {
           return;
         }
       }
-      setError(result.error);
+      if (result.error) setError(result.error);
     } catch (err) {
       setError('An error occurred. Please try again.');
     } finally {
@@ -130,9 +177,21 @@ const AuthScreen = ({ onLogin }) => {
           </div>
         )}
 
+        {mode === 'forgot' && (
+          <div className="bg-yellow-50 border border-yellow-200 p-3 rounded mb-4 text-sm">
+            <p className="text-yellow-800">Enter your email to receive password reset instructions.</p>
+          </div>
+        )}
+
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded mb-4">
             {error}
+          </div>
+        )}
+
+        {message && (
+          <div className="bg-green-50 border border-green-200 text-green-700 p-3 rounded mb-4">
+            {message}
           </div>
         )}
 
@@ -162,34 +221,45 @@ const AuthScreen = ({ onLogin }) => {
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-2">Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-3 py-2 border rounded-md"
-              disabled={loading}
-            />
-          </div>
+          {mode !== 'forgot' && (
+            <div>
+              <label className="block text-sm font-medium mb-2">Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-3 py-2 border rounded-md"
+                disabled={loading}
+              />
+            </div>
+          )}
 
           <button
             onClick={handleSubmit}
             disabled={loading}
             className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400"
           >
-            {loading ? 'Please wait...' : mode === 'login' ? 'Login' : 'Create Account'}
+            {loading ? 'Please wait...' : mode === 'login' ? 'Login' : mode === 'signup' ? 'Create Account' : 'Reset Password'}
           </button>
 
-          <div className="text-center">
+          <div className="text-center space-y-2">
+            {mode === 'login' && (
+              <button
+                onClick={() => { setMode('forgot'); setError(''); setMessage(''); }}
+                className="text-gray-500 hover:underline text-sm block w-full"
+              >
+                Forgot Password?
+              </button>
+            )}
             <button
               onClick={() => {
                 setMode(mode === 'login' ? 'signup' : 'login');
                 setError('');
+                setMessage('');
               }}
               className="text-blue-600 hover:underline text-sm"
             >
-              {mode === 'login' ? 'Need an account? Sign up' : 'Already have an account? Login'}
+              {mode === 'login' ? 'Need an account? Sign up' : mode === 'signup' ? 'Already have an account? Login' : 'Back to Login'}
             </button>
           </div>
         </div>
@@ -199,7 +269,7 @@ const AuthScreen = ({ onLogin }) => {
 };
 
 // ============== PROJECT LIST COMPONENT ==============
-const ProjectList = ({ token, user, onSelectProject, onLogout }) => {
+const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers }) => {
   const [projects, setProjects] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -277,6 +347,14 @@ const ProjectList = ({ token, user, onSelectProject, onLogout }) => {
               >
                 + New Project
               </button>
+              {user.role === 'admin' && onManageUsers && (
+                <button
+                  onClick={onManageUsers}
+                  className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700"
+                >
+                  Manage Users
+                </button>
+              )}
               <button
                 onClick={onLogout}
                 className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700"
@@ -641,6 +719,11 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
   const [loading, setLoading] = useState(true);
   const [selectedPhase, setSelectedPhase] = useState('all');
   const [selectedOwner, setSelectedOwner] = useState('all');
+  const [selectedStatus, setSelectedStatus] = useState('all');
+  const [expandedTaskId, setExpandedTaskId] = useState(null);
+  const [newNote, setNewNote] = useState('');
+  const [showAddTask, setShowAddTask] = useState(false);
+  const [newTask, setNewTask] = useState({ taskTitle: '', owner: '', dueDate: '', phase: 'Phase 1', stage: '', showToClient: false, clientName: '', dependencies: [] });
 
   const isAdmin = user.role === 'admin';
 
@@ -684,19 +767,35 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
       id: taskId,
       taskTitle: task.taskTitle,
       dateCompleted: task.dateCompleted || '',
-      owner: task.owner || ''
+      dueDate: task.dueDate || '',
+      owner: task.owner || '',
+      showToClient: task.showToClient || false,
+      clientName: task.clientName || '',
+      dependencies: task.dependencies || []
     });
   };
 
   const handleSaveEdit = async () => {
     try {
+      const task = tasks.find(t => t.id === editingTask.id);
       const updates = {
         taskTitle: editingTask.taskTitle,
-        dateCompleted: editingTask.dateCompleted
+        dateCompleted: editingTask.dateCompleted,
+        dependencies: editingTask.dependencies
       };
 
       if (isAdmin) {
         updates.owner = editingTask.owner;
+        updates.dueDate = editingTask.dueDate;
+        updates.showToClient = editingTask.showToClient;
+        updates.clientName = editingTask.clientName;
+      } else {
+        if (!task.owner || task.owner.trim() === '') {
+          updates.owner = editingTask.owner;
+        }
+        if (!task.dueDate || task.dueDate.trim() === '') {
+          updates.dueDate = editingTask.dueDate;
+        }
       }
 
       await api.updateTask(token, project.id, editingTask.id, updates);
@@ -706,6 +805,34 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
       setEditingTask(null);
     } catch (err) {
       console.error('Failed to save edit:', err);
+    }
+  };
+
+  const handleAddNote = async (taskId) => {
+    if (!newNote.trim()) return;
+    try {
+      const note = await api.addNote(token, project.id, taskId, newNote);
+      setTasks(tasks.map(t => {
+        if (t.id === taskId) {
+          return { ...t, notes: [...(t.notes || []), note] };
+        }
+        return t;
+      }));
+      setNewNote('');
+    } catch (err) {
+      console.error('Failed to add note:', err);
+    }
+  };
+
+  const handleCreateTask = async () => {
+    if (!newTask.taskTitle.trim()) return;
+    try {
+      const created = await api.createTask(token, project.id, newTask);
+      setTasks([...tasks, created]);
+      setNewTask({ taskTitle: '', owner: '', dueDate: '', phase: 'Phase 1', stage: '', showToClient: false, clientName: '', dependencies: [] });
+      setShowAddTask(false);
+    } catch (err) {
+      console.error('Failed to create task:', err);
     }
   };
 
@@ -721,8 +848,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
       'Phase 1': 'border-blue-500',
       'Phase 2': 'border-green-500',
       'Phase 3': 'border-orange-500',
-      'Phase 4': 'border-pink-500',
-      'Phase 5': 'border-teal-500'
+      'Phase 4': 'border-pink-500'
     };
     return colors[phase] || 'border-gray-500';
   };
@@ -733,8 +859,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
       'Phase 1': 'bg-blue-500',
       'Phase 2': 'bg-green-500',
       'Phase 3': 'bg-orange-500',
-      'Phase 4': 'bg-pink-500',
-      'Phase 5': 'bg-teal-500'
+      'Phase 4': 'bg-pink-500'
     };
     return colors[phase] || 'bg-gray-500';
   };
@@ -760,6 +885,14 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
         filtered = filtered.filter(t => !t.owner || t.owner.trim() === '');
       } else {
         filtered = filtered.filter(t => t.owner === selectedOwner);
+      }
+    }
+
+    if (selectedStatus !== 'all') {
+      if (selectedStatus === 'completed') {
+        filtered = filtered.filter(t => t.completed);
+      } else if (selectedStatus === 'uncompleted') {
+        filtered = filtered.filter(t => !t.completed);
       }
     }
 
@@ -929,6 +1062,31 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                   </select>
                 </div>
               )}
+              
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Status Filter</label>
+                <select
+                  value={selectedStatus}
+                  onChange={(e) => setSelectedStatus(e.target.value)}
+                  className="px-3 py-2 border rounded-md text-sm"
+                >
+                  <option value="all">All Tasks</option>
+                  <option value="completed">Completed</option>
+                  <option value="uncompleted">Uncompleted</option>
+                </select>
+              </div>
+              
+              {viewMode === 'internal' && (
+                <div className="ml-auto">
+                  <label className="block text-xs text-gray-500 mb-1">&nbsp;</label>
+                  <button
+                    onClick={() => setShowAddTask(true)}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+                  >
+                    + Add Task
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -954,10 +1112,6 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 bg-pink-500 rounded"></div>
               <span>Phase 4: Post-Launch</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-teal-500 rounded"></div>
-              <span>Phase 5: Support</span>
             </div>
           </div>
         </div>
@@ -1013,29 +1167,84 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                   setEditingTask({...editingTask, taskTitle: e.target.value})
                                 }
                                 className="w-full px-3 py-2 border rounded-md"
+                                placeholder="Task Title"
                               />
-                              {isAdmin && (
+                              <div className="grid grid-cols-2 gap-3">
+                                {(isAdmin || !task.owner || task.owner.trim() === '') && (
+                                  <div>
+                                    <label className="block text-xs text-gray-500 mb-1">Owner (First and Last Name)</label>
+                                    <input
+                                      placeholder="e.g., John Smith"
+                                      value={editingTask.owner}
+                                      onChange={(e) =>
+                                        setEditingTask({...editingTask, owner: e.target.value})
+                                      }
+                                      className="w-full px-3 py-2 border rounded-md"
+                                    />
+                                  </div>
+                                )}
+                                {(isAdmin || !task.dueDate || task.dueDate.trim() === '') && (
+                                  <div>
+                                    <label className="block text-xs text-gray-500 mb-1">Due Date</label>
+                                    <input
+                                      type="date"
+                                      value={editingTask.dueDate}
+                                      onChange={(e) =>
+                                        setEditingTask({...editingTask, dueDate: e.target.value})
+                                      }
+                                      className="w-full px-3 py-2 border rounded-md"
+                                    />
+                                  </div>
+                                )}
                                 <div>
-                                  <label className="block text-xs text-gray-500 mb-1">Owner (First and Last Name)</label>
+                                  <label className="block text-xs text-gray-500 mb-1">Date Completed</label>
                                   <input
-                                    placeholder="e.g., John Smith"
-                                    value={editingTask.owner}
+                                    type="date"
+                                    value={editingTask.dateCompleted}
                                     onChange={(e) =>
-                                      setEditingTask({...editingTask, owner: e.target.value})
+                                      setEditingTask({...editingTask, dateCompleted: e.target.value})
                                     }
                                     className="w-full px-3 py-2 border rounded-md"
                                   />
                                 </div>
+                                <div>
+                                  <label className="block text-xs text-gray-500 mb-1">Dependencies (Task IDs)</label>
+                                  <input
+                                    placeholder="e.g., 1,2,3"
+                                    value={(editingTask.dependencies || []).join(',')}
+                                    onChange={(e) =>
+                                      setEditingTask({...editingTask, dependencies: e.target.value.split(',').map(s => s.trim()).filter(s => s)})
+                                    }
+                                    className="w-full px-3 py-2 border rounded-md"
+                                  />
+                                </div>
+                              </div>
+                              {isAdmin && (
+                                <div className="flex items-center gap-4">
+                                  <label className="flex items-center gap-2 text-sm">
+                                    <input
+                                      type="checkbox"
+                                      checked={editingTask.showToClient}
+                                      onChange={(e) =>
+                                        setEditingTask({...editingTask, showToClient: e.target.checked})
+                                      }
+                                      className="w-4 h-4"
+                                    />
+                                    Show to Client
+                                  </label>
+                                  {editingTask.showToClient && (
+                                    <input
+                                      placeholder="Client-Facing Name"
+                                      value={editingTask.clientName}
+                                      onChange={(e) =>
+                                        setEditingTask({...editingTask, clientName: e.target.value})
+                                      }
+                                      className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                    />
+                                  )}
+                                </div>
                               )}
                               <div className="flex gap-2">
-                                <input
-                                  placeholder="Date Completed (e.g., 7/14/2025)"
-                                  value={editingTask.dateCompleted}
-                                  onChange={(e) =>
-                                    setEditingTask({...editingTask, dateCompleted: e.target.value})
-                                  }
-                                  className="px-3 py-2 border rounded-md"
-                                />
                                 <button
                                   onClick={handleSaveEdit}
                                   className="px-4 py-2 bg-green-600 text-white rounded-md"
@@ -1062,12 +1271,12 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                 >
                                   {getTaskName(task)}
                                 </h3>
-                                {viewMode === 'internal' && (
+                                {viewMode === 'internal' && (isAdmin || task.createdBy === user.id || !task.createdBy) && (
                                   <button
                                     onClick={() => handleEditTask(task.id)}
                                     className="text-gray-400 hover:text-blue-600 flex-shrink-0"
                                   >
-                                    Edit
+                                    {isAdmin ? 'Edit' : (task.createdBy === user.id ? 'Edit' : 'Update Status')}
                                   </button>
                                 )}
                               </div>
@@ -1110,6 +1319,53 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                   Internal Only
                                 </span>
                               )}
+                              {viewMode === 'internal' && task.dependencies && task.dependencies.length > 0 && (
+                                <div className="mt-2 text-xs text-gray-500">
+                                  <span className="font-medium">Dependencies:</span> Task {task.dependencies.join(', ')}
+                                </div>
+                              )}
+                              {viewMode === 'internal' && (
+                                <div className="mt-3">
+                                  <button
+                                    onClick={() => setExpandedTaskId(expandedTaskId === task.id ? null : task.id)}
+                                    className="text-sm text-blue-600 hover:underline"
+                                  >
+                                    {expandedTaskId === task.id ? 'Hide Notes' : `Notes (${(task.notes || []).length})`}
+                                  </button>
+                                  {expandedTaskId === task.id && (
+                                    <div className="mt-2 bg-gray-50 rounded-lg p-3">
+                                      <div className="space-y-2 max-h-48 overflow-y-auto mb-3">
+                                        {(task.notes || []).length === 0 ? (
+                                          <p className="text-sm text-gray-400 italic">No notes yet</p>
+                                        ) : (
+                                          (task.notes || []).map(note => (
+                                            <div key={note.id} className="bg-white p-2 rounded border text-sm">
+                                              <p className="text-gray-800">{note.content}</p>
+                                              <p className="text-xs text-gray-400 mt-1">
+                                                {note.author} - {new Date(note.createdAt).toLocaleString()}
+                                              </p>
+                                            </div>
+                                          ))
+                                        )}
+                                      </div>
+                                      <div className="flex gap-2">
+                                        <input
+                                          value={newNote}
+                                          onChange={(e) => setNewNote(e.target.value)}
+                                          placeholder="Add a status update..."
+                                          className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                        />
+                                        <button
+                                          onClick={() => handleAddNote(task.id)}
+                                          className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700"
+                                        >
+                                          Add
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
@@ -1119,6 +1375,114 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {showAddTask && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-lg">
+              <h2 className="text-xl font-bold mb-4">Add New Task</h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Task Title *</label>
+                  <input
+                    value={newTask.taskTitle}
+                    onChange={(e) => setNewTask({...newTask, taskTitle: e.target.value})}
+                    className="w-full px-3 py-2 border rounded-md"
+                    placeholder="Enter task title"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Phase</label>
+                    <select
+                      value={newTask.phase}
+                      onChange={(e) => setNewTask({...newTask, phase: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-md"
+                    >
+                      <option value="Phase 0">Phase 0</option>
+                      <option value="Phase 1">Phase 1</option>
+                      <option value="Phase 2">Phase 2</option>
+                      <option value="Phase 3">Phase 3</option>
+                      <option value="Phase 4">Phase 4</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Stage</label>
+                    <input
+                      value={newTask.stage}
+                      onChange={(e) => setNewTask({...newTask, stage: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-md"
+                      placeholder="e.g., Planning"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Owner (First and Last Name)</label>
+                    <input
+                      value={newTask.owner}
+                      onChange={(e) => setNewTask({...newTask, owner: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-md"
+                      placeholder="e.g., John Smith"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Due Date</label>
+                    <input
+                      type="date"
+                      value={newTask.dueDate}
+                      onChange={(e) => setNewTask({...newTask, dueDate: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-md"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Dependencies (Task IDs)</label>
+                  <input
+                    value={(newTask.dependencies || []).join(',')}
+                    onChange={(e) => setNewTask({...newTask, dependencies: e.target.value.split(',').map(s => s.trim()).filter(s => s)})}
+                    className="w-full px-3 py-2 border rounded-md"
+                    placeholder="e.g., 1,2,3"
+                  />
+                </div>
+                {isAdmin && (
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={newTask.showToClient}
+                        onChange={(e) => setNewTask({...newTask, showToClient: e.target.checked})}
+                        className="w-4 h-4"
+                      />
+                      Show to Client
+                    </label>
+                    {newTask.showToClient && (
+                      <input
+                        value={newTask.clientName}
+                        onChange={(e) => setNewTask({...newTask, clientName: e.target.value})}
+                        className="flex-1 px-3 py-2 border rounded-md text-sm"
+                        placeholder="Client-facing name"
+                      />
+                    )}
+                  </div>
+                )}
+                <div className="flex gap-3 justify-end pt-4">
+                  <button
+                    onClick={() => setShowAddTask(false)}
+                    className="px-4 py-2 bg-gray-200 rounded-md hover:bg-gray-300"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCreateTask}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                  >
+                    Create Task
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -1146,6 +1510,194 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
           <p className="mt-3 text-sm text-gray-600 text-center">
             {completedTasks} completed • {totalTasks - completedTasks} remaining
           </p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============== USER MANAGEMENT COMPONENT (Admin Only) ==============
+const UserManagement = ({ token, user, onBack, onLogout }) => {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editingUser, setEditingUser] = useState(null);
+
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  const loadUsers = async () => {
+    setLoading(true);
+    try {
+      const data = await api.getUsers(token);
+      setUsers(data);
+    } catch (err) {
+      console.error('Failed to load users:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveUser = async () => {
+    try {
+      const updates = {
+        name: editingUser.name,
+        email: editingUser.email,
+        role: editingUser.role
+      };
+      if (editingUser.newPassword) {
+        updates.password = editingUser.newPassword;
+      }
+      await api.updateUser(token, editingUser.id, updates);
+      await loadUsers();
+      setEditingUser(null);
+    } catch (err) {
+      console.error('Failed to update user:', err);
+    }
+  };
+
+  const handleDeleteUser = async (userId) => {
+    if (!confirm('Are you sure you want to delete this user?')) return;
+    try {
+      await api.deleteUser(token, userId);
+      await loadUsers();
+    } catch (err) {
+      console.error('Failed to delete user:', err);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-xl">Loading users...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-4xl mx-auto">
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <button
+                onClick={onBack}
+                className="text-blue-600 hover:underline mb-2 flex items-center gap-1"
+              >
+                ← Back to Projects
+              </button>
+              <h1 className="text-3xl font-bold text-gray-900">User Management</h1>
+              <p className="text-gray-600">Manage team member accounts</p>
+            </div>
+            <button
+              onClick={onLogout}
+              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {users.map(u => (
+                <tr key={u.id} className="hover:bg-gray-50">
+                  {editingUser?.id === u.id ? (
+                    <>
+                      <td className="px-6 py-4">
+                        <input
+                          value={editingUser.name}
+                          onChange={(e) => setEditingUser({...editingUser, name: e.target.value})}
+                          className="w-full px-2 py-1 border rounded"
+                        />
+                      </td>
+                      <td className="px-6 py-4">
+                        <input
+                          value={editingUser.email}
+                          onChange={(e) => setEditingUser({...editingUser, email: e.target.value})}
+                          className="w-full px-2 py-1 border rounded"
+                        />
+                      </td>
+                      <td className="px-6 py-4">
+                        <select
+                          value={editingUser.role}
+                          onChange={(e) => setEditingUser({...editingUser, role: e.target.value})}
+                          className="px-2 py-1 border rounded"
+                        >
+                          <option value="user">User</option>
+                          <option value="admin">Admin</option>
+                        </select>
+                      </td>
+                      <td className="px-6 py-4">
+                        <input
+                          type="password"
+                          placeholder="New password (optional)"
+                          value={editingUser.newPassword || ''}
+                          onChange={(e) => setEditingUser({...editingUser, newPassword: e.target.value})}
+                          className="w-full px-2 py-1 border rounded text-sm"
+                        />
+                      </td>
+                      <td className="px-6 py-4 text-right space-x-2">
+                        <button
+                          onClick={handleSaveUser}
+                          className="text-green-600 hover:underline text-sm"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={() => setEditingUser(null)}
+                          className="text-gray-500 hover:underline text-sm"
+                        >
+                          Cancel
+                        </button>
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="px-6 py-4 font-medium text-gray-900">{u.name}</td>
+                      <td className="px-6 py-4 text-gray-600">{u.email}</td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${
+                          u.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {u.role}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-gray-500 text-sm">
+                        {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'N/A'}
+                      </td>
+                      <td className="px-6 py-4 text-right space-x-2">
+                        <button
+                          onClick={() => setEditingUser({...u, newPassword: ''})}
+                          className="text-blue-600 hover:underline text-sm"
+                        >
+                          Edit
+                        </button>
+                        {u.id !== user.id && (
+                          <button
+                            onClick={() => handleDeleteUser(u.id)}
+                            className="text-red-600 hover:underline text-sm"
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </td>
+                    </>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -1201,12 +1753,24 @@ const App = () => {
     );
   }
 
+  if (view === 'users' && user.role === 'admin') {
+    return (
+      <UserManagement
+        token={token}
+        user={user}
+        onBack={handleBackToList}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
   return (
     <ProjectList
       token={token}
       user={user}
       onSelectProject={handleSelectProject}
       onLogout={handleLogout}
+      onManageUsers={() => setView('users')}
     />
   );
 };
