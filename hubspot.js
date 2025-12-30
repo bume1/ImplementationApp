@@ -205,6 +205,78 @@ async function findOwnerByEmail(email) {
   }
 }
 
+async function uploadFileAndAttachToDeal(dealId, fileContent, fileName) {
+  if (!dealId) {
+    throw new Error('Deal ID is required for file upload');
+  }
+  if (!fileContent || typeof fileContent !== 'string') {
+    throw new Error('File content must be a non-empty string');
+  }
+  if (!fileName) {
+    throw new Error('File name is required');
+  }
+  
+  try {
+    const client = await getHubSpotClient();
+    const accessToken = await getAccessToken();
+    
+    const FormData = require('form-data');
+    const formData = new FormData();
+    formData.append('file', Buffer.from(fileContent, 'utf8'), {
+      filename: fileName,
+      contentType: 'text/html; charset=utf-8'
+    });
+    formData.append('folderPath', '/soft-pilot-checklists');
+    formData.append('options', JSON.stringify({ access: 'PRIVATE' }));
+    
+    const uploadResponse = await fetch('https://api.hubapi.com/files/v3/files', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        ...formData.getHeaders()
+      },
+      body: formData
+    });
+    
+    if (!uploadResponse.ok) {
+      const errorText = await uploadResponse.text();
+      throw new Error(`File upload failed: ${errorText}`);
+    }
+    
+    const fileData = await uploadResponse.json();
+    console.log(`✅ File uploaded to HubSpot: ${fileData.id}`);
+    
+    const noteBody = `[Project Tracker] Soft-Pilot Checklist Submitted\n\nA signed soft-pilot checklist has been submitted for this deal.\n\nFile: ${fileName}\nFile ID: ${fileData.id}\nFile URL: ${fileData.url || 'Available in HubSpot Files'}`;
+    
+    const noteObj = {
+      properties: {
+        hs_timestamp: Date.now().toString(),
+        hs_note_body: noteBody,
+        hs_attachment_ids: fileData.id.toString()
+      },
+      associations: [
+        {
+          to: { id: dealId },
+          types: [
+            {
+              associationCategory: 'HUBSPOT_DEFINED',
+              associationTypeId: 214
+            }
+          ]
+        }
+      ]
+    };
+    
+    const noteResponse = await client.crm.objects.notes.basicApi.create(noteObj);
+    console.log(`✅ Note with attachment created for deal ${dealId}`);
+    
+    return { fileId: fileData.id, noteId: noteResponse.id };
+  } catch (error) {
+    console.error('Error uploading file to HubSpot:', error.message);
+    throw error;
+  }
+}
+
 async function createTask(dealId, taskSubject, taskBody, ownerId = null) {
   try {
     const client = await getHubSpotClient();
@@ -257,5 +329,6 @@ module.exports = {
   testConnection,
   getOwners,
   findOwnerByName,
-  createTask
+  createTask,
+  uploadFileAndAttachToDeal
 };

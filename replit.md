@@ -123,6 +123,7 @@ Note: Adding notes to tasks in the webapp does NOT trigger HubSpot sync (to avoi
 - `GET /api/hubspot/pipelines` - Fetch available deal pipelines and stages
 - `GET /api/hubspot/stage-mapping` - Get current phase-to-stage mapping
 - `PUT /api/hubspot/stage-mapping` - Save phase-to-stage mapping (admin only)
+- `POST /api/projects/:id/soft-pilot-checklist` - Submit soft-pilot checklist with signature to HubSpot
 
 ## Reporting
 
@@ -184,3 +185,30 @@ Note: Adding notes to tasks in the webapp does NOT trigger HubSpot sync (to avoi
 ### Task Owner Editing
 - Owner field can only be edited by admins after initial assignment
 - Non-admin users cannot modify owner assignments on any tasks
+
+## Soft-Pilot Checklist Feature
+
+### Overview
+- A dedicated checklist view for all tasks and subtasks in the "Sprint 3: Soft-Pilot" stage
+- Accessible via "View Checklist" button on the Sprint 3: Soft-Pilot stage header in list view
+- Generates a formatted HTML document with task statuses and signature fields
+
+### Features
+- **Task Display**: Shows all Sprint 3 tasks with completion status checkboxes
+- **Subtask Display**: Includes subtasks with their status (Pending/Complete/N/A)
+- **Owner Resolution**: Displays owner names (resolved from email addresses)
+- **Signature Fields**: Clinical Application Specialist must provide name, title, and date
+
+### HubSpot Integration
+- On submission, the checklist is uploaded to HubSpot as an HTML file attachment
+- A note is created on the deal record with file information
+- Requires project to have a HubSpot Record ID configured
+
+### API Endpoint
+- `POST /api/projects/:id/soft-pilot-checklist` - Submit signed checklist and upload to HubSpot
+
+### Data Storage
+- Projects store `softPilotChecklistSubmitted` object with:
+  - `submittedAt`: Timestamp
+  - `submittedBy`: User email
+  - `signature`: Name, title, date

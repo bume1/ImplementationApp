@@ -912,6 +912,58 @@ app.put('/api/hubspot/stage-mapping', authenticateToken, requireAdmin, async (re
   }
 });
 
+// ============== SOFT-PILOT CHECKLIST ==============
+app.post('/api/projects/:id/soft-pilot-checklist', authenticateToken, async (req, res) => {
+  try {
+    const { signature, checklistHtml, projectName } = req.body;
+    
+    if (!signature || !signature.name?.trim() || !signature.title?.trim() || !signature.date?.trim()) {
+      return res.status(400).json({ error: 'Name, title, and date are required in signature' });
+    }
+    
+    if (!checklistHtml || typeof checklistHtml !== 'string' || checklistHtml.length < 100) {
+      return res.status(400).json({ error: 'Invalid checklist content' });
+    }
+    
+    const projects = await db.get('projects') || [];
+    const project = projects.find(p => p.id === req.params.id);
+    
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    
+    if (!project.hubspotRecordId) {
+      return res.status(400).json({ error: 'Project must have a HubSpot Record ID to upload checklist' });
+    }
+    
+    const safeName = (projectName || project.name || 'Project').replace(/[^a-zA-Z0-9]/g, '-');
+    const timestamp = new Date().toISOString().split('T')[0];
+    const fileName = `Soft-Pilot-Checklist_${safeName}_${timestamp}.html`;
+    
+    const result = await hubspot.uploadFileAndAttachToDeal(
+      project.hubspotRecordId, 
+      checklistHtml, 
+      fileName
+    );
+    
+    project.softPilotChecklistSubmitted = {
+      submittedAt: new Date().toISOString(),
+      submittedBy: req.user.email,
+      signature
+    };
+    await db.set('projects', projects);
+    
+    res.json({ 
+      message: 'Soft-pilot checklist submitted and uploaded to HubSpot',
+      fileId: result.fileId,
+      noteId: result.noteId
+    });
+  } catch (error) {
+    console.error('Error submitting soft-pilot checklist:', error);
+    res.status(500).json({ error: error.message || 'Failed to upload checklist to HubSpot' });
+  }
+});
+
 // ============== DATE NORMALIZATION ==============
 const normalizeDate = (dateStr) => {
   if (!dateStr || typeof dateStr !== 'string') return '';

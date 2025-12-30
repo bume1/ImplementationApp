@@ -328,6 +328,16 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ pipelineId, mapping })
+    }).then(r => r.json()),
+
+  submitSoftPilotChecklist: (token, projectId, data) =>
+    fetch(`${API_URL}/api/projects/${projectId}/soft-pilot-checklist`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(data)
     }).then(r => r.json())
 };
 
@@ -1546,6 +1556,271 @@ const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
   );
 };
 
+// ============== SOFT-PILOT CHECKLIST COMPONENT ==============
+const SoftPilotChecklist = ({ token, project, tasks, teamMembers, onClose, onSubmitSuccess }) => {
+  const [signature, setSignature] = useState({ name: '', title: '', date: new Date().toISOString().split('T')[0] });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  const softPilotTasks = tasks.filter(t => t.stage === 'Sprint 3: Soft-Pilot');
+  
+  const getOwnerName = (email) => {
+    if (!email) return '';
+    const member = teamMembers.find(m => m.email?.toLowerCase() === email.toLowerCase());
+    return member ? member.name : email;
+  };
+
+  const generateChecklistHtml = () => {
+    const taskRows = softPilotTasks.map(task => {
+      const subtaskRows = (task.subtasks || []).map(st => `
+        <tr style="background-color: #f9fafb;">
+          <td style="padding: 8px; border: 1px solid #e5e7eb; padding-left: 30px;">└ ${st.title || ''}</td>
+          <td style="padding: 8px; border: 1px solid #e5e7eb;">${getOwnerName(st.owner)}</td>
+          <td style="padding: 8px; border: 1px solid #e5e7eb;">${st.status || 'Pending'}</td>
+          <td style="padding: 8px; border: 1px solid #e5e7eb; text-align: center;">${st.status === 'Complete' ? '☑' : '☐'}</td>
+        </tr>
+      `).join('');
+      
+      return `
+        <tr>
+          <td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: ${task.subtasks?.length ? 'bold' : 'normal'};">${task.taskTitle}</td>
+          <td style="padding: 8px; border: 1px solid #e5e7eb;">${getOwnerName(task.owner)}</td>
+          <td style="padding: 8px; border: 1px solid #e5e7eb;">${task.completed ? 'Complete' : 'Pending'}</td>
+          <td style="padding: 8px; border: 1px solid #e5e7eb; text-align: center;">${task.completed ? '☑' : '☐'}</td>
+        </tr>
+        ${subtaskRows}
+      `;
+    }).join('');
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Soft-Pilot Checklist - ${project.name}</title>
+  <style>
+    body { font-family: 'Open Sans', Arial, sans-serif; padding: 40px; max-width: 900px; margin: 0 auto; }
+    h1 { color: #045E9F; margin-bottom: 5px; }
+    h2 { color: #00205A; margin-top: 30px; }
+    table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+    th { background-color: #045E9F; color: white; padding: 12px 8px; text-align: left; }
+    .signature-section { margin-top: 50px; border-top: 2px solid #e5e7eb; padding-top: 30px; }
+    .signature-field { margin: 15px 0; }
+    .signature-label { font-weight: bold; color: #374151; }
+    .signature-value { border-bottom: 1px solid #374151; padding: 5px 0; min-width: 250px; display: inline-block; }
+  </style>
+</head>
+<body>
+  <img src="https://thrive365labs.com/wp-content/uploads/2023/04/Thrive-365-Labs-Logo-white-background.png" alt="Thrive 365 Labs" style="max-width: 200px; margin-bottom: 20px;">
+  <h1>Soft-Pilot Checklist</h1>
+  <p style="color: #6b7280; margin-bottom: 5px;"><strong>Project:</strong> ${project.name}</p>
+  <p style="color: #6b7280; margin-bottom: 20px;"><strong>Client:</strong> ${project.clientName}</p>
+  <p style="color: #6b7280;"><strong>Date Generated:</strong> ${new Date().toLocaleDateString()}</p>
+
+  <h2>Sprint 3: Soft-Pilot Tasks</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Task</th>
+        <th>Owner</th>
+        <th>Status</th>
+        <th>Verified</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${taskRows}
+    </tbody>
+  </table>
+
+  <div class="signature-section">
+    <h2>Clinical Application Specialist Signature</h2>
+    <div class="signature-field">
+      <span class="signature-label">Name:</span>
+      <span class="signature-value">${signature.name}</span>
+    </div>
+    <div class="signature-field">
+      <span class="signature-label">Title:</span>
+      <span class="signature-value">${signature.title}</span>
+    </div>
+    <div class="signature-field">
+      <span class="signature-label">Date:</span>
+      <span class="signature-value">${signature.date}</span>
+    </div>
+  </div>
+
+  <footer style="margin-top: 50px; text-align: center; color: #9ca3af; font-size: 12px;">
+    <p>Developed by Bianca G. C. Ume, MD, MBA, MS</p>
+    <p>Thrive 365 Labs - New Client Launch Implementation</p>
+  </footer>
+</body>
+</html>
+    `;
+  };
+
+  const handleSubmit = async () => {
+    if (!signature.name.trim() || !signature.title.trim()) {
+      setError('Please enter your name and title');
+      return;
+    }
+    
+    setSubmitting(true);
+    setError('');
+    
+    try {
+      const checklistHtml = generateChecklistHtml();
+      const result = await api.submitSoftPilotChecklist(token, project.id, {
+        signature,
+        checklistHtml,
+        projectName: project.name,
+        clientName: project.clientName
+      });
+      
+      if (result.error) {
+        setError(result.error);
+      } else {
+        onSubmitSuccess();
+        onClose();
+      }
+    } catch (err) {
+      setError('Failed to submit checklist. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="p-6 border-b bg-gradient-to-r from-primary to-accent text-white">
+          <div className="flex justify-between items-center">
+            <div>
+              <h2 className="text-2xl font-bold">Soft-Pilot Checklist</h2>
+              <p className="text-blue-100">{project.name} - {project.clientName}</p>
+            </div>
+            <button onClick={onClose} className="text-white hover:text-blue-200 text-2xl">&times;</button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="mb-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Sprint 3: Soft-Pilot Tasks ({softPilotTasks.length})</h3>
+            <div className="space-y-2">
+              {softPilotTasks.map(task => (
+                <div key={task.id} className="border rounded-lg p-3">
+                  <div className="flex items-center gap-3">
+                    <span className={`text-lg ${task.completed ? 'text-green-600' : 'text-gray-400'}`}>
+                      {task.completed ? '☑' : '☐'}
+                    </span>
+                    <div className="flex-1">
+                      <div className={`font-medium ${task.completed ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
+                        {task.taskTitle}
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        Owner: {getOwnerName(task.owner) || 'Unassigned'}
+                      </div>
+                    </div>
+                  </div>
+                  {task.subtasks && task.subtasks.length > 0 && (
+                    <div className="ml-8 mt-2 space-y-1">
+                      {task.subtasks.map(st => (
+                        <div key={st.id} className="flex items-center gap-2 text-sm text-gray-600">
+                          <span className={st.status === 'Complete' ? 'text-green-600' : 'text-gray-400'}>
+                            {st.status === 'Complete' ? '☑' : st.status === 'N/A' ? '○' : '☐'}
+                          </span>
+                          <span className={st.status === 'Complete' ? 'line-through' : ''}>
+                            {st.title} - {getOwnerName(st.owner) || 'Unassigned'}
+                          </span>
+                          <span className={`text-xs px-2 py-0.5 rounded ${
+                            st.status === 'Complete' ? 'bg-green-100 text-green-700' :
+                            st.status === 'N/A' ? 'bg-gray-100 text-gray-700' :
+                            'bg-yellow-100 text-yellow-700'
+                          }`}>
+                            {st.status || 'Pending'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="border-t pt-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Clinical Application Specialist Signature</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+                <input
+                  type="text"
+                  value={signature.name}
+                  onChange={(e) => setSignature({...signature, name: e.target.value})}
+                  className="w-full px-3 py-2 border rounded-md"
+                  placeholder="Enter your full name"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Title *</label>
+                <input
+                  type="text"
+                  value={signature.title}
+                  onChange={(e) => setSignature({...signature, title: e.target.value})}
+                  className="w-full px-3 py-2 border rounded-md"
+                  placeholder="e.g., Clinical Application Specialist"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                <input
+                  type="date"
+                  value={signature.date}
+                  onChange={(e) => setSignature({...signature, date: e.target.value})}
+                  className="w-full px-3 py-2 border rounded-md"
+                />
+              </div>
+            </div>
+          </div>
+
+          {error && (
+            <div className="mt-4 p-3 bg-red-50 text-red-700 rounded-md">
+              {error}
+            </div>
+          )}
+        </div>
+
+        <div className="p-6 border-t bg-gray-50 flex justify-between items-center">
+          <p className="text-sm text-gray-500">
+            This checklist will be uploaded to HubSpot as an attachment with a note.
+          </p>
+          <div className="flex gap-3">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={submitting || !project.hubspotRecordId}
+              className="px-6 py-2 bg-primary text-white rounded-md hover:bg-accent disabled:bg-gray-400"
+            >
+              {submitting ? 'Submitting...' : 'Submit & Upload to HubSpot'}
+            </button>
+          </div>
+        </div>
+        
+        {!project.hubspotRecordId && (
+          <div className="px-6 pb-4 bg-gray-50">
+            <p className="text-sm text-amber-600">
+              Note: This project needs a HubSpot Record ID to upload the checklist. Edit project details to add one.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // ============== PROJECT TRACKER COMPONENT ==============
 const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
   const [tasks, setTasks] = useState([]);
@@ -1569,6 +1844,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
   const [newSubtask, setNewSubtask] = useState({ taskId: null, title: '', owner: '' });
   const [expandedSubtasksId, setExpandedSubtasksId] = useState(null);
   const [clientPortalDomain, setClientPortalDomain] = useState('');
+  const [showSoftPilotChecklist, setShowSoftPilotChecklist] = useState(false);
 
   const isAdmin = user.role === 'admin';
 
@@ -2476,6 +2752,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
               )}
             </div>
           )}
+          </div>
         </div>
 
         <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
@@ -2542,21 +2819,31 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                           {stageTasks.filter(t => t.completed).length} of {stageTasks.length} complete
                         </p>
                       </div>
-                      {viewMode === 'internal' && (
-                        <button
-                          onClick={() => {
-                            setNewTask({
-                              ...newTask,
-                              phase: phase,
-                              stage: stageName
-                            });
-                            setShowAddTask(true);
-                          }}
-                          className="text-primary hover:text-accent text-sm font-medium"
-                        >
-                          + Add Task
-                        </button>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {viewMode === 'internal' && stageName === 'Sprint 3: Soft-Pilot' && (
+                          <button
+                            onClick={() => setShowSoftPilotChecklist(true)}
+                            className="px-3 py-1 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700"
+                          >
+                            View Checklist
+                          </button>
+                        )}
+                        {viewMode === 'internal' && (
+                          <button
+                            onClick={() => {
+                              setNewTask({
+                                ...newTask,
+                                phase: phase,
+                                stage: stageName
+                              });
+                              setShowAddTask(true);
+                            }}
+                            className="text-primary hover:text-accent text-sm font-medium"
+                          >
+                            + Add Task
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div className="divide-y divide-gray-200">
                       {stageTasks.map(task => (
@@ -3071,6 +3358,19 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
               </div>
             </div>
           </div>
+        )}
+
+        {showSoftPilotChecklist && (
+          <SoftPilotChecklist
+            token={token}
+            project={project}
+            tasks={tasks}
+            teamMembers={teamMembers}
+            onClose={() => setShowSoftPilotChecklist(false)}
+            onSubmitSuccess={() => {
+              alert('Soft-Pilot Checklist submitted successfully and uploaded to HubSpot!');
+            }}
+          />
         )}
       </div>
     </div>
