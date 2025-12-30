@@ -715,15 +715,17 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
     }
   };
 
-  const copyClientLink = (linkId) => {
-    const baseUrl = clientPortalDomain || 'https://deapps.pro';
+  const copyClientLink = (project) => {
+    const baseUrl = project.clientPortalDomain || clientPortalDomain || 'https://deapps.pro';
+    const linkId = project.clientLinkSlug || project.clientLinkId;
     const link = `${baseUrl}/thrive365labslaunch/${linkId}`;
     navigator.clipboard.writeText(link);
     alert('Client link copied to clipboard!');
   };
 
-  const getClientLinkDisplay = (linkId) => {
-    const baseUrl = clientPortalDomain || 'https://deapps.pro';
+  const getClientLinkDisplay = (project) => {
+    const baseUrl = project.clientPortalDomain || clientPortalDomain || 'https://deapps.pro';
+    const linkId = project.clientLinkSlug || project.clientLinkId;
     return `${baseUrl}/thrive365labslaunch/${linkId}`;
   };
 
@@ -735,7 +737,8 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
         clientName: editingProject.clientName,
         projectManager: editingProject.projectManager,
         hubspotRecordId: editingProject.hubspotRecordId,
-        status: editingProject.status
+        status: editingProject.status,
+        clientPortalDomain: editingProject.clientPortalDomain || ''
       });
       setEditingProject(null);
       loadProjects();
@@ -831,17 +834,11 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                       {onManageHubSpot && (
                         <button
                           onClick={() => { onManageHubSpot(); setShowSettingsMenu(false); }}
-                          className="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 border-b"
+                          className="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700"
                         >
                           HubSpot Settings
                         </button>
                       )}
-                      <button
-                        onClick={() => { setEditingDomain(true); setNewDomain(clientPortalDomain); setShowSettingsMenu(false); }}
-                        className="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700"
-                      >
-                        Portal Domain
-                      </button>
                     </div>
                   )}
                 </div>
@@ -950,7 +947,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                       <li><strong>Manage Users:</strong> Add, edit, and remove team members</li>
                       <li><strong>Templates:</strong> Create and manage project templates</li>
                       <li><strong>HubSpot Settings:</strong> Configure pipeline stage mappings</li>
-                      <li><strong>Portal Domain:</strong> Set custom domain for client portal links</li>
+                      <li><strong>Portal Domain:</strong> Set per-project custom domain in project settings</li>
                     </ul>
                   </section>
                 )}
@@ -1109,7 +1106,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                       Edit
                     </button>
                     <button
-                      onClick={() => copyClientLink(project.clientLinkSlug || project.clientLinkId)}
+                      onClick={() => copyClientLink(project)}
                       className="flex-1 bg-gray-100 text-gray-700 py-2 rounded-md hover:bg-gray-200 text-sm"
                     >
                       Copy Client Link
@@ -1223,6 +1220,16 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                     <option value="paused">Paused</option>
                     <option value="completed">Completed</option>
                   </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Client Portal Domain (Optional)</label>
+                  <input
+                    value={editingProject.clientPortalDomain || ''}
+                    onChange={(e) => setEditingProject({...editingProject, clientPortalDomain: e.target.value})}
+                    className="w-full px-3 py-2 border rounded-md"
+                    placeholder="e.g., https://deapps.pro"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Custom domain for this project's client portal link. Leave empty to use default.</p>
                 </div>
               </div>
               <div className="flex gap-2 mt-6">
@@ -1664,17 +1671,75 @@ const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
 };
 
 // ============== SOFT-PILOT CHECKLIST COMPONENT ==============
-const SoftPilotChecklist = ({ token, project, tasks, teamMembers, onClose, onSubmitSuccess }) => {
+const SoftPilotChecklist = ({ token, project, tasks, teamMembers, onClose, onSubmitSuccess, onTaskUpdate }) => {
   const [signature, setSignature] = useState({ name: '', title: '', date: new Date().toISOString().split('T')[0] });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [localTasks, setLocalTasks] = useState([]);
+  const [hasChanges, setHasChanges] = useState(false);
 
-  const softPilotTasks = tasks.filter(t => t.stage === 'Sprint 3: Soft-Pilot');
+  const isResubmission = !!project.softPilotChecklistSubmitted;
+  
+  useEffect(() => {
+    const softPilotOnly = tasks.filter(t => t.stage === 'Sprint 3: Soft-Pilot');
+    setLocalTasks(JSON.parse(JSON.stringify(softPilotOnly)));
+  }, [tasks]);
+
+  const softPilotTasks = localTasks;
   
   const getOwnerName = (email) => {
     if (!email) return '';
     const member = teamMembers.find(m => m.email?.toLowerCase() === email.toLowerCase());
     return member ? member.name : email;
+  };
+
+  const toggleTaskCompletion = async (taskId) => {
+    const updatedTasks = localTasks.map(t => {
+      if (t.id === taskId) {
+        const newCompleted = !t.completed;
+        return { 
+          ...t, 
+          completed: newCompleted,
+          dateCompleted: newCompleted ? new Date().toISOString().split('T')[0] : null
+        };
+      }
+      return t;
+    });
+    setLocalTasks(updatedTasks);
+    setHasChanges(true);
+    
+    const task = updatedTasks.find(t => t.id === taskId);
+    if (onTaskUpdate && task) {
+      await onTaskUpdate(taskId, { 
+        completed: task.completed, 
+        dateCompleted: task.dateCompleted 
+      });
+    }
+  };
+
+  const toggleSubtaskStatus = async (taskId, subtaskId) => {
+    const updatedTasks = localTasks.map(t => {
+      if (t.id === taskId && t.subtasks) {
+        const updatedSubtasks = t.subtasks.map(st => {
+          if (st.id === subtaskId) {
+            const statusCycle = ['Pending', 'Complete', 'N/A'];
+            const currentIndex = statusCycle.indexOf(st.status || 'Pending');
+            const nextStatus = statusCycle[(currentIndex + 1) % statusCycle.length];
+            return { ...st, status: nextStatus };
+          }
+          return st;
+        });
+        return { ...t, subtasks: updatedSubtasks };
+      }
+      return t;
+    });
+    setLocalTasks(updatedTasks);
+    setHasChanges(true);
+    
+    const task = updatedTasks.find(t => t.id === taskId);
+    if (onTaskUpdate && task) {
+      await onTaskUpdate(taskId, { subtasks: task.subtasks });
+    }
   };
 
   const generateChecklistHtml = () => {
@@ -1779,7 +1844,8 @@ const SoftPilotChecklist = ({ token, project, tasks, teamMembers, onClose, onSub
         signature,
         checklistHtml,
         projectName: project.name,
-        clientName: project.clientName
+        clientName: project.clientName,
+        isResubmission
       });
       
       if (result.error) {
@@ -1809,13 +1875,38 @@ const SoftPilotChecklist = ({ token, project, tasks, teamMembers, onClose, onSub
         </div>
 
         <div className="flex-1 overflow-y-auto p-6">
+          {isResubmission && (
+            <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <div className="flex items-center gap-2 text-amber-800">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <span className="font-medium">Previously Submitted</span>
+              </div>
+              <p className="text-sm text-amber-700 mt-1">
+                Last submitted on {new Date(project.softPilotChecklistSubmitted.submittedAt).toLocaleDateString()} 
+                by {project.softPilotChecklistSubmitted.submittedBy}. 
+                You can edit and resubmit - an updated note will be sent to HubSpot.
+              </p>
+            </div>
+          )}
+
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-sm text-blue-800">
+              Click on tasks to mark them complete or incomplete. Click on subtasks to cycle through Pending → Complete → N/A. Changes are saved automatically.
+            </p>
+          </div>
+
           <div className="mb-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Sprint 3: Soft-Pilot Tasks ({softPilotTasks.length})</h3>
             <div className="space-y-2">
               {softPilotTasks.map(task => (
-                <div key={task.id} className="border rounded-lg p-3">
-                  <div className="flex items-center gap-3">
-                    <span className={`text-lg ${task.completed ? 'text-green-600' : 'text-gray-400'}`}>
+                <div key={task.id} className="border rounded-lg p-3 hover:bg-gray-50">
+                  <div 
+                    className="flex items-center gap-3 cursor-pointer"
+                    onClick={() => toggleTaskCompletion(task.id)}
+                  >
+                    <span className={`text-lg ${task.completed ? 'text-green-600' : 'text-gray-400'} hover:scale-110 transition-transform`}>
                       {task.completed ? '☑' : '☐'}
                     </span>
                     <div className="flex-1">
@@ -1830,8 +1921,12 @@ const SoftPilotChecklist = ({ token, project, tasks, teamMembers, onClose, onSub
                   {task.subtasks && task.subtasks.length > 0 && (
                     <div className="ml-8 mt-2 space-y-1">
                       {task.subtasks.map(st => (
-                        <div key={st.id} className="flex items-center gap-2 text-sm text-gray-600">
-                          <span className={st.status === 'Complete' ? 'text-green-600' : 'text-gray-400'}>
+                        <div 
+                          key={st.id} 
+                          className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer hover:bg-gray-100 p-1 rounded"
+                          onClick={(e) => { e.stopPropagation(); toggleSubtaskStatus(task.id, st.id); }}
+                        >
+                          <span className={`${st.status === 'Complete' ? 'text-green-600' : 'text-gray-400'} hover:scale-110 transition-transform`}>
                             {st.status === 'Complete' ? '☑' : st.status === 'N/A' ? '○' : '☐'}
                           </span>
                           <span className={st.status === 'Complete' ? 'line-through' : ''}>
@@ -1897,7 +1992,9 @@ const SoftPilotChecklist = ({ token, project, tasks, teamMembers, onClose, onSub
 
         <div className="p-6 border-t bg-gray-50 flex justify-between items-center">
           <p className="text-sm text-gray-500">
-            This checklist will be uploaded to HubSpot as an attachment with a note.
+            {isResubmission 
+              ? 'Updated checklist will be uploaded to HubSpot with a revision note.' 
+              : 'This checklist will be uploaded to HubSpot as an attachment with a note.'}
           </p>
           <div className="flex gap-3">
             <button
@@ -1911,7 +2008,7 @@ const SoftPilotChecklist = ({ token, project, tasks, teamMembers, onClose, onSub
               disabled={submitting || !project.hubspotRecordId}
               className="px-6 py-2 bg-primary text-white rounded-md hover:bg-accent disabled:bg-gray-400"
             >
-              {submitting ? 'Submitting...' : 'Submit & Upload to HubSpot'}
+              {submitting ? 'Submitting...' : isResubmission ? 'Resubmit & Update HubSpot' : 'Submit & Upload to HubSpot'}
             </button>
           </div>
         </div>
@@ -2344,14 +2441,14 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
   };
 
   const copyClientLink = () => {
-    const baseUrl = clientPortalDomain || 'https://deapps.pro';
+    const baseUrl = project.clientPortalDomain || clientPortalDomain || 'https://deapps.pro';
     const link = `${baseUrl}/thrive365labslaunch/${project.clientLinkSlug || project.clientLinkId}`;
     navigator.clipboard.writeText(link);
     alert('Client link copied!');
   };
 
   const getClientLinkDisplay = () => {
-    const baseUrl = clientPortalDomain || 'https://deapps.pro';
+    const baseUrl = project.clientPortalDomain || clientPortalDomain || 'https://deapps.pro';
     return `${baseUrl}/thrive365labslaunch/${project.clientLinkSlug || project.clientLinkId}`;
   };
 
@@ -2947,7 +3044,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                             onClick={() => setShowSoftPilotChecklist(true)}
                             className="px-3 py-1 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700"
                           >
-                            View Checklist
+                            View & Complete Checklist
                           </button>
                         )}
                         {viewMode === 'internal' && (
@@ -3490,7 +3587,18 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
             teamMembers={teamMembers}
             onClose={() => setShowSoftPilotChecklist(false)}
             onSubmitSuccess={() => {
-              alert('Soft-Pilot Checklist submitted successfully and uploaded to HubSpot!');
+              loadTasks();
+              alert(project.softPilotChecklistSubmitted 
+                ? 'Soft-Pilot Checklist updated and HubSpot notified!' 
+                : 'Soft-Pilot Checklist submitted successfully and uploaded to HubSpot!');
+            }}
+            onTaskUpdate={async (taskId, updates) => {
+              try {
+                await api.updateTask(token, project.id, taskId, updates);
+                setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates } : t));
+              } catch (err) {
+                console.error('Failed to update task:', err);
+              }
             }}
           />
         )}

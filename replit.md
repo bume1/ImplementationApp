@@ -175,13 +175,13 @@ Note: Adding notes to tasks in the webapp does NOT trigger HubSpot sync (to avoi
 - Client portal links use format: `https://deapps.pro/thrive365labslaunch/{client-slug}`
 - Example: `https://deapps.pro/thrive365labslaunch/dallas-forth-worth-urology`
 - Default base URL is `https://deapps.pro` if no custom domain is configured
-- Admins can configure a custom domain via "Portal Domain" in Settings dropdown
-- Custom domain stored in database under `client_portal_domain` key
+- **Per-Project Custom Domain**: Each project can have its own `clientPortalDomain` field configured in project settings
+- Domain priority: Project-specific domain > Global domain > Default (`https://deapps.pro`)
 - Both root-level (`/slug`) and legacy formats work for backwards compatibility
 
 ### API Endpoints
-- `GET /api/settings/client-portal-domain` - Get current custom domain
-- `PUT /api/settings/client-portal-domain` - Set custom domain (admin only)
+- `GET /api/settings/client-portal-domain` - Get global custom domain (fallback)
+- `PUT /api/settings/client-portal-domain` - Set global custom domain (admin only)
 
 ### Task Owner Editing
 - Owner field can only be edited by admins after initial assignment

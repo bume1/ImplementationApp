@@ -205,7 +205,7 @@ async function findOwnerByEmail(email) {
   }
 }
 
-async function uploadFileAndAttachToDeal(dealId, fileContent, fileName) {
+async function uploadFileAndAttachToDeal(dealId, fileContent, fileName, customNote = null) {
   if (!dealId) {
     throw new Error('Deal ID is required for file upload');
   }
@@ -246,7 +246,9 @@ async function uploadFileAndAttachToDeal(dealId, fileContent, fileName) {
     const fileData = await uploadResponse.json();
     console.log(`✅ File uploaded to HubSpot: ${fileData.id}`);
     
-    const noteBody = `[Project Tracker] Soft-Pilot Checklist Submitted\n\nA signed soft-pilot checklist has been submitted for this deal.\n\nFile: ${fileName}\nFile ID: ${fileData.id}\nFile URL: ${fileData.url || 'Available in HubSpot Files'}`;
+    const noteBody = customNote 
+      ? `[Project Tracker] ${customNote}\n\nFile: ${fileName}\nFile ID: ${fileData.id}\nFile URL: ${fileData.url || 'Available in HubSpot Files'}`
+      : `[Project Tracker] Soft-Pilot Checklist Submitted\n\nA signed soft-pilot checklist has been submitted for this deal.\n\nFile: ${fileName}\nFile ID: ${fileData.id}\nFile URL: ${fileData.url || 'Available in HubSpot Files'}`;
     
     const noteObj = {
       properties: {
