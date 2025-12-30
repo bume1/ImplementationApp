@@ -82,8 +82,10 @@ Preferred communication style: Simple, everyday language.
 - Stage Mapping: Map project phases (0-4) to HubSpot deal pipeline stages
 
 ### Sync Behavior
-- **Deal Stage Updates**: When all tasks in a phase are completed, the connected HubSpot deal automatically moves to the mapped stage
-- **Activity Logging**: Notes added to tasks and task completions are logged as activities/notes on the HubSpot deal
+- **Stage Completion Notes**: When all tasks in a stage are completed, a comprehensive note is logged to HubSpot including all task details and notes
+- **Phase Completion**: When all tasks in a phase are completed, a detailed summary is logged AND the deal moves to the mapped pipeline stage
+- **Task Completion Activity**: Logs task completion with phase, stage, owner, and any notes attached to the task
+- **Note Activity**: When notes are added to tasks, they're logged to HubSpot with full context (phase, stage, task owner)
 - **Sync Indicator**: Projects with HubSpot Record IDs show last sync timestamp on the project dashboard
 
 ### Data Flow

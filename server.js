@@ -290,9 +290,21 @@ app.post('/api/projects/:projectId/tasks/:taskId/notes', authenticateToken, asyn
     tasks[idx].notes.push(note);
     await db.set(`tasks_${projectId}`, tasks);
     
-    logHubSpotActivity(projectId, 'Note Added', 
-      `Task: ${tasks[idx].taskTitle}\nNote by: ${req.user.name}\n\n${content}`
-    );
+    // Build comprehensive note activity for HubSpot
+    const task = tasks[idx];
+    let noteDetails = `Task: ${task.taskTitle}`;
+    noteDetails += `\nPhase: ${task.phase}`;
+    if (task.stage) {
+      noteDetails += `\nStage: ${task.stage}`;
+    }
+    if (task.owner) {
+      noteDetails += `\nTask Owner: ${task.owner}`;
+    }
+    noteDetails += `\nNote by: ${req.user.name}`;
+    noteDetails += `\nDate: ${new Date().toLocaleDateString()}`;
+    noteDetails += `\n\n${content}`;
+    
+    logHubSpotActivity(projectId, 'Note Added', noteDetails);
     
     res.json(note);
   } catch (error) {
@@ -518,12 +530,29 @@ app.put('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req,
     await db.set(`tasks_${projectId}`, tasks);
     
     if (!wasCompleted && tasks[idx].completed) {
-      const projects = await getProjects();
-      const project = projects.find(p => p.id === projectId);
-      logHubSpotActivity(projectId, 'Task Completed', 
-        `Task: ${tasks[idx].taskTitle}\nPhase: ${tasks[idx].phase}\nCompleted by: ${req.user.name}\nDate: ${tasks[idx].dateCompleted || new Date().toISOString()}`
-      );
-      checkAndUpdateHubSpotDealStage(projectId);
+      const completedTask = tasks[idx];
+      
+      // Build comprehensive activity details
+      let activityDetails = `Task: ${completedTask.taskTitle}`;
+      activityDetails += `\nPhase: ${completedTask.phase}`;
+      if (completedTask.stage) {
+        activityDetails += `\nStage: ${completedTask.stage}`;
+      }
+      activityDetails += `\nCompleted by: ${req.user.name}`;
+      activityDetails += `\nDate: ${completedTask.dateCompleted || new Date().toISOString()}`;
+      
+      // Include task notes if any exist
+      if (completedTask.notes && completedTask.notes.length > 0) {
+        activityDetails += `\n\n--- Task Notes ---`;
+        completedTask.notes.forEach(note => {
+          activityDetails += `\n[${note.author} - ${new Date(note.createdAt).toLocaleDateString()}]: ${note.content}`;
+        });
+      }
+      
+      logHubSpotActivity(projectId, 'Task Completed', activityDetails);
+      
+      // Check for stage completion and phase completion
+      checkStageAndPhaseCompletion(projectId, tasks, completedTask);
     }
     
     res.json(tasks[idx]);
@@ -688,6 +717,101 @@ async function logHubSpotActivity(projectId, activityType, details) {
     await hubspot.logRecordActivity(project.hubspotRecordId, activityType, details);
   } catch (error) {
     console.error('Error logging HubSpot activity:', error.message);
+  }
+}
+
+async function checkStageAndPhaseCompletion(projectId, tasks, completedTask) {
+  try {
+    const projects = await getProjects();
+    const project = projects.find(p => p.id === projectId);
+    if (!project || !project.hubspotRecordId) {
+      console.log('📋 HubSpot sync skipped: No project or Record ID');
+      return;
+    }
+
+    const phase = completedTask.phase;
+    const stage = completedTask.stage;
+    
+    // Check if stage is completed (all tasks in this phase+stage are done)
+    if (stage) {
+      const stageTasks = tasks.filter(t => t.phase === phase && t.stage === stage);
+      const stageCompleted = stageTasks.every(t => t.completed);
+      
+      if (stageCompleted && stageTasks.length > 0) {
+        // Build comprehensive stage completion note
+        let stageDetails = `Stage "${stage}" in ${phase} is now complete!`;
+        stageDetails += `\n\nTasks completed in this stage:`;
+        
+        stageTasks.forEach(task => {
+          stageDetails += `\n- ${task.taskTitle}`;
+          if (task.owner) stageDetails += ` (Owner: ${task.owner})`;
+          if (task.dateCompleted) stageDetails += ` [Completed: ${new Date(task.dateCompleted).toLocaleDateString()}]`;
+          
+          // Include notes for each task
+          if (task.notes && task.notes.length > 0) {
+            task.notes.forEach(note => {
+              stageDetails += `\n    Note: ${note.content} - ${note.author}`;
+            });
+          }
+        });
+        
+        console.log(`📤 Stage completed: ${phase} / ${stage}`);
+        await hubspot.logRecordActivity(project.hubspotRecordId, 'Stage Completed', stageDetails);
+      }
+    }
+    
+    // Check if entire phase is completed (move deal stage)
+    const phaseTasks = tasks.filter(t => t.phase === phase);
+    const phaseCompleted = phaseTasks.length > 0 && phaseTasks.every(t => t.completed);
+    
+    if (phaseCompleted) {
+      const mapping = await db.get('hubspot_stage_mapping');
+      if (!mapping || !mapping.phases) {
+        console.log('📋 Phase completed but no stage mapping configured');
+        return;
+      }
+      
+      if (mapping.phases[phase]) {
+        const stageId = mapping.phases[phase];
+        console.log(`📤 Phase ${phase} completed - Syncing to HubSpot stage: ${stageId}`);
+        
+        // Log phase completion with comprehensive details
+        let phaseDetails = `${phase} is now complete!`;
+        phaseDetails += `\n\nAll ${phaseTasks.length} tasks in this phase have been completed.`;
+        
+        // Group by stage for summary
+        const stageGroups = {};
+        phaseTasks.forEach(task => {
+          const taskStage = task.stage || 'General';
+          if (!stageGroups[taskStage]) stageGroups[taskStage] = [];
+          stageGroups[taskStage].push(task);
+        });
+        
+        phaseDetails += `\n\n--- Stage Summary ---`;
+        Object.keys(stageGroups).forEach(stageName => {
+          phaseDetails += `\n\n${stageName}: ${stageGroups[stageName].length} tasks`;
+          stageGroups[stageName].forEach(task => {
+            phaseDetails += `\n  - ${task.taskTitle}`;
+          });
+        });
+        
+        await hubspot.logRecordActivity(project.hubspotRecordId, 'Phase Completed', phaseDetails);
+        
+        // Update deal stage
+        await hubspot.updateRecordStage(project.hubspotRecordId, stageId, mapping.pipelineId);
+        
+        const idx = projects.findIndex(p => p.id === projectId);
+        if (idx !== -1) {
+          projects[idx].hubspotDealStage = stageId;
+          projects[idx].lastHubSpotSync = new Date().toISOString();
+          await db.set('projects', projects);
+        }
+        
+        console.log(`✅ HubSpot record ${project.hubspotRecordId} moved to stage for ${phase}`);
+      }
+    }
+  } catch (error) {
+    console.error('Error in stage/phase completion check:', error.message);
   }
 }
 
