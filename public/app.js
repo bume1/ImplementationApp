@@ -327,11 +327,13 @@ const api = {
 
 // ============== CSV HELPER FUNCTIONS ==============
 const downloadSampleCSV = () => {
-  const sampleCSV = `id,phase,stage,taskTitle,owner,dueDate,showToClient,clientName,completed,dateCompleted,dependencies,isSubtask,parentTaskId,subtaskStatus
-101,Phase 1,Project Kick Off & Stakeholder Alignment,Schedule kickoff meeting with client,team@example.com,2025-02-15,true,,,false,,,
-102,Phase 1,Project Kick Off & Stakeholder Alignment,Send meeting invites,admin@example.com,2025-02-14,true,,true,2025-02-10,101,,
-103,Phase 1,Project Kick Off & Stakeholder Alignment,Confirm attendees for kickoff,admin@example.com,2025-02-14,false,,false,,102,,
-,Phase 1,Project Kick Off & Stakeholder Alignment,Send reminder email,admin@example.com,2025-02-13,false,,false,,,true,101,Pending`;
+  const sampleCSV = `id,phase,stage,showToClient,dependencies,taskTitle,isSubtask,parentTaskId,completed,subtaskStatus,owner,startDate,dueDate,dateCompleted
+1,Phase 0,Contract Signature,TRUE,,Contract signed,FALSE,,TRUE,,,,,01/06/2025
+2,Phase 1,Project Kick Off & Stakeholder Alignment,TRUE,1,"Client Profile Complete IN-FULL",FALSE,,TRUE,,team@example.com,,02/05/2025,10/31/2025
+3,Phase 1,Project Kick Off & Stakeholder Alignment,TRUE,1,Pre-Installation Complete,FALSE,,FALSE,,admin@example.com,02/05/2025,10/31/2025,
+4,Phase 1,Project Kick Off & Stakeholder Alignment,FALSE,2,Sales Upload to Hubspot,TRUE,2,TRUE,TRUE,admin@example.com,02/05/2025,10/31/2025,10/31/2025
+5,Phase 1,Launch Data & Systems Prep,TRUE,1,Welcome Call,FALSE,,FALSE,,,,,
+6,Phase 1,Launch Data & Systems Prep,TRUE,1,Schedule Welcome Call,TRUE,5,FALSE,Pending,,,,`;
   const blob = new Blob([sampleCSV], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
