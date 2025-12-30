@@ -1864,19 +1864,21 @@ app.get('/thrive365labslaunch/:slug', async (req, res) => {
   }
 });
 
-// Legacy root-level route (for backwards compatibility)
+// Legacy root-level route DISABLED - use /thrive365labslaunch/{slug} instead
+// Redirect old URLs to new format for backwards compatibility
 app.get('/:slug', async (req, res, next) => {
   // Skip if it looks like a file request or known route
   if (req.params.slug.includes('.') || ['api', 'client', 'favicon.ico', 'thrive365labsLAUNCH', 'thrive365labslaunch'].includes(req.params.slug)) {
     return next();
   }
   
-  // Check if this slug matches a project
+  // Check if this slug matches a project - redirect to new URL format
   const projects = await getProjects();
   const project = projects.find(p => p.clientLinkSlug === req.params.slug);
   
   if (project) {
-    res.sendFile(__dirname + '/public/client.html');
+    // Redirect to the proper URL format
+    res.redirect(301, `/thrive365labslaunch/${req.params.slug}`);
   } else {
     next();
   }
