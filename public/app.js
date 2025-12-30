@@ -291,7 +291,7 @@ const CreateProject = ({ token, open, onClose, onCreated }) => {
   );
 };
 
-const TaskRow = ({ task, canEditOwner, onUpdate, onDelete, isAdmin }) => {
+const TaskCard = ({ task, canEditOwner, onUpdate, onDelete, isAdmin }) => {
   const [saving, setSaving] = useState(false);
 
   const update = async (patch) => {
@@ -310,70 +310,79 @@ const TaskRow = ({ task, canEditOwner, onUpdate, onDelete, isAdmin }) => {
   };
 
   return (
-    <tr className="border-t">
-      <td className="px-3 py-3">
-        <input type="checkbox" checked={!!task.completed} onChange={(e) => toggleCompleted(e.target.checked)} />
-      </td>
-      <td className="px-3 py-3 text-sm text-gray-800">
-        <div className="font-medium">{task.taskTitle}</div>
-        {task.clientName ? <div className="text-xs text-gray-500 mt-1">Client label: {task.clientName}</div> : null}
-      </td>
-      <td className="px-3 py-3 text-sm text-gray-700">{task.phase}</td>
-      <td className="px-3 py-3 text-sm text-gray-700">{task.stage || "—"}</td>
-      <td className="px-3 py-3">
-        <input
-          className={`w-44 rounded-md border px-2 py-1 text-sm ${!canEditOwner ? "bg-gray-100" : ""}`}
-          value={task.owner || ""}
-          disabled={!canEditOwner}
-          onChange={(e) => update({ owner: e.target.value })}
-          placeholder="Owner"
+    <div className="border border-gray-200 rounded-lg p-3 bg-white hover:bg-gray-50 transition">
+      <div className="flex items-start gap-3">
+        <input 
+          type="checkbox" 
+          checked={!!task.completed} 
+          onChange={(e) => toggleCompleted(e.target.checked)}
+          className="mt-1"
         />
-      </td>
-      <td className="px-3 py-3">
-        <input
-          className="w-36 rounded-md border px-2 py-1 text-sm"
-          value={task.startDate || ""}
-          onChange={(e) => update({ startDate: e.target.value })}
-          placeholder="Start"
-        />
-      </td>
-      <td className="px-3 py-3">
-        <input
-          className="w-36 rounded-md border px-2 py-1 text-sm"
-          value={task.dueDate || ""}
-          onChange={(e) => update({ dueDate: e.target.value })}
-          placeholder="Due"
-        />
-      </td>
-      <td className="px-3 py-3">
-        <input
-          className="w-36 rounded-md border px-2 py-1 text-sm"
-          value={task.dateCompleted || ""}
-          onChange={(e) => update({ dateCompleted: e.target.value })}
-          placeholder="Completed"
-        />
-      </td>
-      <td className="px-3 py-3">
-        <input
-          type="checkbox"
-          checked={!!task.showToClient}
-          onChange={(e) => update({ showToClient: e.target.checked })}
-        />
-      </td>
-      <td className="px-3 py-3 text-right">
-        {isAdmin ? (
-          <button
-            onClick={() => onDelete(task.id)}
-            className="text-sm text-red-600 hover:text-red-800"
-            title="Delete task"
-          >
-            Delete
-          </button>
-        ) : (
-          <span className="text-xs text-gray-400">—</span>
-        )}
-      </td>
-    </tr>
+        <div className="flex-1 min-w-0">
+          <div className={`font-medium text-sm ${task.completed ? "line-through text-gray-400" : "text-gray-900"}`}>
+            {task.taskTitle}
+          </div>
+          {task.clientName && <div className="text-xs text-gray-500 mt-1">Client: {task.clientName}</div>}
+          <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+            <div>
+              <span className="text-gray-500">Owner:</span>
+              <input
+                className={`block w-full mt-0.5 rounded px-2 py-1 text-xs border ${!canEditOwner ? "bg-gray-100" : ""}`}
+                value={task.owner || ""}
+                disabled={!canEditOwner}
+                onChange={(e) => update({ owner: e.target.value })}
+                placeholder="Set owner"
+              />
+            </div>
+            <div>
+              <span className="text-gray-500">Start:</span>
+              <input
+                className="block w-full mt-0.5 rounded px-2 py-1 text-xs border"
+                value={task.startDate || ""}
+                onChange={(e) => update({ startDate: e.target.value })}
+                placeholder="Start date"
+              />
+            </div>
+            <div>
+              <span className="text-gray-500">Due:</span>
+              <input
+                className="block w-full mt-0.5 rounded px-2 py-1 text-xs border"
+                value={task.dueDate || ""}
+                onChange={(e) => update({ dueDate: e.target.value })}
+                placeholder="Due date"
+              />
+            </div>
+            <div>
+              <span className="text-gray-500">Completed:</span>
+              <input
+                className="block w-full mt-0.5 rounded px-2 py-1 text-xs border"
+                value={task.dateCompleted || ""}
+                onChange={(e) => update({ dateCompleted: e.target.value })}
+                placeholder="Date done"
+              />
+            </div>
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <label className="flex items-center gap-1 text-xs text-gray-600">
+              <input
+                type="checkbox"
+                checked={!!task.showToClient}
+                onChange={(e) => update({ showToClient: e.target.checked })}
+              />
+              Show to client
+            </label>
+            {isAdmin && (
+              <button
+                onClick={() => onDelete(task.id)}
+                className="ml-auto text-xs text-red-600 hover:text-red-800 font-medium"
+              >
+                Delete
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 };
 
@@ -562,35 +571,54 @@ const ProjectDetail = ({ token, user, project, onBack, onProjectUpdated }) => {
           {loading ? (
             <div className="mt-4 text-gray-600">Loading…</div>
           ) : (
-            <div className="mt-4 overflow-auto">
-              <table className="min-w-[1100px] w-full">
-                <thead>
-                  <tr className="text-left text-xs text-gray-500 border-b">
-                    <th className="px-3 py-2">Done</th>
-                    <th className="px-3 py-2">Task</th>
-                    <th className="px-3 py-2">Phase</th>
-                    <th className="px-3 py-2">Stage</th>
-                    <th className="px-3 py-2">Owner</th>
-                    <th className="px-3 py-2">Start</th>
-                    <th className="px-3 py-2">Due</th>
-                    <th className="px-3 py-2">Completed</th>
-                    <th className="px-3 py-2">Show to Client</th>
-                    <th className="px-3 py-2 text-right">Admin</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredTasks.map((t) => (
-                    <TaskRow
-                      key={t.id}
-                      task={t}
-                      isAdmin={user.role === "admin"}
-                      canEditOwner={user.role === "admin"}
-                      onUpdate={updateTask}
-                      onDelete={deleteTask}
-                    />
-                  ))}
-                </tbody>
-              </table>
+            <div className="mt-4 space-y-6">
+              {["Phase 1", "Phase 2", "Phase 3", "Phase 4", "Phase 5"].map((phase) => {
+                const phaseTasksByStage = {};
+                filteredTasks
+                  .filter(t => t.phase === phase)
+                  .forEach(t => {
+                    const stage = t.stage || "No Stage";
+                    if (!phaseTasksByStage[stage]) phaseTasksByStage[stage] = [];
+                    phaseTasksByStage[stage].push(t);
+                  });
+                
+                const hasPhase = Object.keys(phaseTasksByStage).length > 0;
+                
+                return (
+                  <div key={phase} className="border border-gray-300 rounded-xl overflow-hidden">
+                    <div className="bg-blue-50 border-b border-gray-300 px-4 py-3">
+                      <h3 className="font-bold text-gray-900">{phase}</h3>
+                      <p className="text-xs text-gray-600 mt-1">
+                        {hasPhase ? `${Object.values(phaseTasksByStage).reduce((sum, tasks) => sum + tasks.length, 0)} tasks` : "No tasks"}
+                      </p>
+                    </div>
+                    
+                    {hasPhase ? (
+                      <div className="p-4 space-y-4">
+                        {Object.entries(phaseTasksByStage).map(([stage, tasks]) => (
+                          <div key={stage} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                            <h4 className="font-semibold text-sm text-gray-800 mb-3">{stage}</h4>
+                            <div className="space-y-2">
+                              {tasks.map((t) => (
+                                <TaskCard
+                                  key={t.id}
+                                  task={t}
+                                  isAdmin={user.role === "admin"}
+                                  canEditOwner={user.role === "admin"}
+                                  onUpdate={updateTask}
+                                  onDelete={deleteTask}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-4 text-sm text-gray-500">No tasks in this phase</div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
