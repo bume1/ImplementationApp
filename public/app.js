@@ -1648,7 +1648,13 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
     if (selectedTasks.length === 0) return;
     try {
       await api.bulkUpdateTasks(token, project.id, selectedTasks, completed);
-      await loadTasks();
+      // Update local state
+      const dateCompleted = completed ? new Date().toLocaleDateString() : null;
+      setTasks(tasks.map(t => 
+        selectedTasks.includes(t.id) 
+          ? { ...t, completed, dateCompleted: completed ? (t.dateCompleted || dateCompleted) : t.dateCompleted }
+          : t
+      ));
       setSelectedTasks([]);
       setBulkMode(false);
     } catch (err) {
@@ -1665,7 +1671,8 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
         alert(result.error);
       } else {
         alert(result.message);
-        await loadTasks();
+        // Update local state
+        setTasks(tasks.filter(t => !selectedTasks.includes(t.id)));
         setSelectedTasks([]);
         setBulkMode(false);
       }
@@ -1695,11 +1702,20 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
   const handleAddSubtask = async (taskId) => {
     if (!newSubtask.title.trim()) return;
     try {
-      await api.addSubtask(token, project.id, taskId, {
+      const result = await api.addSubtask(token, project.id, taskId, {
         title: newSubtask.title,
         owner: newSubtask.owner
       });
-      await loadTasks();
+      // Update local state with the new subtask
+      setTasks(tasks.map(t => {
+        if (t.id === taskId) {
+          return {
+            ...t,
+            subtasks: [...(t.subtasks || []), result.subtask || { id: Date.now().toString(), title: newSubtask.title, owner: newSubtask.owner, completed: false, notApplicable: false }]
+          };
+        }
+        return t;
+      }));
       setNewSubtask({ taskId: null, title: '', owner: '' });
     } catch (err) {
       console.error('Failed to add subtask:', err);
@@ -1713,7 +1729,18 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
         notApplicable: status === 'not_applicable'
       };
       await api.updateSubtask(token, project.id, taskId, subtaskId, updates);
-      await loadTasks();
+      // Update local state
+      setTasks(tasks.map(t => {
+        if (t.id === taskId) {
+          return {
+            ...t,
+            subtasks: (t.subtasks || []).map(s =>
+              s.id === subtaskId ? { ...s, ...updates } : s
+            )
+          };
+        }
+        return t;
+      }));
     } catch (err) {
       console.error('Failed to update subtask:', err);
     }
@@ -1734,7 +1761,16 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
     if (!confirm('Delete this subtask?')) return;
     try {
       await api.deleteSubtask(token, project.id, taskId, subtaskId);
-      await loadTasks();
+      // Update local state
+      setTasks(tasks.map(t => {
+        if (t.id === taskId) {
+          return {
+            ...t,
+            subtasks: (t.subtasks || []).filter(s => s.id !== subtaskId)
+          };
+        }
+        return t;
+      }));
     } catch (err) {
       console.error('Failed to delete subtask:', err);
     }
