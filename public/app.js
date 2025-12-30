@@ -706,6 +706,8 @@ const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
   const prevPeriod = () => {
     if (calendarMode === 'month') {
       setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1, 1));
+    } else if (calendarMode === 'week') {
+      setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate() - 7));
     } else {
       setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate() - 1));
     }
@@ -714,6 +716,8 @@ const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
   const nextPeriod = () => {
     if (calendarMode === 'month') {
       setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 1));
+    } else if (calendarMode === 'week') {
+      setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate() + 7));
     } else {
       setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate() + 1));
     }
@@ -727,6 +731,22 @@ const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
   const currentDateStr = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
   const dayViewTasks = getTasksForDateStr(currentDateStr);
 
+  const getWeekDates = () => {
+    const startOfWeek = new Date(selectedDate);
+    startOfWeek.setDate(selectedDate.getDate() - selectedDate.getDay());
+    const weekDates = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(startOfWeek);
+      d.setDate(startOfWeek.getDate() + i);
+      weekDates.push(d);
+    }
+    return weekDates;
+  };
+
+  const weekDates = getWeekDates();
+  const weekStart = weekDates[0];
+  const weekEnd = weekDates[6];
+
   return (
     <div className="bg-white rounded-lg shadow-sm p-6">
       <div className="flex items-center justify-between mb-4">
@@ -734,6 +754,8 @@ const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
           <h2 className="text-2xl font-bold">
             {calendarMode === 'month' 
               ? `${monthNames[month]} ${year}`
+              : calendarMode === 'week'
+              ? `${monthNames[weekStart.getMonth()]} ${weekStart.getDate()} - ${weekStart.getMonth() !== weekEnd.getMonth() ? monthNames[weekEnd.getMonth()] + ' ' : ''}${weekEnd.getDate()}, ${weekEnd.getFullYear()}`
               : `${monthNames[selectedDate.getMonth()]} ${selectedDate.getDate()}, ${selectedDate.getFullYear()}`
             }
           </h2>
@@ -748,6 +770,12 @@ const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
               className={`px-3 py-1 rounded text-sm ${calendarMode === 'day' ? 'bg-white shadow' : ''}`}
             >
               Day
+            </button>
+            <button
+              onClick={() => setCalendarMode('week')}
+              className={`px-3 py-1 rounded text-sm ${calendarMode === 'week' ? 'bg-white shadow' : ''}`}
+            >
+              Week
             </button>
             <button
               onClick={() => setCalendarMode('month')}
@@ -818,6 +846,59 @@ const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
                     ))}
                     {dayTasks.length > 2 && (
                       <div className="text-xs text-gray-500">+{dayTasks.length - 2} more</div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      ) : calendarMode === 'week' ? (
+        <>
+          <div className="grid grid-cols-7 gap-2 mb-2">
+            {dayNames.map(day => (
+              <div key={day} className="text-center text-sm font-semibold text-gray-600 py-2">
+                {day}
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-7 gap-2">
+            {weekDates.map((date, idx) => {
+              const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+              const dayTasks = getTasksForDateStr(dateStr);
+              const isToday = new Date().toDateString() === date.toDateString();
+              return (
+                <div
+                  key={idx}
+                  onClick={() => {
+                    setSelectedDate(date);
+                    setCalendarMode('day');
+                  }}
+                  className={`min-h-[150px] border rounded-lg p-2 cursor-pointer ${
+                    isToday ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+                  } hover:border-blue-300 transition-colors`}
+                >
+                  <div className={`text-sm font-semibold mb-2 ${isToday ? 'text-blue-600' : 'text-gray-700'}`}>
+                    {date.getDate()}
+                  </div>
+                  <div className="space-y-1">
+                    {dayTasks.slice(0, 4).map(task => (
+                      <div
+                        key={task.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          viewMode === 'internal' && onScrollToTask && onScrollToTask(task.id);
+                        }}
+                        className={`text-xs px-1 py-0.5 rounded truncate ${
+                          task.completed ? 'bg-green-200 text-green-800' : 'bg-blue-100 text-blue-800'
+                        } ${viewMode === 'internal' ? 'cursor-pointer hover:opacity-80' : ''}`}
+                        title={task.taskTitle}
+                      >
+                        {task.taskTitle.substring(0, 15)}{task.taskTitle.length > 15 ? '...' : ''}
+                      </div>
+                    ))}
+                    {dayTasks.length > 4 && (
+                      <div className="text-xs text-gray-500">+{dayTasks.length - 4} more</div>
                     )}
                   </div>
                 </div>
