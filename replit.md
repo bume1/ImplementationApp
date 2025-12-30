@@ -79,10 +79,10 @@ Preferred communication style: Simple, everyday language.
 ### Sync Behavior
 - **Deal Stage Updates**: When all tasks in a phase are completed, the connected HubSpot deal automatically moves to the mapped stage
 - **Activity Logging**: Notes added to tasks and task completions are logged as activities/notes on the HubSpot deal
-- **Sync Indicator**: Projects with HubSpot Deal IDs show last sync timestamp on the project dashboard
+- **Sync Indicator**: Projects with HubSpot Record IDs show last sync timestamp on the project dashboard
 
 ### Data Flow
-- Projects store `hubspotDealId` field to link to HubSpot deals
+- Projects store `hubspotRecordId` field to link to HubSpot records
 - Stage mappings stored in database under `hubspot_stage_mapping` key
 - `lastHubSpotSync` timestamp updated on projects when syncs occur
 

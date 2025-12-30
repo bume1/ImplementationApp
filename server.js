@@ -42,7 +42,21 @@ app.use(express.static('public'));
 
 // Helper functions
 const getUsers = async () => (await db.get('users')) || [];
-const getProjects = async () => (await db.get('projects')) || [];
+const getProjects = async () => {
+  const projects = (await db.get('projects')) || [];
+  let needsSave = false;
+  for (const project of projects) {
+    if (project.hubspotDealId && !project.hubspotRecordId) {
+      project.hubspotRecordId = project.hubspotDealId;
+      delete project.hubspotDealId;
+      needsSave = true;
+    }
+  }
+  if (needsSave) {
+    await db.set('projects', projects);
+  }
+  return projects;
+};
 const getTasks = async (projectId) => (await db.get(`tasks_${projectId}`)) || [];
 
 // Generate a URL-friendly slug from client name
@@ -298,7 +312,7 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
 
 app.post('/api/projects', authenticateToken, async (req, res) => {
   try {
-    const { name, clientName, projectManager, hubspotDealId, hubspotDealStage, template } = req.body;
+    const { name, clientName, projectManager, hubspotRecordId, hubspotDealStage, template } = req.body;
     if (!name || !clientName) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
@@ -310,7 +324,7 @@ app.post('/api/projects', authenticateToken, async (req, res) => {
       name,
       clientName,
       projectManager: projectManager || '',
-      hubspotDealId: hubspotDealId || '',
+      hubspotRecordId: hubspotRecordId || '',
       hubspotDealStage: hubspotDealStage || '',
       hubspotCompanyId: '',
       hubspotContactId: '',
@@ -527,9 +541,9 @@ app.get('/api/hubspot/pipelines', authenticateToken, async (req, res) => {
   }
 });
 
-app.get('/api/hubspot/deal/:dealId', authenticateToken, async (req, res) => {
+app.get('/api/hubspot/record/:recordId', authenticateToken, async (req, res) => {
   try {
-    const deal = await hubspot.getDeal(req.params.dealId);
+    const deal = await hubspot.getRecord(req.params.recordId);
     res.json(deal);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -559,7 +573,7 @@ async function checkAndUpdateHubSpotDealStage(projectId) {
   try {
     const projects = await getProjects();
     const project = projects.find(p => p.id === projectId);
-    if (!project || !project.hubspotDealId) return;
+    if (!project || !project.hubspotRecordId) return;
 
     const tasks = await getTasks(projectId);
     const mapping = await db.get('hubspot_stage_mapping');
@@ -575,7 +589,7 @@ async function checkAndUpdateHubSpotDealStage(projectId) {
       const allCompleted = phaseTasks.every(t => t.completed);
       if (allCompleted && mapping.phases[phase]) {
         const stageId = mapping.phases[phase];
-        await hubspot.updateDealStage(project.hubspotDealId, stageId, mapping.pipelineId);
+        await hubspot.updateRecordStage(project.hubspotRecordId, stageId, mapping.pipelineId);
         
         const idx = projects.findIndex(p => p.id === projectId);
         if (idx !== -1) {
@@ -584,7 +598,7 @@ async function checkAndUpdateHubSpotDealStage(projectId) {
           await db.set('projects', projects);
         }
         
-        console.log(`✅ HubSpot deal ${project.hubspotDealId} moved to stage for ${phase}`);
+        console.log(`✅ HubSpot record ${project.hubspotRecordId} moved to stage for ${phase}`);
         break;
       }
     }
@@ -597,9 +611,9 @@ async function logHubSpotActivity(projectId, activityType, details) {
   try {
     const projects = await getProjects();
     const project = projects.find(p => p.id === projectId);
-    if (!project || !project.hubspotDealId) return;
+    if (!project || !project.hubspotRecordId) return;
     
-    await hubspot.logDealActivity(project.hubspotDealId, activityType, details);
+    await hubspot.logRecordActivity(project.hubspotRecordId, activityType, details);
   } catch (error) {
     console.error('Error logging HubSpot activity:', error.message);
   }

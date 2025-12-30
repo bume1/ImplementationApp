@@ -79,34 +79,34 @@ async function getPipelines() {
   }
 }
 
-async function getDeal(dealId) {
+async function getRecord(recordId) {
   try {
     const client = await getHubSpotClient();
-    const response = await client.crm.deals.basicApi.getById(dealId, ['dealname', 'dealstage', 'pipeline', 'amount']);
+    const response = await client.crm.deals.basicApi.getById(recordId, ['dealname', 'dealstage', 'pipeline', 'amount']);
     return response;
   } catch (error) {
-    console.error('Error fetching deal:', error.message);
+    console.error('Error fetching record:', error.message);
     throw error;
   }
 }
 
-async function updateDealStage(dealId, stageId, pipelineId = null) {
+async function updateRecordStage(recordId, stageId, pipelineId = null) {
   try {
     const client = await getHubSpotClient();
     const properties = { dealstage: stageId };
     if (pipelineId) {
       properties.pipeline = pipelineId;
     }
-    const response = await client.crm.deals.basicApi.update(dealId, { properties });
-    console.log(`✅ HubSpot deal ${dealId} updated to stage ${stageId}`);
+    const response = await client.crm.deals.basicApi.update(recordId, { properties });
+    console.log(`✅ HubSpot record ${recordId} updated to stage ${stageId}`);
     return response;
   } catch (error) {
-    console.error('Error updating deal stage:', error.message);
+    console.error('Error updating record stage:', error.message);
     throw error;
   }
 }
 
-async function logDealActivity(dealId, activityType, details) {
+async function logRecordActivity(recordId, activityType, details) {
   try {
     const client = await getHubSpotClient();
     
@@ -124,14 +124,14 @@ async function logDealActivity(dealId, activityType, details) {
     await client.crm.objects.notes.associationsApi.create(
       noteResponse.id,
       'deals',
-      dealId,
+      recordId,
       [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 214 }]
     );
 
-    console.log(`✅ HubSpot activity logged for deal ${dealId}: ${activityType}`);
+    console.log(`✅ HubSpot activity logged for record ${recordId}: ${activityType}`);
     return noteResponse;
   } catch (error) {
-    console.error('Error logging deal activity:', error.message);
+    console.error('Error logging record activity:', error.message);
     throw error;
   }
 }
@@ -149,8 +149,8 @@ async function testConnection() {
 module.exports = {
   getHubSpotClient,
   getPipelines,
-  getDeal,
-  updateDealStage,
-  logDealActivity,
+  getRecord,
+  updateRecordStage,
+  logRecordActivity,
   testConnection
 };

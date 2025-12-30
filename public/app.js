@@ -333,7 +333,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
     name: '',
     clientName: '',
     projectManager: '',
-    hubspotDealId: '',
+    hubspotRecordId: '',
     hubspotDealStage: '',
     template: ''
   });
@@ -382,7 +382,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
         name: '',
         clientName: '',
         projectManager: '',
-        hubspotDealId: '',
+        hubspotRecordId: '',
         hubspotDealStage: '',
         template: defaultTemplate?.id || ''
       });
@@ -501,11 +501,11 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                 <h3 className="font-medium text-blue-900 mb-2">HubSpot Integration</h3>
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-sm font-medium mb-1">HubSpot Deal ID</label>
+                    <label className="block text-sm font-medium mb-1">HubSpot Record ID</label>
                     <input
                       placeholder="e.g., 12345678"
-                      value={newProject.hubspotDealId}
-                      onChange={(e) => setNewProject({...newProject, hubspotDealId: e.target.value})}
+                      value={newProject.hubspotRecordId}
+                      onChange={(e) => setNewProject({...newProject, hubspotRecordId: e.target.value})}
                       className="w-full px-3 py-2 border rounded-md"
                     />
                   </div>
@@ -567,8 +567,8 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                   {project.projectManager && (
                     <p><span className="font-medium">PM:</span> {project.projectManager}</p>
                   )}
-                  {project.hubspotDealId && (
-                    <p><span className="font-medium">HubSpot Deal:</span> {project.hubspotDealId}</p>
+                  {project.hubspotRecordId && (
+                    <p><span className="font-medium">HubSpot Record:</span> {project.hubspotRecordId}</p>
                   )}
                   <p className="text-xs text-gray-400">Template: {project.template}</p>
                 </div>
@@ -1354,9 +1354,9 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                   {window.location.origin}/client/{project.clientLinkSlug || project.clientLinkId}
                 </button>
               </div>
-              {project.hubspotDealId && (
+              {project.hubspotRecordId && (
                 <div className="flex items-center gap-3 text-sm text-gray-600">
-                  <p>HubSpot Deal ID: <span className="font-medium">{project.hubspotDealId}</span></p>
+                  <p>HubSpot Record ID: <span className="font-medium">{project.hubspotRecordId}</span></p>
                   {project.lastHubSpotSync && (
                     <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
                       Last synced: {new Date(project.lastHubSpotSync).toLocaleString()}
@@ -2798,7 +2798,7 @@ const HubSpotSettings = ({ token, user, onBack, onLogout }) => {
                       <li>• When you complete all tasks in a phase, the linked HubSpot deal moves to the mapped stage</li>
                       <li>• Adding notes to tasks creates activity entries on the deal in HubSpot</li>
                       <li>• Completing tasks logs the completion as an activity on the deal</li>
-                      <li>• Projects must have a HubSpot Deal ID set to sync (edit project settings)</li>
+                      <li>• Projects must have a HubSpot Record ID set to sync (edit project settings)</li>
                     </ul>
                   </div>
                 </>
