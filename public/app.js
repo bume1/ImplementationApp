@@ -366,46 +366,36 @@ const parseCSV = (csvText) => {
   
   const headers = rows[0].map(h => h.replace(/^"|"$/g, '').trim());
   
-  // Normalize headers to handle variations in case and naming
+  // Normalize headers: strip spaces/underscores and convert to lowercase for matching
   const headerMap = {
     'showtoclient': 'showToClient',
-    'show_to_client': 'showToClient',
-    'show to client': 'showToClient',
     'clientname': 'clientName',
-    'client_name': 'clientName',
-    'client name': 'clientName',
     'tasktitle': 'taskTitle',
-    'task_title': 'taskTitle',
-    'task title': 'taskTitle',
     'task': 'taskTitle',
     'title': 'taskTitle',
     'duedate': 'dueDate',
-    'due_date': 'dueDate',
-    'due date': 'dueDate',
     'startdate': 'startDate',
-    'start_date': 'startDate',
-    'start date': 'startDate',
     'issubtask': 'isSubtask',
-    'is_subtask': 'isSubtask',
     'parenttaskid': 'parentTaskId',
-    'parent_task_id': 'parentTaskId',
     'subtaskstatus': 'subtaskStatus',
-    'subtask_status': 'subtaskStatus',
     'completed': 'completed',
     'complete': 'completed',
     'done': 'completed',
     'datecompleted': 'dateCompleted',
-    'date_completed': 'dateCompleted',
-    'date completed': 'dateCompleted',
     'id': 'id',
     'taskid': 'id',
-    'task_id': 'id',
-    'task id': 'id'
+    'phase': 'phase',
+    'stage': 'stage',
+    'owner': 'owner',
+    'duration': 'duration',
+    'dependencies': 'dependencies',
+    'notes': 'notes'
   };
   
   const normalizedHeaders = headers.map(h => {
-    const lower = h.toLowerCase();
-    return headerMap[lower] || h;
+    // Remove all spaces, underscores, and convert to lowercase
+    const normalized = h.toLowerCase().replace(/[\s_-]+/g, '');
+    return headerMap[normalized] || h;
   });
   
   const data = [];
