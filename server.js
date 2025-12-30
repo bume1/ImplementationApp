@@ -519,11 +519,16 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
     
     const projectsWithDetails = await Promise.all(projects.map(async (project) => {
       const template = templates.find(t => t.id === project.template);
+      const tasks = await getTasks(project.id);
+      
+      // Calculate task completion progress
+      const totalTasks = tasks.length;
+      const completedTasks = tasks.filter(t => t.completed).length;
+      const progressPercent = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
       
       // Calculate launch duration for completed projects
       let launchDurationWeeks = null;
       if (project.status === 'completed') {
-        const tasks = await getTasks(project.id);
         const contractTask = tasks.find(t => 
           t.taskTitle && t.taskTitle.toLowerCase().includes('contract signed')
         );
@@ -542,7 +547,10 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
       return {
         ...project,
         templateName: template ? template.name : project.template,
-        launchDurationWeeks
+        launchDurationWeeks,
+        totalTasks,
+        completedTasks,
+        progressPercent
       };
     }));
     

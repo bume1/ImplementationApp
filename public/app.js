@@ -1120,7 +1120,29 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                     <StatusBadge status={project.status || 'active'} />
                   </div>
                 </div>
-                <p className="text-gray-600 mb-4">{project.clientName}</p>
+                <p className="text-gray-600 mb-3">{project.clientName}</p>
+
+                {/* Progress Bar */}
+                <div className="mb-4">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs font-medium text-gray-600">Progress</span>
+                    <span className="text-xs font-bold text-primary">{project.progressPercent || 0}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2.5">
+                    <div 
+                      className={`h-2.5 rounded-full transition-all duration-300 ${
+                        project.progressPercent === 100 ? 'bg-green-500' : 
+                        project.progressPercent >= 75 ? 'bg-blue-500' : 
+                        project.progressPercent >= 50 ? 'bg-yellow-500' : 
+                        project.progressPercent >= 25 ? 'bg-orange-500' : 'bg-red-400'
+                      }`}
+                      style={{ width: `${project.progressPercent || 0}%` }}
+                    ></div>
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    {project.completedTasks || 0} of {project.totalTasks || 0} tasks complete
+                  </div>
+                </div>
 
                 <div className="space-y-2 text-sm text-gray-500 mb-4">
                   {project.projectManager && (
