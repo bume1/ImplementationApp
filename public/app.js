@@ -705,14 +705,14 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
 
   const copyClientLink = (linkId) => {
     const baseUrl = clientPortalDomain || window.location.origin;
-    const link = `${baseUrl}/${linkId}`;
+    const link = `${baseUrl}/thrive365labsLAUNCH/${linkId}`;
     navigator.clipboard.writeText(link);
     alert('Client link copied to clipboard!');
   };
 
   const getClientLinkDisplay = (linkId) => {
     const baseUrl = clientPortalDomain || window.location.origin;
-    return `${baseUrl}/${linkId}`;
+    return `${baseUrl}/thrive365labsLAUNCH/${linkId}`;
   };
 
   const handleEditProject = async () => {
@@ -1907,14 +1907,14 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
 
   const copyClientLink = () => {
     const baseUrl = clientPortalDomain || window.location.origin;
-    const link = `${baseUrl}/${project.clientLinkSlug || project.clientLinkId}`;
+    const link = `${baseUrl}/thrive365labsLAUNCH/${project.clientLinkSlug || project.clientLinkId}`;
     navigator.clipboard.writeText(link);
     alert('Client link copied!');
   };
 
   const getClientLinkDisplay = () => {
     const baseUrl = clientPortalDomain || window.location.origin;
-    return `${baseUrl}/${project.clientLinkSlug || project.clientLinkId}`;
+    return `${baseUrl}/thrive365labsLAUNCH/${project.clientLinkSlug || project.clientLinkId}`;
   };
 
   const getPhaseColor = (phase) => {
