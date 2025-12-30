@@ -565,6 +565,14 @@ const TimelineView = ({ tasks, getPhaseColor, viewMode }) => {
   const getTaskName = (task) =>
     (viewMode === 'client' && task.clientName) ? task.clientName : task.taskTitle;
 
+  const isTaskOverdue = (task) => {
+    if (task.completed || !task.dueDate) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const dueDate = new Date(task.dueDate);
+    return dueDate < today;
+  };
+
   return (
     <div className="bg-white rounded-lg shadow-sm p-6">
       <h2 className="text-2xl font-bold mb-6">Project Timeline</h2>
@@ -596,7 +604,8 @@ const TimelineView = ({ tasks, getPhaseColor, viewMode }) => {
                         <div 
                           key={task.id} 
                           className={`flex items-start gap-3 p-3 rounded-lg ${
-                            task.completed ? 'bg-green-50' : 'bg-white'
+                            task.completed ? 'bg-green-50' : 
+                            (viewMode === 'internal' && isTaskOverdue(task)) ? 'bg-red-50 border-red-300' : 'bg-white'
                           } border border-gray-200`}
                         >
                           <div className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${
@@ -832,6 +841,14 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
       const depTask = tasks.find(t => t.id === parseInt(depId) || t.id === depId);
       return depTask && !depTask.completed;
     });
+  };
+
+  const isOverdue = (task) => {
+    if (task.completed || !task.dueDate) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const dueDate = new Date(task.dueDate);
+    return dueDate < today;
   };
 
   const handleEditTask = (taskId) => {
@@ -1246,7 +1263,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                     </div>
                     <div className="divide-y divide-gray-200">
                       {stageTasks.map(task => (
-                    <div key={task.id} id={`task-${task.id}`} className="p-4 hover:bg-gray-50">
+                    <div key={task.id} id={`task-${task.id}`} className={`p-4 ${viewMode === 'internal' && isOverdue(task) ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'}`}>
                       <div className="flex items-start gap-4">
                         {viewMode === 'internal' && (
                           <button
