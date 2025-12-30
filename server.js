@@ -318,8 +318,18 @@ app.post('/api/projects', authenticateToken, async (req, res) => {
     projects.push(newProject);
     await db.set('projects', projects);
 
-    // Load and apply template
-    const templateTasks = await loadTemplate();
+    // Load and apply selected template
+    let templateTasks = [];
+    if (template) {
+      const templates = await db.get('templates') || [];
+      const selectedTemplate = templates.find(t => t.id === template);
+      if (selectedTemplate) {
+        templateTasks = selectedTemplate.tasks || [];
+      }
+    }
+    if (templateTasks.length === 0) {
+      templateTasks = await loadTemplate();
+    }
     await db.set(`tasks_${newProject.id}`, templateTasks);
 
     res.json(newProject);

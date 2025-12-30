@@ -303,18 +303,33 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
   const [projects, setProjects] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [templates, setTemplates] = useState([]);
   const [newProject, setNewProject] = useState({
     name: '',
     clientName: '',
     projectManager: '',
     hubspotDealId: '',
     hubspotDealStage: '',
-    template: 'biolis-au480-clia'
+    template: ''
   });
 
   useEffect(() => {
     loadProjects();
+    loadTemplates();
   }, []);
+
+  const loadTemplates = async () => {
+    try {
+      const data = await api.getTemplates(token);
+      setTemplates(data);
+      if (data.length > 0) {
+        const defaultTemplate = data.find(t => t.isDefault) || data[0];
+        setNewProject(prev => ({ ...prev, template: defaultTemplate.id }));
+      }
+    } catch (err) {
+      console.error('Failed to load templates:', err);
+    }
+  };
 
   const loadProjects = async () => {
     setLoading(true);
@@ -337,13 +352,14 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
     try {
       await api.createProject(token, newProject);
       setShowCreate(false);
+      const defaultTemplate = templates.find(t => t.isDefault) || templates[0];
       setNewProject({
         name: '',
         clientName: '',
         projectManager: '',
         hubspotDealId: '',
         hubspotDealStage: '',
-        template: 'biolis-au480-clia'
+        template: defaultTemplate?.id || ''
       });
       loadProjects();
     } catch (err) {
@@ -406,9 +422,20 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
         {showCreate && (
           <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
             <h2 className="text-xl font-bold mb-4">Create New Project from Template</h2>
-            <p className="text-sm text-gray-600 mb-4">
-              Template: Biolis AU480 with CLIA Upgrade (102 tasks)
-            </p>
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-1">Select Template *</label>
+              <select
+                value={newProject.template}
+                onChange={(e) => setNewProject({...newProject, template: e.target.value})}
+                className="w-full px-3 py-2 border rounded-md"
+              >
+                {templates.map(t => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} ({t.taskCount} tasks){t.isDefault ? ' - Default' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-1">Project Name *</label>
@@ -1933,6 +1960,9 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
   const [saving, setSaving] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [tempName, setTempName] = useState('');
+  const [showCreateTemplate, setShowCreateTemplate] = useState(false);
+  const [newTemplateName, setNewTemplateName] = useState('');
+  const [newTemplateDesc, setNewTemplateDesc] = useState('');
 
   const getUniqueStages = () => {
     if (!selectedTemplate) return [];
@@ -1976,6 +2006,47 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
       setSelectedTemplate(data);
     } catch (err) {
       console.error('Failed to load template:', err);
+    }
+  };
+
+  const handleCreateTemplate = async () => {
+    if (!newTemplateName.trim()) {
+      alert('Template name is required');
+      return;
+    }
+    setSaving(true);
+    try {
+      const newTemplate = await api.createTemplate(token, {
+        name: newTemplateName.trim(),
+        description: newTemplateDesc.trim() || 'Custom template',
+        tasks: []
+      });
+      setTemplates([...templates, { ...newTemplate, taskCount: 0 }]);
+      setShowCreateTemplate(false);
+      setNewTemplateName('');
+      setNewTemplateDesc('');
+      loadTemplateDetails(newTemplate.id);
+    } catch (err) {
+      console.error('Failed to create template:', err);
+      alert('Failed to create template');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteTemplate = async (templateId) => {
+    const template = templates.find(t => t.id === templateId);
+    if (template?.isDefault) {
+      alert('Cannot delete the default template');
+      return;
+    }
+    if (!confirm('Are you sure you want to delete this template? This cannot be undone.')) return;
+    try {
+      await api.deleteTemplate(token, templateId);
+      setTemplates(templates.filter(t => t.id !== templateId));
+    } catch (err) {
+      console.error('Failed to delete template:', err);
+      alert('Failed to delete template');
     }
   };
 
@@ -2101,40 +2172,100 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
         </div>
 
         {!selectedTemplate ? (
-          <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Template Name</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tasks</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {templates.map(template => (
-                  <tr key={template.id}>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{template.name}</div>
-                      {template.isDefault && (
-                        <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">Default</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-500">{template.description}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{template.taskCount}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <button
-                        onClick={() => loadTemplateDetails(template.id)}
-                        className="text-blue-600 hover:underline"
-                      >
-                        Edit Tasks
-                      </button>
-                    </td>
+          <>
+            <div className="flex justify-end mb-4">
+              <button
+                onClick={() => setShowCreateTemplate(true)}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+              >
+                + Create New Template
+              </button>
+            </div>
+
+            {showCreateTemplate && (
+              <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+                <h3 className="text-lg font-bold mb-4">Create New Template</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Template Name *</label>
+                    <input
+                      value={newTemplateName}
+                      onChange={(e) => setNewTemplateName(e.target.value)}
+                      placeholder="e.g., Mobile Lab Setup"
+                      className="w-full px-3 py-2 border rounded-md"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Description</label>
+                    <input
+                      value={newTemplateDesc}
+                      onChange={(e) => setNewTemplateDesc(e.target.value)}
+                      placeholder="Brief description of what this template is for"
+                      className="w-full px-3 py-2 border rounded-md"
+                    />
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={handleCreateTemplate}
+                      disabled={saving}
+                      className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+                    >
+                      {saving ? 'Creating...' : 'Create Template'}
+                    </button>
+                    <button
+                      onClick={() => { setShowCreateTemplate(false); setNewTemplateName(''); setNewTemplateDesc(''); }}
+                      className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Template Name</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tasks</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {templates.map(template => (
+                    <tr key={template.id}>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-medium text-gray-900">{template.name}</div>
+                        {template.isDefault && (
+                          <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">Default</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-500">{template.description}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{template.taskCount}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm space-x-3">
+                        <button
+                          onClick={() => loadTemplateDetails(template.id)}
+                          className="text-blue-600 hover:underline"
+                        >
+                          Edit Tasks
+                        </button>
+                        {!template.isDefault && (
+                          <button
+                            onClick={() => handleDeleteTemplate(template.id)}
+                            className="text-red-600 hover:underline"
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         ) : (
           <div className="space-y-4">
             <div className="flex justify-end mb-4">
