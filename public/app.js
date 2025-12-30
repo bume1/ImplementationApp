@@ -731,6 +731,13 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
 
   const handleEditProject = async () => {
     if (!editingProject) return;
+    
+    // Require Soft-Pilot Checklist submission before marking project as completed
+    if (editingProject.status === 'completed' && !editingProject.softPilotChecklistSubmitted) {
+      alert('The Soft-Pilot Checklist must be submitted before marking this project as completed. Please complete the checklist in the Sprint 3: Soft-Pilot stage first.');
+      return;
+    }
+    
     try {
       await api.updateProject(token, editingProject.id, {
         name: editingProject.name,
@@ -787,10 +794,10 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M9 8h-3v4h3v12h5v-12h3.642l.358-4h-4v-1.667c0-.955.192-1.333 1.115-1.333h2.885v-5h-3.808c-3.596 0-5.192 1.583-5.192 4.615v3.385z"/></svg>
             </a>
           </div>
-          <div className="flex items-center gap-2">
+          <a href="tel:+17707629269" className="flex items-center gap-2 hover:text-blue-300">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
-            <span>Call Now: (770) 762-9269</span>
-          </div>
+            <span>(770) 762-9269</span>
+          </a>
         </div>
       </div>
       
