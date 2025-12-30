@@ -1297,6 +1297,98 @@ app.post('/api/templates/:id/clone', authenticateToken, requireAdmin, async (req
   }
 });
 
+// Import CSV tasks to a template
+app.post('/api/templates/:id/import-csv', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const templates = await db.get('templates') || [];
+    const template = templates.find(t => t.id === req.params.id);
+    
+    if (!template) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+    
+    const { csvData } = req.body;
+    if (!csvData || !Array.isArray(csvData)) {
+      return res.status(400).json({ error: 'CSV data is required' });
+    }
+    
+    // Generate new IDs for imported tasks
+    const maxId = template.tasks.length > 0 ? Math.max(...template.tasks.map(t => t.id)) : 0;
+    const newTasks = csvData.map((row, index) => ({
+      id: maxId + index + 1,
+      phase: row.phase || 'Phase 1',
+      stage: row.stage || '',
+      taskTitle: row.taskTitle || row.title || row.task || '',
+      clientName: row.clientName || '',
+      owner: row.owner || '',
+      startDate: row.startDate || '',
+      dueDate: row.dueDate || '',
+      dateCompleted: '',
+      duration: parseInt(row.duration) || 0,
+      completed: false,
+      showToClient: row.showToClient === 'true' || row.showToClient === true || false,
+      dependencies: row.dependencies ? String(row.dependencies).split(',').map(d => parseInt(d.trim())).filter(d => !isNaN(d)) : []
+    })).filter(t => t.taskTitle);
+    
+    template.tasks = [...template.tasks, ...newTasks];
+    template.updatedAt = new Date().toISOString();
+    
+    await db.set('templates', templates);
+    res.json({ message: `Imported ${newTasks.length} tasks`, template });
+  } catch (error) {
+    console.error('Import CSV to template error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Import CSV tasks to a project
+app.post('/api/projects/:id/import-csv', authenticateToken, async (req, res) => {
+  try {
+    const projects = await getProjects();
+    const project = projects.find(p => p.id === req.params.id);
+    
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    
+    const { csvData } = req.body;
+    if (!csvData || !Array.isArray(csvData)) {
+      return res.status(400).json({ error: 'CSV data is required' });
+    }
+    
+    const tasks = await getTasks(req.params.id);
+    const maxId = tasks.length > 0 ? Math.max(...tasks.map(t => t.id)) : 0;
+    
+    const newTasks = csvData.map((row, index) => ({
+      id: maxId + index + 1,
+      phase: row.phase || 'Phase 1',
+      stage: row.stage || '',
+      taskTitle: row.taskTitle || row.title || row.task || '',
+      clientName: row.clientName || '',
+      owner: row.owner || '',
+      startDate: row.startDate || '',
+      dueDate: row.dueDate || '',
+      dateCompleted: '',
+      duration: parseInt(row.duration) || 0,
+      completed: false,
+      showToClient: row.showToClient === 'true' || row.showToClient === true || false,
+      dependencies: row.dependencies ? String(row.dependencies).split(',').map(d => parseInt(d.trim())).filter(d => !isNaN(d)) : [],
+      notes: [],
+      subtasks: [],
+      createdBy: req.user.id,
+      createdAt: new Date().toISOString()
+    })).filter(t => t.taskTitle);
+    
+    const updatedTasks = [...tasks, ...newTasks];
+    await db.set(`tasks_${req.params.id}`, updatedTasks);
+    
+    res.json({ message: `Imported ${newTasks.length} tasks`, tasks: newTasks });
+  } catch (error) {
+    console.error('Import CSV to project error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.delete('/api/templates/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const templates = await db.get('templates') || [];
