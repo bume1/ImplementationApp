@@ -306,9 +306,10 @@ const api = {
 
 // ============== CSV HELPER FUNCTIONS ==============
 const downloadSampleCSV = () => {
-  const sampleCSV = `phase,stage,taskTitle,owner,dueDate,showToClient,clientName,dependencies,isSubtask,parentTaskId,subtaskStatus
-Phase 1,Project Kick Off & Stakeholder Alignment,Schedule kickoff meeting with client,team@example.com,2025-02-15,true,Acme Labs,,false,,
-Phase 1,Project Kick Off & Stakeholder Alignment,Confirm attendees for kickoff,admin@example.com,2025-02-14,false,Acme Labs,,true,1,Pending`;
+  const sampleCSV = `phase,stage,taskTitle,owner,dueDate,showToClient,clientName,completed,dateCompleted,dependencies,isSubtask,parentTaskId,subtaskStatus
+Phase 1,Project Kick Off & Stakeholder Alignment,Schedule kickoff meeting with client,team@example.com,2025-02-15,true,,,false,,,
+Phase 1,Project Kick Off & Stakeholder Alignment,Send meeting invites,admin@example.com,2025-02-14,true,,true,2025-02-10,,,
+Phase 1,Project Kick Off & Stakeholder Alignment,Confirm attendees for kickoff,admin@example.com,2025-02-14,false,,false,,,,true,1,Pending`;
   const blob = new Blob([sampleCSV], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -388,7 +389,13 @@ const parseCSV = (csvText) => {
     'parenttaskid': 'parentTaskId',
     'parent_task_id': 'parentTaskId',
     'subtaskstatus': 'subtaskStatus',
-    'subtask_status': 'subtaskStatus'
+    'subtask_status': 'subtaskStatus',
+    'completed': 'completed',
+    'complete': 'completed',
+    'done': 'completed',
+    'datecompleted': 'dateCompleted',
+    'date_completed': 'dateCompleted',
+    'date completed': 'dateCompleted'
   };
   
   const normalizedHeaders = headers.map(h => {
