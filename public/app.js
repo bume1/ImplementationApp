@@ -771,7 +771,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
       const url = new URL(domain);
       return url.origin;
     } catch {
-      return domain.replace(/\/thrive365labs(launch)?.*$/i, '').replace(/\/+$/, '') || 'https://deapps.pro';
+      return 'https://deapps.pro';
     }
   };
 
@@ -2514,15 +2514,25 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
     reader.readAsText(file);
   };
 
+  const getBaseUrlForProject = (domain) => {
+    if (!domain) return 'https://deapps.pro';
+    try {
+      const url = new URL(domain);
+      return url.origin;
+    } catch {
+      return 'https://deapps.pro';
+    }
+  };
+
   const copyClientLink = () => {
-    const baseUrl = project.clientPortalDomain || clientPortalDomain || 'https://deapps.pro';
+    const baseUrl = getBaseUrlForProject(project.clientPortalDomain || clientPortalDomain);
     const link = `${baseUrl}/thrive365labslaunch/${project.clientLinkSlug || project.clientLinkId}`;
     navigator.clipboard.writeText(link);
     alert(`Link copied!\n\n${link}`);
   };
 
   const getClientLinkDisplay = () => {
-    const baseUrl = project.clientPortalDomain || clientPortalDomain || 'https://deapps.pro';
+    const baseUrl = getBaseUrlForProject(project.clientPortalDomain || clientPortalDomain);
     return `${baseUrl}/thrive365labslaunch/${project.clientLinkSlug || project.clientLinkId}`;
   };
 
