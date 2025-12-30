@@ -1240,8 +1240,25 @@ const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
 
   const { daysInMonth, startingDayOfWeek, year, month } = getDaysInMonth(selectedDate);
 
+  const normalizeToDateStr = (date) => {
+    if (!date) return '';
+    // Handle YYYY-MM-DD format
+    if (/^\d{4}-\d{2}-\d{2}/.test(date)) return date.substring(0, 10);
+    // Handle MM/DD/YYYY or M/D/YYYY format
+    const slashMatch = date.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+    if (slashMatch) {
+      let [, month, day, year] = slashMatch;
+      if (year.length === 2) year = parseInt(year) > 50 ? '19' + year : '20' + year;
+      return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    }
+    return date;
+  };
+
   const getTasksForDateStr = (dateStr) => {
-    return tasks.filter(t => t.dueDate === dateStr || t.dateCompleted === dateStr);
+    return tasks.filter(t => 
+      normalizeToDateStr(t.dueDate) === dateStr || 
+      normalizeToDateStr(t.dateCompleted) === dateStr
+    );
   };
 
   const getTasksForDay = (day) => {
