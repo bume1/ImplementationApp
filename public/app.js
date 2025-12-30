@@ -652,7 +652,8 @@ const TimelineView = ({ tasks, getPhaseColor, viewMode }) => {
 
 // ============== CALENDAR VIEW COMPONENT ==============
 const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
-  const [selectedMonth, setSelectedMonth] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [calendarMode, setCalendarMode] = useState('month');
 
   const getDaysInMonth = (date) => {
     const year = date.getFullYear();
@@ -664,94 +665,177 @@ const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
     return { daysInMonth, startingDayOfWeek, year, month };
   };
 
-  const { daysInMonth, startingDayOfWeek, year, month } = getDaysInMonth(selectedMonth);
+  const { daysInMonth, startingDayOfWeek, year, month } = getDaysInMonth(selectedDate);
 
-  const getTasksForDate = (day) => {
-    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  const getTasksForDateStr = (dateStr) => {
     return tasks.filter(t => t.dueDate === dateStr || t.dateCompleted === dateStr);
   };
 
-  const prevMonth = () => {
-    setSelectedMonth(new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() - 1));
+  const getTasksForDay = (day) => {
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return getTasksForDateStr(dateStr);
   };
 
-  const nextMonth = () => {
-    setSelectedMonth(new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1));
+  const prevPeriod = () => {
+    if (calendarMode === 'month') {
+      setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1, 1));
+    } else {
+      setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate() - 1));
+    }
   };
+
+  const nextPeriod = () => {
+    if (calendarMode === 'month') {
+      setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 1));
+    } else {
+      setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate() + 1));
+    }
+  };
+
+  const goToToday = () => setSelectedDate(new Date());
 
   const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+  const currentDateStr = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
+  const dayViewTasks = getTasksForDateStr(currentDateStr);
+
   return (
     <div className="bg-white rounded-lg shadow-sm p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold">
-          {monthNames[month]} {year}
-        </h2>
-        <div className="flex gap-2">
-          <button onClick={prevMonth} className="p-2 hover:bg-gray-100 rounded-lg">
-            ←
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-4">
+          <h2 className="text-2xl font-bold">
+            {calendarMode === 'month' 
+              ? `${monthNames[month]} ${year}`
+              : `${monthNames[selectedDate.getMonth()]} ${selectedDate.getDate()}, ${selectedDate.getFullYear()}`
+            }
+          </h2>
+          <button onClick={goToToday} className="text-sm text-blue-600 hover:underline">
+            Today
           </button>
-          <button onClick={nextMonth} className="p-2 hover:bg-gray-100 rounded-lg">
-            →
-          </button>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="flex bg-gray-100 rounded-lg p-1">
+            <button
+              onClick={() => setCalendarMode('day')}
+              className={`px-3 py-1 rounded text-sm ${calendarMode === 'day' ? 'bg-white shadow' : ''}`}
+            >
+              Day
+            </button>
+            <button
+              onClick={() => setCalendarMode('month')}
+              className={`px-3 py-1 rounded text-sm ${calendarMode === 'month' ? 'bg-white shadow' : ''}`}
+            >
+              Month
+            </button>
+          </div>
+          <div className="flex gap-1">
+            <button onClick={prevPeriod} className="p-2 hover:bg-gray-100 rounded-lg">←</button>
+            <button onClick={nextPeriod} className="p-2 hover:bg-gray-100 rounded-lg">→</button>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-7 gap-2 mb-2">
-        {dayNames.map(day => (
-          <div key={day} className="text-center text-sm font-semibold text-gray-600 py-2">
-            {day}
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-7 gap-2">
-        {[...Array(startingDayOfWeek)].map((_, idx) => (
-          <div key={`empty-${idx}`} className="aspect-square"></div>
-        ))}
-        
-        {[...Array(daysInMonth)].map((_, idx) => {
-          const day = idx + 1;
-          const dayTasks = getTasksForDate(day);
-          const isToday = new Date().getDate() === day && 
-                         new Date().getMonth() === month && 
-                         new Date().getFullYear() === year;
-          return (
-            <div
-              key={day}
-              className={`aspect-square border rounded-lg p-2 ${
-                isToday ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
-              } hover:border-blue-300 transition-colors`}
-            >
-              <div className={`text-sm font-semibold mb-1 ${
-                isToday ? 'text-blue-600' : 'text-gray-700'
-              }`}>
+      {calendarMode === 'month' ? (
+        <>
+          <div className="grid grid-cols-7 gap-2 mb-2">
+            {dayNames.map(day => (
+              <div key={day} className="text-center text-sm font-semibold text-gray-600 py-2">
                 {day}
               </div>
-              <div className="space-y-1">
-                {dayTasks.slice(0, 2).map(task => (
-                  <div
-                    key={task.id}
-                    onClick={() => viewMode === 'internal' && onScrollToTask && onScrollToTask(task.id)}
-                    className={`text-xs px-1 py-0.5 rounded truncate ${
-                      task.completed ? 'bg-green-200 text-green-800' : 'bg-blue-100 text-blue-800'
-                    } ${viewMode === 'internal' ? 'cursor-pointer hover:opacity-80' : ''}`}
-                    title={task.taskTitle}
-                  >
-                    {task.taskTitle.substring(0, 12)}{task.taskTitle.length > 12 ? '...' : ''}
+            ))}
+          </div>
+
+          <div className="grid grid-cols-7 gap-2">
+            {[...Array(startingDayOfWeek)].map((_, idx) => (
+              <div key={`empty-${idx}`} className="aspect-square"></div>
+            ))}
+            
+            {[...Array(daysInMonth)].map((_, idx) => {
+              const day = idx + 1;
+              const dayTasks = getTasksForDay(day);
+              const isToday = new Date().getDate() === day && 
+                             new Date().getMonth() === month && 
+                             new Date().getFullYear() === year;
+              return (
+                <div
+                  key={day}
+                  onClick={() => {
+                    setSelectedDate(new Date(year, month, day));
+                    setCalendarMode('day');
+                  }}
+                  className={`aspect-square border rounded-lg p-2 cursor-pointer ${
+                    isToday ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+                  } hover:border-blue-300 transition-colors`}
+                >
+                  <div className={`text-sm font-semibold mb-1 ${
+                    isToday ? 'text-blue-600' : 'text-gray-700'
+                  }`}>
+                    {day}
                   </div>
-                ))}
-                {dayTasks.length > 2 && (
-                  <div className="text-xs text-gray-500">
-                    +{dayTasks.length - 2} more
+                  <div className="space-y-1">
+                    {dayTasks.slice(0, 2).map(task => (
+                      <div
+                        key={task.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          viewMode === 'internal' && onScrollToTask && onScrollToTask(task.id);
+                        }}
+                        className={`text-xs px-1 py-0.5 rounded truncate ${
+                          task.completed ? 'bg-green-200 text-green-800' : 'bg-blue-100 text-blue-800'
+                        } ${viewMode === 'internal' ? 'cursor-pointer hover:opacity-80' : ''}`}
+                        title={task.taskTitle}
+                      >
+                        {task.taskTitle.substring(0, 12)}{task.taskTitle.length > 12 ? '...' : ''}
+                      </div>
+                    ))}
+                    {dayTasks.length > 2 && (
+                      <div className="text-xs text-gray-500">+{dayTasks.length - 2} more</div>
+                    )}
                   </div>
-                )}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      ) : (
+        <div className="space-y-3">
+          <div className="text-lg font-medium text-gray-700 mb-4">
+            {dayNames[selectedDate.getDay()]}, {monthNames[selectedDate.getMonth()]} {selectedDate.getDate()}
+          </div>
+          {dayViewTasks.length === 0 ? (
+            <p className="text-gray-500 text-center py-8">No tasks scheduled for this day</p>
+          ) : (
+            dayViewTasks.map(task => (
+              <div
+                key={task.id}
+                onClick={() => viewMode === 'internal' && onScrollToTask && onScrollToTask(task.id)}
+                className={`p-4 rounded-lg border ${
+                  task.completed ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200'
+                } ${viewMode === 'internal' ? 'cursor-pointer hover:shadow-md' : ''}`}
+              >
+                <div className="flex items-start gap-3">
+                  <div className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${
+                    task.completed ? 'bg-green-500 text-white' : 'border-2 border-gray-300'
+                  }`}>
+                    {task.completed && <span className="text-xs">✓</span>}
+                  </div>
+                  <div className="flex-1">
+                    <h4 className={`font-medium ${task.completed ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
+                      {task.taskTitle}
+                    </h4>
+                    <div className="mt-1 text-sm text-gray-500 flex flex-wrap gap-3">
+                      {task.owner && <span>Owner: {task.owner}</span>}
+                      {task.dueDate && <span>Due: {task.dueDate}</span>}
+                      {task.dateCompleted && <span className="text-green-600">Completed: {task.dateCompleted}</span>}
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            ))
+          )}
+        </div>
+      )}
 
       <div className="mt-6 pt-6 border-t flex items-center gap-6 text-sm">
         <div className="flex items-center gap-2">
@@ -1556,12 +1640,16 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">Stage</label>
-                    <input
+                    <select
                       value={newTask.stage}
                       onChange={(e) => setNewTask({...newTask, stage: e.target.value})}
                       className="w-full px-3 py-2 border rounded-md"
-                      placeholder="e.g., Planning"
-                    />
+                    >
+                      <option value="">-- Select Stage --</option>
+                      {[...new Set(tasks.map(t => t.stage).filter(s => s && s.trim() !== ''))].sort().map(stage => (
+                        <option key={stage} value={stage}>{stage}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
