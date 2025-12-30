@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Project Progress - Thrive 365 Labs</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50">
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const ClientView = () => {
+      const [data, setData] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState(null);
+
+      const linkId = window.location.pathname.split('/').pop();
+
+      useEffect(() => {
+        fetch(`/api/client/${linkId}`)
+          .then(r => r.json())
+          .then(data => {
+            if (data.error) {
+              setError(data.error);
+            } else {
+              setData(data);
+            }
+            setLoading(false);
+          })
+          .catch(err => {
+            setError('Failed to load project');
+            setLoading(false);
+          });
+      }, []);
+
+      if (loading) {
+        return (
+          <div className="min-h-screen flex items-center justify-center">
+            <div className="text-xl">Loading...</div>
+          </div>
+        );
+      }
+
+      if (error) {
+        return (
+          <div className="min-h-screen flex items-center justify-center">
+            <div className="text-xl text-red-600">{error}</div>
+          </div>
+        );
+      }
+
+      const groupedTasks = data.tasks.reduce((acc, task) => {
+        const key = `${task.phase}${task.stage ? ` - ${task.stage}` : ''}`;
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(task);
+        return acc;
+      }, {});
+
+      const totalTasks = data.tasks.length;
+      const completedTasks = data.tasks.filter(t => t.completed).length;
+      const progressPercentage = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+      return (
+        <div className="min-h-screen bg-gray-50 p-6">
+          <div className="max-w-6xl mx-auto">
+            <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+              <h1 className="text-3xl font-bold text-gray-900">{data.project.name}</h1>
+              <p className="text-gray-600">{data.project.clientName}</p>
+            </div>
+
+            <div className="space-y-6">
+              {Object.entries(groupedTasks).map(([groupName, tasks]) => (
+                <div key={groupName} className="bg-white rounded-lg shadow-sm overflow-hidden">
+                  <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-4 text-white">
+                    <h2 className="text-xl font-bold">{groupName}</h2>
+                    <p className="text-sm text-blue-100 mt-1">
+                      {tasks.filter(t => t.completed).length} of {tasks.length} complete
+                    </p>
+                  </div>
+                  <div className="divide-y divide-gray-200">
+                    {tasks.map(task => (
+                      <div key={task.id} className="p-4">
+                        <div className="flex items-start gap-3">
+                          <div className="mt-1">
+                            {task.completed ? (
+                              <div className="w-5 h-5 bg-green-600 rounded-full flex items-center justify-center text-white text-xs">
+                                ✓
+                              </div>
+                            ) : (
+                              <div className="w-5 h-5 border-2 border-gray-300 rounded-full" />
+                            )}
+                          </div>
+                          <div>
+                            <h3 className={`font-medium ${task.completed ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
+                              {task.clientName || task.taskTitle}
+                            </h3>
+                            {task.dateCompleted && (
+                              <p className="text-sm text-green-600 mt-1">
+                                Completed: {task.dateCompleted}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-8 bg-white rounded-lg shadow-sm p-6">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-lg font-semibold">Overall Progress</h3>
+                <span className="text-2xl font-bold text-blue-600">{progressPercentage}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-6">
+                <div 
+                  className="bg-gradient-to-r from-blue-500 to-blue-600 h-6 rounded-full flex items-center justify-center"
+                  style={{ width: `${progressPercentage}%` }}
+                >
+                  {progressPercentage > 10 && (
+                    <span className="text-white text-sm font-medium">
+                      {completedTasks} of {totalTasks} tasks
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<ClientView />);
+  </script>
+</body>
+</html>

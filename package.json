@@ -1,0 +1,21 @@
+{
+  "name": "project-tracker",
+  "version": "2.0.0",
+  "description": "Multi-project launch tracker with templates and HubSpot integration",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "uuid": "^9.0.0",
+    "@replit/database": "^2.0.5",
+    "body-parser": "^1.20.2"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
