@@ -73,6 +73,12 @@ const api = {
       headers: { 'Authorization': `Bearer ${token}` }
     }).then(r => r.json()),
 
+  deleteProject: (token, projectId) =>
+    fetch(`${API_URL}/api/projects/${projectId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.json()),
+
   exportProject: (token, projectId) => {
     window.open(`${API_URL}/api/projects/${projectId}/export`, '_blank');
   },
@@ -323,12 +329,29 @@ const AuthScreen = ({ onLogin }) => {
   );
 };
 
+// ============== STATUS BADGE COMPONENT ==============
+const StatusBadge = ({ status }) => {
+  const statusConfig = {
+    active: { label: 'In Progress', bg: 'bg-blue-100', text: 'text-blue-800', dot: 'bg-blue-500' },
+    paused: { label: 'Paused', bg: 'bg-yellow-100', text: 'text-yellow-800', dot: 'bg-yellow-500' },
+    completed: { label: 'Completed', bg: 'bg-green-100', text: 'text-green-800', dot: 'bg-green-500' }
+  };
+  const config = statusConfig[status] || statusConfig.active;
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${config.bg} ${config.text}`}>
+      <span className={`w-2 h-2 rounded-full ${config.dot}`}></span>
+      {config.label}
+    </span>
+  );
+};
+
 // ============== PROJECT LIST COMPONENT ==============
 const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, onManageTemplates, onManageHubSpot }) => {
   const [projects, setProjects] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState([]);
+  const [editingProject, setEditingProject] = useState(null);
   const [newProject, setNewProject] = useState({
     name: '',
     clientName: '',
@@ -397,6 +420,37 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
     const link = `${window.location.origin}/client/${linkId}`;
     navigator.clipboard.writeText(link);
     alert('Client link copied to clipboard!');
+  };
+
+  const handleEditProject = async () => {
+    if (!editingProject) return;
+    try {
+      await api.updateProject(token, editingProject.id, {
+        name: editingProject.name,
+        clientName: editingProject.clientName,
+        projectManager: editingProject.projectManager,
+        hubspotRecordId: editingProject.hubspotRecordId,
+        status: editingProject.status
+      });
+      setEditingProject(null);
+      loadProjects();
+    } catch (err) {
+      console.error('Failed to update project:', err);
+      alert('Failed to update project');
+    }
+  };
+
+  const handleDeleteProject = async (project) => {
+    if (!confirm(`Are you sure you want to delete "${project.name}"? This will permanently remove the project and all its tasks.`)) {
+      return;
+    }
+    try {
+      await api.deleteProject(token, project.id);
+      loadProjects();
+    } catch (err) {
+      console.error('Failed to delete project:', err);
+      alert('Failed to delete project');
+    }
   };
 
   return (
@@ -560,12 +614,15 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                 key={project.id}
                 className="bg-white rounded-lg shadow-sm p-6 hover:shadow-md border border-gray-200"
               >
-                <h3 className="text-xl font-bold text-gray-900 mb-2">{project.name}</h3>
+                <div className="flex justify-between items-start mb-2">
+                  <h3 className="text-xl font-bold text-gray-900">{project.name}</h3>
+                  <StatusBadge status={project.status || 'active'} />
+                </div>
                 <p className="text-gray-600 mb-4">{project.clientName}</p>
 
                 <div className="space-y-2 text-sm text-gray-500 mb-4">
                   {project.projectManager && (
-                    <p><span className="font-medium">PM:</span> {project.projectManager}</p>
+                    <p><span className="font-medium">On-Site Project Manager:</span> {project.projectManager}</p>
                   )}
                   {project.hubspotRecordId && (
                     <p><span className="font-medium">HubSpot Record:</span> {project.hubspotRecordId}</p>
@@ -580,15 +637,99 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                   >
                     Open Tracker
                   </button>
-                  <button
-                    onClick={() => copyClientLink(project.clientLinkSlug || project.clientLinkId)}
-                    className="w-full bg-gray-100 text-gray-700 py-2 rounded-md hover:bg-gray-200 text-sm"
-                  >
-                    Copy Client Link
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setEditingProject({...project})}
+                      className="flex-1 bg-gray-100 text-gray-700 py-2 rounded-md hover:bg-gray-200 text-sm"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => copyClientLink(project.clientLinkSlug || project.clientLinkId)}
+                      className="flex-1 bg-gray-100 text-gray-700 py-2 rounded-md hover:bg-gray-200 text-sm"
+                    >
+                      Copy Client Link
+                    </button>
+                  </div>
+                  {user.role === 'admin' && (
+                    <button
+                      onClick={() => handleDeleteProject(project)}
+                      className="w-full bg-red-50 text-red-600 py-2 rounded-md hover:bg-red-100 text-sm"
+                    >
+                      Delete Project
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {editingProject && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 max-w-lg w-full mx-4">
+              <h2 className="text-xl font-bold mb-4">Edit Project</h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Project Name</label>
+                  <input
+                    value={editingProject.name}
+                    onChange={(e) => setEditingProject({...editingProject, name: e.target.value})}
+                    className="w-full px-3 py-2 border rounded-md"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Client Name</label>
+                  <input
+                    value={editingProject.clientName}
+                    onChange={(e) => setEditingProject({...editingProject, clientName: e.target.value})}
+                    className="w-full px-3 py-2 border rounded-md"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">On-Site Project Manager</label>
+                  <input
+                    value={editingProject.projectManager || ''}
+                    onChange={(e) => setEditingProject({...editingProject, projectManager: e.target.value})}
+                    className="w-full px-3 py-2 border rounded-md"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">HubSpot Record ID</label>
+                  <input
+                    value={editingProject.hubspotRecordId || ''}
+                    onChange={(e) => setEditingProject({...editingProject, hubspotRecordId: e.target.value})}
+                    className="w-full px-3 py-2 border rounded-md"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Project Status</label>
+                  <select
+                    value={editingProject.status || 'active'}
+                    onChange={(e) => setEditingProject({...editingProject, status: e.target.value})}
+                    className="w-full px-3 py-2 border rounded-md"
+                  >
+                    <option value="active">In Progress</option>
+                    <option value="paused">Paused</option>
+                    <option value="completed">Completed</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex gap-2 mt-6">
+                <button
+                  onClick={handleEditProject}
+                  className="flex-1 bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700"
+                >
+                  Save Changes
+                </button>
+                <button
+                  onClick={() => setEditingProject(null)}
+                  className="flex-1 bg-gray-300 py-2 rounded-md hover:bg-gray-400"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
