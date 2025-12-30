@@ -17,15 +17,22 @@ const JWT_SECRET = process.env.JWT_SECRET || 'thrive365-secret-change-in-product
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
 
-// Serve static files for the main app path
+// Serve static files for the main app path (both cases)
 app.use('/thrive365labsLAUNCH', express.static('public'));
+app.use('/thrive365labslaunch', express.static('public'));
 app.use(express.static('public'));
 
-// Serve the main app at /thrive365labsLAUNCH
+// Serve the main app at /thrive365labsLAUNCH and /thrive365labslaunch
 app.get('/thrive365labsLAUNCH', (req, res) => {
   res.sendFile(__dirname + '/public/index.html');
 });
+app.get('/thrive365labslaunch', (req, res) => {
+  res.sendFile(__dirname + '/public/index.html');
+});
 app.get('/thrive365labsLAUNCH/*', (req, res) => {
+  res.sendFile(__dirname + '/public/index.html');
+});
+app.get('/thrive365labslaunch/*', (req, res) => {
   res.sendFile(__dirname + '/public/index.html');
 });
 
@@ -1739,8 +1746,19 @@ app.delete('/api/templates/:id', authenticateToken, requireAdmin, async (req, re
 });
 
 // ============== CLIENT PORTAL ROUTES ==============
-// New format: /thrive365labsLAUNCH/:slug
+// New format: /thrive365labsLAUNCH/:slug and /thrive365labslaunch/:slug
 app.get('/thrive365labsLAUNCH/:slug', async (req, res) => {
+  const projects = await getProjects();
+  const project = projects.find(p => p.clientLinkSlug === req.params.slug || p.clientLinkId === req.params.slug);
+  
+  if (project) {
+    res.sendFile(__dirname + '/public/client.html');
+  } else {
+    res.status(404).send('Project not found');
+  }
+});
+
+app.get('/thrive365labslaunch/:slug', async (req, res) => {
   const projects = await getProjects();
   const project = projects.find(p => p.clientLinkSlug === req.params.slug || p.clientLinkId === req.params.slug);
   
@@ -1754,7 +1772,7 @@ app.get('/thrive365labsLAUNCH/:slug', async (req, res) => {
 // Legacy root-level route (for backwards compatibility)
 app.get('/:slug', async (req, res, next) => {
   // Skip if it looks like a file request or known route
-  if (req.params.slug.includes('.') || ['api', 'client', 'favicon.ico', 'thrive365labsLAUNCH'].includes(req.params.slug)) {
+  if (req.params.slug.includes('.') || ['api', 'client', 'favicon.ico', 'thrive365labsLAUNCH', 'thrive365labslaunch'].includes(req.params.slug)) {
     return next();
   }
   
