@@ -775,89 +775,113 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-6xl mx-auto">
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-3xl font-bold text-accent">New Client Launch Dashboard</h1>
-              <p className="text-sm text-gray-500">Implementation Trackers</p>
-              <p className="text-gray-600 mt-1">
-                Welcome, {user.name} 
-                {user.role === 'admin' && <span className="ml-2 text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">ADMIN</span>}
-              </p>
-            </div>
-            <div className="flex gap-3 items-center">
+    <div className="min-h-screen bg-gray-50">
+      {/* Top Bar - Dark Navy */}
+      <div className="bg-[#00205A] text-white text-sm">
+        <div className="max-w-6xl mx-auto px-6 py-2 flex justify-between items-center">
+          <div className="flex items-center gap-4">
+            <a href="https://www.linkedin.com/company/thrive-365-labs" target="_blank" rel="noopener noreferrer" className="hover:text-blue-300">
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/></svg>
+            </a>
+            <a href="https://www.facebook.com/thrive365labs" target="_blank" rel="noopener noreferrer" className="hover:text-blue-300">
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M9 8h-3v4h3v12h5v-12h3.642l.358-4h-4v-1.667c0-.955.192-1.333 1.115-1.333h2.885v-5h-3.808c-3.596 0-5.192 1.583-5.192 4.615v3.385z"/></svg>
+            </a>
+          </div>
+          <div className="flex items-center gap-2">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
+            <span>Call Now: (770) 762-9269</span>
+          </div>
+        </div>
+      </div>
+      
+      {/* Main Header - White */}
+      <div className="bg-white border-b shadow-sm">
+        <div className="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
+          <div className="flex items-center gap-4">
+            <img src="/logo.webp" alt="Thrive 365 Labs" className="h-12" />
+          </div>
+          <nav className="flex items-center gap-6">
+            <button
+              onClick={() => setShowCreate(!showCreate)}
+              className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide"
+            >
+              + New Project
+            </button>
+            {user.role === 'admin' && onManageTemplates && (
               <button
-                onClick={() => setShowCreate(!showCreate)}
-                className="bg-primary text-white px-4 py-2 rounded-md hover:bg-accent"
+                onClick={onManageTemplates}
+                className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide"
               >
-                + New Project
+                Templates
               </button>
-              {user.role === 'admin' && onManageTemplates && (
-                <button
-                  onClick={onManageTemplates}
-                  className="bg-teal-600 text-white px-4 py-2 rounded-md hover:bg-teal-700"
-                >
-                  Templates
-                </button>
-              )}
-              {onViewReporting && (
-                <button
-                  onClick={onViewReporting}
-                  className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700"
-                >
-                  Reports
-                </button>
-              )}
-              {user.role === 'admin' && (
-                <div className="relative">
-                  <button
-                    onClick={() => setShowSettingsMenu(!showSettingsMenu)}
-                    className="bg-gray-700 text-white px-4 py-2 rounded-md hover:bg-gray-800 flex items-center gap-2"
-                  >
-                    Settings
-                    <svg className={`w-4 h-4 transition-transform ${showSettingsMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                  {showSettingsMenu && (
-                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border z-50">
-                      {onManageUsers && (
-                        <button
-                          onClick={() => { onManageUsers(); setShowSettingsMenu(false); }}
-                          className="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 border-b"
-                        >
-                          Manage Users
-                        </button>
-                      )}
-                      {onManageHubSpot && (
-                        <button
-                          onClick={() => { onManageHubSpot(); setShowSettingsMenu(false); }}
-                          className="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700"
-                        >
-                          HubSpot Settings
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
+            )}
+            {onViewReporting && (
               <button
-                onClick={() => setShowHelpGuide(true)}
-                className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
+                onClick={onViewReporting}
+                className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide"
               >
-                Help
+                Reports
               </button>
+            )}
+            {user.role === 'admin' && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowSettingsMenu(!showSettingsMenu)}
+                  className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide flex items-center gap-1"
+                >
+                  Settings
+                  <svg className={`w-3 h-3 transition-transform ${showSettingsMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {showSettingsMenu && (
+                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border z-50">
+                    {onManageUsers && (
+                      <button
+                        onClick={() => { onManageUsers(); setShowSettingsMenu(false); }}
+                        className="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 border-b text-sm"
+                      >
+                        Manage Users
+                      </button>
+                    )}
+                    {onManageHubSpot && (
+                      <button
+                        onClick={() => { onManageHubSpot(); setShowSettingsMenu(false); }}
+                        className="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 text-sm"
+                      >
+                        HubSpot Settings
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            <button
+              onClick={() => setShowHelpGuide(true)}
+              className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide"
+            >
+              Help
+            </button>
+            <div className="h-6 w-px bg-gray-300"></div>
+            <div className="flex items-center gap-3">
+              <span className="text-gray-600 text-sm">
+                {user.name}
+                {user.role === 'admin' && <span className="ml-1 text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded">ADMIN</span>}
+              </span>
               <button
                 onClick={onLogout}
-                className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700"
+                className="text-gray-500 hover:text-red-600 text-sm"
               >
                 Logout
               </button>
             </div>
-          </div>
+          </nav>
         </div>
+      </div>
+
+      {/* Page Content */}
+      <div className="p-6">
+      <div className="max-w-6xl mx-auto">
 
         {showHelpGuide && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -1250,7 +1274,8 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
           </div>
         )}
       </div>
-      <footer className="mt-8 py-4 text-center text-sm text-gray-500 border-t">
+      </div>
+      <footer className="mt-8 py-4 text-center text-sm text-gray-500 border-t max-w-6xl mx-auto">
         <p>Developed by Bianca G. C. Ume, MD, MBA, MS</p>
       </footer>
     </div>
