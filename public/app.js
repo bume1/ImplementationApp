@@ -157,6 +157,16 @@ const api = {
       headers: { 'Authorization': `Bearer ${token}` }
     }).then(r => r.json()),
 
+  createUser: (token, userData) =>
+    fetch(`${API_URL}/api/users`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(userData)
+    }).then(r => r.json()),
+
   addNote: (token, projectId, taskId, content) =>
     fetch(`${API_URL}/api/projects/${projectId}/tasks/${taskId}/notes`, {
       method: 'POST',
@@ -280,7 +290,7 @@ const AuthScreen = ({ onLogin }) => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center p-4">
       <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
-        <h1 className="text-3xl font-bold mb-2">New Client Launch Dashboard</h1>
+        <h1 className="text-3xl font-bold mb-2">New Client Launch Implementation App</h1>
         <p className="text-gray-600 mb-6">Thrive 365 Labs</p>
 
 
@@ -369,6 +379,9 @@ const AuthScreen = ({ onLogin }) => {
               {mode === 'login' ? 'Need an account? Sign up' : mode === 'signup' ? 'Already have an account? Login' : 'Back to Login'}
             </button>
           </div>
+        </div>
+        <div className="mt-8 text-center text-sm text-gray-500">
+          <p>Designed by Bianca G. C. Ume, MD, MBA, MS</p>
         </div>
       </div>
     </div>
@@ -794,6 +807,9 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
           </div>
         )}
       </div>
+      <footer className="mt-8 py-4 text-center text-sm text-gray-500 border-t">
+        <p>Designed by Bianca G. C. Ume, MD, MBA, MS</p>
+      </footer>
     </div>
   );
 };
@@ -2068,7 +2084,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                       {isAdmin ? 'Edit' : (task.createdBy === user.id ? 'Edit' : 'Update Status')}
                                     </button>
                                   )}
-                                  {viewMode === 'internal' && (isAdmin || task.createdBy === user.id) && task.createdBy && (
+                                  {viewMode === 'internal' && (isAdmin || (task.createdBy && task.createdBy === user.id)) && (
                                     <button
                                       onClick={() => handleDeleteProjectTask(task.id)}
                                       className="text-gray-400 hover:text-red-600"
@@ -2413,6 +2429,9 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingUser, setEditingUser] = useState(null);
+  const [showAddUser, setShowAddUser] = useState(false);
+  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'user' });
+  const [addError, setAddError] = useState('');
 
   useEffect(() => {
     loadUsers();
@@ -2427,6 +2446,31 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
       console.error('Failed to load users:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCreateUser = async () => {
+    if (!newUser.name.trim() || !newUser.email.trim() || !newUser.password.trim()) {
+      setAddError('Name, email, and password are required');
+      return;
+    }
+    if (newUser.password.length < 8) {
+      setAddError('Password must be at least 8 characters');
+      return;
+    }
+    try {
+      const result = await api.createUser(token, newUser);
+      if (result.error) {
+        setAddError(result.error);
+        return;
+      }
+      await loadUsers();
+      setNewUser({ name: '', email: '', password: '', role: 'user' });
+      setShowAddUser(false);
+      setAddError('');
+    } catch (err) {
+      console.error('Failed to create user:', err);
+      setAddError('Failed to create user');
     }
   };
 
@@ -2481,14 +2525,87 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
               <h1 className="text-3xl font-bold text-gray-900">User Management</h1>
               <p className="text-gray-600">Manage team member accounts</p>
             </div>
-            <button
-              onClick={onLogout}
-              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-            >
-              Logout
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowAddUser(true)}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+              >
+                + Add User
+              </button>
+              <button
+                onClick={onLogout}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+              >
+                Logout
+              </button>
+            </div>
           </div>
         </div>
+
+        {showAddUser && (
+          <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+            <h2 className="text-xl font-bold mb-4">Add New User</h2>
+            {addError && (
+              <div className="bg-red-50 text-red-600 p-3 rounded mb-4">{addError}</div>
+            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Name *</label>
+                <input
+                  value={newUser.name}
+                  onChange={(e) => setNewUser({...newUser, name: e.target.value})}
+                  className="w-full px-3 py-2 border rounded-md"
+                  placeholder="Full name"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Email *</label>
+                <input
+                  type="email"
+                  value={newUser.email}
+                  onChange={(e) => setNewUser({...newUser, email: e.target.value})}
+                  className="w-full px-3 py-2 border rounded-md"
+                  placeholder="email@example.com"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Password *</label>
+                <input
+                  type="password"
+                  value={newUser.password}
+                  onChange={(e) => setNewUser({...newUser, password: e.target.value})}
+                  className="w-full px-3 py-2 border rounded-md"
+                  placeholder="Password"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Role</label>
+                <select
+                  value={newUser.role}
+                  onChange={(e) => setNewUser({...newUser, role: e.target.value})}
+                  className="w-full px-3 py-2 border rounded-md"
+                >
+                  <option value="user">User</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleCreateUser}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+              >
+                Create User
+              </button>
+              <button
+                onClick={() => { setShowAddUser(false); setAddError(''); setNewUser({ name: '', email: '', password: '', role: 'user' }); }}
+                className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="bg-white rounded-lg shadow-sm overflow-hidden">
           <table className="w-full">
@@ -3068,7 +3185,7 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
                           <td className="px-4 py-2 text-sm">{task.phase}</td>
                           <td className="px-4 py-2 text-sm">{task.stage}</td>
                           <td className="px-4 py-2 text-sm font-medium">{task.taskTitle}</td>
-                          <td className="px-4 py-2 text-sm text-gray-500">{getOwnerName ? getOwnerName(task.owner) : (task.owner || '-')}</td>
+                          <td className="px-4 py-2 text-sm text-gray-500">{task.owner || '-'}</td>
                           <td className="px-4 py-2 text-xs text-gray-500 relative group">
                             {task.dependencies && task.dependencies.length > 0 ? (
                               <div>
@@ -3411,7 +3528,7 @@ const Reporting = ({ token, user, onBack, onLogout }) => {
                 ← Back to Projects
               </button>
               <h1 className="text-3xl font-bold text-gray-900">Launch Reports</h1>
-              <p className="text-gray-600">New Client Launch Dashboard - Thrive 365 Labs</p>
+              <p className="text-gray-600">New Client Launch Implementation App - Thrive 365 Labs</p>
             </div>
             <button
               onClick={onLogout}

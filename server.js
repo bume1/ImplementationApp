@@ -137,6 +137,44 @@ app.post('/api/auth/signup', async (req, res) => {
   }
 });
 
+// Admin create user endpoint
+app.post('/api/users', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    const { email, password, name, role } = req.body;
+    if (!email || !password || !name) {
+      return res.status(400).json({ error: 'Email, password, and name are required' });
+    }
+    const users = await getUsers();
+    if (users.find(u => u.email === email)) {
+      return res.status(400).json({ error: 'User already exists with this email' });
+    }
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const newUser = {
+      id: uuidv4(),
+      email,
+      name,
+      password: hashedPassword,
+      role: role || 'user',
+      createdAt: new Date().toISOString()
+    };
+    users.push(newUser);
+    await db.set('users', users);
+    res.json({ 
+      id: newUser.id, 
+      email: newUser.email, 
+      name: newUser.name, 
+      role: newUser.role, 
+      createdAt: newUser.createdAt 
+    });
+  } catch (error) {
+    console.error('Admin create user error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;

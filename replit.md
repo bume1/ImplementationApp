@@ -1,8 +1,8 @@
-# New Client Launch Dashboard - Thrive 365 Labs
+# New Client Launch Implementation App - Thrive 365 Labs
 
 ## Overview
 
-A multi-project launch tracker designed for managing clinical laboratory equipment installations. The system provides a 102-task template specifically for Biolis AU480 CLIA lab setups, with admin controls, team member accounts, and embeddable client portals for external stakeholders to view progress without authentication.
+A multi-project launch tracker designed for managing clinical laboratory equipment installations. Designed by Bianca G. C. Ume, MD, MBA, MS. The system provides a 102-task template specifically for Biolis AU480 CLIA lab setups, with admin controls, team member accounts, and embeddable client portals for external stakeholders to view progress without authentication.
 
 The primary use case is tracking complex, multi-phase laboratory equipment launches with tasks spanning contract signature through go-live, including CLIA certification, equipment procurement, LIS/EMR integration, and staff training coordination.
 
