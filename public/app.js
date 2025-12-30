@@ -149,6 +149,31 @@ const api = {
     fetch(`${API_URL}/api/templates/${templateId}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.json()),
+
+  testHubSpotConnection: (token) =>
+    fetch(`${API_URL}/api/hubspot/test`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.json()),
+
+  getHubSpotPipelines: (token) =>
+    fetch(`${API_URL}/api/hubspot/pipelines`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.json()),
+
+  getHubSpotStageMapping: (token) =>
+    fetch(`${API_URL}/api/hubspot/stage-mapping`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.json()),
+
+  saveHubSpotStageMapping: (token, pipelineId, mapping) =>
+    fetch(`${API_URL}/api/hubspot/stage-mapping`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ pipelineId, mapping })
     }).then(r => r.json())
 };
 
@@ -299,7 +324,7 @@ const AuthScreen = ({ onLogin }) => {
 };
 
 // ============== PROJECT LIST COMPONENT ==============
-const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, onManageTemplates }) => {
+const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, onManageTemplates, onManageHubSpot }) => {
   const [projects, setProjects] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -407,6 +432,14 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                   className="bg-teal-600 text-white px-4 py-2 rounded-md hover:bg-teal-700"
                 >
                   Manage Templates
+                </button>
+              )}
+              {user.role === 'admin' && onManageHubSpot && (
+                <button
+                  onClick={onManageHubSpot}
+                  className="bg-orange-600 text-white px-4 py-2 rounded-md hover:bg-orange-700"
+                >
+                  HubSpot Settings
                 </button>
               )}
               <button
@@ -1322,9 +1355,14 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                 </button>
               </div>
               {project.hubspotDealId && (
-                <p className="text-sm text-gray-600">
-                  HubSpot Deal ID: <span className="font-medium">{project.hubspotDealId}</span>
-                </p>
+                <div className="flex items-center gap-3 text-sm text-gray-600">
+                  <p>HubSpot Deal ID: <span className="font-medium">{project.hubspotDealId}</span></p>
+                  {project.lastHubSpotSync && (
+                    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
+                      Last synced: {new Date(project.lastHubSpotSync).toLocaleString()}
+                    </span>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -2564,6 +2602,215 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
   );
 };
 
+// ============== HUBSPOT SETTINGS COMPONENT (Admin Only) ==============
+const HubSpotSettings = ({ token, user, onBack, onLogout }) => {
+  const [connectionStatus, setConnectionStatus] = useState(null);
+  const [pipelines, setPipelines] = useState([]);
+  const [selectedPipeline, setSelectedPipeline] = useState('');
+  const [stageMapping, setStageMapping] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+
+  const phases = [
+    { id: 'Phase 0', name: 'Phase 0 - Contract Signature' },
+    { id: 'Phase 1', name: 'Phase 1 - Pre-Launch' },
+    { id: 'Phase 2', name: 'Phase 2 - Implementation Sprints' },
+    { id: 'Phase 3', name: 'Phase 3 - Go-Live' },
+    { id: 'Phase 4', name: 'Phase 4 - Post-Launch Optimization' }
+  ];
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [status, existingMapping] = await Promise.all([
+        api.testHubSpotConnection(token),
+        api.getHubSpotStageMapping(token)
+      ]);
+      
+      setConnectionStatus(status);
+      
+      if (status.connected) {
+        const pipelinesData = await api.getHubSpotPipelines(token);
+        setPipelines(pipelinesData);
+        
+        if (existingMapping.pipelineId) {
+          setSelectedPipeline(existingMapping.pipelineId);
+          setStageMapping(existingMapping.phases || {});
+        }
+      }
+    } catch (error) {
+      console.error('Error loading HubSpot data:', error);
+    }
+    setLoading(false);
+  };
+
+  const handlePipelineChange = (pipelineId) => {
+    setSelectedPipeline(pipelineId);
+    setStageMapping({});
+  };
+
+  const handleStageSelect = (phaseId, stageId) => {
+    setStageMapping(prev => ({
+      ...prev,
+      [phaseId]: stageId
+    }));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setMessage('');
+    try {
+      await api.saveHubSpotStageMapping(token, selectedPipeline, stageMapping);
+      setMessage('Stage mapping saved successfully!');
+    } catch (error) {
+      setMessage('Error saving stage mapping');
+    }
+    setSaving(false);
+  };
+
+  const selectedPipelineData = pipelines.find(p => p.id === selectedPipeline);
+
+  return (
+    <div className="min-h-screen bg-gray-100 p-4 md:p-8">
+      <div className="max-w-4xl mx-auto">
+        <div className="bg-white rounded-lg shadow-sm mb-6 p-6">
+          <div className="flex justify-between items-center mb-4">
+            <div>
+              <button
+                onClick={onBack}
+                className="text-sm text-blue-600 hover:underline mb-2"
+              >
+                ← Back to Projects
+              </button>
+              <h1 className="text-2xl font-bold text-gray-900">HubSpot Integration Settings</h1>
+              <p className="text-gray-600">Configure how project phases sync with HubSpot deal stages</p>
+            </div>
+            <button
+              onClick={onLogout}
+              className="text-sm bg-red-100 text-red-600 px-3 py-1 rounded hover:bg-red-200"
+            >
+              Logout
+            </button>
+          </div>
+
+          {loading ? (
+            <div className="text-center py-8">
+              <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-500 border-t-transparent"></div>
+              <p className="mt-2 text-gray-600">Loading HubSpot settings...</p>
+            </div>
+          ) : (
+            <>
+              <div className={`p-4 rounded-lg mb-6 ${connectionStatus?.connected ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                <div className="flex items-center gap-2">
+                  <span className={`w-3 h-3 rounded-full ${connectionStatus?.connected ? 'bg-green-500' : 'bg-red-500'}`}></span>
+                  <span className="font-medium">
+                    {connectionStatus?.connected ? 'HubSpot Connected' : 'HubSpot Not Connected'}
+                  </span>
+                </div>
+                {connectionStatus?.connected && (
+                  <p className="text-sm text-gray-600 mt-1">
+                    Found {connectionStatus.pipelineCount} deal pipeline{connectionStatus.pipelineCount !== 1 ? 's' : ''}
+                  </p>
+                )}
+                {!connectionStatus?.connected && (
+                  <p className="text-sm text-red-600 mt-1">
+                    {connectionStatus?.error || 'Please configure HubSpot connection in Replit'}
+                  </p>
+                )}
+              </div>
+
+              {connectionStatus?.connected && (
+                <>
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Select Deal Pipeline
+                    </label>
+                    <select
+                      value={selectedPipeline}
+                      onChange={(e) => handlePipelineChange(e.target.value)}
+                      className="w-full border rounded-lg px-3 py-2"
+                    >
+                      <option value="">Choose a pipeline...</option>
+                      {pipelines.map(pipeline => (
+                        <option key={pipeline.id} value={pipeline.id}>
+                          {pipeline.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {selectedPipelineData && (
+                    <div className="mb-6">
+                      <h3 className="text-lg font-medium mb-4">Map Project Phases to Deal Stages</h3>
+                      <p className="text-sm text-gray-600 mb-4">
+                        When all tasks in a phase are completed, the connected HubSpot deal will automatically move to the selected stage.
+                      </p>
+                      
+                      <div className="space-y-4">
+                        {phases.map(phase => (
+                          <div key={phase.id} className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg">
+                            <div className="w-1/2">
+                              <span className="font-medium">{phase.name}</span>
+                            </div>
+                            <div className="w-1/2">
+                              <select
+                                value={stageMapping[phase.id] || ''}
+                                onChange={(e) => handleStageSelect(phase.id, e.target.value)}
+                                className="w-full border rounded px-3 py-2"
+                              >
+                                <option value="">No stage mapping</option>
+                                {selectedPipelineData.stages.map(stage => (
+                                  <option key={stage.id} value={stage.id}>
+                                    {stage.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="mt-6 flex items-center gap-4">
+                        <button
+                          onClick={handleSave}
+                          disabled={saving || !selectedPipeline}
+                          className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                        >
+                          {saving ? 'Saving...' : 'Save Mapping'}
+                        </button>
+                        {message && (
+                          <span className={message.includes('Error') ? 'text-red-600' : 'text-green-600'}>
+                            {message}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-8 p-4 bg-blue-50 rounded-lg">
+                    <h4 className="font-medium text-blue-800 mb-2">How it works</h4>
+                    <ul className="text-sm text-blue-700 space-y-1">
+                      <li>• When you complete all tasks in a phase, the linked HubSpot deal moves to the mapped stage</li>
+                      <li>• Adding notes to tasks creates activity entries on the deal in HubSpot</li>
+                      <li>• Completing tasks logs the completion as an activity on the deal</li>
+                      <li>• Projects must have a HubSpot Deal ID set to sync (edit project settings)</li>
+                    </ul>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const App = () => {
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [user, setUser] = useState(JSON.parse(localStorage.getItem('user') || 'null'));
@@ -2634,6 +2881,17 @@ const App = () => {
     );
   }
 
+  if (view === 'hubspot' && user.role === 'admin') {
+    return (
+      <HubSpotSettings
+        token={token}
+        user={user}
+        onBack={handleBackToList}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
   return (
     <ProjectList
       token={token}
@@ -2642,6 +2900,7 @@ const App = () => {
       onLogout={handleLogout}
       onManageUsers={() => setView('users')}
       onManageTemplates={() => setView('templates')}
+      onManageHubSpot={() => setView('hubspot')}
     />
   );
 };
