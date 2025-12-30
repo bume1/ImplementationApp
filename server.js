@@ -402,6 +402,30 @@ app.put('/api/projects/:id', authenticateToken, async (req, res) => {
   }
 });
 
+app.delete('/api/projects/:id', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only admins can delete projects' });
+    }
+    
+    const projects = await getProjects();
+    const idx = projects.findIndex(p => p.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Project not found' });
+    
+    const projectId = req.params.id;
+    projects.splice(idx, 1);
+    await db.set('projects', projects);
+    
+    // Also delete the project's tasks
+    await db.delete(`tasks_${projectId}`);
+    
+    res.json({ message: 'Project deleted successfully' });
+  } catch (error) {
+    console.error('Delete project error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ============== TASK ROUTES ==============
 app.get('/api/projects/:id/tasks', authenticateToken, async (req, res) => {
   try {
