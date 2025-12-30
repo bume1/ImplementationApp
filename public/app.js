@@ -2341,17 +2341,21 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                 placeholder="Task Title"
                               />
                               <div className="grid grid-cols-2 gap-3">
-                                {(isAdmin || !task.owner || task.owner.trim() === '') && (
+                                {isAdmin && (
                                   <div>
                                     <label className="block text-xs text-gray-500 mb-1">Owner</label>
                                     <select
-                                      value={editingTask.owner}
+                                      value={editingTask.owner || ''}
                                       onChange={(e) =>
                                         setEditingTask({...editingTask, owner: e.target.value})
                                       }
                                       className="w-full px-3 py-2 border rounded-md"
                                     >
                                       <option value="">Unassigned</option>
+                                      {/* Show current owner if not in team members list */}
+                                      {editingTask.owner && !teamMembers.find(m => m.email === editingTask.owner) && (
+                                        <option value={editingTask.owner}>{editingTask.owner} (not registered)</option>
+                                      )}
                                       {teamMembers.map(member => (
                                         <option key={member.email} value={member.email}>{member.name}</option>
                                       ))}

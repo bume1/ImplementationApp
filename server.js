@@ -912,6 +912,29 @@ app.put('/api/hubspot/stage-mapping', authenticateToken, requireAdmin, async (re
   }
 });
 
+// ============== FIX CLIENT NAMES (Admin utility) ==============
+app.post('/api/projects/:id/fix-client-names', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const tasks = await getTasks(req.params.id);
+    let fixedCount = 0;
+    
+    tasks.forEach(task => {
+      if (task.showToClient && (!task.clientName || task.clientName.trim() === '')) {
+        task.clientName = task.taskTitle;
+        fixedCount++;
+      }
+    });
+    
+    if (fixedCount > 0) {
+      await db.set(`tasks_${req.params.id}`, tasks);
+    }
+    
+    res.json({ message: `Fixed ${fixedCount} task client names`, fixedCount });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ============== CLIENT PORTAL DOMAIN SETTINGS ==============
 app.get('/api/settings/client-portal-domain', authenticateToken, async (req, res) => {
   try {
