@@ -16,7 +16,18 @@ const JWT_SECRET = process.env.JWT_SECRET || 'thrive365-secret-change-in-product
 
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
+
+// Serve static files for the main app path
+app.use('/thrive365labsLAUNCH', express.static('public'));
 app.use(express.static('public'));
+
+// Serve the main app at /thrive365labsLAUNCH
+app.get('/thrive365labsLAUNCH', (req, res) => {
+  res.sendFile(__dirname + '/public/index.html');
+});
+app.get('/thrive365labsLAUNCH/*', (req, res) => {
+  res.sendFile(__dirname + '/public/index.html');
+});
 
 // Initialize admin user on startup
 (async () => {
@@ -896,6 +907,28 @@ app.put('/api/hubspot/stage-mapping', authenticateToken, requireAdmin, async (re
     const { mapping, pipelineId } = req.body;
     await db.set('hubspot_stage_mapping', { pipelineId, phases: mapping });
     res.json({ message: 'Stage mapping saved' });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============== CLIENT PORTAL DOMAIN SETTINGS ==============
+app.get('/api/settings/client-portal-domain', authenticateToken, async (req, res) => {
+  try {
+    const domain = await db.get('client_portal_domain') || '';
+    res.json({ domain });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.put('/api/settings/client-portal-domain', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { domain } = req.body;
+    // Remove trailing slash if present
+    const cleanDomain = domain ? domain.replace(/\/+$/, '') : '';
+    await db.set('client_portal_domain', cleanDomain);
+    res.json({ message: 'Client portal domain saved', domain: cleanDomain });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }

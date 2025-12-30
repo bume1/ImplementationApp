@@ -186,6 +186,21 @@ const api = {
       body: JSON.stringify({ email })
     }).then(r => r.json()),
 
+  getClientPortalDomain: (token) =>
+    fetch(`${API_URL}/api/settings/client-portal-domain`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.json()),
+
+  setClientPortalDomain: (token, domain) =>
+    fetch(`${API_URL}/api/settings/client-portal-domain`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ domain })
+    }).then(r => r.json()),
+
   getUsers: (token) =>
     fetch(`${API_URL}/api/users`, {
       headers: { 'Authorization': `Bearer ${token}` }
@@ -569,6 +584,9 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState([]);
   const [editingProject, setEditingProject] = useState(null);
+  const [clientPortalDomain, setClientPortalDomain] = useState('');
+  const [editingDomain, setEditingDomain] = useState(false);
+  const [newDomain, setNewDomain] = useState('');
   const [newProject, setNewProject] = useState({
     name: '',
     clientName: '',
@@ -581,7 +599,33 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
   useEffect(() => {
     loadProjects();
     loadTemplates();
+    loadClientPortalDomain();
   }, []);
+
+  const loadClientPortalDomain = async () => {
+    try {
+      const result = await api.getClientPortalDomain(token);
+      setClientPortalDomain(result.domain || '');
+    } catch (err) {
+      console.error('Failed to load client portal domain:', err);
+    }
+  };
+
+  const saveClientPortalDomain = async () => {
+    try {
+      const result = await api.setClientPortalDomain(token, newDomain);
+      if (result.error) {
+        alert(result.error);
+      } else {
+        setClientPortalDomain(result.domain);
+        setEditingDomain(false);
+        alert('Client portal domain saved!');
+      }
+    } catch (err) {
+      console.error('Failed to save domain:', err);
+      alert('Failed to save domain');
+    }
+  };
 
   const loadTemplates = async () => {
     try {
@@ -629,9 +673,15 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
   };
 
   const copyClientLink = (linkId) => {
-    const link = `${window.location.origin}/${linkId}`;
+    const baseUrl = clientPortalDomain || window.location.origin;
+    const link = `${baseUrl}/${linkId}`;
     navigator.clipboard.writeText(link);
     alert('Client link copied to clipboard!');
+  };
+
+  const getClientLinkDisplay = (linkId) => {
+    const baseUrl = clientPortalDomain || window.location.origin;
+    return `${baseUrl}/${linkId}`;
   };
 
   const handleEditProject = async () => {
@@ -720,6 +770,14 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                   className="bg-orange-600 text-white px-4 py-2 rounded-md hover:bg-orange-700"
                 >
                   HubSpot Settings
+                </button>
+              )}
+              {user.role === 'admin' && (
+                <button
+                  onClick={() => { setEditingDomain(true); setNewDomain(clientPortalDomain); }}
+                  className="bg-cyan-600 text-white px-4 py-2 rounded-md hover:bg-cyan-700"
+                >
+                  Portal Domain
                 </button>
               )}
               {onViewReporting && (
@@ -912,6 +970,44 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {editingDomain && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 max-w-lg w-full mx-4">
+              <h2 className="text-xl font-bold mb-4">Client Portal Domain</h2>
+              <p className="text-sm text-gray-600 mb-4">
+                Set a custom domain for client portal links. This domain will be used when copying client links.
+                Leave empty to use the default domain.
+              </p>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Custom Domain URL</label>
+                  <input
+                    placeholder="e.g., https://deapps.pro"
+                    value={newDomain}
+                    onChange={(e) => setNewDomain(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-md"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Include https:// (e.g., https://deapps.pro)</p>
+                </div>
+              </div>
+              <div className="flex gap-2 mt-6">
+                <button
+                  onClick={saveClientPortalDomain}
+                  className="flex-1 bg-primary text-white py-2 rounded-md hover:bg-accent"
+                >
+                  Save Domain
+                </button>
+                <button
+                  onClick={() => setEditingDomain(false)}
+                  className="flex-1 bg-gray-300 py-2 rounded-md hover:bg-gray-400"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -1405,13 +1501,24 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
   const [bulkMode, setBulkMode] = useState(false);
   const [newSubtask, setNewSubtask] = useState({ taskId: null, title: '', owner: '' });
   const [expandedSubtasksId, setExpandedSubtasksId] = useState(null);
+  const [clientPortalDomain, setClientPortalDomain] = useState('');
 
   const isAdmin = user.role === 'admin';
 
   useEffect(() => {
     loadTasks();
     loadTeamMembers();
+    loadClientPortalDomain();
   }, []);
+
+  const loadClientPortalDomain = async () => {
+    try {
+      const result = await api.getClientPortalDomain(token);
+      setClientPortalDomain(result.domain || '');
+    } catch (err) {
+      console.error('Failed to load client portal domain:', err);
+    }
+  };
 
   const loadTasks = async () => {
     setLoading(true);
@@ -1718,9 +1825,15 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
   };
 
   const copyClientLink = () => {
-    const link = `${window.location.origin}/${project.clientLinkSlug || project.clientLinkId}`;
+    const baseUrl = clientPortalDomain || window.location.origin;
+    const link = `${baseUrl}/${project.clientLinkSlug || project.clientLinkId}`;
     navigator.clipboard.writeText(link);
     alert('Client link copied!');
+  };
+
+  const getClientLinkDisplay = () => {
+    const baseUrl = clientPortalDomain || window.location.origin;
+    return `${baseUrl}/${project.clientLinkSlug || project.clientLinkId}`;
   };
 
   const getPhaseColor = (phase) => {
@@ -1917,7 +2030,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                   onClick={copyClientLink}
                   className="text-primary hover:underline font-mono text-xs"
                 >
-                  {window.location.origin}/client/{project.clientLinkSlug || project.clientLinkId}
+                  {getClientLinkDisplay()}
                 </button>
               </div>
               {project.hubspotRecordId && (
