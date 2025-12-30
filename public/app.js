@@ -341,6 +341,56 @@ const api = {
     }).then(r => r.json())
 };
 
+// ============== SHARED HEADER COMPONENT ==============
+const AppHeader = ({ user, onLogout, children }) => {
+  return (
+    <>
+      {/* Top Bar - Dark Navy */}
+      <div className="bg-[#00205A] text-white text-sm">
+        <div className="max-w-6xl mx-auto px-6 py-2 flex justify-between items-center">
+          <div className="flex items-center gap-4">
+            <a href="https://www.linkedin.com/company/thrive-365-labs" target="_blank" rel="noopener noreferrer" className="hover:text-blue-300">
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/></svg>
+            </a>
+            <a href="https://www.facebook.com/thrive365labs" target="_blank" rel="noopener noreferrer" className="hover:text-blue-300">
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M9 8h-3v4h3v12h5v-12h3.642l.358-4h-4v-1.667c0-.955.192-1.333 1.115-1.333h2.885v-5h-3.808c-3.596 0-5.192 1.583-5.192 4.615v3.385z"/></svg>
+            </a>
+          </div>
+          <a href="tel:+17707629269" className="flex items-center gap-2 hover:text-blue-300">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
+            <span>(770) 762-9269</span>
+          </a>
+        </div>
+      </div>
+      
+      {/* Main Header - White */}
+      <div className="bg-white border-b shadow-sm">
+        <div className="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
+          <div className="flex items-center gap-4">
+            <img src="/logo.webp" alt="Thrive 365 Labs" className="h-12" />
+          </div>
+          <nav className="flex items-center gap-6">
+            {children}
+            <div className="h-6 w-px bg-gray-300"></div>
+            <div className="flex items-center gap-3">
+              <span className="text-gray-600 text-sm">
+                {user.name}
+                {user.role === 'admin' && <span className="ml-1 text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded">ADMIN</span>}
+              </span>
+              <button
+                onClick={onLogout}
+                className="text-gray-500 hover:text-red-600 text-sm"
+              >
+                Logout
+              </button>
+            </div>
+          </nav>
+        </div>
+      </div>
+    </>
+  );
+};
+
 // ============== CSV HELPER FUNCTIONS ==============
 const downloadSampleCSV = () => {
   const sampleCSV = `id,phase,stage,showToClient,dependencies,taskTitle,isSubtask,parentTaskId,completed,subtaskStatus,owner,startDate,dueDate,dateCompleted
@@ -783,110 +833,70 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Top Bar - Dark Navy */}
-      <div className="bg-[#00205A] text-white text-sm">
-        <div className="max-w-6xl mx-auto px-6 py-2 flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <a href="https://www.linkedin.com/company/thrive-365-labs" target="_blank" rel="noopener noreferrer" className="hover:text-blue-300">
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/></svg>
-            </a>
-            <a href="https://www.facebook.com/thrive365labs" target="_blank" rel="noopener noreferrer" className="hover:text-blue-300">
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M9 8h-3v4h3v12h5v-12h3.642l.358-4h-4v-1.667c0-.955.192-1.333 1.115-1.333h2.885v-5h-3.808c-3.596 0-5.192 1.583-5.192 4.615v3.385z"/></svg>
-            </a>
-          </div>
-          <a href="tel:+17707629269" className="flex items-center gap-2 hover:text-blue-300">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
-            <span>(770) 762-9269</span>
-          </a>
-        </div>
-      </div>
-      
-      {/* Main Header - White */}
-      <div className="bg-white border-b shadow-sm">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <img src="/logo.webp" alt="Thrive 365 Labs" className="h-12" />
-          </div>
-          <nav className="flex items-center gap-6">
+      <AppHeader user={user} onLogout={onLogout}>
+        <button
+          onClick={() => setShowCreate(!showCreate)}
+          className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide"
+        >
+          + New Project
+        </button>
+        {user.role === 'admin' && onManageTemplates && (
+          <button
+            onClick={onManageTemplates}
+            className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide"
+          >
+            Templates
+          </button>
+        )}
+        {onViewReporting && (
+          <button
+            onClick={onViewReporting}
+            className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide"
+          >
+            Reports
+          </button>
+        )}
+        {user.role === 'admin' && (
+          <div className="relative">
             <button
-              onClick={() => setShowCreate(!showCreate)}
-              className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide"
+              onClick={() => setShowSettingsMenu(!showSettingsMenu)}
+              className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide flex items-center gap-1"
             >
-              + New Project
+              Settings
+              <svg className={`w-3 h-3 transition-transform ${showSettingsMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+              </svg>
             </button>
-            {user.role === 'admin' && onManageTemplates && (
-              <button
-                onClick={onManageTemplates}
-                className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide"
-              >
-                Templates
-              </button>
-            )}
-            {onViewReporting && (
-              <button
-                onClick={onViewReporting}
-                className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide"
-              >
-                Reports
-              </button>
-            )}
-            {user.role === 'admin' && (
-              <div className="relative">
-                <button
-                  onClick={() => setShowSettingsMenu(!showSettingsMenu)}
-                  className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide flex items-center gap-1"
-                >
-                  Settings
-                  <svg className={`w-3 h-3 transition-transform ${showSettingsMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-                {showSettingsMenu && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border z-50">
-                    {onManageUsers && (
-                      <button
-                        onClick={() => { onManageUsers(); setShowSettingsMenu(false); }}
-                        className="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 border-b text-sm"
-                      >
-                        Manage Users
-                      </button>
-                    )}
-                    {onManageHubSpot && (
-                      <button
-                        onClick={() => { onManageHubSpot(); setShowSettingsMenu(false); }}
-                        className="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 text-sm"
-                      >
-                        HubSpot Settings
-                      </button>
-                    )}
-                  </div>
+            {showSettingsMenu && (
+              <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border z-50">
+                {onManageUsers && (
+                  <button
+                    onClick={() => { onManageUsers(); setShowSettingsMenu(false); }}
+                    className="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 border-b text-sm"
+                  >
+                    Manage Users
+                  </button>
+                )}
+                {onManageHubSpot && (
+                  <button
+                    onClick={() => { onManageHubSpot(); setShowSettingsMenu(false); }}
+                    className="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 text-sm"
+                  >
+                    HubSpot Settings
+                  </button>
                 )}
               </div>
             )}
-            <button
-              onClick={() => setShowHelpGuide(true)}
-              className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide"
-            >
-              Help
-            </button>
-            <div className="h-6 w-px bg-gray-300"></div>
-            <div className="flex items-center gap-3">
-              <span className="text-gray-600 text-sm">
-                {user.name}
-                {user.role === 'admin' && <span className="ml-1 text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded">ADMIN</span>}
-              </span>
-              <button
-                onClick={onLogout}
-                className="text-gray-500 hover:text-red-600 text-sm"
-              >
-                Logout
-              </button>
-            </div>
-          </nav>
-        </div>
-      </div>
+          </div>
+        )}
+        <button
+          onClick={() => setShowHelpGuide(true)}
+          className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide"
+        >
+          Help
+        </button>
+      </AppHeader>
 
-      {/* Page Content */}
       <div className="p-6">
       <div className="max-w-6xl mx-auto">
 
@@ -2627,24 +2637,31 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen bg-gray-50">
+      <AppHeader user={user} onLogout={onLogout}>
+        <button onClick={onBack} className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide">
+          ← Back
+        </button>
+        <button
+          onClick={() => api.exportProject(token, project.id)}
+          className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide"
+        >
+          Export CSV
+        </button>
+      </AppHeader>
+
+      <div className="p-6">
       <div className="max-w-7xl mx-auto">
         <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
           <div className="flex justify-between items-start mb-4">
             <div>
-              <button
-                onClick={onBack}
-                className="text-primary hover:underline mb-2 flex items-center gap-1"
-              >
-                ← Back to Projects
-              </button>
-              <h1 className="text-3xl font-bold text-gray-900">{project.name}</h1>
+              <h1 className="text-2xl font-bold text-gray-900">{project.name}</h1>
               <p className="text-gray-600">{project.clientName}</p>
             </div>
             <div className="flex gap-2 flex-wrap">
               <button
                 onClick={() => setViewMode('internal')}
-                className={`px-4 py-2 rounded-md ${
+                className={`px-3 py-1.5 rounded-md text-sm ${
                   viewMode === 'internal'
                     ? 'bg-primary text-white'
                     : 'bg-gray-200 text-gray-700'
@@ -2654,7 +2671,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
               </button>
               <button
                 onClick={() => setViewMode('client')}
-                className={`px-4 py-2 rounded-md ${
+                className={`px-3 py-1.5 rounded-md text-sm ${
                   viewMode === 'client'
                     ? 'bg-primary text-white'
                     : 'bg-gray-200 text-gray-700'
@@ -2667,7 +2684,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
               
               <button
                 onClick={() => setViewType('list')}
-                className={`px-4 py-2 rounded-md ${
+                className={`px-3 py-1.5 rounded-md text-sm ${
                   viewType === 'list'
                     ? 'bg-purple-600 text-white'
                     : 'bg-gray-200 text-gray-700'
@@ -2677,7 +2694,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
               </button>
               <button
                 onClick={() => setViewType('timeline')}
-                className={`px-4 py-2 rounded-md ${
+                className={`px-3 py-1.5 rounded-md text-sm ${
                   viewType === 'timeline'
                     ? 'bg-purple-600 text-white'
                     : 'bg-gray-200 text-gray-700'
@@ -2687,28 +2704,13 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
               </button>
               <button
                 onClick={() => setViewType('calendar')}
-                className={`px-4 py-2 rounded-md ${
+                className={`px-3 py-1.5 rounded-md text-sm ${
                   viewType === 'calendar'
                     ? 'bg-purple-600 text-white'
                     : 'bg-gray-200 text-gray-700'
                 }`}
               >
                 Calendar
-              </button>
-              
-              <div className="border-l border-gray-300 mx-2"></div>
-              
-              <button
-                onClick={() => api.exportProject(token, project.id)}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
-              >
-                Export CSV
-              </button>
-              <button
-                onClick={onLogout}
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-              >
-                Logout
               </button>
             </div>
           </div>
@@ -3635,6 +3637,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
           />
         )}
       </div>
+      </div>
     </div>
   );
 };
@@ -3726,35 +3729,24 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen bg-gray-50">
+      <AppHeader user={user} onLogout={onLogout}>
+        <button onClick={onBack} className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide">
+          ← Back
+        </button>
+        <button
+          onClick={() => setShowAddUser(true)}
+          className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide"
+        >
+          + Add User
+        </button>
+      </AppHeader>
+
+      <div className="p-6">
       <div className="max-w-4xl mx-auto">
         <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <div className="flex justify-between items-center mb-6">
-            <div>
-              <button
-                onClick={onBack}
-                className="text-primary hover:underline mb-2 flex items-center gap-1"
-              >
-                ← Back to Projects
-              </button>
-              <h1 className="text-3xl font-bold text-gray-900">User Management</h1>
-              <p className="text-gray-600">Manage team member accounts</p>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setShowAddUser(true)}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
-              >
-                + Add User
-              </button>
-              <button
-                onClick={onLogout}
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-              >
-                Logout
-              </button>
-            </div>
-          </div>
+          <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
+          <p className="text-gray-600">Manage team member accounts</p>
         </div>
 
         {showAddUser && (
@@ -3924,11 +3916,11 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
           </table>
         </div>
       </div>
+      </div>
     </div>
   );
 };
 
-// ============== MAIN APP COMPONENT ==============
 // ============== TEMPLATE MANAGEMENT COMPONENT ==============
 const TemplateManagement = ({ token, user, onBack, onLogout }) => {
   const [templates, setTemplates] = useState([]);
@@ -4179,54 +4171,56 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen bg-gray-50">
+      <AppHeader user={user} onLogout={onLogout}>
+        <button 
+          onClick={selectedTemplate ? handleBackToTemplates : onBack} 
+          className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide"
+        >
+          ← {selectedTemplate ? 'Back to Templates' : 'Back'}
+        </button>
+        {!selectedTemplate && (
+          <button
+            onClick={() => setShowCreateTemplate(true)}
+            className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide"
+          >
+            + Create Template
+          </button>
+        )}
+      </AppHeader>
+
+      <div className="p-6">
       <div className="max-w-6xl mx-auto">
         <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <div className="flex justify-between items-center mb-6">
-            <div>
-              <button
-                onClick={selectedTemplate ? handleBackToTemplates : onBack}
-                className="text-primary hover:underline mb-2 flex items-center gap-1"
-              >
-                ← {selectedTemplate ? 'Back to Templates' : 'Back to Projects'}
-              </button>
-              <h1 className="text-3xl font-bold text-gray-900">
-                {selectedTemplate ? (
-                  editingName ? (
-                    <div className="flex items-center gap-2">
-                      <span>Edit Template:</span>
-                      <input
-                        value={tempName}
-                        onChange={(e) => setTempName(e.target.value)}
-                        className="px-2 py-1 border rounded text-xl"
-                      />
-                      <button onClick={handleSaveName} disabled={saving} className="text-sm text-green-600 hover:underline">Save</button>
-                      <button onClick={() => setEditingName(false)} className="text-sm text-gray-500 hover:underline">Cancel</button>
-                    </div>
-                  ) : (
-                    <span>
-                      Edit Template: {selectedTemplate.name}
-                      <button 
-                        onClick={() => { setTempName(selectedTemplate.name); setEditingName(true); }}
-                        className="ml-2 text-sm text-primary hover:underline"
-                      >
-                        (rename)
-                      </button>
-                    </span>
-                  )
-                ) : 'Template Management'}
-              </h1>
-              <p className="text-gray-600">
-                {selectedTemplate ? `${selectedTemplate.tasks.length} tasks` : 'Manage project templates'}
-              </p>
-            </div>
-            <button
-              onClick={onLogout}
-              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-            >
-              Logout
-            </button>
-          </div>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {selectedTemplate ? (
+              editingName ? (
+                <div className="flex items-center gap-2">
+                  <span>Edit Template:</span>
+                  <input
+                    value={tempName}
+                    onChange={(e) => setTempName(e.target.value)}
+                    className="px-2 py-1 border rounded text-xl"
+                  />
+                  <button onClick={handleSaveName} disabled={saving} className="text-sm text-green-600 hover:underline">Save</button>
+                  <button onClick={() => setEditingName(false)} className="text-sm text-gray-500 hover:underline">Cancel</button>
+                </div>
+              ) : (
+                <span>
+                  Edit Template: {selectedTemplate.name}
+                  <button 
+                    onClick={() => { setTempName(selectedTemplate.name); setEditingName(true); }}
+                    className="ml-2 text-sm text-primary hover:underline"
+                  >
+                    (rename)
+                  </button>
+                </span>
+              )
+            ) : 'Template Management'}
+          </h1>
+          <p className="text-gray-600">
+            {selectedTemplate ? `${selectedTemplate.tasks.length} tasks` : 'Manage project templates'}
+          </p>
         </div>
 
         {!selectedTemplate ? (
@@ -4553,6 +4547,7 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
           </div>
         )}
       </div>
+      </div>
     </div>
   );
 };
@@ -4631,27 +4626,18 @@ const HubSpotSettings = ({ token, user, onBack, onLogout }) => {
   const selectedPipelineData = pipelines.find(p => p.id === selectedPipeline);
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4 md:p-8">
+    <div className="min-h-screen bg-gray-50">
+      <AppHeader user={user} onLogout={onLogout}>
+        <button onClick={onBack} className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide">
+          ← Back
+        </button>
+      </AppHeader>
+
+      <div className="p-6">
       <div className="max-w-4xl mx-auto">
         <div className="bg-white rounded-lg shadow-sm mb-6 p-6">
-          <div className="flex justify-between items-center mb-4">
-            <div>
-              <button
-                onClick={onBack}
-                className="text-sm text-primary hover:underline mb-2"
-              >
-                ← Back to Projects
-              </button>
-              <h1 className="text-2xl font-bold text-gray-900">HubSpot Integration Settings</h1>
-              <p className="text-gray-600">Configure how project phases sync with HubSpot deal stages</p>
-            </div>
-            <button
-              onClick={onLogout}
-              className="text-sm bg-red-100 text-red-600 px-3 py-1 rounded hover:bg-red-200"
-            >
-              Logout
-            </button>
-          </div>
+          <h1 className="text-2xl font-bold text-gray-900">HubSpot Integration Settings</h1>
+          <p className="text-gray-600 mb-4">Configure how project phases sync with HubSpot deal stages</p>
 
           {loading ? (
             <div className="text-center py-8">
@@ -4762,6 +4748,7 @@ const HubSpotSettings = ({ token, user, onBack, onLogout }) => {
           )}
         </div>
       </div>
+      </div>
     </div>
   );
 };
@@ -4832,27 +4819,18 @@ const Reporting = ({ token, user, onBack, onLogout }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen bg-gray-50">
+      <AppHeader user={user} onLogout={onLogout}>
+        <button onClick={onBack} className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide">
+          ← Back
+        </button>
+      </AppHeader>
+
+      <div className="p-6">
       <div className="max-w-6xl mx-auto">
         <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <div className="flex justify-between items-center mb-6">
-            <div>
-              <button
-                onClick={onBack}
-                className="text-primary hover:underline mb-2 flex items-center gap-1"
-              >
-                ← Back to Projects
-              </button>
-              <h1 className="text-3xl font-bold text-gray-900">Launch Reports</h1>
-              <p className="text-gray-600">New Client Launch Implementation - Thrive 365 Labs Web App</p>
-            </div>
-            <button
-              onClick={onLogout}
-              className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700"
-            >
-              Logout
-            </button>
-          </div>
+          <h1 className="text-2xl font-bold text-gray-900">Launch Reports</h1>
+          <p className="text-gray-600 mb-4">New Client Launch Implementation - Thrive 365 Labs Web App</p>
 
           {/* Summary Stats */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
@@ -5026,6 +5004,7 @@ const Reporting = ({ token, user, onBack, onLogout }) => {
             </div>
           </div>
         </div>
+      </div>
       </div>
     </div>
   );
