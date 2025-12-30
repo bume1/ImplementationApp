@@ -2518,25 +2518,23 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                       <span className="text-xs text-gray-400 ml-2">(Admin only can edit)</span>
                                     )}
                                   </p>
-                                  {(task.startDate || task.dueDate) && (
-                                    <div className="flex items-center gap-4">
-                                      {task.startDate && (
-                                        <span>
-                                          <span className="font-medium">Start:</span> {task.startDate}
-                                        </span>
-                                      )}
-                                      {task.dueDate && (
-                                        <span>
-                                          <span className="font-medium">Due:</span> {task.dueDate}
-                                        </span>
-                                      )}
-                                      {task.dateCompleted && (
-                                        <span className="text-green-600">
-                                          ✓ Completed: {task.dateCompleted}
-                                        </span>
-                                      )}
-                                    </div>
-                                  )}
+                                  <div className="flex items-center gap-4 flex-wrap">
+                                    {task.startDate && (
+                                      <span>
+                                        <span className="font-medium">Start:</span> {task.startDate}
+                                      </span>
+                                    )}
+                                    {task.dueDate && (
+                                      <span>
+                                        <span className="font-medium">Due:</span> {task.dueDate}
+                                      </span>
+                                    )}
+                                    {task.dateCompleted && (
+                                      <span className="text-green-600">
+                                        ✓ Completed: {task.dateCompleted}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               )}
                               {viewMode === 'client' && task.dateCompleted && (
