@@ -58,6 +58,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Third-Party Services
 - **HubSpot**: Integration fields for CRM sync (deal pipeline, client profiles)
+- **Google Drive**: Storage for soft-pilot checklist uploads (organized by client folders)
 - **Replit Database**: Primary data persistence via `@replit/database` package
 
 ### NPM Packages
@@ -68,6 +69,7 @@ Preferred communication style: Simple, everyday language.
 - `uuid` - Unique ID generation
 - `@replit/database` - Replit's key-value database client
 - `body-parser` - Request body parsing
+- `googleapis` - Google Drive API client for file uploads
 
 ### CDN Dependencies (Frontend)
 - React 18 (production build)
@@ -200,16 +202,26 @@ Note: Adding notes to tasks in the webapp does NOT trigger HubSpot sync (to avoi
 - **Owner Resolution**: Displays owner names (resolved from email addresses)
 - **Signature Fields**: Clinical Application Specialist must provide name, title, and date
 
+### Google Drive Integration
+- On submission, the checklist is uploaded to Google Drive as an HTML file
+- Files are organized in folders: `Thrive365Labs Checklists/{Client Name}/`
+- File naming format: `Soft-Pilot-Checklist_{ProjectName}_{Timestamp}.html`
+- Revised versions include version number: `..._REVISED_v2_{Timestamp}.html`
+
 ### HubSpot Integration
-- On submission, the checklist is uploaded to HubSpot as an HTML file attachment
-- A note is created on the deal record with file information
-- Requires project to have a HubSpot Record ID configured
+- A note is created on the deal record with submission details and Google Drive link
+- Note includes: signer name, title, date, and link to uploaded file
+- Does NOT require HubSpot for upload (uses Google Drive instead)
+- HubSpot note is logged if project has a HubSpot Record ID configured
 
 ### API Endpoint
-- `POST /api/projects/:id/soft-pilot-checklist` - Submit signed checklist and upload to HubSpot
+- `POST /api/projects/:id/soft-pilot-checklist` - Submit signed checklist and upload to Google Drive
 
 ### Data Storage
 - Projects store `softPilotChecklistSubmitted` object with:
   - `submittedAt`: Timestamp
   - `submittedBy`: User email
   - `signature`: Name, title, date
+  - `submissionCount`: Number of submissions (for version tracking)
+  - `isRevision`: Boolean indicating if this was an update
+  - `driveLink`: Google Drive web view URL for the uploaded file
