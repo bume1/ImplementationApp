@@ -508,10 +508,24 @@ app.put('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req,
   }
 });
 
-app.delete('/api/projects/:projectId/tasks/:taskId', authenticateToken, requireAdmin, async (req, res) => {
+app.delete('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req, res) => {
   try {
     const { projectId, taskId } = req.params;
     const tasks = await getTasks(projectId);
+    const task = tasks.find(t => t.id === parseInt(taskId));
+    
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+    
+    const isAdmin = req.user.role === 'admin';
+    const isCreator = task.createdBy && task.createdBy === req.user.id;
+    const isTemplateTask = !task.createdBy;
+    
+    if (!isAdmin && (isTemplateTask || !isCreator)) {
+      return res.status(403).json({ error: 'You can only delete tasks you created' });
+    }
+    
     const filtered = tasks.filter(t => t.id !== parseInt(taskId));
     await db.set(`tasks_${projectId}`, filtered);
     res.json({ message: 'Task deleted' });
