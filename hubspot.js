@@ -187,6 +187,24 @@ async function findOwnerByName(firstName, lastName) {
   }
 }
 
+async function findOwnerByEmail(email) {
+  try {
+    const owners = await getOwners();
+    const normalizedEmail = email.toLowerCase().trim();
+    const match = owners.find(owner => {
+      const ownerEmail = (owner.email || '').toLowerCase().trim();
+      return ownerEmail === normalizedEmail;
+    });
+    if (match) {
+      console.log(`📧 Found HubSpot owner by email "${email}": ${match.id}`);
+    }
+    return match ? match.id : null;
+  } catch (error) {
+    console.error('Error finding owner by email:', error.message);
+    return null;
+  }
+}
+
 async function createTask(dealId, taskSubject, taskBody, ownerId = null) {
   try {
     const client = await getHubSpotClient();
@@ -232,6 +250,7 @@ async function createTask(dealId, taskSubject, taskBody, ownerId = null) {
 module.exports = {
   getHubSpotClient,
   getPipelines,
+  findOwnerByEmail,
   getRecord,
   updateRecordStage,
   logRecordActivity,

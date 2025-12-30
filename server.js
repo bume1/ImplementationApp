@@ -302,15 +302,36 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
     const projects = await getProjects();
     const templates = await db.get('templates') || [];
     
-    const projectsWithTemplateNames = projects.map(project => {
+    const projectsWithDetails = await Promise.all(projects.map(async (project) => {
       const template = templates.find(t => t.id === project.template);
+      
+      // Calculate launch duration for completed projects
+      let launchDurationWeeks = null;
+      if (project.status === 'completed') {
+        const tasks = await getTasks(project.id);
+        const contractTask = tasks.find(t => 
+          t.taskTitle && t.taskTitle.toLowerCase().includes('contract signed')
+        );
+        const goLiveTask = tasks.find(t => 
+          t.taskTitle && t.taskTitle.toLowerCase().includes('first live patient samples')
+        );
+        
+        if (contractTask?.dateCompleted && goLiveTask?.dateCompleted) {
+          const contractDate = new Date(contractTask.dateCompleted);
+          const goLiveDate = new Date(goLiveTask.dateCompleted);
+          const diffMs = goLiveDate - contractDate;
+          launchDurationWeeks = Math.round(diffMs / (7 * 24 * 60 * 60 * 1000));
+        }
+      }
+      
       return {
         ...project,
-        templateName: template ? template.name : project.template
+        templateName: template ? template.name : project.template,
+        launchDurationWeeks
       };
-    });
+    }));
     
-    res.json(projectsWithTemplateNames);
+    res.json(projectsWithDetails);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }
@@ -714,16 +735,24 @@ async function createHubSpotTask(projectId, task, completedByName) {
       });
     }
     
-    // Try to find owner in HubSpot by name
+    // Try to find owner in HubSpot by email (preferred) or name
     let ownerId = null;
     if (task.owner) {
-      const nameParts = task.owner.trim().split(/\s+/);
-      if (nameParts.length >= 2) {
-        const firstName = nameParts[0];
-        const lastName = nameParts.slice(1).join(' ');
-        ownerId = await hubspot.findOwnerByName(firstName, lastName);
-        if (ownerId) {
-          console.log(`📋 Found HubSpot owner for "${task.owner}": ${ownerId}`);
+      const ownerValue = task.owner.trim();
+      
+      // Check if owner is an email address
+      if (ownerValue.includes('@')) {
+        ownerId = await hubspot.findOwnerByEmail(ownerValue);
+      } else {
+        // Fall back to name matching
+        const nameParts = ownerValue.split(/\s+/);
+        if (nameParts.length >= 2) {
+          const firstName = nameParts[0];
+          const lastName = nameParts.slice(1).join(' ');
+          ownerId = await hubspot.findOwnerByName(firstName, lastName);
+          if (ownerId) {
+            console.log(`📋 Found HubSpot owner by name "${task.owner}": ${ownerId}`);
+          }
         }
       }
     }
@@ -830,6 +859,55 @@ async function checkStageAndPhaseCompletion(projectId, tasks, completedTask) {
     console.error('Error in stage/phase completion check:', error.message);
   }
 }
+
+// ============== REPORTING ==============
+app.get('/api/reporting', authenticateToken, async (req, res) => {
+  try {
+    const projects = await getProjects();
+    const reportingData = [];
+    
+    for (const project of projects) {
+      const tasks = await getTasks(project.id);
+      
+      // Find contract signed task and first live patient samples task
+      const contractTask = tasks.find(t => 
+        t.taskTitle && t.taskTitle.toLowerCase().includes('contract signed')
+      );
+      const goLiveTask = tasks.find(t => 
+        t.taskTitle && t.taskTitle.toLowerCase().includes('first live patient samples')
+      );
+      
+      let launchDurationWeeks = null;
+      if (contractTask?.dateCompleted && goLiveTask?.dateCompleted) {
+        const contractDate = new Date(contractTask.dateCompleted);
+        const goLiveDate = new Date(goLiveTask.dateCompleted);
+        const diffMs = goLiveDate - contractDate;
+        launchDurationWeeks = Math.round(diffMs / (7 * 24 * 60 * 60 * 1000));
+      }
+      
+      const totalTasks = tasks.length;
+      const completedTasks = tasks.filter(t => t.completed).length;
+      
+      reportingData.push({
+        id: project.id,
+        name: project.name,
+        clientName: project.clientName,
+        status: project.status || 'active',
+        totalTasks,
+        completedTasks,
+        progressPercent: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0,
+        contractSignedDate: contractTask?.dateCompleted || null,
+        goLiveDate: goLiveTask?.dateCompleted || null,
+        launchDurationWeeks
+      });
+    }
+    
+    res.json(reportingData);
+  } catch (error) {
+    console.error('Error generating reporting data:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 
 // ============== EXPORT ==============
 app.get('/api/projects/:id/export', authenticateToken, async (req, res) => {
