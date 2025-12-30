@@ -304,7 +304,17 @@ app.post('/api/projects/:projectId/tasks/:taskId/notes', authenticateToken, asyn
 app.get('/api/projects', authenticateToken, async (req, res) => {
   try {
     const projects = await getProjects();
-    res.json(projects);
+    const templates = await db.get('templates') || [];
+    
+    const projectsWithTemplateNames = projects.map(project => {
+      const template = templates.find(t => t.id === project.template);
+      return {
+        ...project,
+        templateName: template ? template.name : project.template
+      };
+    });
+    
+    res.json(projectsWithTemplateNames);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }
@@ -352,6 +362,10 @@ app.post('/api/projects', authenticateToken, async (req, res) => {
     }
     await db.set(`tasks_${newProject.id}`, templateTasks);
 
+    const templates = await db.get('templates') || [];
+    const templateRecord = templates.find(t => t.id === newProject.template);
+    newProject.templateName = templateRecord ? templateRecord.name : newProject.template;
+
     res.json(newProject);
   } catch (error) {
     console.error('Create project error:', error);
@@ -364,6 +378,11 @@ app.get('/api/projects/:id', authenticateToken, async (req, res) => {
     const projects = await getProjects();
     const project = projects.find(p => p.id === req.params.id);
     if (!project) return res.status(404).json({ error: 'Project not found' });
+    
+    const templates = await db.get('templates') || [];
+    const template = templates.find(t => t.id === project.template);
+    project.templateName = template ? template.name : project.template;
+    
     res.json(project);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });

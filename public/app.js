@@ -570,7 +570,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                   {project.hubspotRecordId && (
                     <p><span className="font-medium">HubSpot Record:</span> {project.hubspotRecordId}</p>
                   )}
-                  <p className="text-xs text-gray-400">Template: {project.template}</p>
+                  <p className="text-xs text-gray-400">Template: {project.templateName || project.template}</p>
                 </div>
 
                 <div className="space-y-2">
