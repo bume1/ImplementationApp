@@ -1797,11 +1797,54 @@ app.delete('/api/templates/:id', authenticateToken, requireAdmin, async (req, re
   }
 });
 
-// ============== CLIENT PORTAL ROUTES ==============
-// New format: /thrive365labsLAUNCH/:slug and /thrive365labslaunch/:slug
-app.get('/thrive365labsLAUNCH/:slug', async (req, res) => {
+// ============== CLIENT PORTAL & INTERNAL ROUTES ==============
+// Reserved paths: login, home serve the main app
+app.get('/thrive365labslaunch/login', (req, res) => {
+  res.sendFile(__dirname + '/public/index.html');
+});
+app.get('/thrive365labsLAUNCH/login', (req, res) => {
+  res.sendFile(__dirname + '/public/index.html');
+});
+app.get('/thrive365labslaunch/home', (req, res) => {
+  res.sendFile(__dirname + '/public/index.html');
+});
+app.get('/thrive365labsLAUNCH/home', (req, res) => {
+  res.sendFile(__dirname + '/public/index.html');
+});
+
+// Internal project tracker: /thrive365labslaunch/{slug}-internal
+app.get('/thrive365labslaunch/:slug-internal', async (req, res) => {
+  const slug = req.params.slug;
   const projects = await getProjects();
-  const project = projects.find(p => p.clientLinkSlug === req.params.slug || p.clientLinkId === req.params.slug);
+  const project = projects.find(p => p.clientLinkSlug === slug || p.clientLinkId === slug);
+  
+  if (project) {
+    res.sendFile(__dirname + '/public/index.html');
+  } else {
+    res.status(404).send('Project not found');
+  }
+});
+app.get('/thrive365labsLAUNCH/:slug-internal', async (req, res) => {
+  const slug = req.params.slug;
+  const projects = await getProjects();
+  const project = projects.find(p => p.clientLinkSlug === slug || p.clientLinkId === slug);
+  
+  if (project) {
+    res.sendFile(__dirname + '/public/index.html');
+  } else {
+    res.status(404).send('Project not found');
+  }
+});
+
+// Client portal: /thrive365labslaunch/{slug} (without -internal suffix)
+app.get('/thrive365labsLAUNCH/:slug', async (req, res) => {
+  const slug = req.params.slug;
+  // Skip if ends with -internal (handled above)
+  if (slug.endsWith('-internal')) {
+    return res.sendFile(__dirname + '/public/index.html');
+  }
+  const projects = await getProjects();
+  const project = projects.find(p => p.clientLinkSlug === slug || p.clientLinkId === slug);
   
   if (project) {
     res.sendFile(__dirname + '/public/client.html');
@@ -1811,8 +1854,13 @@ app.get('/thrive365labsLAUNCH/:slug', async (req, res) => {
 });
 
 app.get('/thrive365labslaunch/:slug', async (req, res) => {
+  const slug = req.params.slug;
+  // Skip if ends with -internal (handled above)
+  if (slug.endsWith('-internal')) {
+    return res.sendFile(__dirname + '/public/index.html');
+  }
   const projects = await getProjects();
-  const project = projects.find(p => p.clientLinkSlug === req.params.slug || p.clientLinkId === req.params.slug);
+  const project = projects.find(p => p.clientLinkSlug === slug || p.clientLinkId === slug);
   
   if (project) {
     res.sendFile(__dirname + '/public/client.html');

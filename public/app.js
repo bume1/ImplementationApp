@@ -5047,6 +5047,30 @@ const App = () => {
   const [user, setUser] = useState(JSON.parse(localStorage.getItem('user') || 'null'));
   const [selectedProject, setSelectedProject] = useState(null);
   const [view, setView] = useState('list');
+  const [pendingInternalSlug, setPendingInternalSlug] = useState(null);
+
+  useEffect(() => {
+    const path = window.location.pathname;
+    const match = path.match(/\/thrive365labslaunch\/(.+)-internal$/i);
+    if (match) {
+      setPendingInternalSlug(match[1]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (token && pendingInternalSlug) {
+      api.getProjects(token).then(projects => {
+        const project = projects.find(p => 
+          p.clientLinkSlug === pendingInternalSlug || p.clientLinkId === pendingInternalSlug
+        );
+        if (project) {
+          setSelectedProject(project);
+          setView('tracker');
+        }
+        setPendingInternalSlug(null);
+      }).catch(() => setPendingInternalSlug(null));
+    }
+  }, [token, pendingInternalSlug]);
 
   const handleLogin = (newToken, newUser) => {
     setToken(newToken);
@@ -5062,16 +5086,20 @@ const App = () => {
     setView('list');
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    window.history.pushState({}, '', '/thrive365labslaunch/login');
   };
 
   const handleSelectProject = (project) => {
     setSelectedProject(project);
     setView('tracker');
+    const slug = project.clientLinkSlug || project.clientLinkId;
+    window.history.pushState({}, '', `/thrive365labslaunch/${slug}-internal`);
   };
 
   const handleBackToList = () => {
     setSelectedProject(null);
     setView('list');
+    window.history.pushState({}, '', '/thrive365labslaunch/home');
   };
 
   if (!token) {
