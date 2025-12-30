@@ -2116,22 +2116,40 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
                               className="w-full px-2 py-1 border rounded text-sm"
                             />
                           </td>
-                          <td className="px-4 py-2">
-                            <select
-                              multiple
-                              value={editingTask.dependencies || []}
-                              onChange={(e) => {
-                                const selected = Array.from(e.target.selectedOptions, opt => opt.value);
-                                setEditingTask({...editingTask, dependencies: selected});
-                              }}
-                              className="w-full px-1 py-1 border rounded text-xs h-16"
-                            >
-                              {selectedTemplate.tasks.filter(t => t.id !== editingTask.id).map(t => (
-                                <option key={t.id} value={String(t.id)}>
-                                  {t.id}: {t.taskTitle.substring(0, 20)}
-                                </option>
-                              ))}
-                            </select>
+                          <td className="px-4 py-2 relative">
+                            <div className="group">
+                              <button
+                                type="button"
+                                className="w-full px-2 py-1 border rounded text-xs text-left bg-white hover:bg-gray-50"
+                              >
+                                {(editingTask.dependencies || []).length > 0 
+                                  ? `${(editingTask.dependencies || []).length} selected`
+                                  : 'Select dependencies...'}
+                              </button>
+                              <div className="hidden group-hover:block absolute z-50 left-0 top-full mt-1 w-72 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                                {selectedTemplate.tasks.filter(t => t.id !== editingTask.id).map(t => (
+                                  <label key={t.id} className="flex items-start gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0">
+                                    <input
+                                      type="checkbox"
+                                      checked={(editingTask.dependencies || []).includes(String(t.id))}
+                                      onChange={(e) => {
+                                        const deps = editingTask.dependencies || [];
+                                        if (e.target.checked) {
+                                          setEditingTask({...editingTask, dependencies: [...deps, String(t.id)]});
+                                        } else {
+                                          setEditingTask({...editingTask, dependencies: deps.filter(d => d !== String(t.id))});
+                                        }
+                                      }}
+                                      className="mt-1 flex-shrink-0"
+                                    />
+                                    <span className="text-xs">
+                                      <span className="font-medium text-gray-700">#{t.id}</span>
+                                      <span className="text-gray-600 ml-1">{t.taskTitle}</span>
+                                    </span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
                           </td>
                           <td className="px-4 py-2">
                             <input
@@ -2163,10 +2181,25 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
                           <td className="px-4 py-2 text-sm">{task.stage}</td>
                           <td className="px-4 py-2 text-sm font-medium">{task.taskTitle}</td>
                           <td className="px-4 py-2 text-sm text-gray-500">{task.owner || '-'}</td>
-                          <td className="px-4 py-2 text-xs text-gray-500">
-                            {task.dependencies && task.dependencies.length > 0 
-                              ? task.dependencies.join(', ')
-                              : '-'}
+                          <td className="px-4 py-2 text-xs text-gray-500 relative group">
+                            {task.dependencies && task.dependencies.length > 0 ? (
+                              <div>
+                                <span className="cursor-help underline decoration-dotted">
+                                  {task.dependencies.length} task{task.dependencies.length > 1 ? 's' : ''}
+                                </span>
+                                <div className="hidden group-hover:block absolute z-50 left-0 top-full mt-1 w-64 bg-gray-800 text-white text-xs rounded-lg shadow-lg p-2">
+                                  <p className="font-medium mb-1 border-b border-gray-600 pb-1">Dependencies:</p>
+                                  {task.dependencies.map(depId => {
+                                    const depTask = selectedTemplate.tasks.find(t => String(t.id) === String(depId));
+                                    return (
+                                      <p key={depId} className="py-1">
+                                        <span className="text-blue-300">#{depId}</span> {depTask ? depTask.taskTitle : 'Unknown'}
+                                      </p>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ) : '-'}
                           </td>
                           <td className="px-4 py-2 text-sm">
                             {task.showToClient ? (
