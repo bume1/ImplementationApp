@@ -1223,29 +1223,47 @@ app.get('/api/reporting', authenticateToken, async (req, res) => {
 });
 
 // ============== EXPORT ==============
+const escapeCSV = (value) => {
+  if (value === null || value === undefined) return '';
+  const str = String(value);
+  if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+};
+
 app.get('/api/projects/:id/export', authenticateToken, async (req, res) => {
   try {
     const projects = await getProjects();
     const project = projects.find(p => p.id === req.params.id);
     if (!project) return res.status(404).json({ error: 'Project not found' });
     const tasks = await getTasks(req.params.id);
-    const csv = [
-      ['Phase', 'Stage', 'Task', 'Owner', 'Start Date', 'Due Date', 'Completed', 'Date Completed'],
-      ...tasks.map(t => [
-        t.phase, 
-        t.stage, 
-        t.taskTitle, 
-        t.owner, 
-        t.startDate, 
-        t.dueDate, 
-        t.completed ? 'Yes' : 'No', 
-        t.dateCompleted
-      ])
-    ].map(row => row.join(',')).join('\n');
+    
+    const headers = ['id', 'phase', 'stage', 'taskTitle', 'owner', 'startDate', 'dueDate', 'showToClient', 'clientName', 'completed', 'dateCompleted', 'dependencies', 'notes'];
+    
+    const rows = tasks.map(t => [
+      t.id,
+      t.phase || '',
+      t.stage || '',
+      t.taskTitle || '',
+      t.owner || '',
+      t.startDate || '',
+      t.dueDate || '',
+      t.showToClient ? 'true' : 'false',
+      t.clientName || '',
+      t.completed ? 'true' : 'false',
+      t.dateCompleted || '',
+      Array.isArray(t.dependencies) ? t.dependencies.join(';') : '',
+      Array.isArray(t.notes) ? t.notes.map(n => n.text || n).join(' | ') : ''
+    ].map(escapeCSV));
+    
+    const csv = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
+    
     res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', `attachment; filename="${project.name}.csv"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${project.name.replace(/[^a-zA-Z0-9]/g, '_')}.csv"`);
     res.send(csv);
   } catch (error) {
+    console.error('Export error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });

@@ -119,8 +119,29 @@ const api = {
       body: JSON.stringify({ csvData })
     }).then(r => r.json()),
 
-  exportProject: (token, projectId) => {
-    window.open(`${API_URL}/api/projects/${projectId}/export`, '_blank');
+  exportProject: async (token, projectId) => {
+    try {
+      const response = await fetch(`${API_URL}/api/projects/${projectId}/export`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!response.ok) throw new Error('Export failed');
+      const blob = await response.blob();
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = 'tasks.csv';
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="(.+)"/);
+        if (match) filename = match[1];
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export error:', err);
+      alert('Failed to export tasks');
+    }
   },
 
   getReportingData: (token) =>
