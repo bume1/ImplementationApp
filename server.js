@@ -623,7 +623,14 @@ app.put('/api/projects/:id', authenticateToken, async (req, res) => {
     const projects = await getProjects();
     const idx = projects.findIndex(p => p.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'Project not found' });
-    projects[idx] = { ...projects[idx], ...req.body };
+    
+    const allowedFields = ['name', 'clientName', 'projectManager', 'hubspotRecordId', 'status', 'clientPortalDomain'];
+    allowedFields.forEach(field => {
+      if (req.body[field] !== undefined) {
+        projects[idx][field] = req.body[field];
+      }
+    });
+    
     await db.set('projects', projects);
     res.json(projects[idx]);
   } catch (error) {
@@ -922,7 +929,7 @@ app.put('/api/hubspot/stage-mapping', authenticateToken, requireAdmin, async (re
 // ============== SOFT-PILOT CHECKLIST ==============
 app.post('/api/projects/:id/soft-pilot-checklist', authenticateToken, async (req, res) => {
   try {
-    const { signature, checklistHtml, projectName } = req.body;
+    const { signature, checklistHtml, projectName, isResubmission } = req.body;
     
     if (!signature || !signature.name?.trim() || !signature.title?.trim() || !signature.date?.trim()) {
       return res.status(400).json({ error: 'Name, title, and date are required in signature' });
@@ -945,25 +952,35 @@ app.post('/api/projects/:id/soft-pilot-checklist', authenticateToken, async (req
     
     const safeName = (projectName || project.name || 'Project').replace(/[^a-zA-Z0-9]/g, '-');
     const timestamp = new Date().toISOString().split('T')[0];
-    const fileName = `Soft-Pilot-Checklist_${safeName}_${timestamp}.html`;
+    const timeStr = new Date().toISOString().split('T')[1].split('.')[0].replace(/:/g, '-');
+    const submissionCount = (project.softPilotChecklistSubmitted?.submissionCount || 0) + 1;
+    const fileName = isResubmission 
+      ? `Soft-Pilot-Checklist_${safeName}_REVISED_v${submissionCount}_${timestamp}.html`
+      : `Soft-Pilot-Checklist_${safeName}_${timestamp}.html`;
     
     const result = await hubspot.uploadFileAndAttachToDeal(
       project.hubspotRecordId, 
       checklistHtml, 
-      fileName
+      fileName,
+      isResubmission ? `REVISED Soft-Pilot Checklist (Version ${submissionCount}) - Updated by ${signature.name} on ${signature.date}. This is an updated version replacing the previous submission.` : null
     );
     
     project.softPilotChecklistSubmitted = {
       submittedAt: new Date().toISOString(),
       submittedBy: req.user.email,
-      signature
+      signature,
+      submissionCount,
+      isRevision: isResubmission || false
     };
     await db.set('projects', projects);
     
     res.json({ 
-      message: 'Soft-pilot checklist submitted and uploaded to HubSpot',
+      message: isResubmission 
+        ? 'Soft-pilot checklist updated and HubSpot notified with revision note' 
+        : 'Soft-pilot checklist submitted and uploaded to HubSpot',
       fileId: result.fileId,
-      noteId: result.noteId
+      noteId: result.noteId,
+      submissionCount
     });
   } catch (error) {
     console.error('Error submitting soft-pilot checklist:', error);
