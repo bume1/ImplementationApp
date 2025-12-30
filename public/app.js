@@ -1587,6 +1587,39 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
     return member ? member.name : email;
   };
 
+  // Get all unique owners from tasks AND team members combined
+  const getAllOwners = () => {
+    const ownerSet = new Set();
+    const ownerList = [];
+    
+    // Add team members first
+    teamMembers.forEach(m => {
+      if (!ownerSet.has(m.email)) {
+        ownerSet.add(m.email);
+        ownerList.push({ email: m.email, name: m.name });
+      }
+    });
+    
+    // Add unique owners from tasks that aren't already in team members
+    tasks.forEach(t => {
+      if (t.owner && !ownerSet.has(t.owner)) {
+        ownerSet.add(t.owner);
+        ownerList.push({ email: t.owner, name: t.owner });
+      }
+      // Also check subtask owners
+      (t.subtasks || []).forEach(st => {
+        if (st.owner && !ownerSet.has(st.owner)) {
+          ownerSet.add(st.owner);
+          ownerList.push({ email: st.owner, name: st.owner });
+        }
+      });
+    });
+    
+    return ownerList;
+  };
+
+  const allOwners = getAllOwners();
+
   const handleBulkComplete = async (completed) => {
     if (selectedTasks.length === 0) return;
     try {
@@ -2380,12 +2413,8 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                       className="w-full px-3 py-2 border rounded-md"
                                     >
                                       <option value="">Unassigned</option>
-                                      {/* Show current owner if not in team members list */}
-                                      {editingTask.owner && !teamMembers.find(m => m.email === editingTask.owner) && (
-                                        <option value={editingTask.owner}>{editingTask.owner} (not registered)</option>
-                                      )}
-                                      {teamMembers.map(member => (
-                                        <option key={member.email} value={member.email}>{member.name}</option>
+                                      {allOwners.map(owner => (
+                                        <option key={owner.email} value={owner.email}>{owner.name}</option>
                                       ))}
                                     </select>
                                   </div>
@@ -2668,8 +2697,8 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                       className="px-2 py-2 border rounded-md text-sm"
                                     >
                                       <option value="">No owner</option>
-                                      {teamMembers.map(member => (
-                                        <option key={member.email} value={member.email}>{member.name}</option>
+                                      {allOwners.map(owner => (
+                                        <option key={owner.email} value={owner.email}>{owner.name}</option>
                                       ))}
                                     </select>
                                     <button
@@ -2760,8 +2789,8 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                       className="w-full px-3 py-2 border rounded-md"
                     >
                       <option value="">Unassigned</option>
-                      {teamMembers.map(member => (
-                        <option key={member.email} value={member.email}>{member.name}</option>
+                      {allOwners.map(owner => (
+                        <option key={owner.email} value={owner.email}>{owner.name}</option>
                       ))}
                     </select>
                   </div>
