@@ -1264,6 +1264,21 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
     }
   };
 
+  const handleDeleteProjectTask = async (taskId) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    
+    if (!confirm('Are you sure you want to delete this task? This cannot be undone.')) return;
+    
+    try {
+      await api.deleteTask(token, project.id, taskId);
+      setTasks(tasks.filter(t => t.id !== taskId));
+    } catch (err) {
+      console.error('Failed to delete task:', err);
+      alert(err.message || 'Failed to delete task. You can only delete tasks you created.');
+    }
+  };
+
   const handleAddNote = async (taskId) => {
     if (!newNote.trim()) return;
     try {
@@ -1787,14 +1802,24 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                 >
                                   {getTaskName(task)}
                                 </h3>
-                                {viewMode === 'internal' && (isAdmin || task.createdBy === user.id || !task.createdBy) && (
-                                  <button
-                                    onClick={() => handleEditTask(task.id)}
-                                    className="text-gray-400 hover:text-blue-600 flex-shrink-0"
-                                  >
-                                    {isAdmin ? 'Edit' : (task.createdBy === user.id ? 'Edit' : 'Update Status')}
-                                  </button>
-                                )}
+                                <div className="flex gap-2 flex-shrink-0">
+                                  {viewMode === 'internal' && (isAdmin || task.createdBy === user.id || !task.createdBy) && (
+                                    <button
+                                      onClick={() => handleEditTask(task.id)}
+                                      className="text-gray-400 hover:text-blue-600"
+                                    >
+                                      {isAdmin ? 'Edit' : (task.createdBy === user.id ? 'Edit' : 'Update Status')}
+                                    </button>
+                                  )}
+                                  {viewMode === 'internal' && (isAdmin || task.createdBy === user.id) && task.createdBy && (
+                                    <button
+                                      onClick={() => handleDeleteProjectTask(task.id)}
+                                      className="text-gray-400 hover:text-red-600"
+                                    >
+                                      Delete
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                               {viewMode === 'internal' && (
                                 <div className="mt-2 space-y-1 text-sm text-gray-600">
