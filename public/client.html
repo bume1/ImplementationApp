@@ -67,7 +67,18 @@
                   <div className="space-y-4">
                     {Object.entries(phaseData).map(([stage, stageTasks]) => (
                       <div key={stage} className="bg-gray-50 rounded-lg p-4">
-                        <h4 className="font-semibold text-gray-800 mb-3">{stage}</h4>
+                        <div className="flex justify-between items-start mb-3">
+                          <h4 className="font-semibold text-gray-800">{stage}</h4>
+                          {(() => {
+                            const dueDates = stageTasks.filter(t => t.dueDate).map(t => t.dueDate).sort();
+                            const targetDate = dueDates.length > 0 ? dueDates[dueDates.length - 1] : null;
+                            return targetDate ? (
+                              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
+                                Target: {targetDate}
+                              </span>
+                            ) : null;
+                          })()}
+                        </div>
                         <div className="space-y-2">
                           {stageTasks.map(task => (
                             <div 
@@ -89,9 +100,11 @@
                                 }`}>
                                   {task.clientName || task.taskTitle}
                                 </h5>
-                                {task.dateCompleted && (
-                                  <p className="mt-1 text-xs text-green-600">
-                                    Completed: {task.dateCompleted}
+                                {(task.dateCompleted || task.owner) && (
+                                  <p className="mt-1 text-xs text-gray-600">
+                                    {task.owner && <span className="text-gray-500">Owner: {task.owner}</span>}
+                                    {task.owner && task.dateCompleted && <span className="mx-1">•</span>}
+                                    {task.dateCompleted && <span className="text-green-600">Completed: {task.dateCompleted}</span>}
                                   </p>
                                 )}
                               </div>

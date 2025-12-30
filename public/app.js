@@ -537,6 +537,14 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
 };
 
 // ============== TIMELINE VIEW COMPONENT (Phase/Stage Grouped) ==============
+const phaseNames = {
+  'Phase 0': 'Phase 0: Contract Signature',
+  'Phase 1': 'Phase 1: Pre-Launch',
+  'Phase 2': 'Phase 2: Implementation Sprints',
+  'Phase 3': 'Phase 3: Go-Live',
+  'Phase 4': 'Phase 4: Post-Launch Optimization'
+};
+
 const TimelineView = ({ tasks, getPhaseColor, viewMode }) => {
   const groupedByPhase = {};
   
@@ -573,7 +581,7 @@ const TimelineView = ({ tasks, getPhaseColor, viewMode }) => {
           return (
             <div key={phase} className={`border-l-4 ${getPhaseColor(phase)} pl-6`}>
               <div className="mb-4">
-                <h3 className="text-xl font-bold text-gray-900">{phase}</h3>
+                <h3 className="text-xl font-bold text-gray-900">{phaseNames[phase] || phase}</h3>
                 <p className="text-sm text-gray-600">
                   {completedCount} of {totalCount} complete ({totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0}%)
                 </p>
@@ -634,7 +642,7 @@ const TimelineView = ({ tasks, getPhaseColor, viewMode }) => {
 };
 
 // ============== CALENDAR VIEW COMPONENT ==============
-const CalendarView = ({ tasks }) => {
+const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
   const [selectedMonth, setSelectedMonth] = useState(new Date());
 
   const getDaysInMonth = (date) => {
@@ -653,6 +661,8 @@ const CalendarView = ({ tasks }) => {
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     return tasks.filter(t => t.dueDate === dateStr || t.dateCompleted === dateStr);
   };
+
+  const hasPhase3Task = (dayTasks) => dayTasks.some(t => t.phase === 'Phase 3');
 
   const prevMonth = () => {
     setSelectedMonth(new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() - 1));
@@ -700,27 +710,34 @@ const CalendarView = ({ tasks }) => {
           const isToday = new Date().getDate() === day && 
                          new Date().getMonth() === month && 
                          new Date().getFullYear() === year;
+          const isPhase3Day = hasPhase3Task(dayTasks);
           
           return (
             <div
               key={day}
               className={`aspect-square border rounded-lg p-2 ${
+                isPhase3Day ? 'bg-green-100 border-green-400' :
                 isToday ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
               } hover:border-blue-300 transition-colors`}
             >
-              <div className={`text-sm font-semibold mb-1 ${isToday ? 'text-blue-600' : 'text-gray-700'}`}>
+              <div className={`text-sm font-semibold mb-1 ${
+                isPhase3Day ? 'text-green-700' :
+                isToday ? 'text-blue-600' : 'text-gray-700'
+              }`}>
                 {day}
               </div>
               <div className="space-y-1">
                 {dayTasks.slice(0, 2).map(task => (
                   <div
                     key={task.id}
+                    onClick={() => viewMode === 'internal' && onScrollToTask && onScrollToTask(task.id)}
                     className={`text-xs px-1 py-0.5 rounded truncate ${
-                      task.completed ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
-                    }`}
+                      task.completed ? 'bg-green-200 text-green-800' : 
+                      task.phase === 'Phase 3' ? 'bg-green-300 text-green-900' : 'bg-blue-100 text-blue-800'
+                    } ${viewMode === 'internal' ? 'cursor-pointer hover:opacity-80' : ''}`}
                     title={task.taskTitle}
                   >
-                    {task.taskTitle.substring(0, 15)}{task.taskTitle.length > 15 ? '...' : ''}
+                    {task.taskTitle.substring(0, 12)}{task.taskTitle.length > 12 ? '...' : ''}
                   </div>
                 ))}
                 {dayTasks.length > 2 && (
@@ -784,6 +801,23 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
   const handleToggleComplete = async (taskId) => {
     const task = tasks.find(t => t.id === taskId);
     const newCompleted = !task.completed;
+    
+    // Check if this task has incomplete dependencies
+    if (newCompleted && task.dependencies && task.dependencies.length > 0) {
+      const incompleteDeps = task.dependencies.filter(depId => {
+        const depTask = tasks.find(t => t.id === parseInt(depId) || t.id === depId);
+        return depTask && !depTask.completed;
+      });
+      if (incompleteDeps.length > 0) {
+        const depNames = incompleteDeps.map(depId => {
+          const depTask = tasks.find(t => t.id === parseInt(depId) || t.id === depId);
+          return depTask ? `Task ${depId}: ${depTask.taskTitle}` : `Task ${depId}`;
+        }).join('\n');
+        alert(`Cannot complete this task. The following dependencies must be completed first:\n\n${depNames}`);
+        return;
+      }
+    }
+    
     const updates = {
       completed: newCompleted,
       dateCompleted: newCompleted && !task.dateCompleted
@@ -797,6 +831,14 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
     } catch (err) {
       console.error('Failed to update task:', err);
     }
+  };
+
+  const hasIncompleteDependencies = (task) => {
+    if (!task.dependencies || task.dependencies.length === 0) return false;
+    return task.dependencies.some(depId => {
+      const depTask = tasks.find(t => t.id === parseInt(depId) || t.id === depId);
+      return depTask && !depTask.completed;
+    });
   };
 
   const handleEditTask = (taskId) => {
@@ -1154,8 +1196,25 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
           </div>
         </div>
 
+        <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-lg font-semibold text-gray-900">Overall Project Progress</h3>
+            <span className="text-xl font-bold text-blue-600">{progressPercentage}%</span>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-5 overflow-hidden">
+            <div
+              className="bg-gradient-to-r from-blue-500 to-blue-600 h-5 rounded-full flex items-center justify-center transition-all duration-500"
+              style={{ width: `${progressPercentage}%` }}
+            >
+              {progressPercentage > 10 && (
+                <span className="text-white text-xs font-medium">{completedTasks} of {totalTasks}</span>
+              )}
+            </div>
+          </div>
+        </div>
+
         {viewType === 'timeline' && <TimelineView tasks={getFilteredTasks()} getPhaseColor={getPhaseColor} viewMode={viewMode} />}
-        {viewType === 'calendar' && <CalendarView tasks={getFilteredTasks()} />}
+        {viewType === 'calendar' && <CalendarView tasks={getFilteredTasks()} viewMode={viewMode} onScrollToTask={(taskId) => { setViewType('list'); setTimeout(() => document.getElementById(`task-${taskId}`)?.scrollIntoView({ behavior: 'smooth' }), 100); }} />}
         
         {viewType === 'list' && (
           <div className="space-y-6">
@@ -1169,16 +1228,21 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                 </div>
                 <div className="divide-y divide-gray-200">
                   {groupTasks.map(task => (
-                    <div key={task.id} className="p-4 hover:bg-gray-50">
+                    <div key={task.id} id={`task-${task.id}`} className="p-4 hover:bg-gray-50">
                       <div className="flex items-start gap-4">
                         {viewMode === 'internal' && (
                           <button
                             onClick={() => handleToggleComplete(task.id)}
                             className="mt-1 flex-shrink-0"
+                            title={hasIncompleteDependencies(task) ? 'Complete dependencies first' : ''}
                           >
                             {task.completed ? (
                               <div className="w-6 h-6 bg-green-600 rounded-full flex items-center justify-center text-white text-sm">
                                 ✓
+                              </div>
+                            ) : hasIncompleteDependencies(task) ? (
+                              <div className="w-6 h-6 border-2 border-orange-300 bg-orange-50 rounded-full flex items-center justify-center text-orange-400 text-xs cursor-not-allowed" title="Dependencies incomplete">
+                                ⏳
                               </div>
                             ) : (
                               <div className="w-6 h-6 border-2 border-gray-300 rounded-full hover:border-gray-400" />
@@ -1246,15 +1310,23 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                   />
                                 </div>
                                 <div>
-                                  <label className="block text-xs text-gray-500 mb-1">Dependencies (Task IDs)</label>
-                                  <input
-                                    placeholder="e.g., 1,2,3"
-                                    value={(editingTask.dependencies || []).join(',')}
-                                    onChange={(e) =>
-                                      setEditingTask({...editingTask, dependencies: e.target.value.split(',').map(s => s.trim()).filter(s => s)})
-                                    }
-                                    className="w-full px-3 py-2 border rounded-md"
-                                  />
+                                  <label className="block text-xs text-gray-500 mb-1">Dependencies</label>
+                                  <select
+                                    multiple
+                                    value={editingTask.dependencies || []}
+                                    onChange={(e) => {
+                                      const selected = Array.from(e.target.selectedOptions, option => option.value);
+                                      setEditingTask({...editingTask, dependencies: selected});
+                                    }}
+                                    className="w-full px-3 py-2 border rounded-md h-24"
+                                  >
+                                    {tasks.filter(t => t.id !== editingTask.id).map(t => (
+                                      <option key={t.id} value={String(t.id)}>
+                                        {t.id}: {t.taskTitle.substring(0, 40)}{t.taskTitle.length > 40 ? '...' : ''}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <p className="text-xs text-gray-400 mt-1">Hold Ctrl/Cmd to select multiple</p>
                                 </div>
                               </div>
                               {isAdmin && (
@@ -1476,13 +1548,23 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">Dependencies (Task IDs)</label>
-                  <input
-                    value={(newTask.dependencies || []).join(',')}
-                    onChange={(e) => setNewTask({...newTask, dependencies: e.target.value.split(',').map(s => s.trim()).filter(s => s)})}
-                    className="w-full px-3 py-2 border rounded-md"
-                    placeholder="e.g., 1,2,3"
-                  />
+                  <label className="block text-sm font-medium mb-1">Dependencies</label>
+                  <select
+                    multiple
+                    value={newTask.dependencies || []}
+                    onChange={(e) => {
+                      const selected = Array.from(e.target.selectedOptions, option => option.value);
+                      setNewTask({...newTask, dependencies: selected});
+                    }}
+                    className="w-full px-3 py-2 border rounded-md h-24"
+                  >
+                    {tasks.map(t => (
+                      <option key={t.id} value={String(t.id)}>
+                        {t.id}: {t.taskTitle.substring(0, 40)}{t.taskTitle.length > 40 ? '...' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-400 mt-1">Hold Ctrl/Cmd to select multiple</p>
                 </div>
                 {isAdmin && (
                   <div className="flex items-center gap-4">
@@ -1523,32 +1605,6 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
             </div>
           </div>
         )}
-
-        <div className="mt-8 bg-white rounded-lg shadow-sm p-6">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-lg font-semibold text-gray-900">
-              Overall Project Progress
-            </h3>
-            <span className="text-2xl font-bold text-blue-600">
-              {progressPercentage}%
-            </span>
-          </div>
-          <div className="w-full bg-gray-200 rounded-full h-6 overflow-hidden">
-            <div
-              className="bg-gradient-to-r from-blue-500 to-blue-600 h-6 rounded-full flex items-center justify-center transition-all duration-500"
-              style={{ width: `${progressPercentage}%` }}
-            >
-              {progressPercentage > 10 && (
-                <span className="text-white text-sm font-medium">
-                  {completedTasks} of {totalTasks} tasks
-                </span>
-              )}
-            </div>
-          </div>
-          <p className="mt-3 text-sm text-gray-600 text-center">
-            {completedTasks} completed • {totalTasks - completedTasks} remaining
-          </p>
-        </div>
       </div>
     </div>
   );
@@ -1750,6 +1806,28 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [editingTask, setEditingTask] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [tempName, setTempName] = useState('');
+
+  const getUniqueStages = () => {
+    if (!selectedTemplate) return [];
+    const stages = [...new Set(selectedTemplate.tasks.map(t => t.stage).filter(s => s))];
+    return stages.sort();
+  };
+
+  const handleSaveName = async () => {
+    if (!selectedTemplate || !tempName.trim()) return;
+    setSaving(true);
+    try {
+      await api.updateTemplate(token, selectedTemplate.id, { name: tempName.trim() });
+      setSelectedTemplate({ ...selectedTemplate, name: tempName.trim() });
+      setEditingName(false);
+    } catch (err) {
+      console.error('Failed to save template name:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   useEffect(() => {
     loadTemplates();
@@ -1859,7 +1937,30 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
                 ← {selectedTemplate ? 'Back to Templates' : 'Back to Projects'}
               </button>
               <h1 className="text-3xl font-bold text-gray-900">
-                {selectedTemplate ? `Edit Template: ${selectedTemplate.name}` : 'Template Management'}
+                {selectedTemplate ? (
+                  editingName ? (
+                    <div className="flex items-center gap-2">
+                      <span>Edit Template:</span>
+                      <input
+                        value={tempName}
+                        onChange={(e) => setTempName(e.target.value)}
+                        className="px-2 py-1 border rounded text-xl"
+                      />
+                      <button onClick={handleSaveName} disabled={saving} className="text-sm text-green-600 hover:underline">Save</button>
+                      <button onClick={() => setEditingName(false)} className="text-sm text-gray-500 hover:underline">Cancel</button>
+                    </div>
+                  ) : (
+                    <span>
+                      Edit Template: {selectedTemplate.name}
+                      <button 
+                        onClick={() => { setTempName(selectedTemplate.name); setEditingName(true); }}
+                        className="ml-2 text-sm text-blue-600 hover:underline"
+                      >
+                        (rename)
+                      </button>
+                    </span>
+                  )
+                ) : 'Template Management'}
               </h1>
               <p className="text-gray-600">
                 {selectedTemplate ? `${selectedTemplate.tasks.length} tasks` : 'Manage project templates'}
@@ -1930,6 +2031,7 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stage</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Task Title</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Owner</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Dependencies</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Client View</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                   </tr>
@@ -1954,11 +2056,24 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
                             </select>
                           </td>
                           <td className="px-4 py-2">
-                            <input
+                            <select
                               value={editingTask.stage}
                               onChange={(e) => setEditingTask({...editingTask, stage: e.target.value})}
                               className="w-full px-2 py-1 border rounded text-sm"
-                            />
+                            >
+                              <option value="">-- Select Stage --</option>
+                              {getUniqueStages().map(stage => (
+                                <option key={stage} value={stage}>{stage}</option>
+                              ))}
+                              <option value="__new__">+ Add New Stage...</option>
+                            </select>
+                            {editingTask.stage === '__new__' && (
+                              <input
+                                placeholder="New stage name"
+                                onChange={(e) => setEditingTask({...editingTask, stage: e.target.value})}
+                                className="w-full px-2 py-1 border rounded text-sm mt-1"
+                              />
+                            )}
                           </td>
                           <td className="px-4 py-2">
                             <input
@@ -1973,6 +2088,23 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
                               onChange={(e) => setEditingTask({...editingTask, owner: e.target.value})}
                               className="w-full px-2 py-1 border rounded text-sm"
                             />
+                          </td>
+                          <td className="px-4 py-2">
+                            <select
+                              multiple
+                              value={editingTask.dependencies || []}
+                              onChange={(e) => {
+                                const selected = Array.from(e.target.selectedOptions, opt => opt.value);
+                                setEditingTask({...editingTask, dependencies: selected});
+                              }}
+                              className="w-full px-1 py-1 border rounded text-xs h-16"
+                            >
+                              {selectedTemplate.tasks.filter(t => t.id !== editingTask.id).map(t => (
+                                <option key={t.id} value={String(t.id)}>
+                                  {t.id}: {t.taskTitle.substring(0, 20)}
+                                </option>
+                              ))}
+                            </select>
                           </td>
                           <td className="px-4 py-2">
                             <input
@@ -2004,6 +2136,11 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
                           <td className="px-4 py-2 text-sm">{task.stage}</td>
                           <td className="px-4 py-2 text-sm font-medium">{task.taskTitle}</td>
                           <td className="px-4 py-2 text-sm text-gray-500">{task.owner || '-'}</td>
+                          <td className="px-4 py-2 text-xs text-gray-500">
+                            {task.dependencies && task.dependencies.length > 0 
+                              ? task.dependencies.join(', ')
+                              : '-'}
+                          </td>
                           <td className="px-4 py-2 text-sm">
                             {task.showToClient ? (
                               <span className="text-green-600">Yes</span>
