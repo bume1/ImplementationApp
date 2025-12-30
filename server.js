@@ -8,6 +8,7 @@ const bodyParser = require('body-parser');
 const fs = require('fs').promises;
 const path = require('path');
 const hubspot = require('./hubspot');
+const googledrive = require('./googledrive');
 
 const app = express();
 const db = new Database();
@@ -961,45 +962,64 @@ app.post('/api/projects/:id/soft-pilot-checklist', authenticateToken, async (req
       return res.status(404).json({ error: 'Project not found' });
     }
     
-    if (!project.hubspotRecordId) {
-      return res.status(400).json({ error: 'Project must have a HubSpot Record ID to upload checklist' });
+    const submissionCount = (project.softPilotChecklistSubmitted?.submissionCount || 0) + 1;
+    let driveResult = null;
+    let hubspotNoteId = null;
+    
+    // Upload to Google Drive
+    try {
+      driveResult = await googledrive.uploadSoftPilotChecklist(
+        projectName || project.name,
+        project.clientName,
+        checklistHtml
+      );
+      console.log('✅ Checklist uploaded to Google Drive:', driveResult.webViewLink);
+    } catch (driveError) {
+      console.error('Google Drive upload failed:', driveError.message);
     }
     
-    const safeName = (projectName || project.name || 'Project').replace(/[^a-zA-Z0-9]/g, '-');
-    const timestamp = new Date().toISOString().split('T')[0];
-    const timeStr = new Date().toISOString().split('T')[1].split('.')[0].replace(/:/g, '-');
-    const submissionCount = (project.softPilotChecklistSubmitted?.submissionCount || 0) + 1;
-    const fileName = isResubmission 
-      ? `Soft-Pilot-Checklist_${safeName}_REVISED_v${submissionCount}_${timestamp}.html`
-      : `Soft-Pilot-Checklist_${safeName}_${timestamp}.html`;
-    
-    const result = await hubspot.uploadFileAndAttachToDeal(
-      project.hubspotRecordId, 
-      checklistHtml, 
-      fileName,
-      isResubmission ? `REVISED Soft-Pilot Checklist (Version ${submissionCount}) - Updated by ${signature.name} on ${signature.date}. This is an updated version replacing the previous submission.` : null
-    );
+    // Log note to HubSpot if project has a HubSpot Record ID
+    if (project.hubspotRecordId) {
+      try {
+        const noteDetails = isResubmission
+          ? `REVISED Soft-Pilot Checklist (Version ${submissionCount})\n\nUpdated by: ${signature.name}\nTitle: ${signature.title}\nDate: ${signature.date}\n\nThis is an updated version replacing the previous submission.`
+          : `Soft-Pilot Checklist Submitted\n\nSigned by: ${signature.name}\nTitle: ${signature.title}\nDate: ${signature.date}`;
+        
+        const fullNote = driveResult 
+          ? `${noteDetails}\n\nGoogle Drive Link: ${driveResult.webViewLink}`
+          : noteDetails;
+        
+        await hubspot.logRecordActivity(
+          project.hubspotRecordId,
+          isResubmission ? 'Soft-Pilot Checklist Updated' : 'Soft-Pilot Checklist Submitted',
+          fullNote
+        );
+        console.log('✅ HubSpot note created for checklist submission');
+      } catch (hubspotError) {
+        console.error('HubSpot note creation failed:', hubspotError.message);
+      }
+    }
     
     project.softPilotChecklistSubmitted = {
       submittedAt: new Date().toISOString(),
       submittedBy: req.user.email,
       signature,
       submissionCount,
-      isRevision: isResubmission || false
+      isRevision: isResubmission || false,
+      driveLink: driveResult?.webViewLink || null
     };
     await db.set('projects', projects);
     
     res.json({ 
       message: isResubmission 
-        ? 'Soft-pilot checklist updated and HubSpot notified with revision note' 
-        : 'Soft-pilot checklist submitted and uploaded to HubSpot',
-      fileId: result.fileId,
-      noteId: result.noteId,
+        ? 'Soft-pilot checklist updated and saved to Google Drive' 
+        : 'Soft-pilot checklist submitted and uploaded to Google Drive',
+      driveLink: driveResult?.webViewLink,
       submissionCount
     });
   } catch (error) {
     console.error('Error submitting soft-pilot checklist:', error);
-    res.status(500).json({ error: error.message || 'Failed to upload checklist to HubSpot' });
+    res.status(500).json({ error: error.message || 'Failed to upload checklist' });
   }
 });
 
