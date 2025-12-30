@@ -662,8 +662,6 @@ const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
     return tasks.filter(t => t.dueDate === dateStr || t.dateCompleted === dateStr);
   };
 
-  const hasPhase3Task = (dayTasks) => dayTasks.some(t => t.phase === 'Phase 3');
-
   const prevMonth = () => {
     setSelectedMonth(new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() - 1));
   };
@@ -710,18 +708,14 @@ const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
           const isToday = new Date().getDate() === day && 
                          new Date().getMonth() === month && 
                          new Date().getFullYear() === year;
-          const isPhase3Day = hasPhase3Task(dayTasks);
-          
           return (
             <div
               key={day}
               className={`aspect-square border rounded-lg p-2 ${
-                isPhase3Day ? 'bg-green-100 border-green-400' :
                 isToday ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
               } hover:border-blue-300 transition-colors`}
             >
               <div className={`text-sm font-semibold mb-1 ${
-                isPhase3Day ? 'text-green-700' :
                 isToday ? 'text-blue-600' : 'text-gray-700'
               }`}>
                 {day}
@@ -732,8 +726,7 @@ const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
                     key={task.id}
                     onClick={() => viewMode === 'internal' && onScrollToTask && onScrollToTask(task.id)}
                     className={`text-xs px-1 py-0.5 rounded truncate ${
-                      task.completed ? 'bg-green-200 text-green-800' : 
-                      task.phase === 'Phase 3' ? 'bg-green-300 text-green-900' : 'bg-blue-100 text-blue-800'
+                      task.completed ? 'bg-green-200 text-green-800' : 'bg-blue-100 text-blue-800'
                     } ${viewMode === 'internal' ? 'cursor-pointer hover:opacity-80' : ''}`}
                     title={task.taskTitle}
                   >
