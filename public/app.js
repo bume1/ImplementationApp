@@ -169,6 +169,16 @@ const api = {
       body: JSON.stringify({ taskIds, completed })
     }).then(r => r.json()),
 
+  bulkDeleteTasks: (token, projectId, taskIds) =>
+    fetch(`${API_URL}/api/projects/${projectId}/tasks/bulk-delete`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ taskIds })
+    }).then(r => r.json()),
+
   forgotPassword: (email) =>
     fetch(`${API_URL}/api/auth/forgot-password`, {
       method: 'POST',
@@ -544,10 +554,6 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
     try {
       const data = await api.getTemplates(token);
       setTemplates(data);
-      if (data.length > 0) {
-        const defaultTemplate = data.find(t => t.isDefault) || data[0];
-        setNewProject(prev => ({ ...prev, template: defaultTemplate.id }));
-      }
     } catch (err) {
       console.error('Failed to load templates:', err);
     }
@@ -574,14 +580,13 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
     try {
       await api.createProject(token, newProject);
       setShowCreate(false);
-      const defaultTemplate = templates.find(t => t.isDefault) || templates[0];
       setNewProject({
         name: '',
         clientName: '',
         projectManager: '',
         hubspotRecordId: '',
         hubspotDealStage: '',
-        template: defaultTemplate?.id || ''
+        template: ''
       });
       loadProjects();
     } catch (err) {
@@ -704,14 +709,15 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
 
         {showCreate && (
           <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-            <h2 className="text-xl font-bold mb-4">Create New Project from Template</h2>
+            <h2 className="text-xl font-bold mb-4">Create New Project</h2>
             <div className="mb-4">
-              <label className="block text-sm font-medium mb-1">Select Template *</label>
+              <label className="block text-sm font-medium mb-1">Select Template (Optional)</label>
               <select
                 value={newProject.template}
                 onChange={(e) => setNewProject({...newProject, template: e.target.value})}
                 className="w-full px-3 py-2 border rounded-md"
               >
+                <option value="">No Template (start empty)</option>
                 {templates.map(t => (
                   <option key={t.id} value={t.id}>
                     {t.name} ({t.taskCount} tasks){t.isDefault ? ' - Default' : ''}
@@ -1413,6 +1419,25 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
     }
   };
 
+  const handleBulkDelete = async () => {
+    if (selectedTasks.length === 0) return;
+    if (!confirm(`Are you sure you want to delete ${selectedTasks.length} tasks? This cannot be undone.`)) return;
+    try {
+      const result = await api.bulkDeleteTasks(token, project.id, selectedTasks);
+      if (result.error) {
+        alert(result.error);
+      } else {
+        alert(result.message);
+        await loadTasks();
+        setSelectedTasks([]);
+        setBulkMode(false);
+      }
+    } catch (err) {
+      console.error('Failed to bulk delete tasks:', err);
+      alert('Failed to delete tasks');
+    }
+  };
+
   const toggleTaskSelection = (taskId) => {
     if (selectedTasks.includes(taskId)) {
       setSelectedTasks(selectedTasks.filter(id => id !== taskId));
@@ -1953,6 +1978,15 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                           className="px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 text-sm"
                         >
                           Mark {selectedTasks.length} Incomplete
+                        </button>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">&nbsp;</label>
+                        <button
+                          onClick={handleBulkDelete}
+                          className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm"
+                        >
+                          Delete {selectedTasks.length}
                         </button>
                       </div>
                     </>

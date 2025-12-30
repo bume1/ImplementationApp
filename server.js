@@ -428,6 +428,42 @@ app.put('/api/projects/:projectId/tasks/bulk-update', authenticateToken, async (
   }
 });
 
+// ============== BULK TASK DELETE ==============
+app.post('/api/projects/:projectId/tasks/bulk-delete', authenticateToken, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { taskIds } = req.body;
+    
+    if (!taskIds || !Array.isArray(taskIds)) {
+      return res.status(400).json({ error: 'taskIds array is required' });
+    }
+    
+    const tasks = await getTasks(projectId);
+    const taskIdsSet = new Set(taskIds.map(id => parseInt(id)));
+    
+    // Check permissions - user can only delete tasks they created (unless admin)
+    const users = await db.get('users') || [];
+    const user = users.find(u => u.id === req.user.id);
+    const isAdmin = user && user.role === 'admin';
+    
+    const tasksToDelete = tasks.filter(t => taskIdsSet.has(t.id));
+    for (const task of tasksToDelete) {
+      if (!isAdmin && task.createdBy !== req.user.id) {
+        return res.status(403).json({ error: `You can only delete tasks you created. Task "${task.taskTitle}" was created by someone else.` });
+      }
+    }
+    
+    const remainingTasks = tasks.filter(t => !taskIdsSet.has(t.id));
+    const deletedCount = tasks.length - remainingTasks.length;
+    
+    await db.set(`tasks_${projectId}`, remainingTasks);
+    res.json({ message: `${deletedCount} tasks deleted` });
+  } catch (error) {
+    console.error('Bulk delete error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ============== TASK NOTES ==============
 app.post('/api/projects/:projectId/tasks/:taskId/notes', authenticateToken, async (req, res) => {
   try {
@@ -526,7 +562,7 @@ app.post('/api/projects', authenticateToken, async (req, res) => {
     projects.push(newProject);
     await db.set('projects', projects);
 
-    // Load and apply selected template
+    // Load and apply selected template (empty if none selected)
     let templateTasks = [];
     if (template) {
       const templates = await db.get('templates') || [];
@@ -534,9 +570,6 @@ app.post('/api/projects', authenticateToken, async (req, res) => {
       if (selectedTemplate) {
         templateTasks = selectedTemplate.tasks || [];
       }
-    }
-    if (templateTasks.length === 0) {
-      templateTasks = await loadTemplate();
     }
     await db.set(`tasks_${newProject.id}`, templateTasks);
 
