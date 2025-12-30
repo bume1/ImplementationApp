@@ -36,8 +36,13 @@ Preferred communication style: Simple, everyday language.
 
 ### Data Model
 - **Users**: id, email, name, password (hashed), role, createdAt
-- **Projects**: id, name, HubSpot integration fields, client info
+- **Projects**: id, name, clientName, projectManager, hubspotRecordId, status (active/paused/completed), template, clientLinkId, clientLinkSlug
 - **Tasks**: 102-task template with fields including phase, stage, taskTitle, owner, startDate, dueDate, dateCompleted, duration, completed status
+
+### Project Management Features
+- **Status Tags**: Projects display status badges (In Progress, Paused, Completed)
+- **Editable Details**: Project name, client name, On-Site Project Manager, HubSpot Record ID, and status can be edited via modal
+- **Admin-Only Deletion**: Only admins can delete projects (removes project and all associated tasks)
 
 ### Template System
 - Task templates loaded from JSON file (`template-biolis-au480-clia.json`)
