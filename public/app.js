@@ -770,7 +770,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
     const linkId = project.clientLinkSlug || project.clientLinkId;
     const link = `${baseUrl}/thrive365labslaunch/${linkId}`;
     navigator.clipboard.writeText(link);
-    alert('Client link copied to clipboard!');
+    alert(`Link copied!\n\n${link}`);
   };
 
   const getClientLinkDisplay = (project) => {
@@ -2508,7 +2508,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
     const baseUrl = project.clientPortalDomain || clientPortalDomain || 'https://deapps.pro';
     const link = `${baseUrl}/thrive365labslaunch/${project.clientLinkSlug || project.clientLinkId}`;
     navigator.clipboard.writeText(link);
-    alert('Client link copied!');
+    alert(`Link copied!\n\n${link}`);
   };
 
   const getClientLinkDisplay = () => {
