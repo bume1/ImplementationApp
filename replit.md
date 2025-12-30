@@ -34,6 +34,11 @@ Preferred communication style: Simple, everyday language.
 - Role-based access: admin vs regular user
 - Client portal uses project-specific embed links (no login required)
 
+### Task Permissions
+- **Template tasks** (from original template): Can be edited by all users, deleted only by admins
+- **User-created tasks**: Can be edited and deleted by the creator or admins
+- Delete button only appears for tasks you created (or all tasks if admin)
+
 ### Data Model
 - **Users**: id, email, name, password (hashed), role, createdAt
 - **Projects**: id, name, clientName, projectManager, hubspotRecordId, status (active/paused/completed), template, clientLinkId, clientLinkSlug
