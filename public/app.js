@@ -313,8 +313,8 @@ const AuthScreen = ({ onLogin }) => {
         <div className="flex justify-center mb-6">
           <img src="/logo.webp" alt="Thrive 365 Labs" className="h-16" />
         </div>
-        <h1 className="text-2xl font-bold mb-2 text-accent">New Client Launch Implementation App</h1>
-        <p className="text-gray-600 mb-6">Thrive 365 Labs</p>
+        <h1 className="text-2xl font-bold mb-2 text-accent text-center">New Client Launch Implementation</h1>
+        <p className="text-gray-600 mb-6 text-center">Thrive 365 Labs Web App</p>
 
 
         {mode === 'forgot' && (
@@ -554,7 +554,8 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
         <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-3xl font-bold">Project Dashboard</h1>
+              <h1 className="text-3xl font-bold text-accent">New Client Launch Dashboard</h1>
+              <p className="text-sm text-gray-500">Implementation Trackers</p>
               <p className="text-gray-600 mt-1">
                 Welcome, {user.name} 
                 {user.role === 'admin' && <span className="ml-2 text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">ADMIN</span>}
@@ -1054,7 +1055,7 @@ const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
               : `${monthNames[selectedDate.getMonth()]} ${selectedDate.getDate()}, ${selectedDate.getFullYear()}`
             }
           </h2>
-          <button onClick={goToToday} className="text-sm text-blue-600 hover:underline">
+          <button onClick={goToToday} className="text-sm text-primary hover:underline">
             Today
           </button>
         </div>
@@ -1735,7 +1736,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                 <span className="text-gray-600">Client Link (embeddable):</span>
                 <button
                   onClick={copyClientLink}
-                  className="text-blue-600 hover:underline font-mono text-xs"
+                  className="text-primary hover:underline font-mono text-xs"
                 >
                   {window.location.origin}/client/{project.clientLinkSlug || project.clientLinkId}
                 </button>
@@ -1900,11 +1901,11 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
         <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-lg font-semibold text-gray-900">Overall Project Progress</h3>
-            <span className="text-xl font-bold text-blue-600">{progressPercentage}%</span>
+            <span className="text-xl font-bold text-primary">{progressPercentage}%</span>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-5 overflow-hidden">
             <div
-              className="bg-gradient-to-r from-blue-500 to-blue-600 h-5 rounded-full flex items-center justify-center transition-all duration-500"
+              className="bg-gradient-to-r from-primary to-accent h-5 rounded-full flex items-center justify-center transition-all duration-500"
               style={{ width: `${progressPercentage}%` }}
             >
               {progressPercentage > 10 && (
@@ -1946,7 +1947,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                             });
                             setShowAddTask(true);
                           }}
-                          className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                          className="text-primary hover:text-accent text-sm font-medium"
                         >
                           + Add Task
                         </button>
@@ -2123,7 +2124,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                   {viewMode === 'internal' && (isAdmin || task.createdBy === user.id || !task.createdBy) && (
                                     <button
                                       onClick={() => handleEditTask(task.id)}
-                                      className="text-gray-400 hover:text-blue-600"
+                                      className="text-gray-400 hover:text-primary"
                                     >
                                       {isAdmin ? 'Edit' : (task.createdBy === user.id ? 'Edit' : 'Update Status')}
                                     </button>
@@ -2186,7 +2187,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                 <div className="mt-3 flex flex-wrap gap-4">
                                   <button
                                     onClick={() => setExpandedTaskId(expandedTaskId === task.id ? null : task.id)}
-                                    className="text-sm text-blue-600 hover:underline"
+                                    className="text-sm text-primary hover:underline"
                                   >
                                     {expandedTaskId === task.id ? 'Hide Notes' : `Notes (${(task.notes || []).length})`}
                                   </button>
@@ -2981,7 +2982,7 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
                       Edit Template: {selectedTemplate.name}
                       <button 
                         onClick={() => { setTempName(selectedTemplate.name); setEditingName(true); }}
-                        className="ml-2 text-sm text-blue-600 hover:underline"
+                        className="ml-2 text-sm text-primary hover:underline"
                       >
                         (rename)
                       </button>
@@ -3279,7 +3280,7 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
                           <td className="px-4 py-2 space-x-2">
                             <button
                               onClick={() => setEditingTask({...task})}
-                              className="text-blue-600 hover:underline"
+                              className="text-primary hover:underline"
                             >
                               Edit
                             </button>
@@ -3385,7 +3386,7 @@ const HubSpotSettings = ({ token, user, onBack, onLogout }) => {
             <div>
               <button
                 onClick={onBack}
-                className="text-sm text-blue-600 hover:underline mb-2"
+                className="text-sm text-primary hover:underline mb-2"
               >
                 ← Back to Projects
               </button>
@@ -3591,7 +3592,7 @@ const Reporting = ({ token, user, onBack, onLogout }) => {
                 ← Back to Projects
               </button>
               <h1 className="text-3xl font-bold text-gray-900">Launch Reports</h1>
-              <p className="text-gray-600">New Client Launch Implementation App - Thrive 365 Labs</p>
+              <p className="text-gray-600">New Client Launch Implementation - Thrive 365 Labs Web App</p>
             </div>
             <button
               onClick={onLogout}
@@ -3604,7 +3605,7 @@ const Reporting = ({ token, user, onBack, onLogout }) => {
           {/* Summary Stats */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
             <div className="bg-blue-50 p-4 rounded-lg text-center">
-              <div className="text-3xl font-bold text-blue-600">{reportData.length}</div>
+              <div className="text-3xl font-bold text-primary">{reportData.length}</div>
               <div className="text-sm text-blue-800">Total Projects</div>
             </div>
             <div className="bg-green-50 p-4 rounded-lg text-center">
