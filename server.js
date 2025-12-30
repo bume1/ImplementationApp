@@ -23,19 +23,14 @@ app.use('/thrive365labsLAUNCH', express.static('public'));
 app.use('/thrive365labslaunch', express.static('public'));
 app.use(express.static('public'));
 
-// Serve the main app at /thrive365labsLAUNCH and /thrive365labslaunch
+// Serve the main app at /thrive365labsLAUNCH and /thrive365labslaunch root only
 app.get('/thrive365labsLAUNCH', (req, res) => {
   res.sendFile(__dirname + '/public/index.html');
 });
 app.get('/thrive365labslaunch', (req, res) => {
   res.sendFile(__dirname + '/public/index.html');
 });
-app.get('/thrive365labsLAUNCH/*', (req, res) => {
-  res.sendFile(__dirname + '/public/index.html');
-});
-app.get('/thrive365labslaunch/*', (req, res) => {
-  res.sendFile(__dirname + '/public/index.html');
-});
+// Note: Specific sub-routes (login, home, :slug, :slug-internal) are defined at the end of the file
 
 // Initialize admin user on startup
 (async () => {
