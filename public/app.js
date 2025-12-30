@@ -629,6 +629,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
   const [editingDomain, setEditingDomain] = useState(false);
   const [newDomain, setNewDomain] = useState('');
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const [showHelpGuide, setShowHelpGuide] = useState(false);
   const [newProject, setNewProject] = useState({
     name: '',
     clientName: '',
@@ -715,15 +716,15 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
   };
 
   const copyClientLink = (linkId) => {
-    const baseUrl = clientPortalDomain || window.location.origin;
-    const link = `${baseUrl}/thrive365labsLAUNCH/${linkId}`;
+    const baseUrl = clientPortalDomain || 'https://deapps.pro';
+    const link = `${baseUrl}/thrive365labslaunch/${linkId}`;
     navigator.clipboard.writeText(link);
     alert('Client link copied to clipboard!');
   };
 
   const getClientLinkDisplay = (linkId) => {
-    const baseUrl = clientPortalDomain || window.location.origin;
-    return `${baseUrl}/thrive365labsLAUNCH/${linkId}`;
+    const baseUrl = clientPortalDomain || 'https://deapps.pro';
+    return `${baseUrl}/thrive365labslaunch/${linkId}`;
   };
 
   const handleEditProject = async () => {
@@ -846,6 +847,12 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                 </div>
               )}
               <button
+                onClick={() => setShowHelpGuide(true)}
+                className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
+              >
+                Help
+              </button>
+              <button
                 onClick={onLogout}
                 className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700"
               >
@@ -854,6 +861,106 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
             </div>
           </div>
         </div>
+
+        {showHelpGuide && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+              <div className="p-6 border-b bg-gradient-to-r from-primary to-accent text-white">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-2xl font-bold">Help Guide</h2>
+                  <button onClick={() => setShowHelpGuide(false)} className="text-white hover:text-blue-200 text-2xl">&times;</button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                <section>
+                  <h3 className="text-lg font-bold text-primary mb-3">Getting Started</h3>
+                  <p className="text-gray-700 mb-2">Welcome to the New Client Launch Implementation tracker! This application helps you manage clinical laboratory equipment installations with a structured phase-based approach.</p>
+                  <ul className="list-disc ml-5 text-gray-600 space-y-1">
+                    <li><strong>Create a Project:</strong> Click "+ New Project" to start a new client launch</li>
+                    <li><strong>Select a Template:</strong> Choose from pre-built templates with tasks already set up</li>
+                    <li><strong>Track Progress:</strong> Click on a project card to view and manage tasks</li>
+                  </ul>
+                </section>
+                
+                <section>
+                  <h3 className="text-lg font-bold text-primary mb-3">Project Phases</h3>
+                  <div className="space-y-2 text-gray-600">
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-purple-500 rounded"></div><span><strong>Phase 0:</strong> Contract Signature</span></div>
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-blue-500 rounded"></div><span><strong>Phase 1:</strong> Pre-Launch (Kick Off, Data Systems Prep)</span></div>
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-green-500 rounded"></div><span><strong>Phase 2:</strong> Implementation Sprints (Soft-Pilot, System Setup)</span></div>
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-orange-500 rounded"></div><span><strong>Phase 3:</strong> Go-Live (Validation, Live Operations)</span></div>
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-pink-500 rounded"></div><span><strong>Phase 4:</strong> Post-Launch Optimization</span></div>
+                  </div>
+                </section>
+
+                <section>
+                  <h3 className="text-lg font-bold text-primary mb-3">Task Management</h3>
+                  <ul className="list-disc ml-5 text-gray-600 space-y-1">
+                    <li><strong>Complete Tasks:</strong> Click the circle next to a task to mark it complete</li>
+                    <li><strong>Add Subtasks:</strong> Click "Add Subtask" to break down complex tasks</li>
+                    <li><strong>Subtask Status:</strong> Pending, Complete, or N/A (Not Applicable)</li>
+                    <li><strong>Bulk Operations:</strong> Use "Bulk Select" to update multiple tasks at once</li>
+                    <li><strong>Add Notes:</strong> Expand a task to add internal notes</li>
+                  </ul>
+                </section>
+
+                <section>
+                  <h3 className="text-lg font-bold text-primary mb-3">Views</h3>
+                  <ul className="list-disc ml-5 text-gray-600 space-y-1">
+                    <li><strong>List View:</strong> See all tasks organized by phase and stage</li>
+                    <li><strong>Timeline View:</strong> Visualize task schedules on a timeline</li>
+                    <li><strong>Calendar View:</strong> See tasks organized by due date</li>
+                    <li><strong>Client View:</strong> Preview what clients see in their portal</li>
+                  </ul>
+                </section>
+
+                <section>
+                  <h3 className="text-lg font-bold text-primary mb-3">Client Portal</h3>
+                  <ul className="list-disc ml-5 text-gray-600 space-y-1">
+                    <li>Each project has a shareable client link for external stakeholders</li>
+                    <li>Client portal URL format: <code className="bg-gray-100 px-1 rounded">https://deapps.pro/thrive365labslaunch/client-name</code></li>
+                    <li>Click "Copy Client Link" on project cards to share with clients</li>
+                    <li>Clients can view progress without logging in</li>
+                  </ul>
+                </section>
+
+                <section>
+                  <h3 className="text-lg font-bold text-primary mb-3">HubSpot Integration</h3>
+                  <ul className="list-disc ml-5 text-gray-600 space-y-1">
+                    <li>Link projects to HubSpot deals via the HubSpot Record ID</li>
+                    <li>Task completions automatically sync to HubSpot</li>
+                    <li>Phase completions update deal pipeline stages</li>
+                    <li>Use "View Checklist" on Sprint 3: Soft-Pilot to submit signed checklists</li>
+                  </ul>
+                </section>
+
+                <section>
+                  <h3 className="text-lg font-bold text-primary mb-3">CSV Import/Export</h3>
+                  <ul className="list-disc ml-5 text-gray-600 space-y-1">
+                    <li><strong>Export:</strong> Click "Export CSV" to download all project tasks</li>
+                    <li><strong>Import:</strong> Use "Import CSV" to bulk add tasks</li>
+                    <li>Download the template to see the required format</li>
+                  </ul>
+                </section>
+
+                {user.role === 'admin' && (
+                  <section>
+                    <h3 className="text-lg font-bold text-primary mb-3">Admin Features</h3>
+                    <ul className="list-disc ml-5 text-gray-600 space-y-1">
+                      <li><strong>Manage Users:</strong> Add, edit, and remove team members</li>
+                      <li><strong>Templates:</strong> Create and manage project templates</li>
+                      <li><strong>HubSpot Settings:</strong> Configure pipeline stage mappings</li>
+                      <li><strong>Portal Domain:</strong> Set custom domain for client portal links</li>
+                    </ul>
+                  </section>
+                )}
+              </div>
+              <div className="p-4 border-t bg-gray-50 text-center">
+                <p className="text-sm text-gray-500">Developed by Bianca G. C. Ume, MD, MBA, MS</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {showCreate && (
           <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
@@ -2237,15 +2344,15 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
   };
 
   const copyClientLink = () => {
-    const baseUrl = clientPortalDomain || window.location.origin;
-    const link = `${baseUrl}/thrive365labsLAUNCH/${project.clientLinkSlug || project.clientLinkId}`;
+    const baseUrl = clientPortalDomain || 'https://deapps.pro';
+    const link = `${baseUrl}/thrive365labslaunch/${project.clientLinkSlug || project.clientLinkId}`;
     navigator.clipboard.writeText(link);
     alert('Client link copied!');
   };
 
   const getClientLinkDisplay = () => {
-    const baseUrl = clientPortalDomain || window.location.origin;
-    return `${baseUrl}/thrive365labsLAUNCH/${project.clientLinkSlug || project.clientLinkId}`;
+    const baseUrl = clientPortalDomain || 'https://deapps.pro';
+    return `${baseUrl}/thrive365labslaunch/${project.clientLinkSlug || project.clientLinkId}`;
   };
 
   const getPhaseColor = (phase) => {
@@ -2757,26 +2864,41 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
 
         <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
           <div className="flex flex-wrap gap-4 text-sm">
-            <div className="flex items-center gap-2">
+            <button
+              onClick={() => document.getElementById('phase-Phase 0')?.scrollIntoView({ behavior: 'smooth' })}
+              className="flex items-center gap-2 hover:bg-purple-50 px-2 py-1 rounded transition-colors cursor-pointer"
+            >
               <div className="w-3 h-3 bg-purple-500 rounded"></div>
               <span>Phase 0: Contract Signature</span>
-            </div>
-            <div className="flex items-center gap-2">
+            </button>
+            <button
+              onClick={() => document.getElementById('phase-Phase 1')?.scrollIntoView({ behavior: 'smooth' })}
+              className="flex items-center gap-2 hover:bg-blue-50 px-2 py-1 rounded transition-colors cursor-pointer"
+            >
               <div className="w-3 h-3 bg-blue-500 rounded"></div>
               <span>Phase 1: Pre-Launch</span>
-            </div>
-            <div className="flex items-center gap-2">
+            </button>
+            <button
+              onClick={() => document.getElementById('phase-Phase 2')?.scrollIntoView({ behavior: 'smooth' })}
+              className="flex items-center gap-2 hover:bg-green-50 px-2 py-1 rounded transition-colors cursor-pointer"
+            >
               <div className="w-3 h-3 bg-green-500 rounded"></div>
               <span>Phase 2: Implementation Sprints</span>
-            </div>
-            <div className="flex items-center gap-2">
+            </button>
+            <button
+              onClick={() => document.getElementById('phase-Phase 3')?.scrollIntoView({ behavior: 'smooth' })}
+              className="flex items-center gap-2 hover:bg-orange-50 px-2 py-1 rounded transition-colors cursor-pointer"
+            >
               <div className="w-3 h-3 bg-orange-500 rounded"></div>
               <span>Phase 3: Go-Live</span>
-            </div>
-            <div className="flex items-center gap-2">
+            </button>
+            <button
+              onClick={() => document.getElementById('phase-Phase 4')?.scrollIntoView({ behavior: 'smooth' })}
+              className="flex items-center gap-2 hover:bg-pink-50 px-2 py-1 rounded transition-colors cursor-pointer"
+            >
               <div className="w-3 h-3 bg-pink-500 rounded"></div>
               <span>Phase 4: Post-Launch Optimization</span>
-            </div>
+            </button>
           </div>
         </div>
 
@@ -2803,7 +2925,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
         {viewType === 'list' && (
           <div className="space-y-8">
             {sortedPhases.map(phase => (
-              <div key={phase} className="space-y-4">
+              <div key={phase} id={`phase-${phase}`} className="space-y-4 scroll-mt-4">
                 <div className={`${getPhaseGradient(phase)} p-3 rounded-lg text-white`}>
                   <h2 className="text-lg font-bold">{phaseNames[phase] || phase}</h2>
                   <p className="text-sm opacity-80">

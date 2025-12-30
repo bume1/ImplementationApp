@@ -168,15 +168,16 @@ Note: Adding notes to tasks in the webapp does NOT trigger HubSpot sync (to avoi
 ## Custom Domain & App URL
 
 ### Application Path
-- Main app accessible at `/thrive365labsLAUNCH` path (e.g., `yourdomain.com/thrive365labsLAUNCH`)
-- This allows hosting multiple apps on the same domain
+- Main app accessible at `/thrive365labslaunch` path (e.g., `https://deapps.pro/thrive365labslaunch`)
+- Both lowercase and uppercase paths are supported for backwards compatibility
 
-### Client Portal Custom Domain
-- Admins can configure a custom domain for client portal links via "Portal Domain" button on dashboard
+### Client Portal URLs
+- Client portal links use format: `https://deapps.pro/thrive365labslaunch/{client-slug}`
+- Example: `https://deapps.pro/thrive365labslaunch/dallas-forth-worth-urology`
+- Default base URL is `https://deapps.pro` if no custom domain is configured
+- Admins can configure a custom domain via "Portal Domain" in Settings dropdown
 - Custom domain stored in database under `client_portal_domain` key
-- Client links use format: `{custom-domain}/{slug}` (e.g., `https://deapps.pro/dallas-forth-worth-urology`)
-- Both root-level (`/slug`) and legacy (`/client/slug`) URL formats work for client portals
-- If no custom domain is set, the default app origin is used
+- Both root-level (`/slug`) and legacy formats work for backwards compatibility
 
 ### API Endpoints
 - `GET /api/settings/client-portal-domain` - Get current custom domain
