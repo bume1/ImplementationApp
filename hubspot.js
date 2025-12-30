@@ -160,11 +160,83 @@ async function testConnection() {
   }
 }
 
+async function getOwners() {
+  try {
+    const client = await getHubSpotClient();
+    const response = await client.crm.owners.ownersApi.getPage();
+    return response.results || [];
+  } catch (error) {
+    console.error('Error fetching HubSpot owners:', error.message);
+    return [];
+  }
+}
+
+async function findOwnerByName(firstName, lastName) {
+  try {
+    const owners = await getOwners();
+    const match = owners.find(owner => {
+      const ownerFirst = (owner.firstName || '').toLowerCase().trim();
+      const ownerLast = (owner.lastName || '').toLowerCase().trim();
+      return ownerFirst === firstName.toLowerCase().trim() && 
+             ownerLast === lastName.toLowerCase().trim();
+    });
+    return match ? match.id : null;
+  } catch (error) {
+    console.error('Error finding owner by name:', error.message);
+    return null;
+  }
+}
+
+async function createTask(dealId, taskSubject, taskBody, ownerId = null) {
+  try {
+    const client = await getHubSpotClient();
+    
+    const taskInput = {
+      properties: {
+        hs_timestamp: new Date().toISOString(),
+        hs_task_subject: taskSubject,
+        hs_task_body: taskBody,
+        hs_task_status: 'COMPLETED',
+        hs_task_priority: 'MEDIUM',
+        hs_task_type: 'TODO'
+      },
+      associations: [
+        {
+          to: { id: dealId },
+          types: [
+            {
+              associationCategory: 'HUBSPOT_DEFINED',
+              associationTypeId: 215
+            }
+          ]
+        }
+      ]
+    };
+    
+    if (ownerId) {
+      taskInput.properties.hubspot_owner_id = ownerId;
+    }
+    
+    const response = await client.crm.objects.basicApi.create('tasks', taskInput);
+    console.log(`✅ HubSpot task created and completed: ${taskSubject}`);
+    return response;
+  } catch (error) {
+    console.error('Error creating HubSpot task:', error.message);
+    if (error.body) {
+      console.error('HubSpot API error details:', JSON.stringify(error.body));
+    }
+    throw error;
+  }
+}
+
 module.exports = {
   getHubSpotClient,
   getPipelines,
   getRecord,
   updateRecordStage,
   logRecordActivity,
-  testConnection
+  testConnection,
+  getOwners,
+  findOwnerByName,
+  createTask
 };
