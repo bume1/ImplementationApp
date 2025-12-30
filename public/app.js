@@ -765,8 +765,18 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
     }
   };
 
+  const getBaseUrl = (domain) => {
+    if (!domain) return 'https://deapps.pro';
+    try {
+      const url = new URL(domain);
+      return url.origin;
+    } catch {
+      return domain.replace(/\/thrive365labs(launch)?.*$/i, '').replace(/\/+$/, '') || 'https://deapps.pro';
+    }
+  };
+
   const copyClientLink = (project) => {
-    const baseUrl = project.clientPortalDomain || clientPortalDomain || 'https://deapps.pro';
+    const baseUrl = getBaseUrl(project.clientPortalDomain || clientPortalDomain);
     const linkId = project.clientLinkSlug || project.clientLinkId;
     const link = `${baseUrl}/thrive365labslaunch/${linkId}`;
     navigator.clipboard.writeText(link);
@@ -774,7 +784,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
   };
 
   const getClientLinkDisplay = (project) => {
-    const baseUrl = project.clientPortalDomain || clientPortalDomain || 'https://deapps.pro';
+    const baseUrl = getBaseUrl(project.clientPortalDomain || clientPortalDomain);
     const linkId = project.clientLinkSlug || project.clientLinkId;
     return `${baseUrl}/thrive365labslaunch/${linkId}`;
   };
@@ -2057,8 +2067,8 @@ const SoftPilotChecklist = ({ token, project, tasks, teamMembers, onClose, onSub
         <div className="p-6 border-t bg-gray-50 flex justify-between items-center">
           <p className="text-sm text-gray-500">
             {isResubmission 
-              ? 'Updated checklist will be uploaded to HubSpot with a revision note.' 
-              : 'This checklist will be uploaded to HubSpot as an attachment with a note.'}
+              ? 'Updated checklist will be uploaded to Google Drive and noted in HubSpot.' 
+              : 'This checklist will be uploaded to Google Drive and noted in HubSpot.'}
           </p>
           <div className="flex gap-3">
             <button
@@ -2072,7 +2082,7 @@ const SoftPilotChecklist = ({ token, project, tasks, teamMembers, onClose, onSub
               disabled={submitting || !project.hubspotRecordId}
               className="px-6 py-2 bg-primary text-white rounded-md hover:bg-accent disabled:bg-gray-400"
             >
-              {submitting ? 'Submitting...' : isResubmission ? 'Resubmit & Update HubSpot' : 'Submit & Upload to HubSpot'}
+              {submitting ? 'Submitting...' : isResubmission ? 'Resubmit & Upload' : 'Submit & Upload'}
             </button>
           </div>
         </div>

@@ -163,10 +163,11 @@ async function uploadHtmlFile(fileName, htmlContent, folderId = null) {
   }
 }
 
+const SOFT_PILOT_FOLDER_ID = '16Tsa2IJypBBvvoVsLamy5j0DFgVUGLSN';
+
 async function uploadSoftPilotChecklist(projectName, clientName, htmlContent) {
   try {
-    const mainFolderId = await findOrCreateFolder('Thrive365Labs Checklists');
-    const clientFolderId = await findOrCreateFolder(clientName, mainFolderId);
+    const clientFolderId = await findOrCreateFolder(clientName, SOFT_PILOT_FOLDER_ID);
     
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const fileName = `Soft-Pilot-Checklist_${projectName.replace(/[^a-zA-Z0-9]/g, '-')}_${timestamp}.html`;
