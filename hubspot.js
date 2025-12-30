@@ -1,11 +1,21 @@
 const { Client } = require('@hubspot/api-client');
 
 let connectionSettings = null;
+let tokenExpiresAt = null;
 
 async function getAccessToken() {
-  if (connectionSettings?.settings?.expires_at && new Date(connectionSettings.settings.expires_at).getTime() > Date.now()) {
-    return connectionSettings.settings.access_token;
+  // Check if we have a valid cached token (with 60-second buffer before expiry)
+  if (connectionSettings && tokenExpiresAt && (tokenExpiresAt - Date.now() > 60000)) {
+    const cachedToken = connectionSettings?.settings?.access_token || 
+                        connectionSettings?.settings?.oauth?.credentials?.access_token;
+    if (cachedToken) {
+      return cachedToken;
+    }
   }
+  
+  // Clear cache and fetch fresh token
+  connectionSettings = null;
+  tokenExpiresAt = null;
   
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
   if (!hostname) {
@@ -47,11 +57,23 @@ async function getAccessToken() {
     throw new Error('HubSpot connector not configured');
   }
 
-  const accessToken = connectionSettings?.settings?.access_token || connectionSettings?.settings?.oauth?.credentials?.access_token;
+  const accessToken = connectionSettings?.settings?.access_token || 
+                      connectionSettings?.settings?.oauth?.credentials?.access_token;
 
   if (!accessToken) {
     throw new Error('HubSpot not connected - no access token found');
   }
+  
+  // Store expiration time from the connection settings
+  const expiresAt = connectionSettings?.settings?.expires_at || 
+                    connectionSettings?.settings?.oauth?.credentials?.expires_at;
+  if (expiresAt) {
+    tokenExpiresAt = new Date(expiresAt).getTime();
+  } else {
+    // Default to 25 minutes from now if no expiry provided (HubSpot tokens last 30 min)
+    tokenExpiresAt = Date.now() + (25 * 60 * 1000);
+  }
+  
   return accessToken;
 }
 
