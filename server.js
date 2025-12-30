@@ -1477,6 +1477,25 @@ app.delete('/api/templates/:id', authenticateToken, requireAdmin, async (req, re
   }
 });
 
+// ============== ROOT-LEVEL CLIENT PORTAL ROUTES (must be last) ==============
+// This enables custom domain URLs like: yourdomain.com/practice-name-slug
+app.get('/:slug', async (req, res, next) => {
+  // Skip if it looks like a file request or known route
+  if (req.params.slug.includes('.') || ['api', 'client', 'favicon.ico'].includes(req.params.slug)) {
+    return next();
+  }
+  
+  // Check if this slug matches a project
+  const projects = await getProjects();
+  const project = projects.find(p => p.clientLinkSlug === req.params.slug);
+  
+  if (project) {
+    res.sendFile(__dirname + '/public/client.html');
+  } else {
+    next();
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
   console.log(`🔐 Admin login: bianca@thrive365labs.com / Thrive2025!`);

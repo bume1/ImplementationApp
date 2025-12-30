@@ -596,7 +596,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
   };
 
   const copyClientLink = (linkId) => {
-    const link = `${window.location.origin}/client/${linkId}`;
+    const link = `${window.location.origin}/${linkId}`;
     navigator.clipboard.writeText(link);
     alert('Client link copied to clipboard!');
   };
@@ -1685,7 +1685,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
   };
 
   const copyClientLink = () => {
-    const link = `${window.location.origin}/client/${project.clientLinkSlug || project.clientLinkId}`;
+    const link = `${window.location.origin}/${project.clientLinkSlug || project.clientLinkId}`;
     navigator.clipboard.writeText(link);
     alert('Client link copied!');
   };

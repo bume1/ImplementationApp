@@ -523,7 +523,9 @@
       const [error, setError] = useState(null);
       const [viewType, setViewType] = useState('list');
 
-      const linkId = window.location.pathname.split('/').pop();
+      const pathParts = window.location.pathname.split('/').filter(Boolean);
+      const isClientRoute = pathParts[0] === 'client';
+      const linkId = isClientRoute ? pathParts[1] : pathParts[0];
 
       useEffect(() => {
         fetch(`/api/client/${linkId}`)
