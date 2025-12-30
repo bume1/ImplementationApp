@@ -1686,11 +1686,23 @@ app.delete('/api/templates/:id', authenticateToken, requireAdmin, async (req, re
   }
 });
 
-// ============== ROOT-LEVEL CLIENT PORTAL ROUTES (must be last) ==============
-// This enables custom domain URLs like: yourdomain.com/practice-name-slug
+// ============== CLIENT PORTAL ROUTES ==============
+// New format: /thrive365labsLAUNCH/:slug
+app.get('/thrive365labsLAUNCH/:slug', async (req, res) => {
+  const projects = await getProjects();
+  const project = projects.find(p => p.clientLinkSlug === req.params.slug || p.clientLinkId === req.params.slug);
+  
+  if (project) {
+    res.sendFile(__dirname + '/public/client.html');
+  } else {
+    res.status(404).send('Project not found');
+  }
+});
+
+// Legacy root-level route (for backwards compatibility)
 app.get('/:slug', async (req, res, next) => {
   // Skip if it looks like a file request or known route
-  if (req.params.slug.includes('.') || ['api', 'client', 'favicon.ico'].includes(req.params.slug)) {
+  if (req.params.slug.includes('.') || ['api', 'client', 'favicon.ico', 'thrive365labsLAUNCH'].includes(req.params.slug)) {
     return next();
   }
   
