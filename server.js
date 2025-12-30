@@ -7,6 +7,7 @@ const Database = require('@replit/database');
 const bodyParser = require('body-parser');
 const fs = require('fs').promises;
 const path = require('path');
+const hubspot = require('./hubspot');
 
 const app = express();
 const db = new Database();
@@ -274,6 +275,11 @@ app.post('/api/projects/:projectId/tasks/:taskId/notes', authenticateToken, asyn
     if (!tasks[idx].notes) tasks[idx].notes = [];
     tasks[idx].notes.push(note);
     await db.set(`tasks_${projectId}`, tasks);
+    
+    logHubSpotActivity(projectId, 'Note Added', 
+      `Task: ${tasks[idx].taskTitle}\nNote by: ${req.user.name}\n\n${content}`
+    );
+    
     res.json(note);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
@@ -450,8 +456,19 @@ app.put('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req,
       }
     }
 
+    const wasCompleted = task.completed;
     tasks[idx] = { ...tasks[idx], ...updates };
     await db.set(`tasks_${projectId}`, tasks);
+    
+    if (!wasCompleted && tasks[idx].completed) {
+      const projects = await getProjects();
+      const project = projects.find(p => p.id === projectId);
+      logHubSpotActivity(projectId, 'Task Completed', 
+        `Task: ${tasks[idx].taskTitle}\nPhase: ${tasks[idx].phase}\nCompleted by: ${req.user.name}\nDate: ${tasks[idx].dateCompleted || new Date().toISOString()}`
+      );
+      checkAndUpdateHubSpotDealStage(projectId);
+    }
+    
     res.json(tasks[idx]);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
@@ -490,6 +507,103 @@ app.get('/api/client/:linkId', async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
+
+// ============== HUBSPOT INTEGRATION ==============
+app.get('/api/hubspot/test', authenticateToken, async (req, res) => {
+  try {
+    const result = await hubspot.testConnection();
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ connected: false, error: error.message });
+  }
+});
+
+app.get('/api/hubspot/pipelines', authenticateToken, async (req, res) => {
+  try {
+    const pipelines = await hubspot.getPipelines();
+    res.json(pipelines);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/hubspot/deal/:dealId', authenticateToken, async (req, res) => {
+  try {
+    const deal = await hubspot.getDeal(req.params.dealId);
+    res.json(deal);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/hubspot/stage-mapping', authenticateToken, async (req, res) => {
+  try {
+    const mapping = await db.get('hubspot_stage_mapping') || {};
+    res.json(mapping);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.put('/api/hubspot/stage-mapping', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { mapping, pipelineId } = req.body;
+    await db.set('hubspot_stage_mapping', { pipelineId, phases: mapping });
+    res.json({ message: 'Stage mapping saved' });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+async function checkAndUpdateHubSpotDealStage(projectId) {
+  try {
+    const projects = await getProjects();
+    const project = projects.find(p => p.id === projectId);
+    if (!project || !project.hubspotDealId) return;
+
+    const tasks = await getTasks(projectId);
+    const mapping = await db.get('hubspot_stage_mapping');
+    if (!mapping || !mapping.phases) return;
+
+    const phases = ['Phase 0', 'Phase 1', 'Phase 2', 'Phase 3', 'Phase 4'];
+    
+    for (let i = phases.length - 1; i >= 0; i--) {
+      const phase = phases[i];
+      const phaseTasks = tasks.filter(t => t.phase === phase);
+      if (phaseTasks.length === 0) continue;
+      
+      const allCompleted = phaseTasks.every(t => t.completed);
+      if (allCompleted && mapping.phases[phase]) {
+        const stageId = mapping.phases[phase];
+        await hubspot.updateDealStage(project.hubspotDealId, stageId, mapping.pipelineId);
+        
+        const idx = projects.findIndex(p => p.id === projectId);
+        if (idx !== -1) {
+          projects[idx].hubspotDealStage = stageId;
+          projects[idx].lastHubSpotSync = new Date().toISOString();
+          await db.set('projects', projects);
+        }
+        
+        console.log(`✅ HubSpot deal ${project.hubspotDealId} moved to stage for ${phase}`);
+        break;
+      }
+    }
+  } catch (error) {
+    console.error('Error syncing HubSpot deal stage:', error.message);
+  }
+}
+
+async function logHubSpotActivity(projectId, activityType, details) {
+  try {
+    const projects = await getProjects();
+    const project = projects.find(p => p.id === projectId);
+    if (!project || !project.hubspotDealId) return;
+    
+    await hubspot.logDealActivity(project.hubspotDealId, activityType, details);
+  } catch (error) {
+    console.error('Error logging HubSpot activity:', error.message);
+  }
+}
 
 // ============== EXPORT ==============
 app.get('/api/projects/:id/export', authenticateToken, async (req, res) => {
