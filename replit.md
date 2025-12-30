@@ -131,10 +131,13 @@ Note: Adding notes to tasks in the webapp does NOT trigger HubSpot sync (to avoi
 - **Client Portal**: Server resolves owner emails to names before sending to client portal (ownerDisplayName field)
 
 ### Subtasks
-- Each task can have multiple subtasks with their own owners
-- Subtasks have title, owner (email), and completed status
+- Each task can have multiple subtasks with their own owners (any user in the system)
+- Subtasks have title, owner (email with dropdown selection), and status (Pending, Complete, N/A)
+- **Separate "Add Subtask" button** visible on each task (not buried in notes)
+- **Subtask status dropdown**: Pending, Complete, or N/A (Not Applicable)
+- **Completion enforcement**: Parent task cannot be marked complete until all subtasks are either Complete or N/A
 - Subtasks are NOT synced to HubSpot (only parent tasks sync)
-- Access subtasks by expanding a task's details (Notes section)
+- "Subtasks incomplete" warning badge shown on tasks with pending subtasks
 
 ### Bulk Task Operations
 - "Bulk Select" mode allows selecting multiple tasks via checkboxes

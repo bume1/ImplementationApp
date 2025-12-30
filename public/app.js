@@ -1212,6 +1212,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
   const [selectedTasks, setSelectedTasks] = useState([]);
   const [bulkMode, setBulkMode] = useState(false);
   const [newSubtask, setNewSubtask] = useState({ taskId: null, title: '', owner: '' });
+  const [expandedSubtasksId, setExpandedSubtasksId] = useState(null);
 
   const isAdmin = user.role === 'admin';
 
@@ -1290,13 +1291,28 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
     }
   };
 
-  const handleToggleSubtask = async (taskId, subtaskId, currentCompleted) => {
+  const handleSubtaskStatusChange = async (taskId, subtaskId, status) => {
     try {
-      await api.updateSubtask(token, project.id, taskId, subtaskId, { completed: !currentCompleted });
+      const updates = {
+        completed: status === 'completed',
+        notApplicable: status === 'not_applicable'
+      };
+      await api.updateSubtask(token, project.id, taskId, subtaskId, updates);
       await loadTasks();
     } catch (err) {
       console.error('Failed to update subtask:', err);
     }
+  };
+
+  const getSubtaskStatus = (subtask) => {
+    if (subtask.notApplicable) return 'not_applicable';
+    if (subtask.completed) return 'completed';
+    return 'pending';
+  };
+
+  const hasIncompleteSubtasks = (task) => {
+    if (!task.subtasks || task.subtasks.length === 0) return false;
+    return task.subtasks.some(s => !s.completed && !s.notApplicable);
   };
 
   const handleDeleteSubtask = async (taskId, subtaskId) => {
@@ -1328,6 +1344,13 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
         return;
       }
     }
+
+    // Check if this task has incomplete subtasks
+    if (newCompleted && hasIncompleteSubtasks(task)) {
+      const incompleteSubtasks = task.subtasks.filter(s => !s.completed && !s.notApplicable);
+      alert(`Cannot complete this task. The following subtasks must be completed or marked N/A first:\n\n${incompleteSubtasks.map(s => s.title).join('\n')}`);
+      return;
+    }
     
     const updates = {
       completed: newCompleted,
@@ -1337,7 +1360,11 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
     };
 
     try {
-      await api.updateTask(token, project.id, taskId, updates);
+      const result = await api.updateTask(token, project.id, taskId, updates);
+      if (result.error) {
+        alert(result.error);
+        return;
+      }
       setTasks(tasks.map(t => t.id === taskId ? {...t, ...updates} : t));
     } catch (err) {
       console.error('Failed to update task:', err);
@@ -2103,114 +2130,131 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                   >
                                     {expandedTaskId === task.id ? 'Hide Notes' : `Notes (${(task.notes || []).length})`}
                                   </button>
-                                  <span className="text-sm text-gray-500">
-                                    Subtasks: {(task.subtasks || []).filter(s => s.completed).length}/{(task.subtasks || []).length}
-                                  </span>
-                                  {expandedTaskId === task.id && (
-                                    <div className="w-full mt-2 bg-gray-50 rounded-lg p-3">
-                                      <div className="mb-4">
-                                        <h4 className="text-sm font-medium text-gray-700 mb-2">Notes</h4>
-                                        <div className="space-y-2 max-h-32 overflow-y-auto mb-3">
-                                          {(task.notes || []).length === 0 ? (
-                                            <p className="text-sm text-gray-400 italic">No notes yet</p>
-                                          ) : (
-                                            (task.notes || []).map(note => (
-                                              <div key={note.id} className="bg-white p-2 rounded border text-sm">
-                                                <p className="text-gray-800">{note.content}</p>
-                                                <p className="text-xs text-gray-400 mt-1">
-                                                  {note.author} - {new Date(note.createdAt).toLocaleString()}
-                                                </p>
-                                              </div>
-                                            ))
-                                          )}
-                                        </div>
-                                        <div className="flex gap-2">
-                                          <input
-                                            value={newNote}
-                                            onChange={(e) => setNewNote(e.target.value)}
-                                            placeholder="Add a status update..."
-                                            className="flex-1 px-3 py-2 border rounded-md text-sm"
-                                          />
-                                          <button
-                                            onClick={() => handleAddNote(task.id)}
-                                            className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700"
-                                          >
-                                            Add
-                                          </button>
-                                        </div>
-                                      </div>
-                                      <div className="border-t pt-4">
-                                        <h4 className="text-sm font-medium text-gray-700 mb-2">Subtasks</h4>
-                                        <div className="space-y-2 mb-3">
-                                          {(task.subtasks || []).length === 0 ? (
-                                            <p className="text-sm text-gray-400 italic">No subtasks</p>
-                                          ) : (
-                                            (task.subtasks || []).map(subtask => (
-                                              <div key={subtask.id} className="flex items-center gap-2 bg-white p-2 rounded border text-sm">
-                                                <input
-                                                  type="checkbox"
-                                                  checked={subtask.completed}
-                                                  onChange={() => handleToggleSubtask(task.id, subtask.id, subtask.completed)}
-                                                  className="w-4 h-4"
-                                                />
-                                                <span className={subtask.completed ? 'line-through text-gray-400 flex-1' : 'flex-1'}>
-                                                  {subtask.title}
-                                                </span>
-                                                {subtask.owner && (
-                                                  <span className="text-xs text-gray-500">{getOwnerName(subtask.owner)}</span>
-                                                )}
-                                                <button
-                                                  onClick={() => handleDeleteSubtask(task.id, subtask.id)}
-                                                  className="text-red-400 hover:text-red-600 text-xs"
-                                                >
-                                                  x
-                                                </button>
-                                              </div>
-                                            ))
-                                          )}
-                                        </div>
-                                        {newSubtask.taskId === task.id ? (
-                                          <div className="flex gap-2">
-                                            <input
-                                              value={newSubtask.title}
-                                              onChange={(e) => setNewSubtask({...newSubtask, title: e.target.value})}
-                                              placeholder="Subtask title..."
-                                              className="flex-1 px-3 py-2 border rounded-md text-sm"
-                                            />
-                                            <select
-                                              value={newSubtask.owner}
-                                              onChange={(e) => setNewSubtask({...newSubtask, owner: e.target.value})}
-                                              className="px-2 py-2 border rounded-md text-sm"
-                                            >
-                                              <option value="">No owner</option>
-                                              {teamMembers.map(member => (
-                                                <option key={member.email} value={member.email}>{member.name}</option>
-                                              ))}
-                                            </select>
-                                            <button
-                                              onClick={() => handleAddSubtask(task.id)}
-                                              className="px-3 py-2 bg-green-600 text-white rounded-md text-sm hover:bg-green-700"
-                                            >
-                                              Add
-                                            </button>
-                                            <button
-                                              onClick={() => setNewSubtask({ taskId: null, title: '', owner: '' })}
-                                              className="px-3 py-2 bg-gray-300 rounded-md text-sm"
-                                            >
-                                              Cancel
-                                            </button>
-                                          </div>
-                                        ) : (
-                                          <button
-                                            onClick={() => setNewSubtask({ taskId: task.id, title: '', owner: '' })}
-                                            className="text-sm text-blue-600 hover:underline"
-                                          >
-                                            + Add Subtask
-                                          </button>
-                                        )}
-                                      </div>
-                                    </div>
+                                  <button
+                                    onClick={() => setExpandedSubtasksId(expandedSubtasksId === task.id ? null : task.id)}
+                                    className="text-sm text-purple-600 hover:underline"
+                                  >
+                                    {expandedSubtasksId === task.id ? 'Hide Subtasks' : `Subtasks (${(task.subtasks || []).filter(s => s.completed || s.notApplicable).length}/${(task.subtasks || []).length})`}
+                                  </button>
+                                  <button
+                                    onClick={() => setNewSubtask({ taskId: task.id, title: '', owner: '' })}
+                                    className="text-sm text-green-600 hover:underline"
+                                  >
+                                    + Add Subtask
+                                  </button>
+                                  {hasIncompleteSubtasks(task) && (
+                                    <span className="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded">
+                                      Subtasks incomplete
+                                    </span>
                                   )}
+                                </div>
+                              )}
+                              {viewMode === 'internal' && expandedTaskId === task.id && (
+                                <div className="w-full mt-2 bg-gray-50 rounded-lg p-3">
+                                  <h4 className="text-sm font-medium text-gray-700 mb-2">Notes</h4>
+                                  <div className="space-y-2 max-h-32 overflow-y-auto mb-3">
+                                    {(task.notes || []).length === 0 ? (
+                                      <p className="text-sm text-gray-400 italic">No notes yet</p>
+                                    ) : (
+                                      (task.notes || []).map(note => (
+                                        <div key={note.id} className="bg-white p-2 rounded border text-sm">
+                                          <p className="text-gray-800">{note.content}</p>
+                                          <p className="text-xs text-gray-400 mt-1">
+                                            {note.author} - {new Date(note.createdAt).toLocaleString()}
+                                          </p>
+                                        </div>
+                                      ))
+                                    )}
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <input
+                                      value={newNote}
+                                      onChange={(e) => setNewNote(e.target.value)}
+                                      placeholder="Add a status update..."
+                                      className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                    />
+                                    <button
+                                      onClick={() => handleAddNote(task.id)}
+                                      className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700"
+                                    >
+                                      Add
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                              {viewMode === 'internal' && expandedSubtasksId === task.id && (
+                                <div className="w-full mt-2 bg-purple-50 rounded-lg p-3">
+                                  <h4 className="text-sm font-medium text-gray-700 mb-2">Subtasks</h4>
+                                  <div className="space-y-2 mb-3">
+                                    {(task.subtasks || []).length === 0 ? (
+                                      <p className="text-sm text-gray-400 italic">No subtasks</p>
+                                    ) : (
+                                      (task.subtasks || []).map(subtask => (
+                                        <div key={subtask.id} className="flex items-center gap-2 bg-white p-2 rounded border text-sm">
+                                          <select
+                                            value={getSubtaskStatus(subtask)}
+                                            onChange={(e) => handleSubtaskStatusChange(task.id, subtask.id, e.target.value)}
+                                            className={`px-2 py-1 border rounded text-xs ${
+                                              getSubtaskStatus(subtask) === 'completed' ? 'bg-green-100 text-green-700' :
+                                              getSubtaskStatus(subtask) === 'not_applicable' ? 'bg-gray-100 text-gray-600' :
+                                              'bg-yellow-50 text-yellow-700'
+                                            }`}
+                                          >
+                                            <option value="pending">Pending</option>
+                                            <option value="completed">Complete</option>
+                                            <option value="not_applicable">N/A</option>
+                                          </select>
+                                          <span className={getSubtaskStatus(subtask) !== 'pending' ? 'line-through text-gray-400 flex-1' : 'flex-1'}>
+                                            {subtask.title}
+                                          </span>
+                                          {subtask.owner && (
+                                            <span className="text-xs text-gray-500">{getOwnerName(subtask.owner)}</span>
+                                          )}
+                                          <button
+                                            onClick={() => handleDeleteSubtask(task.id, subtask.id)}
+                                            className="text-red-400 hover:text-red-600 text-xs"
+                                          >
+                                            x
+                                          </button>
+                                        </div>
+                                      ))
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                              {viewMode === 'internal' && newSubtask.taskId === task.id && (
+                                <div className="w-full mt-2 bg-green-50 rounded-lg p-3">
+                                  <h4 className="text-sm font-medium text-gray-700 mb-2">Add New Subtask</h4>
+                                  <div className="flex gap-2 flex-wrap">
+                                    <input
+                                      value={newSubtask.title}
+                                      onChange={(e) => setNewSubtask({...newSubtask, title: e.target.value})}
+                                      placeholder="Subtask title..."
+                                      className="flex-1 min-w-48 px-3 py-2 border rounded-md text-sm"
+                                    />
+                                    <select
+                                      value={newSubtask.owner}
+                                      onChange={(e) => setNewSubtask({...newSubtask, owner: e.target.value})}
+                                      className="px-2 py-2 border rounded-md text-sm"
+                                    >
+                                      <option value="">No owner</option>
+                                      {teamMembers.map(member => (
+                                        <option key={member.email} value={member.email}>{member.name}</option>
+                                      ))}
+                                    </select>
+                                    <button
+                                      onClick={() => handleAddSubtask(task.id)}
+                                      className="px-3 py-2 bg-green-600 text-white rounded-md text-sm hover:bg-green-700"
+                                    >
+                                      Add
+                                    </button>
+                                    <button
+                                      onClick={() => setNewSubtask({ taskId: null, title: '', owner: '' })}
+                                      className="px-3 py-2 bg-gray-300 rounded-md text-sm"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
                                 </div>
                               )}
                             </div>

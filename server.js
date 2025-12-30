@@ -314,7 +314,7 @@ app.post('/api/projects/:projectId/tasks/:taskId/subtasks', authenticateToken, a
 app.put('/api/projects/:projectId/tasks/:taskId/subtasks/:subtaskId', authenticateToken, async (req, res) => {
   try {
     const { projectId, taskId, subtaskId } = req.params;
-    const { title, owner, completed } = req.body;
+    const { title, owner, completed, notApplicable } = req.body;
     
     const tasks = await getTasks(projectId);
     const taskIdx = tasks.findIndex(t => t.id === parseInt(taskId));
@@ -327,6 +327,7 @@ app.put('/api/projects/:projectId/tasks/:taskId/subtasks/:subtaskId', authentica
     if (title !== undefined) tasks[taskIdx].subtasks[subtaskIdx].title = title;
     if (owner !== undefined) tasks[taskIdx].subtasks[subtaskIdx].owner = owner;
     if (completed !== undefined) tasks[taskIdx].subtasks[subtaskIdx].completed = completed;
+    if (notApplicable !== undefined) tasks[taskIdx].subtasks[subtaskIdx].notApplicable = notApplicable;
     
     await db.set(`tasks_${projectId}`, tasks);
     res.json(tasks[taskIdx].subtasks[subtaskIdx]);
@@ -653,6 +654,19 @@ app.put('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req,
     }
 
     const wasCompleted = task.completed;
+    
+    // Server-side validation: Check for incomplete subtasks before allowing completion
+    if (updates.completed && !task.completed) {
+      const subtasks = task.subtasks || [];
+      const incompleteSubtasks = subtasks.filter(s => !s.completed && !s.notApplicable);
+      if (incompleteSubtasks.length > 0) {
+        return res.status(400).json({ 
+          error: 'Cannot complete task with pending subtasks',
+          incompleteSubtasks: incompleteSubtasks.map(s => s.title)
+        });
+      }
+    }
+    
     tasks[idx] = { ...tasks[idx], ...updates };
     await db.set(`tasks_${projectId}`, tasks);
     
