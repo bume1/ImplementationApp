@@ -944,6 +944,17 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
     return colors[phase] || 'bg-gray-500';
   };
 
+  const getPhaseGradient = (phase) => {
+    const gradients = {
+      'Phase 0': 'bg-gradient-to-r from-purple-600 to-purple-700',
+      'Phase 1': 'bg-gradient-to-r from-blue-600 to-blue-700',
+      'Phase 2': 'bg-gradient-to-r from-green-600 to-green-700',
+      'Phase 3': 'bg-gradient-to-r from-orange-600 to-orange-700',
+      'Phase 4': 'bg-gradient-to-r from-pink-600 to-pink-700'
+    };
+    return gradients[phase] || 'bg-gradient-to-r from-gray-600 to-gray-700';
+  };
+
   const getUniqueOwners = () => {
     const owners = tasks
       .map(t => t.owner)
@@ -986,12 +997,18 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
   const completedTasks = tasks.filter(t => t.completed).length;
   const progressPercentage = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
-  const groupedTasks = getFilteredTasks().reduce((acc, task) => {
-    const key = `${task.phase}${task.stage ? ` - ${task.stage}` : ''}`;
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(task);
+  const groupedByPhase = getFilteredTasks().reduce((acc, task) => {
+    if (!acc[task.phase]) acc[task.phase] = {};
+    const stageKey = task.stage || 'General';
+    if (!acc[task.phase][stageKey]) acc[task.phase][stageKey] = [];
+    acc[task.phase][stageKey].push(task);
     return acc;
   }, {});
+
+  const phaseOrder = ['Phase 0', 'Phase 1', 'Phase 2', 'Phase 3', 'Phase 4'];
+  const sortedPhases = Object.keys(groupedByPhase).sort((a, b) => 
+    phaseOrder.indexOf(a) - phaseOrder.indexOf(b)
+  );
 
   const phases = [...new Set(tasks.map(t => t.phase))];
   const owners = getUniqueOwners();
@@ -1217,17 +1234,25 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
         {viewType === 'calendar' && <CalendarView tasks={getFilteredTasks()} viewMode={viewMode} onScrollToTask={(taskId) => { setViewType('list'); setTimeout(() => document.getElementById(`task-${taskId}`)?.scrollIntoView({ behavior: 'smooth' }), 100); }} />}
         
         {viewType === 'list' && (
-          <div className="space-y-6">
-            {Object.entries(groupedTasks).map(([groupName, groupTasks]) => (
-              <div key={groupName} className="bg-white rounded-lg shadow-sm overflow-hidden">
-                <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-4 text-white">
-                  <h2 className="text-xl font-bold">{groupName}</h2>
-                  <p className="text-sm text-blue-100 mt-1">
-                    {groupTasks.filter(t => t.completed).length} of {groupTasks.length} complete
+          <div className="space-y-8">
+            {sortedPhases.map(phase => (
+              <div key={phase} className="space-y-4">
+                <div className={`${getPhaseGradient(phase)} p-3 rounded-lg text-white`}>
+                  <h2 className="text-lg font-bold">{phaseNames[phase] || phase}</h2>
+                  <p className="text-sm opacity-80">
+                    {Object.values(groupedByPhase[phase]).flat().filter(t => t.completed).length} of {Object.values(groupedByPhase[phase]).flat().length} complete
                   </p>
                 </div>
-                <div className="divide-y divide-gray-200">
-                  {groupTasks.map(task => (
+                {Object.entries(groupedByPhase[phase]).map(([stageName, stageTasks]) => (
+                  <div key={stageName} className={`bg-white rounded-lg shadow-sm overflow-hidden border-l-4 ${getPhaseColor(phase)}`}>
+                    <div className="bg-gray-50 p-3 border-b">
+                      <h3 className="font-semibold text-gray-700">{stageName}</h3>
+                      <p className="text-xs text-gray-500">
+                        {stageTasks.filter(t => t.completed).length} of {stageTasks.length} complete
+                      </p>
+                    </div>
+                    <div className="divide-y divide-gray-200">
+                      {stageTasks.map(task => (
                     <div key={task.id} id={`task-${task.id}`} className="p-4 hover:bg-gray-50">
                       <div className="flex items-start gap-4">
                         {viewMode === 'internal' && (
@@ -1482,7 +1507,9 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                       </div>
                     </div>
                   ))}
-                </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             ))}
           </div>
