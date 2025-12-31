@@ -1595,13 +1595,13 @@ const TimelineView = ({ tasks, getPhaseColor, viewMode }) => {
                               {viewMode === 'internal' && (
                                 <div className="mt-1 flex flex-wrap gap-3 text-xs text-gray-500">
                                   {task.dueDate && <span>Due: {task.dueDate}</span>}
-                                  {task.dateCompleted && (
+                                  {task.completed && task.dateCompleted && (
                                     <span className="text-green-600">Completed: {formatDateForDisplay(task.dateCompleted)}</span>
                                   )}
                                   {task.owner && <span>Owner: {task.owner}</span>}
                                 </div>
                               )}
-                              {viewMode === 'client' && task.dateCompleted && (
+                              {viewMode === 'client' && task.completed && task.dateCompleted && (
                                 <p className="mt-1 text-xs text-green-600">
                                   Completed: {formatDateForDisplay(task.dateCompleted)}
                                 </p>
@@ -1897,7 +1897,7 @@ const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
                     <div className="mt-1 text-sm text-gray-500 flex flex-wrap gap-3">
                       {task.owner && <span>Owner: {task.owner}</span>}
                       {task.dueDate && <span>Due: {task.dueDate}</span>}
-                      {task.dateCompleted && <span className="text-green-600">Completed: {formatDateForDisplay(task.dateCompleted)}</span>}
+                      {task.completed && task.dateCompleted && <span className="text-green-600">Completed: {formatDateForDisplay(task.dateCompleted)}</span>}
                     </div>
                   </div>
                 </div>
@@ -3578,7 +3578,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                         <span className="font-medium">Due:</span> {task.dueDate}
                                       </span>
                                     )}
-                                    {task.dateCompleted && (
+                                    {task.completed && task.dateCompleted && (
                                       <span className="text-green-600">
                                         ✓ Completed: {formatDateForDisplay(task.dateCompleted)}
                                       </span>
@@ -3586,7 +3586,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                   </div>
                                 </div>
                               )}
-                              {viewMode === 'client' && task.dateCompleted && (
+                              {viewMode === 'client' && task.completed && task.dateCompleted && (
                                 <p className="mt-1 text-sm text-green-600">
                                   Completed: {formatDateForDisplay(task.dateCompleted)}
                                 </p>
