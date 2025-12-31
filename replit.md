@@ -181,8 +181,16 @@ Note: Adding notes to tasks in the webapp does NOT trigger HubSpot sync (to avoi
 ### Bulk Task Operations
 - "Bulk Select" mode allows selecting multiple tasks via checkboxes
 - "Select All" and "Deselect All" buttons for quick selection
+- **Per-Stage Bulk Selection**: Each stage header has "Select Stage" / "Deselect Stage" toggle button when in bulk mode
 - "Mark X Complete" and "Mark X Incomplete" bulk action buttons
 - Bulk updates do NOT sync to HubSpot (to prevent overloading)
+
+### Admin Activity Logging
+- **Storage**: Activity log stored under `activity_log` database key (limited to 500 entries)
+- **Logged Actions**: Task completions, reopenings, and updates are automatically logged
+- **Activity Details**: Each entry includes user name, action type, entity type, timestamp, and details (task title, stage, etc.)
+- **Admin Access**: "View Activity Log" link in footer (admin only)
+- **API Endpoint**: `GET /api/admin/activity-log` - Retrieve activity log with optional `limit` and `projectId` filters
 
 ## Custom Domain & App URL
 

@@ -1,6 +1,53 @@
 const { useState, useEffect } = React;
 const API_URL = window.location.origin;
 
+// ============== STANDARD PHASES AND STAGES (Always visible) ==============
+const STANDARD_PHASES = {
+  'Phase 0': {
+    name: 'Phase 0: Contract Signature',
+    stages: ['Contract Signature']
+  },
+  'Phase 1': {
+    name: 'Phase 1: Pre-Launch',
+    stages: ['Project Kick Off & Stakeholder Alignment', 'Launch Data & Systems Prep']
+  },
+  'Phase 2': {
+    name: 'Phase 2: Implementation Sprints',
+    stages: ['Sprint 1: Core System Setups', 'Sprint 2: Lab & QUA Pilot Prep', 'Sprint 3: Soft-Pilot']
+  },
+  'Phase 3': {
+    name: 'Phase 3: Go-Live',
+    stages: ['Training/Validation', 'Go-Live']
+  },
+  'Phase 4': {
+    name: 'Phase 4: Post-Launch Optimization',
+    stages: ['KPIs', 'Monitoring & Customer Support']
+  }
+};
+
+const PHASE_ORDER = ['Phase 0', 'Phase 1', 'Phase 2', 'Phase 3', 'Phase 4'];
+
+// Helper to ensure all phases/stages are always represented
+const ensureAllPhasesAndStages = (groupedByPhase) => {
+  const result = {};
+  PHASE_ORDER.forEach(phase => {
+    result[phase] = {};
+    const standardStages = STANDARD_PHASES[phase]?.stages || [];
+    standardStages.forEach(stage => {
+      result[phase][stage] = groupedByPhase[phase]?.[stage] || [];
+    });
+    // Also include any non-standard stages that have tasks
+    if (groupedByPhase[phase]) {
+      Object.keys(groupedByPhase[phase]).forEach(stage => {
+        if (!result[phase][stage]) {
+          result[phase][stage] = groupedByPhase[phase][stage];
+        }
+      });
+    }
+  });
+  return result;
+};
+
 // ============== API CLIENT ==============
 const api = {
   signup: (email, password, name) =>
@@ -149,8 +196,8 @@ const api = {
       headers: { 'Authorization': `Bearer ${token}` }
     }).then(r => r.json()),
 
-  getTeamMembers: (token) =>
-    fetch(`${API_URL}/api/team-members`, {
+  getTeamMembers: (token, projectId = null) =>
+    fetch(`${API_URL}/api/team-members${projectId ? `?projectId=${projectId}` : ''}`, {
       headers: { 'Authorization': `Bearer ${token}` }
     }).then(r => r.json()),
 
@@ -695,6 +742,9 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
   const [newDomain, setNewDomain] = useState('');
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [showHelpGuide, setShowHelpGuide] = useState(false);
+  const [showActivityLog, setShowActivityLog] = useState(false);
+  const [activityLog, setActivityLog] = useState([]);
+  const [activityLoading, setActivityLoading] = useState(false);
   const [newProject, setNewProject] = useState({
     name: '',
     clientName: '',
@@ -703,6 +753,24 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
     hubspotDealStage: '',
     template: ''
   });
+
+  const loadActivityLog = async () => {
+    if (user.role !== 'admin') return;
+    setActivityLoading(true);
+    try {
+      const res = await fetch('/api/admin/activity-log?limit=100', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setActivityLog(data);
+      }
+    } catch (err) {
+      console.error('Failed to load activity log:', err);
+    } finally {
+      setActivityLoading(false);
+    }
+  };
 
   useEffect(() => {
     loadProjects();
@@ -1341,7 +1409,64 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
       </div>
       <footer className="mt-8 py-4 text-center text-sm text-gray-500 border-t max-w-6xl mx-auto">
         <p>Developed by Bianca G. C. Ume, MD, MBA, MS</p>
+        {user.role === 'admin' && (
+          <button 
+            onClick={() => { setShowActivityLog(true); loadActivityLog(); }}
+            className="mt-2 text-primary hover:text-accent text-xs underline"
+          >
+            View Activity Log
+          </button>
+        )}
       </footer>
+
+      {showActivityLog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg w-full max-w-3xl max-h-[80vh] flex flex-col">
+            <div className="p-4 border-b flex justify-between items-center">
+              <h2 className="text-lg font-bold text-primary">Activity Log</h2>
+              <button onClick={() => setShowActivityLog(false)} className="text-gray-500 hover:text-gray-700 text-xl">&times;</button>
+            </div>
+            <div className="p-4 overflow-y-auto flex-1">
+              {activityLoading ? (
+                <p className="text-gray-500 text-center">Loading...</p>
+              ) : activityLog.length === 0 ? (
+                <p className="text-gray-500 text-center">No activity recorded yet.</p>
+              ) : (
+                <div className="space-y-3">
+                  {activityLog.map(activity => (
+                    <div key={activity.id} className="p-3 bg-gray-50 rounded-lg border text-sm">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <span className="font-medium text-gray-800">{activity.userName}</span>
+                          <span className="text-gray-600 ml-2">
+                            {activity.action === 'completed' && 'completed task'}
+                            {activity.action === 'reopened' && 'reopened task'}
+                            {activity.action === 'updated' && 'updated task'}
+                            {activity.action === 'created' && `created ${activity.entityType}`}
+                            {activity.action === 'deleted' && `deleted ${activity.entityType}`}
+                          </span>
+                        </div>
+                        <span className="text-xs text-gray-400">
+                          {new Date(activity.timestamp).toLocaleString()}
+                        </span>
+                      </div>
+                      {activity.details && activity.details.taskTitle && (
+                        <p className="text-gray-600 mt-1 truncate">
+                          "{activity.details.taskTitle}"
+                          {activity.details.stage && <span className="text-gray-400 ml-2">in {activity.details.stage}</span>}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="p-3 border-t bg-gray-50 text-center text-xs text-gray-500">
+              Showing last 100 activities
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -1356,21 +1481,22 @@ const phaseNames = {
 };
 
 const TimelineView = ({ tasks, getPhaseColor, viewMode }) => {
-  const groupedByPhase = {};
-  
+  // Group tasks by phase and stage
+  const rawGroupedByPhase = {};
   tasks.forEach(task => {
     const phase = task.phase || 'No Phase';
-    if (!groupedByPhase[phase]) {
-      groupedByPhase[phase] = {};
+    if (!rawGroupedByPhase[phase]) {
+      rawGroupedByPhase[phase] = {};
     }
     const stage = task.stage || 'General';
-    if (!groupedByPhase[phase][stage]) {
-      groupedByPhase[phase][stage] = [];
+    if (!rawGroupedByPhase[phase][stage]) {
+      rawGroupedByPhase[phase][stage] = [];
     }
-    groupedByPhase[phase][stage].push(task);
+    rawGroupedByPhase[phase][stage].push(task);
   });
 
-  const phases = [...new Set(tasks.map(t => t.phase || 'No Phase'))].sort();
+  // Ensure all phases and stages are always visible (even if empty)
+  const groupedByPhase = ensureAllPhasesAndStages(rawGroupedByPhase);
 
   const getTaskName = (task) =>
     (viewMode === 'client' && task.clientName) ? task.clientName : task.taskTitle;
@@ -1388,10 +1514,8 @@ const TimelineView = ({ tasks, getPhaseColor, viewMode }) => {
       <h2 className="text-2xl font-bold mb-6">Project Timeline</h2>
       
       <div className="space-y-8">
-        {phases.map(phase => {
-          const phaseData = groupedByPhase[phase];
-          if (!phaseData || Object.keys(phaseData).length === 0) return null;
-          
+        {PHASE_ORDER.map(phase => {
+          const phaseData = groupedByPhase[phase] || {};
           const phaseTasks = Object.values(phaseData).flat();
           const completedCount = phaseTasks.filter(t => t.completed).length;
           const totalCount = phaseTasks.length;
@@ -1410,44 +1534,48 @@ const TimelineView = ({ tasks, getPhaseColor, viewMode }) => {
                   <div key={stage} className="bg-gray-50 rounded-lg p-4">
                     <h4 className="font-semibold text-gray-800 mb-3">{stage}</h4>
                     <div className="space-y-2">
-                      {stageTasks.map(task => (
-                        <div 
-                          key={task.id} 
-                          className={`flex items-start gap-3 p-3 rounded-lg ${
-                            task.completed ? 'bg-green-50' : 
-                            (viewMode === 'internal' && isTaskOverdue(task)) ? 'bg-red-50 border-red-300' : 'bg-white'
-                          } border border-gray-200`}
-                        >
-                          <div className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${
-                            task.completed 
-                              ? 'bg-green-500 text-white' 
-                              : 'border-2 border-gray-300'
-                          }`}>
-                            {task.completed && <span className="text-xs">✓</span>}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <h5 className={`font-medium ${
-                              task.completed ? 'text-gray-500 line-through' : 'text-gray-900'
+                      {stageTasks.length === 0 ? (
+                        <p className="text-gray-400 text-sm italic">No tasks in this stage</p>
+                      ) : (
+                        stageTasks.map(task => (
+                          <div 
+                            key={task.id} 
+                            className={`flex items-start gap-3 p-3 rounded-lg ${
+                              task.completed ? 'bg-green-50' : 
+                              (viewMode === 'internal' && isTaskOverdue(task)) ? 'bg-red-50 border-red-300' : 'bg-white'
+                            } border border-gray-200`}
+                          >
+                            <div className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${
+                              task.completed 
+                                ? 'bg-green-500 text-white' 
+                                : 'border-2 border-gray-300'
                             }`}>
-                              {getTaskName(task)}
-                            </h5>
-                            {viewMode === 'internal' && (
-                              <div className="mt-1 flex flex-wrap gap-3 text-xs text-gray-500">
-                                {task.dueDate && <span>Due: {task.dueDate}</span>}
-                                {task.dateCompleted && (
-                                  <span className="text-green-600">Completed: {task.dateCompleted}</span>
-                                )}
-                                {task.owner && <span>Owner: {task.owner}</span>}
-                              </div>
-                            )}
-                            {viewMode === 'client' && task.dateCompleted && (
-                              <p className="mt-1 text-xs text-green-600">
-                                Completed: {task.dateCompleted}
-                              </p>
-                            )}
+                              {task.completed && <span className="text-xs">✓</span>}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h5 className={`font-medium ${
+                                task.completed ? 'text-gray-500 line-through' : 'text-gray-900'
+                              }`}>
+                                {getTaskName(task)}
+                              </h5>
+                              {viewMode === 'internal' && (
+                                <div className="mt-1 flex flex-wrap gap-3 text-xs text-gray-500">
+                                  {task.dueDate && <span>Due: {task.dueDate}</span>}
+                                  {task.dateCompleted && (
+                                    <span className="text-green-600">Completed: {task.dateCompleted}</span>
+                                  )}
+                                  {task.owner && <span>Owner: {task.owner}</span>}
+                                </div>
+                              )}
+                              {viewMode === 'client' && task.dateCompleted && (
+                                <p className="mt-1 text-xs text-green-600">
+                                  Completed: {task.dateCompleted}
+                                </p>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))
+                      )}
                     </div>
                   </div>
                 ))}
@@ -2130,7 +2258,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
   const [expandedTaskId, setExpandedTaskId] = useState(null);
   const [newNote, setNewNote] = useState('');
   const [showAddTask, setShowAddTask] = useState(false);
-  const [newTask, setNewTask] = useState({ taskTitle: '', owner: '', dueDate: '', phase: 'Phase 1', stage: '', showToClient: false, clientName: '', dependencies: [] });
+  const [newTask, setNewTask] = useState({ taskTitle: '', owner: '', secondaryOwner: '', dueDate: '', phase: 'Phase 1', stage: '', showToClient: false, clientName: '', dependencies: [] });
   const [teamMembers, setTeamMembers] = useState([]);
   const [selectedTasks, setSelectedTasks] = useState([]);
   const [bulkMode, setBulkMode] = useState(false);
@@ -2170,7 +2298,8 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
 
   const loadTeamMembers = async () => {
     try {
-      const data = await api.getTeamMembers(token);
+      // Pass project ID to filter team members to only those assigned to this project
+      const data = await api.getTeamMembers(token, project.id);
       setTeamMembers(data);
     } catch (err) {
       console.error('Failed to load team members:', err);
@@ -2493,7 +2622,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
     try {
       const created = await api.createTask(token, project.id, newTask);
       setTasks([...tasks, created]);
-      setNewTask({ taskTitle: '', owner: '', dueDate: '', phase: 'Phase 1', stage: '', showToClient: false, clientName: '', dependencies: [] });
+      setNewTask({ taskTitle: '', owner: '', secondaryOwner: '', dueDate: '', phase: 'Phase 1', stage: '', showToClient: false, clientName: '', dependencies: [] });
       setShowAddTask(false);
     } catch (err) {
       console.error('Failed to create task:', err);
@@ -2669,7 +2798,8 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
   const completedTasks = tasks.filter(t => t.completed).length;
   const progressPercentage = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
-  const groupedByPhase = getFilteredTasks().reduce((acc, task) => {
+  // Group filtered tasks by phase and stage
+  const rawGroupedByPhase = getFilteredTasks().reduce((acc, task) => {
     if (!acc[task.phase]) acc[task.phase] = {};
     const stageKey = task.stage || 'General';
     if (!acc[task.phase][stageKey]) acc[task.phase][stageKey] = [];
@@ -2677,10 +2807,8 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
     return acc;
   }, {});
 
-  const phaseOrder = ['Phase 0', 'Phase 1', 'Phase 2', 'Phase 3', 'Phase 4'];
-  const sortedPhases = Object.keys(groupedByPhase).sort((a, b) => 
-    phaseOrder.indexOf(a) - phaseOrder.indexOf(b)
-  );
+  // Ensure all phases and stages are always visible (even if empty)
+  const groupedByPhase = ensureAllPhasesAndStages(rawGroupedByPhase);
 
   const phases = [...new Set(tasks.map(t => t.phase))];
   const owners = getUniqueOwners();
@@ -3112,15 +3240,15 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
         
         {viewType === 'list' && (
           <div className="space-y-8">
-            {sortedPhases.map(phase => (
+            {PHASE_ORDER.map(phase => (
               <div key={phase} id={`phase-${phase}`} className="space-y-4 scroll-mt-4">
                 <div className={`${getPhaseGradient(phase)} p-3 rounded-lg text-white`}>
                   <h2 className="text-lg font-bold">{phaseNames[phase] || phase}</h2>
                   <p className="text-sm opacity-80">
-                    {Object.values(groupedByPhase[phase]).flat().filter(t => t.completed).length} of {Object.values(groupedByPhase[phase]).flat().length} complete
+                    {Object.values(groupedByPhase[phase] || {}).flat().filter(t => t.completed).length} of {Object.values(groupedByPhase[phase] || {}).flat().length} complete
                   </p>
                 </div>
-                {Object.entries(groupedByPhase[phase]).map(([stageName, stageTasks]) => (
+                {Object.entries(groupedByPhase[phase] || {}).map(([stageName, stageTasks]) => (
                   <div key={stageName} className={`bg-white rounded-lg shadow-sm overflow-hidden border-l-4 ${getPhaseColor(phase)}`}>
                     <div className="bg-gray-50 p-3 border-b flex justify-between items-center">
                       <div>
@@ -3130,6 +3258,24 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
+                        {viewMode === 'internal' && bulkMode && stageTasks.length > 0 && (
+                          <>
+                            <button
+                              onClick={() => {
+                                const stageTaskIds = stageTasks.map(t => t.id);
+                                const allSelected = stageTaskIds.every(id => selectedTasks.includes(id));
+                                if (allSelected) {
+                                  setSelectedTasks(selectedTasks.filter(id => !stageTaskIds.includes(id)));
+                                } else {
+                                  setSelectedTasks([...new Set([...selectedTasks, ...stageTaskIds])]);
+                                }
+                              }}
+                              className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded hover:bg-blue-200"
+                            >
+                              {stageTasks.every(t => selectedTasks.includes(t.id)) ? 'Deselect Stage' : 'Select Stage'}
+                            </button>
+                          </>
+                        )}
                         {viewMode === 'internal' && stageName === 'Sprint 3: Soft-Pilot' && (
                           <button
                             onClick={() => setShowSoftPilotChecklist(true)}
@@ -3156,7 +3302,9 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                       </div>
                     </div>
                     <div className="divide-y divide-gray-200">
-                      {stageTasks.map(task => (
+                      {stageTasks.length === 0 ? (
+                        <div className="p-4 text-gray-400 text-sm italic">No tasks in this stage</div>
+                      ) : stageTasks.map(task => (
                     <div key={task.id} id={`task-${task.id}`} className={`p-4 ${viewMode === 'internal' && isOverdue(task) ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'} ${selectedTasks.includes(task.id) ? 'bg-blue-50' : ''}`}>
                       <div className="flex items-start gap-4">
                         {viewMode === 'internal' && bulkMode && (
@@ -3210,21 +3358,38 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                               />
                               <div className="grid grid-cols-2 gap-3">
                                 {isAdmin && (
-                                  <div>
-                                    <label className="block text-xs text-gray-500 mb-1">Owner</label>
-                                    <select
-                                      value={editingTask.owner || ''}
-                                      onChange={(e) =>
-                                        setEditingTask({...editingTask, owner: e.target.value})
-                                      }
-                                      className="w-full px-3 py-2 border rounded-md"
-                                    >
-                                      <option value="">Unassigned</option>
-                                      {allOwners.map(owner => (
-                                        <option key={owner.email} value={owner.email}>{owner.name}</option>
-                                      ))}
-                                    </select>
-                                  </div>
+                                  <>
+                                    <div>
+                                      <label className="block text-xs text-gray-500 mb-1">Primary Owner <span className="text-red-500">*</span></label>
+                                      <select
+                                        value={editingTask.owner || ''}
+                                        onChange={(e) =>
+                                          setEditingTask({...editingTask, owner: e.target.value})
+                                        }
+                                        className="w-full px-3 py-2 border rounded-md"
+                                      >
+                                        <option value="">Select Primary Owner</option>
+                                        {allOwners.map(owner => (
+                                          <option key={owner.email} value={owner.email}>{owner.name}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label className="block text-xs text-gray-500 mb-1">Secondary Owner (optional)</label>
+                                      <select
+                                        value={editingTask.secondaryOwner || ''}
+                                        onChange={(e) =>
+                                          setEditingTask({...editingTask, secondaryOwner: e.target.value})
+                                        }
+                                        className="w-full px-3 py-2 border rounded-md"
+                                      >
+                                        <option value="">None</option>
+                                        {allOwners.filter(o => o.email !== editingTask.owner).map(owner => (
+                                          <option key={owner.email} value={owner.email}>{owner.name}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  </>
                                 )}
                                 {(isAdmin || !task.dueDate || task.dueDate.trim() === '') && (
                                   <div>
@@ -3349,7 +3514,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                               {viewMode === 'internal' && (
                                 <div className="mt-2 space-y-1 text-sm text-gray-600">
                                   <p>
-                                    <span className="font-medium">Owner:</span> {getOwnerName(task.owner)}
+                                    <span className="font-medium">Primary:</span> {getOwnerName(task.owner)}{task.secondaryOwner && <span className="ml-2"><span className="font-medium">Secondary:</span> {getOwnerName(task.secondaryOwner)}</span>}
                                     {!isAdmin && task.owner && (
                                       <span className="text-xs text-gray-400 ml-2">(Admin only can edit)</span>
                                     )}
@@ -3589,18 +3754,33 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium mb-1">Owner</label>
+                    <label className="block text-sm font-medium mb-1">Primary Owner <span className="text-red-500">*</span></label>
                     <select
                       value={newTask.owner}
                       onChange={(e) => setNewTask({...newTask, owner: e.target.value})}
                       className="w-full px-3 py-2 border rounded-md"
                     >
-                      <option value="">Unassigned</option>
+                      <option value="">Select Primary Owner</option>
                       {allOwners.map(owner => (
                         <option key={owner.email} value={owner.email}>{owner.name}</option>
                       ))}
                     </select>
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Secondary Owner (optional)</label>
+                    <select
+                      value={newTask.secondaryOwner || ''}
+                      onChange={(e) => setNewTask({...newTask, secondaryOwner: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-md"
+                    >
+                      <option value="">None</option>
+                      {allOwners.filter(o => o.email !== newTask.owner).map(owner => (
+                        <option key={owner.email} value={owner.email}>{owner.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium mb-1">Due Date</label>
                     <input
