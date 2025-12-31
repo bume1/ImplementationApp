@@ -3687,14 +3687,17 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
 // ============== USER MANAGEMENT COMPONENT (Admin Only) ==============
 const UserManagement = ({ token, user, onBack, onLogout }) => {
   const [users, setUsers] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingUser, setEditingUser] = useState(null);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [showAddUser, setShowAddUser] = useState(false);
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'user' });
   const [addError, setAddError] = useState('');
 
   useEffect(() => {
     loadUsers();
+    loadProjects();
   }, []);
 
   const loadUsers = async () => {
@@ -3707,6 +3710,29 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadProjects = async () => {
+    try {
+      const data = await api.getProjects(token);
+      setProjects(data);
+    } catch (err) {
+      console.error('Failed to load projects:', err);
+    }
+  };
+
+  const toggleProjectAssignment = (projectId) => {
+    if (!editingUser) return;
+    const current = editingUser.assignedProjects || [];
+    const updated = current.includes(projectId)
+      ? current.filter(id => id !== projectId)
+      : [...current, projectId];
+    setEditingUser({ ...editingUser, assignedProjects: updated });
+  };
+
+  const openEditModal = (u) => {
+    setEditingUser({ ...u, newPassword: '', assignedProjects: u.assignedProjects || [] });
+    setShowEditModal(true);
   };
 
   const handleCreateUser = async () => {
@@ -3739,7 +3765,8 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
       const updates = {
         name: editingUser.name,
         email: editingUser.email,
-        role: editingUser.role
+        role: editingUser.role,
+        assignedProjects: editingUser.assignedProjects || []
       };
       if (editingUser.newPassword) {
         updates.password = editingUser.newPassword;
@@ -3747,6 +3774,7 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
       await api.updateUser(token, editingUser.id, updates);
       await loadUsers();
       setEditingUser(null);
+      setShowEditModal(false);
     } catch (err) {
       console.error('Failed to update user:', err);
     }
@@ -3863,6 +3891,7 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Projects</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
               </tr>
@@ -3870,88 +3899,41 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
             <tbody className="divide-y divide-gray-200">
               {users.map(u => (
                 <tr key={u.id} className="hover:bg-gray-50">
-                  {editingUser?.id === u.id ? (
-                    <>
-                      <td className="px-6 py-4">
-                        <input
-                          value={editingUser.name}
-                          onChange={(e) => setEditingUser({...editingUser, name: e.target.value})}
-                          className="w-full px-2 py-1 border rounded"
-                        />
-                      </td>
-                      <td className="px-6 py-4">
-                        <input
-                          value={editingUser.email}
-                          onChange={(e) => setEditingUser({...editingUser, email: e.target.value})}
-                          className="w-full px-2 py-1 border rounded"
-                        />
-                      </td>
-                      <td className="px-6 py-4">
-                        <select
-                          value={editingUser.role}
-                          onChange={(e) => setEditingUser({...editingUser, role: e.target.value})}
-                          className="px-2 py-1 border rounded"
-                        >
-                          <option value="user">User</option>
-                          <option value="admin">Admin</option>
-                        </select>
-                      </td>
-                      <td className="px-6 py-4">
-                        <input
-                          type="password"
-                          placeholder="New password (optional)"
-                          value={editingUser.newPassword || ''}
-                          onChange={(e) => setEditingUser({...editingUser, newPassword: e.target.value})}
-                          className="w-full px-2 py-1 border rounded text-sm"
-                        />
-                      </td>
-                      <td className="px-6 py-4 text-right space-x-2">
-                        <button
-                          onClick={handleSaveUser}
-                          className="text-green-600 hover:underline text-sm"
-                        >
-                          Save
-                        </button>
-                        <button
-                          onClick={() => setEditingUser(null)}
-                          className="text-gray-500 hover:underline text-sm"
-                        >
-                          Cancel
-                        </button>
-                      </td>
-                    </>
-                  ) : (
-                    <>
-                      <td className="px-6 py-4 font-medium text-gray-900">{u.name}</td>
-                      <td className="px-6 py-4 text-gray-600">{u.email}</td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${
-                          u.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800'
-                        }`}>
-                          {u.role}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-gray-500 text-sm">
-                        {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'N/A'}
-                      </td>
-                      <td className="px-6 py-4 text-right space-x-2">
-                        <button
-                          onClick={() => setEditingUser({...u, newPassword: ''})}
-                          className="text-primary hover:underline text-sm"
-                        >
-                          Edit
-                        </button>
-                        {u.id !== user.id && (
-                          <button
-                            onClick={() => handleDeleteUser(u.id)}
-                            className="text-red-600 hover:underline text-sm"
-                          >
-                            Delete
-                          </button>
-                        )}
-                      </td>
-                    </>
-                  )}
+                  <td className="px-6 py-4 font-medium text-gray-900">{u.name}</td>
+                  <td className="px-6 py-4 text-gray-600">{u.email}</td>
+                  <td className="px-6 py-4">
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${
+                      u.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      {u.role}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-gray-600 text-sm">
+                    {u.role === 'admin' ? (
+                      <span className="text-green-600 font-medium">All Projects</span>
+                    ) : (
+                      <span>{(u.assignedProjects || []).length} assigned</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 text-gray-500 text-sm">
+                    {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'N/A'}
+                  </td>
+                  <td className="px-6 py-4 text-right space-x-2">
+                    <button
+                      onClick={() => openEditModal(u)}
+                      className="text-primary hover:underline text-sm"
+                    >
+                      Edit
+                    </button>
+                    {u.id !== user.id && (
+                      <button
+                        onClick={() => handleDeleteUser(u.id)}
+                        className="text-red-600 hover:underline text-sm"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -3959,6 +3941,106 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
         </div>
       </div>
       </div>
+
+      {showEditModal && editingUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <h2 className="text-xl font-bold mb-4">Edit User: {editingUser.name}</h2>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Name</label>
+                  <input
+                    value={editingUser.name}
+                    onChange={(e) => setEditingUser({...editingUser, name: e.target.value})}
+                    className="w-full px-3 py-2 border rounded-md"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Email</label>
+                  <input
+                    type="email"
+                    value={editingUser.email}
+                    onChange={(e) => setEditingUser({...editingUser, email: e.target.value})}
+                    className="w-full px-3 py-2 border rounded-md"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Role</label>
+                  <select
+                    value={editingUser.role}
+                    onChange={(e) => setEditingUser({...editingUser, role: e.target.value})}
+                    className="w-full px-3 py-2 border rounded-md"
+                  >
+                    <option value="user">User</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">New Password (optional)</label>
+                  <input
+                    type="password"
+                    value={editingUser.newPassword || ''}
+                    onChange={(e) => setEditingUser({...editingUser, newPassword: e.target.value})}
+                    className="w-full px-3 py-2 border rounded-md"
+                    placeholder="Leave blank to keep current"
+                  />
+                </div>
+              </div>
+
+              {editingUser.role !== 'admin' && (
+                <div className="mb-6">
+                  <label className="block text-sm font-medium mb-2">Assigned Projects</label>
+                  <p className="text-xs text-gray-500 mb-3">Select which projects this user can access. Admins can access all projects automatically.</p>
+                  <div className="border rounded-md max-h-60 overflow-y-auto">
+                    {projects.length === 0 ? (
+                      <div className="p-4 text-gray-500 text-center">No projects available</div>
+                    ) : (
+                      projects.map(p => (
+                        <label key={p.id} className="flex items-center gap-3 p-3 hover:bg-gray-50 border-b last:border-b-0 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={(editingUser.assignedProjects || []).includes(p.id)}
+                            onChange={() => toggleProjectAssignment(p.id)}
+                            className="w-4 h-4 text-primary rounded"
+                          />
+                          <div>
+                            <div className="font-medium text-gray-900">{p.name}</div>
+                            <div className="text-sm text-gray-500">{p.clientName}</div>
+                          </div>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {editingUser.role === 'admin' && (
+                <div className="mb-6 p-4 bg-purple-50 rounded-md">
+                  <p className="text-purple-800 font-medium">Admins have access to all projects</p>
+                  <p className="text-purple-600 text-sm">This user can view and manage all projects in the system.</p>
+                </div>
+              )}
+
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={() => { setShowEditModal(false); setEditingUser(null); }}
+                  className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveUser}
+                  className="px-4 py-2 bg-primary text-white rounded-md hover:bg-blue-700"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

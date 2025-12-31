@@ -105,13 +105,17 @@ async function loadTemplate() {
 }
 
 // Auth middleware
-const authenticateToken = (req, res, next) => {
+const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Access denied' });
-  jwt.verify(token, JWT_SECRET, (err, user) => {
+  jwt.verify(token, JWT_SECRET, async (err, tokenUser) => {
     if (err) return res.status(403).json({ error: 'Invalid token' });
-    req.user = user;
+    // Fetch fresh user data from database to get current assignedProjects
+    const users = await getUsers();
+    const freshUser = users.find(u => u.id === tokenUser.id);
+    if (!freshUser) return res.status(403).json({ error: 'User not found' });
+    req.user = { ...tokenUser, assignedProjects: freshUser.assignedProjects || [] };
     next();
   });
 };
@@ -276,7 +280,8 @@ app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
       email: u.email,
       name: u.name,
       role: u.role,
-      createdAt: u.createdAt
+      createdAt: u.createdAt,
+      assignedProjects: u.assignedProjects || []
     }));
     res.json(safeUsers);
   } catch (error) {
@@ -287,7 +292,7 @@ app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
 app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
-    const { name, email, role, password } = req.body;
+    const { name, email, role, password, assignedProjects } = req.body;
     const users = await getUsers();
     const idx = users.findIndex(u => u.id === userId);
     if (idx === -1) return res.status(404).json({ error: 'User not found' });
@@ -296,9 +301,16 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
     if (email) users[idx].email = email;
     if (role) users[idx].role = role;
     if (password) users[idx].password = await bcrypt.hash(password, 10);
+    if (assignedProjects !== undefined) users[idx].assignedProjects = assignedProjects;
     
     await db.set('users', users);
-    res.json({ id: users[idx].id, email: users[idx].email, name: users[idx].name, role: users[idx].role });
+    res.json({ 
+      id: users[idx].id, 
+      email: users[idx].email, 
+      name: users[idx].name, 
+      role: users[idx].role,
+      assignedProjects: users[idx].assignedProjects || []
+    });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }
@@ -510,8 +522,15 @@ app.post('/api/projects/:projectId/tasks/:taskId/notes', authenticateToken, asyn
 // ============== PROJECT ROUTES ==============
 app.get('/api/projects', authenticateToken, async (req, res) => {
   try {
-    const projects = await getProjects();
+    let projects = await getProjects();
     const templates = await db.get('templates') || [];
+    
+    // Filter projects based on user access (admins see all, users see assigned only)
+    const isAdmin = req.user.role === 'admin';
+    if (!isAdmin) {
+      const userAssignedProjects = req.user.assignedProjects || [];
+      projects = projects.filter(p => userAssignedProjects.includes(p.id));
+    }
     
     const projectsWithDetails = await Promise.all(projects.map(async (project) => {
       const template = templates.find(t => t.id === project.template);
