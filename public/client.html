@@ -38,6 +38,52 @@
   <script type="text/babel">
     const { useState, useEffect } = React;
 
+    // Standard phases and stages (always visible)
+    const STANDARD_PHASES = {
+      'Phase 0': {
+        name: 'Phase 0: Contract Signature',
+        stages: ['Contract Signature']
+      },
+      'Phase 1': {
+        name: 'Phase 1: Pre-Launch',
+        stages: ['Project Kick Off & Stakeholder Alignment', 'Launch Data & Systems Prep']
+      },
+      'Phase 2': {
+        name: 'Phase 2: Implementation Sprints',
+        stages: ['Sprint 1: Core System Setups', 'Sprint 2: Lab & QUA Pilot Prep', 'Sprint 3: Soft-Pilot']
+      },
+      'Phase 3': {
+        name: 'Phase 3: Go-Live',
+        stages: ['Training/Validation', 'Go-Live']
+      },
+      'Phase 4': {
+        name: 'Phase 4: Post-Launch Optimization',
+        stages: ['KPIs', 'Monitoring & Customer Support']
+      }
+    };
+
+    const PHASE_ORDER = ['Phase 0', 'Phase 1', 'Phase 2', 'Phase 3', 'Phase 4'];
+
+    // Helper to ensure all phases/stages are always represented
+    const ensureAllPhasesAndStages = (groupedByPhase) => {
+      const result = {};
+      PHASE_ORDER.forEach(phase => {
+        result[phase] = {};
+        const standardStages = STANDARD_PHASES[phase]?.stages || [];
+        standardStages.forEach(stage => {
+          result[phase][stage] = groupedByPhase[phase]?.[stage] || [];
+        });
+        if (groupedByPhase[phase]) {
+          Object.keys(groupedByPhase[phase]).forEach(stage => {
+            if (!result[phase][stage]) {
+              result[phase][stage] = groupedByPhase[phase][stage];
+            }
+          });
+        }
+      });
+      return result;
+    };
+
     const getPhaseColor = (phase) => {
       const colors = {
         'Phase 0': 'border-purple-500',
@@ -50,31 +96,29 @@
     };
 
     const TimelineView = ({ tasks }) => {
-      const groupedByPhase = {};
+      const rawGroupedByPhase = {};
       
       tasks.forEach(task => {
         const phase = task.phase || 'No Phase';
-        if (!groupedByPhase[phase]) {
-          groupedByPhase[phase] = {};
+        if (!rawGroupedByPhase[phase]) {
+          rawGroupedByPhase[phase] = {};
         }
         const stage = task.stage || 'General';
-        if (!groupedByPhase[phase][stage]) {
-          groupedByPhase[phase][stage] = [];
+        if (!rawGroupedByPhase[phase][stage]) {
+          rawGroupedByPhase[phase][stage] = [];
         }
-        groupedByPhase[phase][stage].push(task);
+        rawGroupedByPhase[phase][stage].push(task);
       });
 
-      const phases = [...new Set(tasks.map(t => t.phase || 'No Phase'))].sort();
+      const groupedByPhase = ensureAllPhasesAndStages(rawGroupedByPhase);
 
       return (
         <div className="bg-white rounded-lg shadow-sm p-6">
           <h2 className="text-2xl font-bold mb-6 text-accent">Project Timeline</h2>
           
           <div className="space-y-8">
-            {phases.map(phase => {
-              const phaseData = groupedByPhase[phase];
-              if (!phaseData || Object.keys(phaseData).length === 0) return null;
-              
+            {PHASE_ORDER.map(phase => {
+              const phaseData = groupedByPhase[phase] || {};
               const phaseTasks = Object.values(phaseData).flat();
               const completedCount = phaseTasks.filter(t => t.completed).length;
               const totalCount = phaseTasks.length;
@@ -82,7 +126,7 @@
               return (
                 <div key={phase} className={`border-l-4 ${getPhaseColor(phase)} pl-6`}>
                   <div className="mb-4">
-                    <h3 className="text-xl font-bold text-gray-900">{phase}</h3>
+                    <h3 className="text-xl font-bold text-gray-900">{STANDARD_PHASES[phase]?.name || phase}</h3>
                     <p className="text-sm text-gray-600">
                       {completedCount} of {totalCount} complete ({totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0}%)
                     </p>
@@ -158,7 +202,7 @@
     };
 
     const ListView = ({ tasks }) => {
-      const groupedByPhase = tasks.reduce((acc, task) => {
+      const rawGroupedByPhase = tasks.reduce((acc, task) => {
         if (!acc[task.phase]) acc[task.phase] = {};
         const stageKey = task.stage || 'General';
         if (!acc[task.phase][stageKey]) acc[task.phase][stageKey] = [];
@@ -166,30 +210,20 @@
         return acc;
       }, {});
 
-      const phaseOrder = ['Phase 0', 'Phase 1', 'Phase 2', 'Phase 3', 'Phase 4'];
-      const sortedPhases = Object.keys(groupedByPhase).sort((a, b) => 
-        phaseOrder.indexOf(a) - phaseOrder.indexOf(b)
-      );
-
-      const phaseNames = {
-        'Phase 0': 'Phase 0: Contract Signature',
-        'Phase 1': 'Phase 1: Pre-Launch',
-        'Phase 2': 'Phase 2: Implementation Sprints',
-        'Phase 3': 'Phase 3: Go-Live',
-        'Phase 4': 'Phase 4: Post-Launch Optimization'
-      };
+      // Ensure all phases and stages are always visible
+      const groupedByPhase = ensureAllPhasesAndStages(rawGroupedByPhase);
 
       return (
         <div className="space-y-8">
-          {sortedPhases.map(phase => (
+          {PHASE_ORDER.map(phase => (
             <div key={phase} className="space-y-4">
               <div className={`${getPhaseGradient(phase)} p-3 rounded-lg text-white`}>
-                <h2 className="text-lg font-bold">{phaseNames[phase] || phase}</h2>
+                <h2 className="text-lg font-bold">{STANDARD_PHASES[phase]?.name || phase}</h2>
                 <p className="text-sm opacity-80">
-                  {Object.values(groupedByPhase[phase]).flat().filter(t => t.completed).length} of {Object.values(groupedByPhase[phase]).flat().length} complete
+                  {Object.values(groupedByPhase[phase] || {}).flat().filter(t => t.completed).length} of {Object.values(groupedByPhase[phase] || {}).flat().length} complete
                 </p>
               </div>
-              {Object.entries(groupedByPhase[phase]).map(([stageName, stageTasks]) => {
+              {Object.entries(groupedByPhase[phase] || {}).map(([stageName, stageTasks]) => {
                 const dueDates = stageTasks.filter(t => t.dueDate).map(t => t.dueDate).sort();
                 const targetDate = dueDates.length > 0 ? dueDates[dueDates.length - 1] : null;
                 
@@ -209,7 +243,9 @@
                       )}
                     </div>
                     <div className="divide-y divide-gray-200">
-                      {stageTasks.map(task => (
+                      {stageTasks.length === 0 ? (
+                        <div className="p-4 text-gray-400 text-sm italic">No tasks in this stage</div>
+                      ) : stageTasks.map(task => (
                         <div key={task.id} className="p-4">
                           <div className="flex items-start gap-3">
                             <div className="mt-1">

@@ -73,6 +73,30 @@ const getProjects = async () => {
 };
 const getTasks = async (projectId) => (await db.get(`tasks_${projectId}`)) || [];
 
+// Activity logging helper
+const logActivity = async (userId, userName, action, entityType, entityId, details, projectId = null) => {
+  try {
+    const activities = (await db.get('activity_log')) || [];
+    const activity = {
+      id: uuidv4(),
+      userId,
+      userName,
+      action,
+      entityType,
+      entityId,
+      details,
+      projectId,
+      timestamp: new Date().toISOString()
+    };
+    activities.unshift(activity);
+    // Keep only last 500 activities to prevent unbounded growth
+    if (activities.length > 500) activities.length = 500;
+    await db.set('activity_log', activities);
+  } catch (err) {
+    console.error('Failed to log activity:', err);
+  }
+};
+
 // Generate a URL-friendly slug from client name
 const generateClientSlug = (clientName, existingSlugs = []) => {
   let slug = clientName
@@ -302,6 +326,26 @@ app.put('/api/admin/password-reset-requests/:id', authenticateToken, requireAdmi
   }
 });
 
+// Get activity log (Admin only)
+app.get('/api/admin/activity-log', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { limit = 100, projectId } = req.query;
+    let activities = (await db.get('activity_log')) || [];
+    
+    // Filter by project if specified
+    if (projectId) {
+      activities = activities.filter(a => a.projectId === projectId);
+    }
+    
+    // Limit results
+    activities = activities.slice(0, parseInt(limit));
+    
+    res.json(activities);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ============== USER MANAGEMENT (Admin Only) ==============
 app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -365,10 +409,22 @@ app.delete('/api/users/:userId', authenticateToken, requireAdmin, async (req, re
 // ============== TEAM MEMBERS (for owner selection) ==============
 app.get('/api/team-members', authenticateToken, async (req, res) => {
   try {
+    const { projectId } = req.query;
     const users = await getUsers();
-    const teamMembers = users.map(u => ({
+    
+    // If projectId is provided, filter to only users assigned to that project (or admins)
+    let filteredUsers = users;
+    if (projectId) {
+      filteredUsers = users.filter(u => 
+        u.role === 'admin' || 
+        (u.assignedProjects && u.assignedProjects.includes(projectId))
+      );
+    }
+    
+    const teamMembers = filteredUsers.map(u => ({
       email: u.email,
-      name: u.name
+      name: u.name,
+      role: u.role
     }));
     res.json(teamMembers);
   } catch (error) {
@@ -933,6 +989,19 @@ app.put('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req,
     
     tasks[idx] = { ...tasks[idx], ...updates };
     await db.set(`tasks_${projectId}`, tasks);
+    
+    // Log activity for task updates
+    const actionType = !wasCompleted && tasks[idx].completed ? 'completed' : 
+                       wasCompleted && !tasks[idx].completed ? 'reopened' : 'updated';
+    logActivity(
+      req.user.id,
+      req.user.name,
+      actionType,
+      'task',
+      taskId,
+      { taskTitle: tasks[idx].taskTitle, phase: tasks[idx].phase, stage: tasks[idx].stage },
+      projectId
+    );
     
     if (!wasCompleted && tasks[idx].completed) {
       const completedTask = tasks[idx];
