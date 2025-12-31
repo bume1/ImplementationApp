@@ -111,13 +111,26 @@ const authenticateToken = async (req, res, next) => {
   if (!token) return res.status(401).json({ error: 'Access denied' });
   jwt.verify(token, JWT_SECRET, async (err, tokenUser) => {
     if (err) return res.status(403).json({ error: 'Invalid token' });
-    // Fetch fresh user data from database to get current assignedProjects
+    // Fetch fresh user data from database to get current role and permissions
     const users = await getUsers();
     const freshUser = users.find(u => u.id === tokenUser.id);
     if (!freshUser) return res.status(403).json({ error: 'User not found' });
-    req.user = { ...tokenUser, assignedProjects: freshUser.assignedProjects || [] };
+    // Use fresh data for all user properties to ensure permission changes take effect immediately
+    req.user = { 
+      id: freshUser.id,
+      email: freshUser.email,
+      name: freshUser.name,
+      role: freshUser.role,
+      assignedProjects: freshUser.assignedProjects || []
+    };
     next();
   });
+};
+
+// Authorization helper to check project access
+const canAccessProject = (user, projectId) => {
+  if (user.role === 'admin') return true;
+  return (user.assignedProjects || []).includes(projectId);
 };
 
 const requireAdmin = (req, res, next) => {
@@ -349,6 +362,12 @@ app.get('/api/team-members', authenticateToken, async (req, res) => {
 app.post('/api/projects/:projectId/tasks/:taskId/subtasks', authenticateToken, async (req, res) => {
   try {
     const { projectId, taskId } = req.params;
+    
+    // Check project access
+    if (!canAccessProject(req.user, projectId)) {
+      return res.status(403).json({ error: 'Access denied to this project' });
+    }
+    
     const { title, owner } = req.body;
     if (!title) return res.status(400).json({ error: 'Subtask title is required' });
     
@@ -378,6 +397,12 @@ app.post('/api/projects/:projectId/tasks/:taskId/subtasks', authenticateToken, a
 app.put('/api/projects/:projectId/tasks/:taskId/subtasks/:subtaskId', authenticateToken, async (req, res) => {
   try {
     const { projectId, taskId, subtaskId } = req.params;
+    
+    // Check project access
+    if (!canAccessProject(req.user, projectId)) {
+      return res.status(403).json({ error: 'Access denied to this project' });
+    }
+    
     const { title, owner, completed, notApplicable } = req.body;
     
     const tasks = await getTasks(projectId);
@@ -404,6 +429,11 @@ app.delete('/api/projects/:projectId/tasks/:taskId/subtasks/:subtaskId', authent
   try {
     const { projectId, taskId, subtaskId } = req.params;
     
+    // Check project access
+    if (!canAccessProject(req.user, projectId)) {
+      return res.status(403).json({ error: 'Access denied to this project' });
+    }
+    
     const tasks = await getTasks(projectId);
     const taskIdx = tasks.findIndex(t => t.id === parseInt(taskId));
     if (taskIdx === -1) return res.status(404).json({ error: 'Task not found' });
@@ -422,6 +452,12 @@ app.delete('/api/projects/:projectId/tasks/:taskId/subtasks/:subtaskId', authent
 app.put('/api/projects/:projectId/tasks/bulk-update', authenticateToken, async (req, res) => {
   try {
     const { projectId } = req.params;
+    
+    // Check project access
+    if (!canAccessProject(req.user, projectId)) {
+      return res.status(403).json({ error: 'Access denied to this project' });
+    }
+    
     const { taskIds, completed } = req.body;
     
     if (!taskIds || !Array.isArray(taskIds)) {
@@ -458,6 +494,12 @@ app.put('/api/projects/:projectId/tasks/bulk-update', authenticateToken, async (
 app.post('/api/projects/:projectId/tasks/bulk-delete', authenticateToken, async (req, res) => {
   try {
     const { projectId } = req.params;
+    
+    // Check project access
+    if (!canAccessProject(req.user, projectId)) {
+      return res.status(403).json({ error: 'Access denied to this project' });
+    }
+    
     const { taskIds } = req.body;
     
     if (!taskIds || !Array.isArray(taskIds)) {
@@ -494,6 +536,12 @@ app.post('/api/projects/:projectId/tasks/bulk-delete', authenticateToken, async 
 app.post('/api/projects/:projectId/tasks/:taskId/notes', authenticateToken, async (req, res) => {
   try {
     const { projectId, taskId } = req.params;
+    
+    // Check project access
+    if (!canAccessProject(req.user, projectId)) {
+      return res.status(403).json({ error: 'Access denied to this project' });
+    }
+    
     const { content } = req.body;
     if (!content) return res.status(400).json({ error: 'Note content is required' });
     
@@ -631,6 +679,11 @@ app.get('/api/projects/:id', authenticateToken, async (req, res) => {
     const project = projects.find(p => p.id === req.params.id);
     if (!project) return res.status(404).json({ error: 'Project not found' });
     
+    // Check project access
+    if (!canAccessProject(req.user, req.params.id)) {
+      return res.status(403).json({ error: 'Access denied to this project' });
+    }
+    
     const templates = await db.get('templates') || [];
     const template = templates.find(t => t.id === project.template);
     project.templateName = template ? template.name : project.template;
@@ -643,6 +696,11 @@ app.get('/api/projects/:id', authenticateToken, async (req, res) => {
 
 app.put('/api/projects/:id', authenticateToken, async (req, res) => {
   try {
+    // Check project access
+    if (!canAccessProject(req.user, req.params.id)) {
+      return res.status(403).json({ error: 'Access denied to this project' });
+    }
+    
     const projects = await getProjects();
     const idx = projects.findIndex(p => p.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'Project not found' });
@@ -695,6 +753,11 @@ app.delete('/api/projects/:id', authenticateToken, async (req, res) => {
 // Clone/Duplicate a project
 app.post('/api/projects/:id/clone', authenticateToken, async (req, res) => {
   try {
+    // Check project access
+    if (!canAccessProject(req.user, req.params.id)) {
+      return res.status(403).json({ error: 'Access denied to this project' });
+    }
+    
     const projects = await getProjects();
     const originalProject = projects.find(p => p.id === req.params.id);
     if (!originalProject) return res.status(404).json({ error: 'Project not found' });
@@ -743,6 +806,11 @@ app.post('/api/projects/:id/clone', authenticateToken, async (req, res) => {
 // ============== TASK ROUTES ==============
 app.get('/api/projects/:id/tasks', authenticateToken, async (req, res) => {
   try {
+    // Check project access
+    if (!canAccessProject(req.user, req.params.id)) {
+      return res.status(403).json({ error: 'Access denied to this project' });
+    }
+    
     const tasks = await getTasks(req.params.id);
     res.json(tasks);
   } catch (error) {
@@ -752,6 +820,11 @@ app.get('/api/projects/:id/tasks', authenticateToken, async (req, res) => {
 
 app.post('/api/projects/:id/tasks', authenticateToken, async (req, res) => {
   try {
+    // Check project access
+    if (!canAccessProject(req.user, req.params.id)) {
+      return res.status(403).json({ error: 'Access denied to this project' });
+    }
+    
     const { taskTitle, owner, dueDate, phase, stage, showToClient, clientName, notes, dependencies } = req.body;
     const projectId = req.params.id;
     const tasks = await getTasks(projectId);
@@ -784,6 +857,12 @@ app.post('/api/projects/:id/tasks', authenticateToken, async (req, res) => {
 app.put('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req, res) => {
   try {
     const { projectId, taskId } = req.params;
+    
+    // Check project access
+    if (!canAccessProject(req.user, projectId)) {
+      return res.status(403).json({ error: 'Access denied to this project' });
+    }
+    
     const updates = req.body;
     const tasks = await getTasks(projectId);
     const idx = tasks.findIndex(t => t.id === parseInt(taskId));
@@ -856,6 +935,12 @@ app.put('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req,
 app.delete('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req, res) => {
   try {
     const { projectId, taskId } = req.params;
+    
+    // Check project access
+    if (!canAccessProject(req.user, projectId)) {
+      return res.status(403).json({ error: 'Access denied to this project' });
+    }
+    
     const tasks = await getTasks(projectId);
     const task = tasks.find(t => t.id === parseInt(taskId));
     
@@ -959,6 +1044,11 @@ app.put('/api/hubspot/stage-mapping', authenticateToken, requireAdmin, async (re
 // ============== SOFT-PILOT CHECKLIST ==============
 app.post('/api/projects/:id/soft-pilot-checklist', authenticateToken, async (req, res) => {
   try {
+    // Check project access
+    if (!canAccessProject(req.user, req.params.id)) {
+      return res.status(403).json({ error: 'Access denied to this project' });
+    }
+    
     const { signature, checklistHtml, projectName, isResubmission } = req.body;
     
     if (!signature || !signature.name?.trim() || !signature.title?.trim() || !signature.date?.trim()) {
@@ -1384,6 +1474,11 @@ const escapeCSV = (value) => {
 
 app.get('/api/projects/:id/export', authenticateToken, async (req, res) => {
   try {
+    // Check project access
+    if (!canAccessProject(req.user, req.params.id)) {
+      return res.status(403).json({ error: 'Access denied to this project' });
+    }
+    
     const projects = await getProjects();
     const project = projects.find(p => p.id === req.params.id);
     if (!project) return res.status(404).json({ error: 'Project not found' });
@@ -1630,6 +1725,11 @@ app.post('/api/templates/:id/import-csv', authenticateToken, requireAdmin, async
 // Import CSV tasks to a project
 app.post('/api/projects/:id/import-csv', authenticateToken, async (req, res) => {
   try {
+    // Check project access
+    if (!canAccessProject(req.user, req.params.id)) {
+      return res.status(403).json({ error: 'Access denied to this project' });
+    }
+    
     const projects = await getProjects();
     const project = projects.find(p => p.id === req.params.id);
     

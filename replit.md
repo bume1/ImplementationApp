@@ -34,13 +34,21 @@ Preferred communication style: Simple, everyday language.
 - Role-based access: admin vs regular user
 - Client portal uses project-specific embed links (no login required)
 
+### Project Access Control
+- **Admins**: Can see and manage ALL projects in the system
+- **Regular Users**: Can only see projects they have been assigned to by an admin
+- **Assignment**: Admins assign projects to users via the User Management page (Edit user modal)
+- **Enforcement**: All project-related API endpoints check user's assignedProjects before allowing access
+- **Real-time**: Permission changes take effect immediately (no re-login required)
+- User data includes `assignedProjects` array field containing project IDs the user can access
+
 ### Task Permissions
 - **Template tasks** (from original template): Can be edited by all users, deleted only by admins
 - **User-created tasks**: Can be edited and deleted by the creator or admins
 - Delete button only appears for tasks you created (or all tasks if admin)
 
 ### Data Model
-- **Users**: id, email, name, password (hashed), role, createdAt
+- **Users**: id, email, name, password (hashed), role, createdAt, assignedProjects (array of project IDs)
 - **Projects**: id, name, clientName, projectManager, hubspotRecordId, status (active/paused/completed), template, clientLinkId, clientLinkSlug
 - **Tasks**: 102-task template with fields including phase, stage, taskTitle, owner, startDate, dueDate, dateCompleted, duration, completed status
 
