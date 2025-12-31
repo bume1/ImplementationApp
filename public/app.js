@@ -27,6 +27,40 @@ const STANDARD_PHASES = {
 
 const PHASE_ORDER = ['Phase 0', 'Phase 1', 'Phase 2', 'Phase 3', 'Phase 4'];
 
+// Helper to format date for display (handles ISO, YYYY-MM-DD, and locale formats)
+const formatDateForDisplay = (dateStr) => {
+  if (!dateStr) return '';
+  // If already YYYY-MM-DD format, return as is
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+  // If ISO format with time, extract date part
+  if (dateStr.includes('T')) return dateStr.split('T')[0];
+  // Try to parse and format as YYYY-MM-DD for other formats (like MM/DD/YYYY)
+  try {
+    const date = new Date(dateStr);
+    if (!isNaN(date.getTime())) {
+      return date.toISOString().split('T')[0];
+    }
+  } catch (e) {}
+  return dateStr;
+};
+
+// Helper to normalize date for input fields (ensures YYYY-MM-DD format)
+const normalizeDateForInput = (dateStr) => {
+  if (!dateStr) return '';
+  // If already YYYY-MM-DD format, return as is
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+  // If ISO format with time, extract date part
+  if (dateStr.includes('T')) return dateStr.split('T')[0];
+  // Try to parse and convert to YYYY-MM-DD for other formats
+  try {
+    const date = new Date(dateStr);
+    if (!isNaN(date.getTime())) {
+      return date.toISOString().split('T')[0];
+    }
+  } catch (e) {}
+  return '';
+};
+
 // Helper to ensure all phases/stages are always represented
 const ensureAllPhasesAndStages = (groupedByPhase) => {
   const result = {};
@@ -1562,14 +1596,14 @@ const TimelineView = ({ tasks, getPhaseColor, viewMode }) => {
                                 <div className="mt-1 flex flex-wrap gap-3 text-xs text-gray-500">
                                   {task.dueDate && <span>Due: {task.dueDate}</span>}
                                   {task.dateCompleted && (
-                                    <span className="text-green-600">Completed: {task.dateCompleted}</span>
+                                    <span className="text-green-600">Completed: {formatDateForDisplay(task.dateCompleted)}</span>
                                   )}
                                   {task.owner && <span>Owner: {task.owner}</span>}
                                 </div>
                               )}
                               {viewMode === 'client' && task.dateCompleted && (
                                 <p className="mt-1 text-xs text-green-600">
-                                  Completed: {task.dateCompleted}
+                                  Completed: {formatDateForDisplay(task.dateCompleted)}
                                 </p>
                               )}
                             </div>
@@ -1863,7 +1897,7 @@ const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
                     <div className="mt-1 text-sm text-gray-500 flex flex-wrap gap-3">
                       {task.owner && <span>Owner: {task.owner}</span>}
                       {task.dueDate && <span>Due: {task.dueDate}</span>}
-                      {task.dateCompleted && <span className="text-green-600">Completed: {task.dateCompleted}</span>}
+                      {task.dateCompleted && <span className="text-green-600">Completed: {formatDateForDisplay(task.dateCompleted)}</span>}
                     </div>
                   </div>
                 </div>
@@ -2544,9 +2578,10 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
     setEditingTask({
       id: taskId,
       taskTitle: task.taskTitle,
-      dateCompleted: task.dateCompleted || '',
-      dueDate: task.dueDate || '',
+      dateCompleted: normalizeDateForInput(task.dateCompleted) || '',
+      dueDate: normalizeDateForInput(task.dueDate) || '',
       owner: task.owner || '',
+      secondaryOwner: task.secondaryOwner || '',
       showToClient: task.showToClient || false,
       clientName: task.clientName || '',
       dependencies: task.dependencies || []
@@ -2558,13 +2593,14 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
       const task = tasks.find(t => t.id === editingTask.id);
       const updates = {
         taskTitle: editingTask.taskTitle,
-        dateCompleted: editingTask.dateCompleted,
+        dateCompleted: editingTask.dateCompleted || null,
         dependencies: editingTask.dependencies
       };
 
       if (isAdmin) {
         updates.owner = editingTask.owner;
-        updates.dueDate = editingTask.dueDate;
+        updates.secondaryOwner = editingTask.secondaryOwner || null;
+        updates.dueDate = editingTask.dueDate || null;
         updates.showToClient = editingTask.showToClient;
         updates.clientName = editingTask.clientName;
       } else {
@@ -3406,14 +3442,26 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                 )}
                                 <div>
                                   <label className="block text-xs text-gray-500 mb-1">Date Completed</label>
-                                  <input
-                                    type="date"
-                                    value={editingTask.dateCompleted}
-                                    onChange={(e) =>
-                                      setEditingTask({...editingTask, dateCompleted: e.target.value})
-                                    }
-                                    className="w-full px-3 py-2 border rounded-md"
-                                  />
+                                  <div className="flex gap-2">
+                                    <input
+                                      type="date"
+                                      value={editingTask.dateCompleted}
+                                      onChange={(e) =>
+                                        setEditingTask({...editingTask, dateCompleted: e.target.value})
+                                      }
+                                      className="flex-1 px-3 py-2 border rounded-md"
+                                    />
+                                    {editingTask.dateCompleted && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingTask({...editingTask, dateCompleted: ''})}
+                                        className="px-3 py-2 bg-red-100 text-red-600 rounded-md text-sm hover:bg-red-200"
+                                        title="Clear date"
+                                      >
+                                        Clear
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
                                 <div>
                                   <label className="block text-xs text-gray-500 mb-1">Dependencies</label>
@@ -3532,7 +3580,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                     )}
                                     {task.dateCompleted && (
                                       <span className="text-green-600">
-                                        ✓ Completed: {task.dateCompleted}
+                                        ✓ Completed: {formatDateForDisplay(task.dateCompleted)}
                                       </span>
                                     )}
                                   </div>
@@ -3540,7 +3588,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                               )}
                               {viewMode === 'client' && task.dateCompleted && (
                                 <p className="mt-1 text-sm text-green-600">
-                                  Completed: {task.dateCompleted}
+                                  Completed: {formatDateForDisplay(task.dateCompleted)}
                                 </p>
                               )}
                               {viewMode === 'internal' && !task.showToClient && (
