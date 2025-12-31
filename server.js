@@ -232,7 +232,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// ============== FORGOT PASSWORD ==============
+// ============== PASSWORD RESET REQUESTS (Admin-managed) ==============
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
@@ -242,44 +242,62 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     const users = await getUsers();
     const user = users.find(u => u.email === email);
     if (!user) {
-      return res.json({ message: 'If an account exists with this email, password reset instructions will be sent.' });
+      return res.json({ message: 'Your request has been submitted. An administrator will reach out to you shortly to help reset your password.' });
     }
-    const resetToken = uuidv4();
-    const resetExpiry = new Date(Date.now() + 3600000).toISOString();
-    const idx = users.findIndex(u => u.email === email);
-    users[idx].resetToken = resetToken;
-    users[idx].resetExpiry = resetExpiry;
-    await db.set('users', users);
-    console.log(`Password reset requested for ${email}. Token: ${resetToken}`);
-    res.json({ message: 'If an account exists with this email, password reset instructions will be sent.' });
+    
+    // Store password reset request for admin to handle
+    const resetRequests = await db.get('password_reset_requests') || [];
+    
+    // Check if there's already a pending request for this user
+    const existingIdx = resetRequests.findIndex(r => r.email === email && r.status === 'pending');
+    if (existingIdx !== -1) {
+      return res.json({ message: 'Your request has been submitted. An administrator will reach out to you shortly to help reset your password.' });
+    }
+    
+    resetRequests.push({
+      id: uuidv4(),
+      userId: user.id,
+      email: user.email,
+      name: user.name,
+      requestedAt: new Date().toISOString(),
+      status: 'pending'
+    });
+    await db.set('password_reset_requests', resetRequests);
+    
+    console.log(`Password reset requested for ${email} - Admin action required`);
+    res.json({ message: 'Your request has been submitted. An administrator will reach out to you shortly to help reset your password.' });
   } catch (error) {
     console.error('Forgot password error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-app.post('/api/auth/reset-password', async (req, res) => {
+// Get pending password reset requests (Admin only)
+app.get('/api/admin/password-reset-requests', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { token, newPassword } = req.body;
-    if (!token || !newPassword) {
-      return res.status(400).json({ error: 'Token and new password are required' });
-    }
-    const users = await getUsers();
-    const idx = users.findIndex(u => u.resetToken === token);
-    if (idx === -1) {
-      return res.status(400).json({ error: 'Invalid or expired reset token' });
-    }
-    const user = users[idx];
-    if (new Date(user.resetExpiry) < new Date()) {
-      return res.status(400).json({ error: 'Reset token has expired' });
-    }
-    users[idx].password = await bcrypt.hash(newPassword, 10);
-    delete users[idx].resetToken;
-    delete users[idx].resetExpiry;
-    await db.set('users', users);
-    res.json({ message: 'Password reset successful' });
+    const resetRequests = await db.get('password_reset_requests') || [];
+    res.json(resetRequests.filter(r => r.status === 'pending'));
   } catch (error) {
-    console.error('Reset password error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Mark password reset request as handled (Admin only)
+app.put('/api/admin/password-reset-requests/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    const resetRequests = await db.get('password_reset_requests') || [];
+    const idx = resetRequests.findIndex(r => r.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'Request not found' });
+    
+    resetRequests[idx].status = status || 'completed';
+    resetRequests[idx].handledAt = new Date().toISOString();
+    resetRequests[idx].handledBy = req.user.email;
+    await db.set('password_reset_requests', resetRequests);
+    
+    res.json({ message: 'Request updated' });
+  } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }
 });

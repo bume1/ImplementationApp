@@ -253,6 +253,21 @@ const api = {
       body: JSON.stringify(userData)
     }).then(r => r.json()),
 
+  getPasswordResetRequests: (token) =>
+    fetch(`${API_URL}/api/admin/password-reset-requests`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.json()),
+
+  handlePasswordResetRequest: (token, requestId, status) =>
+    fetch(`${API_URL}/api/admin/password-reset-requests/${requestId}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ status })
+    }).then(r => r.json()),
+
   addNote: (token, projectId, taskId, content) =>
     fetch(`${API_URL}/api/projects/${projectId}/tasks/${taskId}/notes`, {
       method: 'POST',
@@ -559,8 +574,8 @@ const AuthScreen = ({ onLogin }) => {
 
 
         {mode === 'forgot' && (
-          <div className="bg-yellow-50 border border-yellow-200 p-3 rounded mb-4 text-sm">
-            <p className="text-yellow-800">Enter your email to receive password reset instructions.</p>
+          <div className="bg-blue-50 border border-blue-200 p-3 rounded mb-4 text-sm">
+            <p className="text-blue-800">Enter your email address and an administrator will reach out to help reset your password.</p>
           </div>
         )}
 
@@ -620,7 +635,7 @@ const AuthScreen = ({ onLogin }) => {
             disabled={loading}
             className="w-full bg-primary text-white py-2 rounded-md hover:bg-accent disabled:bg-gray-400"
           >
-            {loading ? 'Please wait...' : mode === 'login' ? 'Login' : mode === 'signup' ? 'Create Account' : 'Reset Password'}
+            {loading ? 'Please wait...' : mode === 'login' ? 'Login' : mode === 'signup' ? 'Create Account' : 'Request Password Reset'}
           </button>
 
           <div className="text-center space-y-2">
@@ -3694,10 +3709,12 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
   const [showAddUser, setShowAddUser] = useState(false);
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'user' });
   const [addError, setAddError] = useState('');
+  const [passwordResetRequests, setPasswordResetRequests] = useState([]);
 
   useEffect(() => {
     loadUsers();
     loadProjects();
+    loadPasswordResetRequests();
   }, []);
 
   const loadUsers = async () => {
@@ -3718,6 +3735,34 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
       setProjects(data);
     } catch (err) {
       console.error('Failed to load projects:', err);
+    }
+  };
+
+  const loadPasswordResetRequests = async () => {
+    try {
+      const data = await api.getPasswordResetRequests(token);
+      setPasswordResetRequests(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Failed to load password reset requests:', err);
+    }
+  };
+
+  const handleResetRequest = async (requestId, userToReset) => {
+    // Open edit modal for this user so admin can reset their password
+    const userRecord = users.find(u => u.id === userToReset.userId);
+    if (userRecord) {
+      // Store the pending request ID to mark as completed when password is actually saved
+      setEditingUser({ ...userRecord, newPassword: '', assignedProjects: userRecord.assignedProjects || [], pendingResetRequestId: requestId });
+      setShowEditModal(true);
+    }
+  };
+
+  const dismissResetRequest = async (requestId) => {
+    try {
+      await api.handlePasswordResetRequest(token, requestId, 'dismissed');
+      await loadPasswordResetRequests();
+    } catch (err) {
+      console.error('Failed to dismiss request:', err);
     }
   };
 
@@ -3772,6 +3817,17 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
         updates.password = editingUser.newPassword;
       }
       await api.updateUser(token, editingUser.id, updates);
+      
+      // If this was a password reset request and password was updated, mark request as completed
+      if (editingUser.pendingResetRequestId && editingUser.newPassword) {
+        try {
+          await api.handlePasswordResetRequest(token, editingUser.pendingResetRequestId, 'completed');
+          await loadPasswordResetRequests();
+        } catch (err) {
+          console.error('Failed to mark reset request as completed:', err);
+        }
+      }
+      
       await loadUsers();
       setEditingUser(null);
       setShowEditModal(false);
@@ -3818,6 +3874,43 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
           <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
           <p className="text-gray-600">Manage team member accounts</p>
         </div>
+
+        {passwordResetRequests.length > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg shadow-sm p-6 mb-6">
+            <h2 className="text-lg font-bold text-amber-800 mb-3 flex items-center gap-2">
+              <span className="w-3 h-3 bg-amber-500 rounded-full animate-pulse"></span>
+              Password Reset Requests ({passwordResetRequests.length})
+            </h2>
+            <p className="text-amber-700 text-sm mb-4">
+              The following users have requested password resets. Click "Reset Password" to set a new password for them, then contact them with the new password.
+            </p>
+            <div className="space-y-3">
+              {passwordResetRequests.map(req => (
+                <div key={req.id} className="bg-white border border-amber-200 rounded-lg p-4 flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-gray-900">{req.name}</p>
+                    <p className="text-sm text-gray-600">{req.email}</p>
+                    <p className="text-xs text-gray-400">Requested: {new Date(req.requestedAt).toLocaleString()}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleResetRequest(req.id, req)}
+                      className="px-3 py-1.5 bg-primary text-white text-sm rounded hover:bg-accent"
+                    >
+                      Reset Password
+                    </button>
+                    <button
+                      onClick={() => dismissResetRequest(req.id)}
+                      className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {showAddUser && (
           <div className="bg-white rounded-lg shadow-sm p-6 mb-6">

@@ -34,6 +34,15 @@ Preferred communication style: Simple, everyday language.
 - Role-based access: admin vs regular user
 - Client portal uses project-specific embed links (no login required)
 
+### Password Reset Flow (Admin-Managed)
+- **No email integration**: Password resets are handled manually by administrators
+- **User Request**: Users click "Forgot Password?" and enter their email
+- **Notification**: User sees message that an administrator will reach out to help
+- **Admin View**: Password reset requests appear in User Management with amber notification banner
+- **Admin Action**: Admin clicks "Reset Password" to open user edit modal, sets new password, contacts user manually
+- **Dismiss Option**: Admins can dismiss invalid/duplicate requests
+- **Data Storage**: Requests stored under `password_reset_requests` key with status tracking
+
 ### Project Access Control
 - **Admins**: Can see and manage ALL projects in the system
 - **Regular Users**: Can only see projects they have been assigned to by an admin
