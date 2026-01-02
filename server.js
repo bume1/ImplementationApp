@@ -18,6 +18,14 @@ const JWT_SECRET = process.env.JWT_SECRET || 'thrive365-secret-change-in-product
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
 
+// Disable caching to prevent stale content issues
+app.use((req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  next();
+});
+
 // Serve static files for the main app path (both cases)
 app.use('/thrive365labsLAUNCH', express.static('public'));
 app.use('/thrive365labslaunch', express.static('public'));
