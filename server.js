@@ -649,6 +649,74 @@ app.post('/api/projects/:projectId/tasks/:taskId/notes', authenticateToken, asyn
   }
 });
 
+// Update a note (author only)
+app.put('/api/projects/:projectId/tasks/:taskId/notes/:noteId', authenticateToken, async (req, res) => {
+  try {
+    const { projectId, taskId, noteId } = req.params;
+    
+    if (!canAccessProject(req.user, projectId)) {
+      return res.status(403).json({ error: 'Access denied to this project' });
+    }
+    
+    const { content } = req.body;
+    if (!content) return res.status(400).json({ error: 'Note content is required' });
+    
+    const tasks = await getTasks(projectId);
+    const taskIdx = tasks.findIndex(t => t.id === parseInt(taskId));
+    if (taskIdx === -1) return res.status(404).json({ error: 'Task not found' });
+    
+    const noteIdx = (tasks[taskIdx].notes || []).findIndex(n => n.id === noteId);
+    if (noteIdx === -1) return res.status(404).json({ error: 'Note not found' });
+    
+    const note = tasks[taskIdx].notes[noteIdx];
+    
+    // Only the author or an admin can edit the note
+    if (note.authorId !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'You can only edit your own notes' });
+    }
+    
+    tasks[taskIdx].notes[noteIdx].content = content;
+    tasks[taskIdx].notes[noteIdx].editedAt = new Date().toISOString();
+    await db.set(`tasks_${projectId}`, tasks);
+    
+    res.json(tasks[taskIdx].notes[noteIdx]);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete a note (author only)
+app.delete('/api/projects/:projectId/tasks/:taskId/notes/:noteId', authenticateToken, async (req, res) => {
+  try {
+    const { projectId, taskId, noteId } = req.params;
+    
+    if (!canAccessProject(req.user, projectId)) {
+      return res.status(403).json({ error: 'Access denied to this project' });
+    }
+    
+    const tasks = await getTasks(projectId);
+    const taskIdx = tasks.findIndex(t => t.id === parseInt(taskId));
+    if (taskIdx === -1) return res.status(404).json({ error: 'Task not found' });
+    
+    const noteIdx = (tasks[taskIdx].notes || []).findIndex(n => n.id === noteId);
+    if (noteIdx === -1) return res.status(404).json({ error: 'Note not found' });
+    
+    const note = tasks[taskIdx].notes[noteIdx];
+    
+    // Only the author or an admin can delete the note
+    if (note.authorId !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'You can only delete your own notes' });
+    }
+    
+    tasks[taskIdx].notes.splice(noteIdx, 1);
+    await db.set(`tasks_${projectId}`, tasks);
+    
+    res.json({ message: 'Note deleted' });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ============== PROJECT ROUTES ==============
 app.get('/api/projects', authenticateToken, async (req, res) => {
   try {
@@ -1219,6 +1287,72 @@ app.post('/api/projects/:id/soft-pilot-checklist', authenticateToken, async (req
   } catch (error) {
     console.error('Error submitting soft-pilot checklist:', error);
     res.status(500).json({ error: error.message || 'Failed to upload checklist' });
+  }
+});
+
+// Manual HubSpot sync for projects where record ID was added after creation
+app.post('/api/projects/:id/hubspot-sync', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only admins can trigger manual sync' });
+    }
+    
+    const projects = await getProjects();
+    const project = projects.find(p => p.id === req.params.id);
+    
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    
+    if (!project.hubspotRecordId) {
+      return res.status(400).json({ error: 'Project does not have a HubSpot Record ID configured' });
+    }
+    
+    const tasks = await getTasks(project.id);
+    const completedTasks = tasks.filter(t => t.completed);
+    
+    if (completedTasks.length === 0) {
+      return res.json({ message: 'No completed tasks to sync', synced: 0 });
+    }
+    
+    let syncedCount = 0;
+    
+    // Log an initial sync note
+    try {
+      await hubspot.logRecordActivity(
+        project.hubspotRecordId,
+        'Manual Sync Initiated',
+        `Syncing ${completedTasks.length} completed tasks from Project Tracker`
+      );
+    } catch (err) {
+      console.error('Failed to log initial sync note:', err.message);
+    }
+    
+    // Sync each completed task
+    for (const task of completedTasks) {
+      try {
+        await createHubSpotTask(project.id, task, 'Manual Sync');
+        syncedCount++;
+      } catch (err) {
+        console.error(`Failed to sync task ${task.id}:`, err.message);
+      }
+    }
+    
+    // Update project with sync timestamp
+    const projectIdx = projects.findIndex(p => p.id === project.id);
+    if (projectIdx !== -1) {
+      projects[projectIdx].lastHubSpotSync = new Date().toISOString();
+      await db.set('projects', projects);
+    }
+    
+    res.json({ 
+      message: `Successfully synced ${syncedCount} of ${completedTasks.length} completed tasks to HubSpot`,
+      synced: syncedCount,
+      total: completedTasks.length
+    });
+  } catch (error) {
+    console.error('Manual HubSpot sync error:', error);
+    res.status(500).json({ error: 'Failed to sync to HubSpot' });
   }
 });
 
