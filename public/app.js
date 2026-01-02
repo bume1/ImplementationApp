@@ -763,7 +763,7 @@ const AuthScreen = ({ onLogin }) => {
           </div>
         </div>
         <div className="mt-8 text-center text-sm text-gray-500">
-          <p>Developed by Bianca G. C. Ume, MD, MBA, MS</p>
+          <p>Powered by Thrive365Labs | Developed by Bianca G. C. Ume, MD, MBA, MS</p>
         </div>
       </div>
     </div>
@@ -1113,11 +1113,29 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
 
                 <section>
                   <h3 className="text-lg font-bold text-primary mb-3">HubSpot Integration</h3>
+                  <p className="text-gray-700 mb-2 font-medium">Automatic Syncs (happen immediately):</p>
+                  <ul className="list-disc ml-5 text-gray-600 space-y-1 mb-3">
+                    <li><strong>Task Completion:</strong> Creates a completed HubSpot task with phase, stage, completion details, and all notes</li>
+                    <li><strong>Stage Completion:</strong> When all tasks in a stage are done, logs a summary note to HubSpot</li>
+                    <li><strong>Phase Completion:</strong> Logs stage-by-stage summary AND moves the deal to the mapped pipeline stage</li>
+                    <li><strong>Soft-Pilot Checklist:</strong> Creates note with signature and Google Drive link</li>
+                  </ul>
+                  <p className="text-gray-700 mb-2 font-medium">Manual Sync:</p>
+                  <ul className="list-disc ml-5 text-gray-600 space-y-1 mb-3">
+                    <li><strong>"Sync All to HubSpot" button:</strong> Use when Record ID was added after tasks were completed</li>
+                    <li>Available to admins only, syncs all completed tasks that missed automatic sync</li>
+                  </ul>
+                  <p className="text-gray-700 mb-2 font-medium">What Does NOT Sync:</p>
+                  <ul className="list-disc ml-5 text-gray-600 space-y-1 mb-3">
+                    <li>Adding notes to tasks (notes only sync when task is completed)</li>
+                    <li>Bulk mark complete/incomplete operations</li>
+                    <li>Subtasks (only parent tasks sync)</li>
+                    <li>Reopening tasks</li>
+                  </ul>
+                  <p className="text-gray-700 mb-2 font-medium">Requirements:</p>
                   <ul className="list-disc ml-5 text-gray-600 space-y-1">
-                    <li>Link projects to HubSpot deals via the HubSpot Record ID</li>
-                    <li>Task completions automatically sync to HubSpot</li>
-                    <li>Phase completions update deal pipeline stages</li>
-                    <li>Use "View Checklist" on Sprint 3: Soft-Pilot to submit signed checklists</li>
+                    <li>Project must have a HubSpot Record ID configured</li>
+                    <li>HubSpot integration must be connected (via HubSpot Settings)</li>
                   </ul>
                 </section>
 
@@ -1143,7 +1161,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                 )}
               </div>
               <div className="p-4 border-t bg-gray-50 text-center">
-                <p className="text-sm text-gray-500">Developed by Bianca G. C. Ume, MD, MBA, MS</p>
+                <p className="text-sm text-gray-500">Powered by Thrive365Labs | Developed by Bianca G. C. Ume, MD, MBA, MS</p>
               </div>
             </div>
           </div>
@@ -1464,7 +1482,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
       </div>
       </div>
       <footer className="mt-8 py-4 text-center text-sm text-gray-500 border-t max-w-6xl mx-auto">
-        <p>Developed by Bianca G. C. Ume, MD, MBA, MS</p>
+        <p>Powered by Thrive365Labs | Developed by Bianca G. C. Ume, MD, MBA, MS</p>
         {user.role === 'admin' && (
           <button 
             onClick={() => { setShowActivityLog(true); loadActivityLog(); }}
@@ -2094,7 +2112,7 @@ const SoftPilotChecklist = ({ token, project, tasks, teamMembers, onClose, onSub
   </div>
 
   <footer style="margin-top: 50px; text-align: center; color: #9ca3af; font-size: 12px;">
-    <p>Developed by Bianca G. C. Ume, MD, MBA, MS</p>
+    <p>Powered by Thrive365Labs | Developed by Bianca G. C. Ume, MD, MBA, MS</p>
     <p>Thrive 365 Labs - New Client Launch Implementation</p>
   </footer>
 </body>
