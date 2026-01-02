@@ -123,6 +123,12 @@ const api = {
       body: JSON.stringify(updates)
     }).then(r => r.json()),
 
+  syncToHubSpot: (token, projectId) =>
+    fetch(`${API_URL}/api/projects/${projectId}/hubspot-sync`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.json()),
+
   getTasks: (token, projectId) =>
     fetch(`${API_URL}/api/projects/${projectId}/tasks`, {
       headers: { 'Authorization': `Bearer ${token}` }
@@ -357,6 +363,22 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ content })
+    }).then(r => r.json()),
+
+  updateNote: (token, projectId, taskId, noteId, content) =>
+    fetch(`${API_URL}/api/projects/${projectId}/tasks/${taskId}/notes/${noteId}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ content })
+    }).then(r => r.json()),
+
+  deleteNote: (token, projectId, taskId, noteId) =>
+    fetch(`${API_URL}/api/projects/${projectId}/tasks/${taskId}/notes/${noteId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
     }).then(r => r.json()),
 
   getTemplates: (token) =>
@@ -2291,6 +2313,9 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
   const [showOwnerDropdown, setShowOwnerDropdown] = useState(false);
   const [expandedTaskId, setExpandedTaskId] = useState(null);
   const [newNote, setNewNote] = useState('');
+  const [editingNote, setEditingNote] = useState(null);
+  const [editingNoteContent, setEditingNoteContent] = useState('');
+  const [syncingToHubSpot, setSyncingToHubSpot] = useState(false);
   const [showAddTask, setShowAddTask] = useState(false);
   const [newTask, setNewTask] = useState({ taskTitle: '', owner: '', secondaryOwner: '', dueDate: '', phase: 'Phase 1', stage: '', showToClient: false, clientName: '', dependencies: [] });
   const [teamMembers, setTeamMembers] = useState([]);
@@ -2653,6 +2678,52 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
     }
   };
 
+  const handleUpdateNote = async (taskId, noteId) => {
+    if (!editingNoteContent.trim()) return;
+    try {
+      const updatedNote = await api.updateNote(token, project.id, taskId, noteId, editingNoteContent);
+      if (updatedNote.error) {
+        alert(updatedNote.error);
+        return;
+      }
+      setTasks(tasks.map(t => {
+        if (t.id === taskId) {
+          return { 
+            ...t, 
+            notes: (t.notes || []).map(n => n.id === noteId ? updatedNote : n) 
+          };
+        }
+        return t;
+      }));
+      setEditingNote(null);
+      setEditingNoteContent('');
+    } catch (err) {
+      console.error('Failed to update note:', err);
+    }
+  };
+
+  const handleDeleteNote = async (taskId, noteId) => {
+    if (!confirm('Are you sure you want to delete this note?')) return;
+    try {
+      const result = await api.deleteNote(token, project.id, taskId, noteId);
+      if (result.error) {
+        alert(result.error);
+        return;
+      }
+      setTasks(tasks.map(t => {
+        if (t.id === taskId) {
+          return { 
+            ...t, 
+            notes: (t.notes || []).filter(n => n.id !== noteId) 
+          };
+        }
+        return t;
+      }));
+    } catch (err) {
+      console.error('Failed to delete note:', err);
+    }
+  };
+
   const handleCreateTask = async () => {
     if (!newTask.taskTitle.trim()) return;
     try {
@@ -2948,12 +3019,37 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                 </button>
               </div>
               {project.hubspotRecordId && (
-                <div className="flex items-center gap-3 text-sm text-gray-600">
+                <div className="flex items-center gap-3 text-sm text-gray-600 flex-wrap">
                   <p>HubSpot Record ID: <span className="font-medium">{project.hubspotRecordId}</span></p>
                   {project.lastHubSpotSync && (
                     <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
                       Last synced: {new Date(project.lastHubSpotSync).toLocaleString()}
                     </span>
+                  )}
+                  {isAdmin && (
+                    <button
+                      onClick={async () => {
+                        if (!confirm('This will sync all completed tasks to HubSpot. Continue?')) return;
+                        setSyncingToHubSpot(true);
+                        try {
+                          const result = await api.syncToHubSpot(token, project.id);
+                          if (result.error) {
+                            alert(result.error);
+                          } else {
+                            alert(result.message);
+                            loadTasks();
+                          }
+                        } catch (err) {
+                          alert('Failed to sync to HubSpot');
+                        } finally {
+                          setSyncingToHubSpot(false);
+                        }
+                      }}
+                      disabled={syncingToHubSpot}
+                      className="px-2 py-1 bg-orange-100 text-orange-700 text-xs rounded hover:bg-orange-200 disabled:opacity-50"
+                    >
+                      {syncingToHubSpot ? 'Syncing...' : 'Sync All to HubSpot'}
+                    </button>
                   )}
                 </div>
               )}
@@ -3598,7 +3694,16 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                               )}
                               {viewMode === 'internal' && task.dependencies && task.dependencies.length > 0 && (
                                 <div className="mt-2 text-xs text-gray-500">
-                                  <span className="font-medium">Dependencies:</span> Task {task.dependencies.join(', ')}
+                                  <span className="font-medium">Dependencies:</span>{' '}
+                                  {task.dependencies.map((depId, idx) => {
+                                    const depTask = tasks.find(t => t.id === depId || t.id === parseInt(depId));
+                                    return (
+                                      <span key={depId}>
+                                        {depTask ? `"${depTask.taskTitle}"` : `Task ${depId}`}
+                                        {idx < task.dependencies.length - 1 ? ', ' : ''}
+                                      </span>
+                                    );
+                                  })}
                                 </div>
                               )}
                               {viewMode === 'internal' && (
@@ -3637,10 +3742,56 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                     ) : (
                                       (task.notes || []).map(note => (
                                         <div key={note.id} className="bg-white p-2 rounded border text-sm">
-                                          <p className="text-gray-800">{note.content}</p>
-                                          <p className="text-xs text-gray-400 mt-1">
-                                            {note.author} - {new Date(note.createdAt).toLocaleString()}
-                                          </p>
+                                          {editingNote === note.id ? (
+                                            <div className="space-y-2">
+                                              <textarea
+                                                value={editingNoteContent}
+                                                onChange={(e) => setEditingNoteContent(e.target.value)}
+                                                className="w-full px-2 py-1 border rounded text-sm"
+                                                rows={2}
+                                              />
+                                              <div className="flex gap-2">
+                                                <button
+                                                  onClick={() => handleUpdateNote(task.id, note.id)}
+                                                  className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
+                                                >
+                                                  Save
+                                                </button>
+                                                <button
+                                                  onClick={() => { setEditingNote(null); setEditingNoteContent(''); }}
+                                                  className="px-2 py-1 bg-gray-300 text-gray-700 text-xs rounded hover:bg-gray-400"
+                                                >
+                                                  Cancel
+                                                </button>
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            <>
+                                              <p className="text-gray-800">{note.content}</p>
+                                              <div className="flex justify-between items-center mt-1">
+                                                <p className="text-xs text-gray-400">
+                                                  {note.author} - {new Date(note.createdAt).toLocaleString()}
+                                                  {note.editedAt && <span className="italic"> (edited)</span>}
+                                                </p>
+                                                {(note.authorId === user.id || isAdmin) && (
+                                                  <div className="flex gap-2">
+                                                    <button
+                                                      onClick={() => { setEditingNote(note.id); setEditingNoteContent(note.content); }}
+                                                      className="text-xs text-primary hover:underline"
+                                                    >
+                                                      Edit
+                                                    </button>
+                                                    <button
+                                                      onClick={() => handleDeleteNote(task.id, note.id)}
+                                                      className="text-xs text-red-600 hover:underline"
+                                                    >
+                                                      Delete
+                                                    </button>
+                                                  </div>
+                                                )}
+                                              </div>
+                                            </>
+                                          )}
                                         </div>
                                       ))
                                     )}

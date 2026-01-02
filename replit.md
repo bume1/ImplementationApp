@@ -1,252 +1,66 @@
-# New Client Launch Implementation - Thrive 365 Labs Web App
+# Thrive 365 Labs Web App
 
 ## Overview
-
-A multi-project launch tracker designed for managing clinical laboratory equipment installations. Designed by Bianca G. C. Ume, MD, MBA, MS. The system provides a 102-task template specifically for Biolis AU480 CLIA lab setups, with admin controls, team member accounts, and embeddable client portals for external stakeholders to view progress without authentication.
-
-The primary use case is tracking complex, multi-phase laboratory equipment launches with tasks spanning contract signature through go-live, including CLIA certification, equipment procurement, LIS/EMR integration, and staff training coordination.
+A multi-project launch tracker designed for managing complex clinical laboratory equipment installations. The system provides a 102-task template for Biolis AU480 CLIA lab setups, featuring admin controls, team member accounts, and embeddable client portals for external stakeholders to view progress without authentication. Its primary purpose is to track multi-phase laboratory equipment launches from contract signature through go-live, including CLIA certification, equipment procurement, LIS/EMR integration, and staff training coordination.
 
 ## User Preferences
-
 Preferred communication style: Simple, everyday language.
 
 ## System Architecture
 
-### Backend Architecture
-- **Framework**: Express.js REST API server
-- **Authentication**: JWT-based auth with bcryptjs password hashing
-- **Data Storage**: Replit Database (key-value store) - not a traditional SQL database
-- **Data Structure**: 
-  - Users stored under `users` key as array
-  - Projects stored under `projects` key as array
-  - Tasks stored per-project under `tasks_{projectId}` keys
+### UI/UX Decisions
+- **Branding**: Thrive 365 Labs logo, primary color #045E9F (blue), accent color #00205A (dark navy), Open Sans font.
+- **Client Portal**: Embeddable, unauthenticated views for external stakeholders.
+- **Reporting**: Dedicated "Launch Reports" page with summary statistics and charts (Launches by Client, Go-Live Timelines).
+- **Activity Log**: Admin-only view of system activities.
 
-### Frontend Architecture
-- **Framework**: React 18 loaded via CDN (no build step)
-- **Transpilation**: Babel standalone for JSX in browser
-- **Styling**: Tailwind CSS via CDN
-- **Structure**: Single-page application with components in `public/app.js`
-- **Client Portal**: Separate `public/client.html` for unauthenticated embeddable views
+### Technical Implementations
+- **Backend**: Express.js REST API with JWT-based authentication and `bcryptjs` for password hashing.
+- **Frontend**: React 18 (CDN-loaded), Babel standalone for JSX, and Tailwind CSS (CDN). Single-page application structure.
+- **Data Storage**: Replit Database (key-value store) for users, projects, tasks, password reset requests, HubSpot mappings, and activity logs.
+- **Authentication**: JWT, role-based access (admin vs. regular user), and admin-managed password resets. Admin user is auto-created.
+- **Project Access Control**: Admins manage all projects; regular users access only assigned projects.
+- **Task Permissions**: Template tasks editable by all, deletable by admins. User-created tasks editable/deletable by creator or admins.
+- **Data Model**: Includes Users (id, email, name, role, assignedProjects), Projects (id, name, clientName, status, clientLinkId, etc.), and Tasks (102-task template with detailed fields).
+- **Project Management**: Status tags, editable project details, admin-only project deletion.
+- **Template System**: Task templates loaded from JSON, applied to new projects. Support for cloning projects and templates.
+- **CSV Import**: Bulk import of tasks for templates and projects with comprehensive parsing.
+- **HubSpot Integration**: Configuration via Replit's OAuth, stage mapping, automated task completion and stage completion notes sync, and manual sync option.
+- **Reporting**: Launch reports page with charts and launch duration calculation.
+- **Task Management**: Per-stage task addition, email-based owner assignment with name display, subtasks with completion enforcement, and bulk task operations.
+- **Admin Activity Logging**: Logs task completions, reopenings, and updates with user details and timestamps.
+- **Custom Domain & URL**: Supports custom domains for the application path and client portals, with per-project domain configuration.
+- **Soft-Pilot Checklist**: Dedicated checklist view for Sprint 3 tasks, generating HTML documents with task statuses and signature fields, uploaded to Google Drive and linked to HubSpot.
 
-### Authentication Model
-- Admin user auto-created on server startup (bianca@thrive365labs.com)
-- User signup available for team members
-- Role-based access: admin vs regular user
-- Client portal uses project-specific embed links (no login required)
-
-### Password Reset Flow (Admin-Managed)
-- **No email integration**: Password resets are handled manually by administrators
-- **User Request**: Users click "Forgot Password?" and enter their email
-- **Notification**: User sees message that an administrator will reach out to help
-- **Admin View**: Password reset requests appear in User Management with amber notification banner
-- **Admin Action**: Admin clicks "Reset Password" to open user edit modal, sets new password, contacts user manually
-- **Dismiss Option**: Admins can dismiss invalid/duplicate requests
-- **Data Storage**: Requests stored under `password_reset_requests` key with status tracking
-
-### Project Access Control
-- **Admins**: Can see and manage ALL projects in the system
-- **Regular Users**: Can only see projects they have been assigned to by an admin
-- **Assignment**: Admins assign projects to users via the User Management page (Edit user modal)
-- **Enforcement**: All project-related API endpoints check user's assignedProjects before allowing access
-- **Real-time**: Permission changes take effect immediately (no re-login required)
-- User data includes `assignedProjects` array field containing project IDs the user can access
-
-### Task Permissions
-- **Template tasks** (from original template): Can be edited by all users, deleted only by admins
-- **User-created tasks**: Can be edited and deleted by the creator or admins
-- Delete button only appears for tasks you created (or all tasks if admin)
-
-### Data Model
-- **Users**: id, email, name, password (hashed), role, createdAt, assignedProjects (array of project IDs)
-- **Projects**: id, name, clientName, projectManager, hubspotRecordId, status (active/paused/completed), template, clientLinkId, clientLinkSlug
-- **Tasks**: 102-task template with fields including phase, stage, taskTitle, owner, startDate, dueDate, dateCompleted, duration, completed status
-
-### Project Management Features
-- **Status Tags**: Projects display status badges (In Progress, Paused, Completed)
-- **Editable Details**: Project name, client name, On-Site Project Manager, HubSpot Record ID, and status can be edited via modal
-- **Admin-Only Deletion**: Only admins can delete projects (removes project and all associated tasks)
-
-### Template System
-- Task templates loaded from JSON file (`template-biolis-au480-clia.json`)
-- Templates organized by Phase (0-4) and Stage groupings
-- Applied to new projects on creation
+### System Design Choices
+- **Modularity**: Separation of frontend and backend.
+- **Scalability**: CDN-based frontend for faster loading, key-value store for flexible data handling.
+- **Security**: JWT for authentication, bcrypt for password hashing.
+- **User Experience**: Streamlined workflows for project and task management, intuitive reporting, and client-facing transparency.
 
 ## External Dependencies
 
 ### Third-Party Services
-- **HubSpot**: Integration fields for CRM sync (deal pipeline, client profiles)
-- **Google Drive**: Storage for soft-pilot checklist uploads (organized by client folders)
-- **Replit Database**: Primary data persistence via `@replit/database` package
+- **HubSpot**: CRM integration for deal pipeline and client profiles.
+- **Google Drive**: Storage for soft-pilot checklist uploads.
+- **Replit Database**: Primary data persistence.
 
 ### NPM Packages
-- `express` - Web server framework
-- `cors` - Cross-origin resource sharing
-- `bcryptjs` - Password hashing
-- `jsonwebtoken` - JWT authentication tokens
-- `uuid` - Unique ID generation
-- `@replit/database` - Replit's key-value database client
-- `body-parser` - Request body parsing
-- `googleapis` - Google Drive API client for file uploads
+- `express`
+- `cors`
+- `bcryptjs`
+- `jsonwebtoken`
+- `uuid`
+- `@replit/database`
+- `body-parser`
+- `googleapis`
 
 ### CDN Dependencies (Frontend)
-- React 18 (production build)
+- React 18
 - ReactDOM 18
-- Babel standalone (JSX transpilation)
+- Babel standalone
 - Tailwind CSS
 
 ### Environment Variables
-- `PORT` - Server port (defaults to 5000)
-- `JWT_SECRET` - Token signing secret (has default, should be changed in production)
-
-## Branding
-- **Logo**: Thrive 365 Labs logo from thrive365labs.com
-- **Primary Color**: #045E9F (blue)
-- **Accent Color**: #00205A (dark navy)
-- **Font**: Open Sans (via Google Fonts)
-- **Designer Credit**: "Developed by Bianca G. C. Ume, MD, MBA, MS"
-
-## Clone/Duplicate Features
-- **Clone Projects**: Any user can clone a project via "Clone Project" button on project cards. Creates new project with all tasks reset to incomplete status.
-- **Clone Templates**: Admins can clone templates via "Clone" button in Template Management. Creates new template with all task definitions.
-
-## CSV Import
-- **Template CSV Import**: Admins can bulk import tasks to templates via "Import CSV" button in Template Management
-- **Project CSV Import**: Users can bulk import tasks to projects via "Import CSV" button in Project Tracker
-- **CSV Columns**: phase, stage, taskTitle, owner, dueDate, showToClient, clientName, completed, dateCompleted, dependencies, isSubtask, parentTaskId, subtaskStatus
-- **Parser Features**: Handles quoted fields, escaped quotes (""), commas within fields, and multiline content
-- **Completion Status**: Import 'completed' column (accepts true/yes/1) to mark tasks as complete
-- **Client-Facing Name**: When showToClient is true, clientName defaults to taskTitle if not specified
-
-## HubSpot Integration
-
-### Configuration
-- HubSpot integration uses Replit's OAuth connector for secure credential management
-- Access: Admin users can configure HubSpot settings via "HubSpot Settings" button on the dashboard
-- Stage Mapping: Map project phases (0-4) to HubSpot deal pipeline stages
-
-### Sync Behavior
-- **Task Completion**: Creates a HubSpot task (marked complete) associated with the deal. Assigns owner by email match (preferred) or first/last name match. Task body includes phase, stage, completion details, and all task notes
-- **Stage Completion Notes**: When all tasks in a stage are completed, a comprehensive note is logged to HubSpot including all task details, owners, completion dates/times, and notes
-- **Phase Completion**: When all tasks in a phase are completed, a stage-by-stage summary is logged AND the deal moves to the mapped pipeline stage
-- **Sync Indicator**: Projects with HubSpot Record IDs show last sync timestamp on the project dashboard
-
-Note: Adding notes to tasks in the webapp does NOT trigger HubSpot sync (to avoid overloading). Notes are included in the task body when the task is completed and in stage completion summaries.
-
-### Data Flow
-- Projects store `hubspotRecordId` field to link to HubSpot records
-- Stage mappings stored in database under `hubspot_stage_mapping` key
-- `lastHubSpotSync` timestamp updated on projects when syncs occur
-
-### API Endpoints
-- `GET /api/hubspot/test` - Test HubSpot connection status
-- `GET /api/hubspot/pipelines` - Fetch available deal pipelines and stages
-- `GET /api/hubspot/stage-mapping` - Get current phase-to-stage mapping
-- `PUT /api/hubspot/stage-mapping` - Save phase-to-stage mapping (admin only)
-- `POST /api/projects/:id/soft-pilot-checklist` - Submit soft-pilot checklist with signature to HubSpot
-
-## Reporting
-
-### Launch Reports Page
-- Accessible via "Reports" button on dashboard (available to all users)
-- Summary stats: Total projects, Completed, In Progress, Average weeks to launch
-
-### Charts
-1. **Launches by Client**: Stacked bar chart showing completed vs in-progress vs paused projects per client
-2. **Go-Live Timelines**: Bar chart showing implementation duration (weeks) for completed projects
-
-### Launch Duration Calculation
-- Calculated as weeks between "Contract signed" task completion and "First Live Patient Samples Processed" task completion
-- Displayed on completed project cards in the dashboard
-- Used in reporting charts and tables
-
-### Per-Stage Task Addition
-- Each stage in the list view has an "+ Add Task" button
-- Clicking pre-fills the phase and stage for the new task
-
-### Owner Assignment
-- **Email-Based Assignment**: Task owners are assigned by email address (stored internally as email)
-- **Name Display**: Owner names are displayed in the UI by looking up the user's name from their email
-- **Team Members Dropdown**: Owner selection uses a dropdown of registered team members (by email, showing name)
-- **Client Portal**: Server resolves owner emails to names before sending to client portal (ownerDisplayName field)
-
-### Subtasks
-- Each task can have multiple subtasks with their own owners (any user in the system)
-- Subtasks have title, owner (email with dropdown selection), and status (Pending, Complete, N/A)
-- **Separate "Add Subtask" button** visible on each task (not buried in notes)
-- **Subtask status dropdown**: Pending, Complete, or N/A (Not Applicable)
-- **Completion enforcement**: Parent task cannot be marked complete until all subtasks are either Complete or N/A
-- Subtasks are NOT synced to HubSpot (only parent tasks sync)
-- "Subtasks incomplete" warning badge shown on tasks with pending subtasks
-
-### Bulk Task Operations
-- "Bulk Select" mode allows selecting multiple tasks via checkboxes
-- "Select All" and "Deselect All" buttons for quick selection
-- **Per-Stage Bulk Selection**: Each stage header has "Select Stage" / "Deselect Stage" toggle button when in bulk mode
-- "Mark X Complete" and "Mark X Incomplete" bulk action buttons
-- Bulk updates do NOT sync to HubSpot (to prevent overloading)
-
-### Admin Activity Logging
-- **Storage**: Activity log stored under `activity_log` database key (limited to 500 entries)
-- **Logged Actions**: Task completions, reopenings, and updates are automatically logged
-- **Activity Details**: Each entry includes user name, action type, entity type, timestamp, and details (task title, stage, etc.)
-- **Admin Access**: "View Activity Log" link in footer (admin only)
-- **API Endpoint**: `GET /api/admin/activity-log` - Retrieve activity log with optional `limit` and `projectId` filters
-
-## Custom Domain & App URL
-
-### Application Path
-- Main app accessible at `/thrive365labslaunch` path (e.g., `https://deapps.pro/thrive365labslaunch`)
-- Both lowercase and uppercase paths are supported for backwards compatibility
-
-### Client Portal URLs
-- Client portal links use format: `https://deapps.pro/thrive365labslaunch/{client-slug}`
-- Example: `https://deapps.pro/thrive365labslaunch/dallas-forth-worth-urology`
-- Default base URL is `https://deapps.pro` if no custom domain is configured
-- **Per-Project Custom Domain**: Each project can have its own `clientPortalDomain` field configured in project settings
-- Domain priority: Project-specific domain > Global domain > Default (`https://deapps.pro`)
-- Both root-level (`/slug`) and legacy formats work for backwards compatibility
-
-### API Endpoints
-- `GET /api/settings/client-portal-domain` - Get global custom domain (fallback)
-- `PUT /api/settings/client-portal-domain` - Set global custom domain (admin only)
-
-### Task Owner Editing
-- Owner field can only be edited by admins after initial assignment
-- Non-admin users cannot modify owner assignments on any tasks
-
-## Soft-Pilot Checklist Feature
-
-### Overview
-- A dedicated checklist view for all tasks and subtasks in the "Sprint 3: Soft-Pilot" stage
-- Accessible via "View Checklist" button on the Sprint 3: Soft-Pilot stage header in list view
-- Generates a formatted HTML document with task statuses and signature fields
-
-### Features
-- **Task Display**: Shows all Sprint 3 tasks with completion status checkboxes
-- **Subtask Display**: Includes subtasks with their status (Pending/Complete/N/A)
-- **Owner Resolution**: Displays owner names (resolved from email addresses)
-- **Signature Fields**: Clinical Application Specialist must provide name, title, and date
-
-### Google Drive Integration
-- On submission, the checklist is uploaded to Google Drive as an HTML file
-- Files are organized in folders: `Thrive365Labs Checklists/{Client Name}/`
-- File naming format: `Soft-Pilot-Checklist_{ProjectName}_{Timestamp}.html`
-- Revised versions include version number: `..._REVISED_v2_{Timestamp}.html`
-
-### HubSpot Integration
-- A note is created on the deal record with submission details and Google Drive link
-- Note includes: signer name, title, date, and link to uploaded file
-- Does NOT require HubSpot for upload (uses Google Drive instead)
-- HubSpot note is logged if project has a HubSpot Record ID configured
-
-### API Endpoint
-- `POST /api/projects/:id/soft-pilot-checklist` - Submit signed checklist and upload to Google Drive
-
-### Data Storage
-- Projects store `softPilotChecklistSubmitted` object with:
-  - `submittedAt`: Timestamp
-  - `submittedBy`: User email
-  - `signature`: Name, title, date
-  - `submissionCount`: Number of submissions (for version tracking)
-  - `isRevision`: Boolean indicating if this was an update
-  - `driveLink`: Google Drive web view URL for the uploaded file
+- `PORT`
+- `JWT_SECRET`
