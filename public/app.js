@@ -345,6 +345,48 @@ const api = {
       headers: { 'Authorization': `Bearer ${token}` }
     }).then(r => r.json()),
 
+  getPortalSettings: () =>
+    fetch(`${API_URL}/api/portal-settings`).then(r => r.json()),
+  
+  updatePortalSettings: (token, settings) =>
+    fetch(`${API_URL}/api/portal-settings`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(settings)
+    }).then(r => r.json()),
+  
+  getAnnouncements: () =>
+    fetch(`${API_URL}/api/announcements`).then(r => r.json()),
+  
+  createAnnouncement: (token, announcement) =>
+    fetch(`${API_URL}/api/announcements`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(announcement)
+    }).then(r => r.json()),
+  
+  updateAnnouncement: (token, id, announcement) =>
+    fetch(`${API_URL}/api/announcements/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(announcement)
+    }).then(r => r.json()),
+  
+  deleteAnnouncement: (token, id) =>
+    fetch(`${API_URL}/api/announcements/${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.json()),
+
   handlePasswordResetRequest: (token, requestId, status) =>
     fetch(`${API_URL}/api/admin/password-reset-requests/${requestId}`, {
       method: 'PUT',
@@ -787,7 +829,7 @@ const StatusBadge = ({ status }) => {
 };
 
 // ============== PROJECT LIST COMPONENT ==============
-const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, onManageTemplates, onManageHubSpot, onViewReporting }) => {
+const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, onManageTemplates, onManageHubSpot, onViewReporting, onManagePortalSettings, onManageAnnouncements }) => {
   const [projects, setProjects] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -1032,6 +1074,22 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                     className="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 text-sm"
                   >
                     HubSpot Settings
+                  </button>
+                )}
+                {onManagePortalSettings && (
+                  <button
+                    onClick={() => { onManagePortalSettings(); setShowSettingsMenu(false); }}
+                    className="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 text-sm"
+                  >
+                    Portal Settings
+                  </button>
+                )}
+                {onManageAnnouncements && (
+                  <button
+                    onClick={() => { onManageAnnouncements(); setShowSettingsMenu(false); }}
+                    className="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 text-sm"
+                  >
+                    Announcements
                   </button>
                 )}
               </div>
@@ -4104,7 +4162,7 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
   const [editingUser, setEditingUser] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAddUser, setShowAddUser] = useState(false);
-  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'user' });
+  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'user', practiceName: '', isNewClient: false, assignedProjects: [] });
   const [addError, setAddError] = useState('');
   const [passwordResetRequests, setPasswordResetRequests] = useState([]);
 
@@ -4186,6 +4244,10 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
       setAddError('Password must be at least 8 characters');
       return;
     }
+    if (newUser.role === 'client' && !newUser.practiceName.trim()) {
+      setAddError('Practice name is required for client accounts');
+      return;
+    }
     try {
       const result = await api.createUser(token, newUser);
       if (result.error) {
@@ -4193,7 +4255,7 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
         return;
       }
       await loadUsers();
-      setNewUser({ name: '', email: '', password: '', role: 'user' });
+      setNewUser({ name: '', email: '', password: '', role: 'user', practiceName: '', isNewClient: false, assignedProjects: [] });
       setShowAddUser(false);
       setAddError('');
     } catch (err) {
@@ -4208,7 +4270,9 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
         name: editingUser.name,
         email: editingUser.email,
         role: editingUser.role,
-        assignedProjects: editingUser.assignedProjects || []
+        assignedProjects: editingUser.assignedProjects || [],
+        practiceName: editingUser.practiceName || '',
+        isNewClient: editingUser.isNewClient || false
       };
       if (editingUser.newPassword) {
         updates.password = editingUser.newPassword;
@@ -4352,11 +4416,60 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
                   onChange={(e) => setNewUser({...newUser, role: e.target.value})}
                   className="w-full px-3 py-2 border rounded-md"
                 >
-                  <option value="user">User</option>
+                  <option value="user">Team Member</option>
                   <option value="admin">Admin</option>
+                  <option value="client">Client</option>
                 </select>
               </div>
+              {newUser.role === 'client' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Practice Name *</label>
+                    <input
+                      value={newUser.practiceName}
+                      onChange={(e) => setNewUser({...newUser, practiceName: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-md"
+                      placeholder="e.g., Dallas Medical Center"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="isNewClient"
+                      checked={newUser.isNewClient}
+                      onChange={(e) => setNewUser({...newUser, isNewClient: e.target.checked})}
+                      className="w-4 h-4"
+                    />
+                    <label htmlFor="isNewClient" className="text-sm font-medium">
+                      New Client (show Launch Milestones)
+                    </label>
+                  </div>
+                </>
+              )}
             </div>
+            {newUser.role === 'client' && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-2">Assign to Project</label>
+                <div className="max-h-40 overflow-y-auto border rounded-md p-2 space-y-1">
+                  {projects.map(p => (
+                    <label key={p.id} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={(newUser.assignedProjects || []).includes(p.id)}
+                        onChange={(e) => {
+                          const current = newUser.assignedProjects || [];
+                          const updated = e.target.checked
+                            ? [...current, p.id]
+                            : current.filter(id => id !== p.id);
+                          setNewUser({...newUser, assignedProjects: updated});
+                        }}
+                      />
+                      {p.name} ({p.clientName})
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="flex gap-2">
               <button
                 onClick={handleCreateUser}
@@ -4365,7 +4478,7 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
                 Create User
               </button>
               <button
-                onClick={() => { setShowAddUser(false); setAddError(''); setNewUser({ name: '', email: '', password: '', role: 'user' }); }}
+                onClick={() => { setShowAddUser(false); setAddError(''); setNewUser({ name: '', email: '', password: '', role: 'user', practiceName: '', isNewClient: false, assignedProjects: [] }); }}
                 className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400"
               >
                 Cancel
@@ -4393,10 +4506,17 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
                   <td className="px-6 py-4 text-gray-600">{u.email}</td>
                   <td className="px-6 py-4">
                     <span className={`px-2 py-1 rounded text-xs font-medium ${
-                      u.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800'
+                      u.role === 'admin' ? 'bg-purple-100 text-purple-800' : 
+                      u.role === 'client' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'
                     }`}>
-                      {u.role}
+                      {u.role === 'client' ? 'Client' : u.role === 'admin' ? 'Admin' : 'Team'}
                     </span>
+                    {u.role === 'client' && u.practiceName && (
+                      <div className="text-xs text-gray-500 mt-1">{u.practiceName}</div>
+                    )}
+                    {u.role === 'client' && u.isNewClient && (
+                      <span className="ml-1 px-1.5 py-0.5 bg-green-100 text-green-700 text-xs rounded">New</span>
+                    )}
                   </td>
                   <td className="px-6 py-4 text-gray-600 text-sm">
                     {u.role === 'admin' ? (
@@ -4463,8 +4583,9 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
                     onChange={(e) => setEditingUser({...editingUser, role: e.target.value})}
                     className="w-full px-3 py-2 border rounded-md"
                   >
-                    <option value="user">User</option>
+                    <option value="user">Team Member</option>
                     <option value="admin">Admin</option>
+                    <option value="client">Client</option>
                   </select>
                 </div>
                 <div>
@@ -4477,7 +4598,41 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
                     placeholder="Leave blank to keep current"
                   />
                 </div>
+                {editingUser.role === 'client' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Practice Name</label>
+                      <input
+                        value={editingUser.practiceName || ''}
+                        onChange={(e) => setEditingUser({...editingUser, practiceName: e.target.value})}
+                        className="w-full px-3 py-2 border rounded-md"
+                        placeholder="e.g., Dallas Medical Center"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="editIsNewClient"
+                        checked={editingUser.isNewClient || false}
+                        onChange={(e) => setEditingUser({...editingUser, isNewClient: e.target.checked})}
+                        className="w-4 h-4"
+                      />
+                      <label htmlFor="editIsNewClient" className="text-sm font-medium">
+                        New Client (show Launch Milestones)
+                      </label>
+                    </div>
+                  </>
+                )}
               </div>
+              
+              {editingUser.role === 'client' && editingUser.slug && (
+                <div className="mb-4 p-4 bg-blue-50 rounded-md">
+                  <p className="text-sm font-medium text-blue-800">Client Portal URL:</p>
+                  <p className="text-blue-600 font-mono text-sm break-all mt-1">
+                    {window.location.origin}/portal/{editingUser.slug}
+                  </p>
+                </div>
+              )}
 
               {editingUser.role !== 'admin' && (
                 <div className="mb-6">
@@ -5624,6 +5779,315 @@ const Reporting = ({ token, user, onBack, onLogout }) => {
   );
 };
 
+// ============== PORTAL SETTINGS COMPONENT ==============
+const PortalSettings = ({ token, user, onBack, onLogout }) => {
+  const [settings, setSettings] = useState({
+    inventoryFormEmbed: '',
+    filesFormEmbed: '',
+    supportUrl: 'https://thrive365labs-49020024.hs-sites.com/support'
+  });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    loadSettings();
+  }, []);
+
+  const loadSettings = async () => {
+    try {
+      const data = await api.getPortalSettings();
+      setSettings(data);
+    } catch (err) {
+      console.error('Failed to load portal settings:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setMessage('');
+    try {
+      await api.updatePortalSettings(token, settings);
+      setMessage('Settings saved successfully!');
+      setTimeout(() => setMessage(''), 3000);
+    } catch (err) {
+      setMessage('Failed to save settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <AppHeader user={user} onLogout={onLogout}>
+        <button onClick={onBack} className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide">
+          ← Back
+        </button>
+      </AppHeader>
+
+      <div className="p-6 max-w-4xl mx-auto">
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+          <h1 className="text-2xl font-bold text-gray-900">Portal Settings</h1>
+          <p className="text-gray-600">Configure HubSpot embeds and settings for the client portal</p>
+        </div>
+
+        {loading ? (
+          <div className="text-center py-12">Loading settings...</div>
+        ) : (
+          <div className="bg-white rounded-lg shadow-sm p-6 space-y-6">
+            {message && (
+              <div className={`p-3 rounded ${message.includes('success') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                {message}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Inventory Form Embed Code
+              </label>
+              <p className="text-xs text-gray-500 mb-2">
+                Paste the HubSpot form embed script for inventory management. Get this from HubSpot {'>'} Marketing {'>'} Forms {'>'} Embed.
+              </p>
+              <textarea
+                value={settings.inventoryFormEmbed}
+                onChange={(e) => setSettings({...settings, inventoryFormEmbed: e.target.value})}
+                className="w-full px-3 py-2 border rounded-md font-mono text-sm"
+                rows={6}
+                placeholder='<script charset="utf-8" type="text/javascript" src="//js.hsforms.net/forms/embed/v2.js"></script>...'
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Files Upload Form Embed Code
+              </label>
+              <p className="text-xs text-gray-500 mb-2">
+                Paste the HubSpot form embed script for file uploads. Create a form with file upload fields in HubSpot.
+              </p>
+              <textarea
+                value={settings.filesFormEmbed}
+                onChange={(e) => setSettings({...settings, filesFormEmbed: e.target.value})}
+                className="w-full px-3 py-2 border rounded-md font-mono text-sm"
+                rows={6}
+                placeholder='<script charset="utf-8" type="text/javascript" src="//js.hsforms.net/forms/embed/v2.js"></script>...'
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Customer Support URL
+              </label>
+              <input
+                type="url"
+                value={settings.supportUrl}
+                onChange={(e) => setSettings({...settings, supportUrl: e.target.value})}
+                className="w-full px-3 py-2 border rounded-md"
+                placeholder="https://thrive365labs-49020024.hs-sites.com/support"
+              />
+            </div>
+
+            <div className="flex gap-3 pt-4">
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="px-6 py-2 bg-primary text-white rounded-md hover:bg-accent disabled:opacity-50"
+              >
+                {saving ? 'Saving...' : 'Save Settings'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ============== ANNOUNCEMENTS MANAGER COMPONENT ==============
+const AnnouncementsManager = ({ token, user, onBack, onLogout }) => {
+  const [announcements, setAnnouncements] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState({ title: '', content: '', type: 'info' });
+
+  useEffect(() => {
+    loadAnnouncements();
+  }, []);
+
+  const loadAnnouncements = async () => {
+    try {
+      const data = await api.getAnnouncements();
+      setAnnouncements(data);
+    } catch (err) {
+      console.error('Failed to load announcements:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreate = async () => {
+    if (!form.title.trim() || !form.content.trim()) return;
+    try {
+      await api.createAnnouncement(token, form);
+      setForm({ title: '', content: '', type: 'info' });
+      setShowAdd(false);
+      loadAnnouncements();
+    } catch (err) {
+      console.error('Failed to create announcement:', err);
+    }
+  };
+
+  const handleUpdate = async () => {
+    if (!form.title.trim() || !form.content.trim()) return;
+    try {
+      await api.updateAnnouncement(token, editing.id, form);
+      setForm({ title: '', content: '', type: 'info' });
+      setEditing(null);
+      loadAnnouncements();
+    } catch (err) {
+      console.error('Failed to update announcement:', err);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('Delete this announcement?')) return;
+    try {
+      await api.deleteAnnouncement(token, id);
+      loadAnnouncements();
+    } catch (err) {
+      console.error('Failed to delete announcement:', err);
+    }
+  };
+
+  const startEdit = (ann) => {
+    setEditing(ann);
+    setForm({ title: ann.title, content: ann.content, type: ann.type || 'info' });
+    setShowAdd(false);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <AppHeader user={user} onLogout={onLogout}>
+        <button onClick={onBack} className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide">
+          ← Back
+        </button>
+      </AppHeader>
+
+      <div className="p-6 max-w-4xl mx-auto">
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-6 flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Announcements</h1>
+            <p className="text-gray-600">Create announcements visible to clients in their portal</p>
+          </div>
+          <button
+            onClick={() => { setShowAdd(true); setEditing(null); setForm({ title: '', content: '', type: 'info' }); }}
+            className="px-4 py-2 bg-primary text-white rounded-md hover:bg-accent"
+          >
+            + New Announcement
+          </button>
+        </div>
+
+        {(showAdd || editing) && (
+          <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+            <h2 className="text-lg font-bold mb-4">{editing ? 'Edit Announcement' : 'New Announcement'}</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Title</label>
+                <input
+                  value={form.title}
+                  onChange={(e) => setForm({...form, title: e.target.value})}
+                  className="w-full px-3 py-2 border rounded-md"
+                  placeholder="Announcement title"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Content</label>
+                <textarea
+                  value={form.content}
+                  onChange={(e) => setForm({...form, content: e.target.value})}
+                  className="w-full px-3 py-2 border rounded-md"
+                  rows={4}
+                  placeholder="Announcement message..."
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Type</label>
+                <select
+                  value={form.type}
+                  onChange={(e) => setForm({...form, type: e.target.value})}
+                  className="px-3 py-2 border rounded-md"
+                >
+                  <option value="info">Info (Blue)</option>
+                  <option value="success">Success (Green)</option>
+                  <option value="warning">Warning (Yellow)</option>
+                </select>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={editing ? handleUpdate : handleCreate}
+                  className="px-4 py-2 bg-primary text-white rounded-md hover:bg-accent"
+                >
+                  {editing ? 'Save Changes' : 'Create'}
+                </button>
+                <button
+                  onClick={() => { setShowAdd(false); setEditing(null); }}
+                  className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {loading ? (
+          <div className="text-center py-12">Loading announcements...</div>
+        ) : announcements.length === 0 ? (
+          <div className="bg-white rounded-lg shadow-sm p-12 text-center text-gray-500">
+            No announcements yet. Create one to share news with your clients.
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {announcements.map(ann => (
+              <div key={ann.id} className={`bg-white rounded-lg shadow-sm p-6 border-l-4 ${
+                ann.type === 'warning' ? 'border-yellow-500' :
+                ann.type === 'success' ? 'border-green-500' : 'border-blue-500'
+              }`}>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="font-bold text-lg text-gray-900">{ann.title}</h3>
+                    <p className="text-gray-600 mt-2">{ann.content}</p>
+                    <p className="text-xs text-gray-400 mt-3">
+                      By {ann.createdBy} on {new Date(ann.createdAt).toLocaleString()}
+                      {ann.updatedAt && <span> (edited)</span>}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => startEdit(ann)}
+                      className="text-primary hover:underline text-sm"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDelete(ann.id)}
+                      className="text-red-600 hover:underline text-sm"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const App = () => {
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [user, setUser] = useState(JSON.parse(localStorage.getItem('user') || 'null'));
@@ -5733,6 +6197,28 @@ const App = () => {
     );
   }
 
+  if (view === 'portal-settings' && user.role === 'admin') {
+    return (
+      <PortalSettings
+        token={token}
+        user={user}
+        onBack={handleBackToList}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  if (view === 'announcements' && user.role === 'admin') {
+    return (
+      <AnnouncementsManager
+        token={token}
+        user={user}
+        onBack={handleBackToList}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
   if (view === 'reporting') {
     return (
       <Reporting
@@ -5754,6 +6240,8 @@ const App = () => {
       onManageTemplates={() => setView('templates')}
       onManageHubSpot={() => setView('hubspot')}
       onViewReporting={() => setView('reporting')}
+      onManagePortalSettings={() => setView('portal-settings')}
+      onManageAnnouncements={() => setView('announcements')}
     />
   );
 };

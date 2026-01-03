@@ -153,7 +153,11 @@ const authenticateToken = async (req, res, next) => {
       email: freshUser.email,
       name: freshUser.name,
       role: freshUser.role,
-      assignedProjects: freshUser.assignedProjects || []
+      assignedProjects: freshUser.assignedProjects || [],
+      // Client-specific fields
+      isNewClient: freshUser.isNewClient || false,
+      slug: freshUser.slug || null,
+      practiceName: freshUser.practiceName || null
     };
     next();
   });
@@ -162,7 +166,17 @@ const authenticateToken = async (req, res, next) => {
 // Authorization helper to check project access
 const canAccessProject = (user, projectId) => {
   if (user.role === 'admin') return true;
+  if (user.role === 'client') {
+    return (user.assignedProjects || []).includes(projectId);
+  }
   return (user.assignedProjects || []).includes(projectId);
+};
+
+// Generate a unique slug for client users
+const generateClientUserSlug = async (practiceName) => {
+  const users = await getUsers();
+  const existingSlugs = users.filter(u => u.slug).map(u => u.slug);
+  return generateClientSlug(practiceName, existingSlugs);
 };
 
 const requireAdmin = (req, res, next) => {
@@ -206,7 +220,7 @@ app.post('/api/users', authenticateToken, async (req, res) => {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Admin access required' });
     }
-    const { email, password, name, role } = req.body;
+    const { email, password, name, role, practiceName, isNewClient, assignedProjects } = req.body;
     if (!email || !password || !name) {
       return res.status(400).json({ error: 'Email, password, and name are required' });
     }
@@ -223,13 +237,29 @@ app.post('/api/users', authenticateToken, async (req, res) => {
       role: role || 'user',
       createdAt: new Date().toISOString()
     };
+    
+    // Client-specific fields
+    if (role === 'client') {
+      if (!practiceName) {
+        return res.status(400).json({ error: 'Practice name is required for client accounts' });
+      }
+      newUser.practiceName = practiceName;
+      newUser.isNewClient = isNewClient || false;
+      newUser.slug = await generateClientUserSlug(practiceName);
+      newUser.assignedProjects = assignedProjects || [];
+    }
+    
     users.push(newUser);
     await db.set('users', users);
     res.json({ 
       id: newUser.id, 
       email: newUser.email, 
       name: newUser.name, 
-      role: newUser.role, 
+      role: newUser.role,
+      practiceName: newUser.practiceName,
+      isNewClient: newUser.isNewClient,
+      slug: newUser.slug,
+      assignedProjects: newUser.assignedProjects,
       createdAt: newUser.createdAt 
     });
   } catch (error) {
@@ -254,12 +284,62 @@ app.post('/api/auth/login', async (req, res) => {
       JWT_SECRET,
       { expiresIn: '24h' }
     );
-    res.json({ 
-      token, 
-      user: { id: user.id, email: user.email, name: user.name, role: user.role } 
-    });
+    const userResponse = { 
+      id: user.id, 
+      email: user.email, 
+      name: user.name, 
+      role: user.role 
+    };
+    // Include client-specific fields
+    if (user.role === 'client') {
+      userResponse.practiceName = user.practiceName;
+      userResponse.isNewClient = user.isNewClient;
+      userResponse.slug = user.slug;
+      userResponse.assignedProjects = user.assignedProjects || [];
+    }
+    res.json({ token, user: userResponse });
   } catch (error) {
     console.error('Login error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Client portal login endpoint
+app.post('/api/auth/client-login', async (req, res) => {
+  try {
+    const { email, password, slug } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Missing credentials' });
+    }
+    const users = await getUsers();
+    const user = users.find(u => u.email === email && u.role === 'client');
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      return res.status(400).json({ error: 'Invalid credentials' });
+    }
+    // Optionally verify slug matches if provided
+    if (slug && user.slug !== slug) {
+      return res.status(400).json({ error: 'Invalid portal access' });
+    }
+    const token = jwt.sign(
+      { id: user.id, email: user.email, name: user.name, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+    res.json({ 
+      token, 
+      user: { 
+        id: user.id, 
+        email: user.email, 
+        name: user.name, 
+        role: user.role,
+        practiceName: user.practiceName,
+        isNewClient: user.isNewClient,
+        slug: user.slug,
+        assignedProjects: user.assignedProjects || []
+      }
+    });
+  } catch (error) {
+    console.error('Client login error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -364,7 +444,11 @@ app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
       name: u.name,
       role: u.role,
       createdAt: u.createdAt,
-      assignedProjects: u.assignedProjects || []
+      assignedProjects: u.assignedProjects || [],
+      // Client-specific fields
+      practiceName: u.practiceName || null,
+      isNewClient: u.isNewClient || false,
+      slug: u.slug || null
     }));
     res.json(safeUsers);
   } catch (error) {
@@ -375,7 +459,7 @@ app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
 app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
-    const { name, email, role, password, assignedProjects } = req.body;
+    const { name, email, role, password, assignedProjects, practiceName, isNewClient } = req.body;
     const users = await getUsers();
     const idx = users.findIndex(u => u.id === userId);
     if (idx === -1) return res.status(404).json({ error: 'User not found' });
@@ -386,13 +470,27 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
     if (password) users[idx].password = await bcrypt.hash(password, 10);
     if (assignedProjects !== undefined) users[idx].assignedProjects = assignedProjects;
     
+    // Client-specific fields
+    if (practiceName !== undefined) {
+      users[idx].practiceName = practiceName;
+      // Regenerate slug if practice name changes and user is a client
+      if (users[idx].role === 'client' && practiceName) {
+        const existingSlugs = users.filter((u, i) => i !== idx && u.slug).map(u => u.slug);
+        users[idx].slug = generateClientSlug(practiceName, existingSlugs);
+      }
+    }
+    if (isNewClient !== undefined) users[idx].isNewClient = isNewClient;
+    
     await db.set('users', users);
     res.json({ 
       id: users[idx].id, 
       email: users[idx].email, 
       name: users[idx].name, 
       role: users[idx].role,
-      assignedProjects: users[idx].assignedProjects || []
+      assignedProjects: users[idx].assignedProjects || [],
+      practiceName: users[idx].practiceName || null,
+      isNewClient: users[idx].isNewClient || false,
+      slug: users[idx].slug || null
     });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
@@ -1152,6 +1250,171 @@ app.get('/api/client/:linkId', async (req, res) => {
       project: { name: project.name, clientName: project.clientName },
       tasks: tasksWithOwnerNames
     });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============== ANNOUNCEMENTS ==============
+// Get all announcements (public, no auth required for clients)
+app.get('/api/announcements', async (req, res) => {
+  try {
+    const announcements = (await db.get('announcements')) || [];
+    // Sort by date, newest first
+    announcements.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    res.json(announcements);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Create announcement (admin only)
+app.post('/api/announcements', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { title, content, type } = req.body;
+    if (!title || !content) {
+      return res.status(400).json({ error: 'Title and content are required' });
+    }
+    const announcements = (await db.get('announcements')) || [];
+    const newAnnouncement = {
+      id: uuidv4(),
+      title,
+      content,
+      type: type || 'info', // info, warning, success
+      createdAt: new Date().toISOString(),
+      createdBy: req.user.name,
+      createdById: req.user.id
+    };
+    announcements.unshift(newAnnouncement);
+    // Keep only last 50 announcements
+    if (announcements.length > 50) announcements.length = 50;
+    await db.set('announcements', announcements);
+    res.json(newAnnouncement);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update announcement (admin only)
+app.put('/api/announcements/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { title, content, type } = req.body;
+    const announcements = (await db.get('announcements')) || [];
+    const idx = announcements.findIndex(a => a.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Announcement not found' });
+    
+    if (title) announcements[idx].title = title;
+    if (content) announcements[idx].content = content;
+    if (type) announcements[idx].type = type;
+    announcements[idx].updatedAt = new Date().toISOString();
+    announcements[idx].updatedBy = req.user.name;
+    
+    await db.set('announcements', announcements);
+    res.json(announcements[idx]);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete announcement (admin only)
+app.delete('/api/announcements/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const announcements = (await db.get('announcements')) || [];
+    const filtered = announcements.filter(a => a.id !== req.params.id);
+    await db.set('announcements', filtered);
+    res.json({ message: 'Announcement deleted' });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============== CLIENT PORTAL API (Authenticated Clients) ==============
+// Get client portal data for authenticated client
+app.get('/api/client-portal/data', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'client') {
+      return res.status(403).json({ error: 'Client access required' });
+    }
+    
+    const projects = await getProjects();
+    const users = await getUsers();
+    const announcements = (await db.get('announcements')) || [];
+    const activities = (await db.get('activity_log')) || [];
+    
+    // Get client's assigned projects
+    const clientProjects = projects.filter(p => 
+      (req.user.assignedProjects || []).includes(p.id)
+    );
+    
+    // Get tasks for each project (only client-visible ones)
+    const projectsWithTasks = await Promise.all(clientProjects.map(async (project) => {
+      const allTasks = await getTasks(project.id);
+      const clientTasks = allTasks.filter(t => t.showToClient).map(task => ({
+        ...task,
+        ownerDisplayName: task.owner 
+          ? (users.find(u => u.email === task.owner)?.name || task.owner)
+          : null
+      }));
+      return {
+        id: project.id,
+        name: project.name,
+        clientName: project.clientName,
+        status: project.status,
+        tasks: clientTasks
+      };
+    }));
+    
+    // Filter activities to client-safe events for their projects
+    const clientActivities = activities
+      .filter(a => 
+        (req.user.assignedProjects || []).includes(a.projectId) &&
+        ['task_completed', 'stage_completed', 'phase_completed'].includes(a.action)
+      )
+      .slice(0, 20);
+    
+    res.json({
+      user: {
+        name: req.user.name,
+        practiceName: req.user.practiceName,
+        isNewClient: req.user.isNewClient
+      },
+      projects: projectsWithTasks,
+      announcements: announcements.slice(0, 10),
+      activities: clientActivities
+    });
+  } catch (error) {
+    console.error('Client portal data error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get portal settings (admin configurable HubSpot embeds)
+app.get('/api/portal-settings', async (req, res) => {
+  try {
+    const settings = (await db.get('portal_settings')) || {
+      inventoryFormEmbed: '',
+      filesFormEmbed: '',
+      supportUrl: 'https://thrive365labs-49020024.hs-sites.com/support'
+    };
+    res.json(settings);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update portal settings (admin only)
+app.put('/api/portal-settings', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { inventoryFormEmbed, filesFormEmbed, supportUrl } = req.body;
+    const settings = {
+      inventoryFormEmbed: inventoryFormEmbed || '',
+      filesFormEmbed: filesFormEmbed || '',
+      supportUrl: supportUrl || 'https://thrive365labs-49020024.hs-sites.com/support',
+      updatedAt: new Date().toISOString(),
+      updatedBy: req.user.name
+    };
+    await db.set('portal_settings', settings);
+    res.json(settings);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }
@@ -2212,11 +2475,44 @@ app.get('/thrive365labslaunch/:slug', async (req, res) => {
   }
 });
 
+// ============== AUTHENTICATED CLIENT PORTAL ROUTES ==============
+// Client portal login page: /portal/:slug/login
+app.get('/portal/:slug/login', async (req, res) => {
+  const users = await getUsers();
+  const clientUser = users.find(u => u.role === 'client' && u.slug === req.params.slug);
+  if (clientUser) {
+    res.sendFile(__dirname + '/public/portal.html');
+  } else {
+    res.status(404).send('Portal not found');
+  }
+});
+
+// Client portal pages: /portal/:slug, /portal/:slug/*
+app.get('/portal/:slug', async (req, res) => {
+  const users = await getUsers();
+  const clientUser = users.find(u => u.role === 'client' && u.slug === req.params.slug);
+  if (clientUser) {
+    res.sendFile(__dirname + '/public/portal.html');
+  } else {
+    res.status(404).send('Portal not found');
+  }
+});
+
+app.get('/portal/:slug/*', async (req, res) => {
+  const users = await getUsers();
+  const clientUser = users.find(u => u.role === 'client' && u.slug === req.params.slug);
+  if (clientUser) {
+    res.sendFile(__dirname + '/public/portal.html');
+  } else {
+    res.status(404).send('Portal not found');
+  }
+});
+
 // Legacy root-level route DISABLED - use /thrive365labslaunch/{slug} instead
 // Redirect old URLs to new format for backwards compatibility
 app.get('/:slug', async (req, res, next) => {
   // Skip if it looks like a file request or known route
-  if (req.params.slug.includes('.') || ['api', 'client', 'favicon.ico', 'thrive365labsLAUNCH', 'thrive365labslaunch'].includes(req.params.slug)) {
+  if (req.params.slug.includes('.') || ['api', 'client', 'favicon.ico', 'thrive365labsLAUNCH', 'thrive365labslaunch', 'portal'].includes(req.params.slug)) {
     return next();
   }
   

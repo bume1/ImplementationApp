@@ -10,7 +10,9 @@ Preferred communication style: Simple, everyday language.
 
 ### UI/UX Decisions
 - **Branding**: Thrive 365 Labs logo, primary color #045E9F (blue), accent color #00205A (dark navy), Open Sans font.
-- **Client Portal**: Embeddable, unauthenticated views for external stakeholders.
+- **Client Portal**: Authenticated client portal with practice-specific logins at /portal/{slug}. Includes sidebar navigation: Home (announcements, activity feed), Launch Milestones (for new clients), Inventory Management, Customer Support, and Files.
+- **Portal Settings**: Admin-configurable HubSpot embed codes for inventory forms and file uploads, plus customer support URL.
+- **Announcements Manager**: Admin component to create/edit/delete announcements visible on client portal homepage.
 - **Reporting**: Dedicated "Launch Reports" page with summary statistics and charts (Launches by Client, Go-Live Timelines).
 - **Activity Log**: Admin-only view of system activities.
 
