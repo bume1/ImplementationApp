@@ -563,7 +563,7 @@ const AppHeader = ({ user, onLogout, children }) => {
       <div className="bg-white border-b shadow-sm">
         <div className="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
           <div className="flex items-center gap-4">
-            <img src="/logo.webp" alt="Thrive 365 Labs" className="h-12" />
+            <img src="https://thrive365labs.com/wp-content/uploads/2023/04/Thrive-365-Labs-Logo-white-background.png" alt="Thrive 365 Labs" className="h-12" />
           </div>
           <nav className="flex items-center gap-6">
             {children}
@@ -748,10 +748,10 @@ const AuthScreen = ({ onLogin }) => {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center p-4">
       <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
         <div className="flex justify-center mb-6">
-          <img src="/logo.webp" alt="Thrive 365 Labs" className="h-16" />
+          <img src="https://thrive365labs.com/wp-content/uploads/2023/04/Thrive-365-Labs-Logo-white-background.png" alt="Thrive 365 Labs" className="h-16" />
         </div>
-        <h1 className="text-2xl font-bold mb-2 text-accent text-center">Portal</h1>
-        <p className="text-gray-600 mb-6 text-center">Thrive 365 Labs Web App</p>
+        <h1 className="text-2xl font-bold mb-2 text-accent text-center">New Client Implementations</h1>
+        <p className="text-gray-600 mb-6 text-center">Thrive 365 Labs Launch Tracker</p>
 
 
         {mode === 'forgot' && (
@@ -4477,18 +4477,6 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
                       placeholder="e.g., Dallas Medical Center"
                     />
                   </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="isNewClient"
-                      checked={newUser.isNewClient}
-                      onChange={(e) => setNewUser({...newUser, isNewClient: e.target.checked})}
-                      className="w-4 h-4"
-                    />
-                    <label htmlFor="isNewClient" className="text-sm font-medium">
-                      New Client (show Launch Milestones)
-                    </label>
-                  </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">Practice Logo</label>
                     <div className="space-y-2">
@@ -4588,8 +4576,8 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
                     {u.role === 'client' && u.practiceName && (
                       <div className="text-xs text-gray-500 mt-1">{u.practiceName}</div>
                     )}
-                    {u.role === 'client' && u.isNewClient && (
-                      <span className="ml-1 px-1.5 py-0.5 bg-green-100 text-green-700 text-xs rounded">New</span>
+                    {u.role === 'client' && u.assignedProjects?.length > 0 && (
+                      <span className="ml-1 px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded">{u.assignedProjects.length} project{u.assignedProjects.length > 1 ? 's' : ''}</span>
                     )}
                   </td>
                   <td className="px-6 py-4 text-gray-600 text-sm">
@@ -4682,18 +4670,6 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
                         className="w-full px-3 py-2 border rounded-md"
                         placeholder="e.g., Dallas Medical Center"
                       />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        id="editIsNewClient"
-                        checked={editingUser.isNewClient || false}
-                        onChange={(e) => setEditingUser({...editingUser, isNewClient: e.target.checked})}
-                        className="w-4 h-4"
-                      />
-                      <label htmlFor="editIsNewClient" className="text-sm font-medium">
-                        New Client (show Launch Milestones)
-                      </label>
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">Practice Logo</label>

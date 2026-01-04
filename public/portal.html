@@ -87,6 +87,11 @@
           } else {
             localStorage.setItem('portal_token', result.token);
             localStorage.setItem('portal_user', JSON.stringify(result.user));
+            // If logged in from central /portal without slug, redirect to user's portal
+            if (!slug && result.user.slug) {
+              window.location.href = `/portal/${result.user.slug}`;
+              return;
+            }
             onLogin(result.token, result.user);
           }
         } catch (err) {
@@ -155,116 +160,151 @@
       );
     };
     
-    const Sidebar = ({ activePage, onNavigate, user }) => {
+    // SVG icons for consistent branding
+    const Icons = {
+      home: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>,
+      target: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>,
+      package: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>,
+      clipboard: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>,
+      chart: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>,
+      chat: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>,
+      folder: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>,
+      logout: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>,
+      megaphone: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"/></svg>,
+      activity: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>,
+      warning: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>,
+      calendar: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>,
+      list: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>,
+      menu: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"/></svg>,
+      close: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>
+    };
+    
+    const Sidebar = ({ activePage, onNavigate, user, isMobileOpen, onClose }) => {
       const [inventoryExpanded, setInventoryExpanded] = useState(activePage === 'inventory' || activePage === 'reports');
       
       const mainItems = [
-        { id: 'home', label: 'Home', icon: '🏠' }
+        { id: 'home', label: 'Home', icon: Icons.home }
       ];
       
-      if (user?.isNewClient) {
-        mainItems.push({ id: 'milestones', label: 'Launch Milestones', icon: '🎯' });
+      // Show Launch Milestones for clients with assigned projects
+      if (user?.assignedProjects?.length > 0) {
+        mainItems.push({ id: 'milestones', label: 'Launch Milestones', icon: Icons.target });
       }
       
       const bottomItems = [
-        { id: 'support', label: 'Customer Support', icon: '💬' },
-        { id: 'files', label: 'Files', icon: '📁' }
+        { id: 'support', label: 'Customer Support', icon: Icons.chat },
+        { id: 'files', label: 'Files', icon: Icons.folder }
       ];
       
+      const handleNavigate = (id) => {
+        onNavigate(id);
+        if (onClose) onClose();
+      };
+      
       return (
-        <aside className="w-64 bg-white border-r min-h-screen fixed left-0 top-0">
-          <div className="p-4 border-b">
-            {user?.logo ? (
-              <img src={user.logo} alt={user.practiceName || 'Practice Logo'} className="h-12 max-w-full object-contain" />
-            ) : (
-              <img src="https://www.thrive365labs.com/wp-content/uploads/2024/05/Thrive-Logo-Blue-Gradient.png" alt="Thrive 365 Labs" className="h-10" />
-            )}
-          </div>
+        <>
+          {/* Mobile overlay */}
+          {isMobileOpen && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden" onClick={onClose}></div>
+          )}
           
-          <div className="p-4 border-b bg-gray-50">
-            <p className="text-sm text-gray-500">Welcome,</p>
-            <p className="font-semibold text-accent">{user?.name || 'Client'}</p>
-            <p className="text-xs text-gray-500">{user?.practiceName}</p>
-          </div>
-          
-          <nav className="p-2">
-            {mainItems.map(item => (
-              <button
-                key={item.id}
-                onClick={() => onNavigate(item.id)}
-                className={`w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center gap-3 ${
-                  activePage === item.id ? 'active' : 'text-gray-700'
-                }`}
-              >
-                <span className="text-lg">{item.icon}</span>
-                <span className="font-medium">{item.label}</span>
-              </button>
-            ))}
-            
-            <div className="mt-1">
-              <button
-                onClick={() => setInventoryExpanded(!inventoryExpanded)}
-                className={`w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center justify-between ${
-                  (activePage === 'inventory' || activePage === 'reports') ? 'active' : 'text-gray-700'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-lg">📦</span>
-                  <span className="font-medium">Inventory</span>
-                </div>
-                <span className="text-xs">{inventoryExpanded ? '▼' : '▶'}</span>
-              </button>
-              
-              {inventoryExpanded && (
-                <div className="ml-6 mt-1 space-y-1">
-                  <button
-                    onClick={() => onNavigate('inventory')}
-                    className={`w-full text-left px-4 py-2 rounded-lg text-sm flex items-center gap-2 ${
-                      activePage === 'inventory' ? 'bg-primary/10 text-primary font-medium' : 'text-gray-600 hover:bg-gray-100'
-                    }`}
-                  >
-                    <span>📋</span> Weekly Update
-                  </button>
-                  <button
-                    onClick={() => onNavigate('reports')}
-                    className={`w-full text-left px-4 py-2 rounded-lg text-sm flex items-center gap-2 ${
-                      activePage === 'reports' ? 'bg-primary/10 text-primary font-medium' : 'text-gray-600 hover:bg-gray-100'
-                    }`}
-                  >
-                    <span>📊</span> Reports & Alerts
-                  </button>
-                </div>
+          <aside className={`w-64 bg-white border-r min-h-screen fixed left-0 top-0 z-50 transform transition-transform duration-300 ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
+            <div className="p-4 border-b flex justify-between items-center">
+              {user?.logo ? (
+                <img src={user.logo} alt={user.practiceName || 'Practice Logo'} className="h-12 max-w-full object-contain" />
+              ) : (
+                <img src="https://thrive365labs.com/wp-content/uploads/2023/04/Thrive-365-Labs-Logo-white-background.png" alt="Thrive 365 Labs" className="h-10" />
               )}
+              <button onClick={onClose} className="lg:hidden text-gray-500 hover:text-gray-700">
+                {Icons.close}
+              </button>
             </div>
             
-            {bottomItems.map(item => (
+            <div className="p-4 border-b bg-gray-50">
+              <p className="text-sm text-gray-500">Welcome,</p>
+              <p className="font-semibold text-accent">{user?.name || 'Client'}</p>
+              <p className="text-xs text-gray-500">{user?.practiceName}</p>
+            </div>
+            
+            <nav className="p-2">
+              {mainItems.map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => handleNavigate(item.id)}
+                  className={`w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center gap-3 ${
+                    activePage === item.id ? 'active' : 'text-gray-700'
+                  }`}
+                >
+                  <span className="text-primary">{item.icon}</span>
+                  <span className="font-medium">{item.label}</span>
+                </button>
+              ))}
+              
+              <div className="mt-1">
+                <button
+                  onClick={() => setInventoryExpanded(!inventoryExpanded)}
+                  className={`w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center justify-between ${
+                    (activePage === 'inventory' || activePage === 'reports') ? 'active' : 'text-gray-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-primary">{Icons.package}</span>
+                    <span className="font-medium">Inventory</span>
+                  </div>
+                  <span className="text-xs">{inventoryExpanded ? '▼' : '▶'}</span>
+                </button>
+                
+                {inventoryExpanded && (
+                  <div className="ml-6 mt-1 space-y-1">
+                    <button
+                      onClick={() => handleNavigate('inventory')}
+                      className={`w-full text-left px-4 py-2 rounded-lg text-sm flex items-center gap-2 ${
+                        activePage === 'inventory' ? 'bg-primary/10 text-primary font-medium' : 'text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      <span className="text-primary">{Icons.clipboard}</span> Weekly Update
+                    </button>
+                    <button
+                      onClick={() => handleNavigate('reports')}
+                      className={`w-full text-left px-4 py-2 rounded-lg text-sm flex items-center gap-2 ${
+                        activePage === 'reports' ? 'bg-primary/10 text-primary font-medium' : 'text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      <span className="text-primary">{Icons.chart}</span> Reports & Alerts
+                    </button>
+                  </div>
+                )}
+              </div>
+              
+              {bottomItems.map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => handleNavigate(item.id)}
+                  className={`w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center gap-3 ${
+                    activePage === item.id ? 'active' : 'text-gray-700'
+                  }`}
+                >
+                  <span className="text-primary">{item.icon}</span>
+                  <span className="font-medium">{item.label}</span>
+                </button>
+              ))}
+            </nav>
+            
+            <div className="absolute bottom-0 left-0 right-0 p-4 border-t">
               <button
-                key={item.id}
-                onClick={() => onNavigate(item.id)}
-                className={`w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center gap-3 ${
-                  activePage === item.id ? 'active' : 'text-gray-700'
-                }`}
+                onClick={() => {
+                  localStorage.removeItem('portal_token');
+                  localStorage.removeItem('portal_user');
+                  window.location.reload();
+                }}
+                className="w-full text-left px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2"
               >
-                <span className="text-lg">{item.icon}</span>
-                <span className="font-medium">{item.label}</span>
+                {Icons.logout}
+                <span>Sign Out</span>
               </button>
-            ))}
-          </nav>
-          
-          <div className="absolute bottom-0 left-0 right-0 p-4 border-t">
-            <button
-              onClick={() => {
-                localStorage.removeItem('portal_token');
-                localStorage.removeItem('portal_user');
-                window.location.reload();
-              }}
-              className="w-full text-left px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2"
-            >
-              <span>🚪</span>
-              <span>Sign Out</span>
-            </button>
-          </div>
-        </aside>
+            </div>
+          </aside>
+        </>
       );
     };
     
@@ -288,11 +328,11 @@
           <div className="grid md:grid-cols-2 gap-6">
             <div className="bg-white p-6 rounded-xl shadow-sm">
               <h2 className="text-lg font-bold text-accent mb-4 flex items-center gap-2">
-                <span>📢</span> Announcements
+                <span className="text-primary">{Icons.megaphone}</span> Announcements
               </h2>
               {announcements && announcements.length > 0 ? (
-                <div className="space-y-3">
-                  {announcements.slice(0, 5).map(ann => (
+                <div className="space-y-3 max-h-64 overflow-y-auto">
+                  {announcements.map(ann => (
                     <div key={ann.id} className={`p-3 rounded-lg border-l-4 ${
                       ann.type === 'warning' ? 'border-yellow-500 bg-yellow-50' :
                       ann.type === 'success' ? 'border-green-500 bg-green-50' :
@@ -313,16 +353,16 @@
             
             <div className="bg-white p-6 rounded-xl shadow-sm">
               <h2 className="text-lg font-bold text-accent mb-4 flex items-center gap-2">
-                <span>📊</span> Recent Activity
+                <span className="text-primary">{Icons.activity}</span> Recent Activity
               </h2>
               {data?.activities && data.activities.length > 0 ? (
                 <div className="space-y-2">
                   {data.activities.slice(0, 5).map((act, idx) => {
                     const getIcon = () => {
-                      if (act.action === 'inventory_submitted') return { icon: '📦', color: 'text-blue-500' };
-                      if (act.action === 'form_submitted') return { icon: '📝', color: 'text-purple-500' };
-                      if (act.action === 'phase_completed') return { icon: '🎉', color: 'text-yellow-500' };
-                      return { icon: '✓', color: 'text-green-500' };
+                      if (act.action === 'inventory_submitted') return { icon: Icons.package, color: 'text-blue-500' };
+                      if (act.action === 'form_submitted') return { icon: Icons.clipboard, color: 'text-purple-500' };
+                      if (act.action === 'phase_completed') return { icon: Icons.target, color: 'text-yellow-500' };
+                      return { icon: Icons.target, color: 'text-green-500' };
                     };
                     const getLabel = () => {
                       if (act.action === 'inventory_submitted') return 'Weekly inventory submitted';
@@ -352,17 +392,17 @@
           
           <div className="grid md:grid-cols-3 gap-4">
             <a href="#" onClick={(e) => { e.preventDefault(); }} className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center">
-              <div className="text-4xl mb-2">📦</div>
+              <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.package, { className: 'w-10 h-10' })}</div>
               <h3 className="font-semibold text-gray-800">Inventory Management</h3>
               <p className="text-sm text-gray-500 mt-1">Submit inventory requests</p>
             </a>
             <a href="#" onClick={(e) => { e.preventDefault(); }} className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center">
-              <div className="text-4xl mb-2">💬</div>
+              <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.chat, { className: 'w-10 h-10' })}</div>
               <h3 className="font-semibold text-gray-800">Customer Support</h3>
               <p className="text-sm text-gray-500 mt-1">Get help from our team</p>
             </a>
             <a href="#" onClick={(e) => { e.preventDefault(); }} className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center">
-              <div className="text-4xl mb-2">📁</div>
+              <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.folder, { className: 'w-10 h-10' })}</div>
               <h3 className="font-semibold text-gray-800">Files</h3>
               <p className="text-sm text-gray-500 mt-1">Upload and view documents</p>
             </a>
@@ -422,7 +462,7 @@
                       {tasks.filter(t => t.phase === phase).map(task => (
                         <div key={task.id} className="flex items-center gap-3 text-sm">
                           <span className={task.completed ? 'text-green-500' : 'text-gray-300'}>
-                            {task.completed ? '✓' : '○'}
+                            {task.completed ? <svg className="w-4 h-4 inline" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/></svg> : '○'}
                           </span>
                           <span className={task.completed ? 'text-gray-500 line-through' : 'text-gray-700'}>
                             {task.clientName || task.taskTitle}
@@ -786,7 +826,7 @@
           <div className="grid md:grid-cols-2 gap-6">
             <div className="bg-white p-6 rounded-xl shadow-sm">
               <h2 className="text-lg font-bold text-red-600 mb-4 flex items-center gap-2">
-                <span>⚠️</span> Low Stock Alerts ({lowStock.length})
+                <span className="text-red-600">{Icons.warning}</span> Low Stock Alerts ({lowStock.length})
               </h2>
               {lowStock.length > 0 ? (
                 <div className="space-y-2 max-h-64 overflow-y-auto">
@@ -802,7 +842,7 @@
                 </div>
               ) : (
                 <div className="text-center py-8 text-gray-500">
-                  <div className="text-4xl mb-2">✓</div>
+                  <div className="flex justify-center mb-2 text-green-500">{React.cloneElement(Icons.target, { className: 'w-10 h-10' })}</div>
                   <p>All items are well stocked</p>
                 </div>
               )}
@@ -810,7 +850,7 @@
 
             <div className="bg-white p-6 rounded-xl shadow-sm">
               <h2 className="text-lg font-bold text-orange-600 mb-4 flex items-center gap-2">
-                <span>📅</span> Expiring Soon ({expiring.length})
+                <span className="text-orange-600">{Icons.calendar}</span> Expiring Soon ({expiring.length})
               </h2>
               {expiring.length > 0 ? (
                 <div className="space-y-2 max-h-64 overflow-y-auto">
@@ -829,7 +869,7 @@
                 </div>
               ) : (
                 <div className="text-center py-8 text-gray-500">
-                  <div className="text-4xl mb-2">✓</div>
+                  <div className="flex justify-center mb-2 text-green-500">{React.cloneElement(Icons.target, { className: 'w-10 h-10' })}</div>
                   <p>No items expiring soon</p>
                 </div>
               )}
@@ -839,7 +879,7 @@
           {usageTrends?.consumptionRate?.length > 0 && (
             <div className="bg-white p-6 rounded-xl shadow-sm">
               <h2 className="text-lg font-bold text-purple-600 mb-4 flex items-center gap-2">
-                <span>📊</span> Top Consumed Items (Rolling Average)
+                <span className="text-purple-600">{Icons.chart}</span> Top Consumed Items (Rolling Average)
               </h2>
               <p className="text-xs text-gray-500 mb-3">Average weekly usage calculated across up to 12 submissions for accuracy</p>
               <div className="overflow-x-auto">
@@ -929,40 +969,40 @@
               
               {/* Line chart */}
               {selectedItems.length > 0 ? (
-                <div className="relative h-48 border rounded-lg p-4 bg-gray-50">
+                <div className="relative h-80 border rounded-lg p-4 bg-gray-50">
                   {(() => {
                     const selectedData = selectedItems.map(key => usageTrends.itemTimeSeries.find(i => i.key === key)).filter(Boolean);
                     const allDates = [...new Set(selectedData.flatMap(item => item.dataPoints.map(dp => dp.date)))].sort();
                     const maxQty = Math.max(...selectedData.flatMap(item => item.dataPoints.map(dp => dp.quantity)), 1);
-                    const chartWidth = 100;
-                    const chartHeight = 100;
+                    const chartWidth = 300;
+                    const chartHeight = 200;
                     
                     return (
-                      <svg viewBox={`0 0 ${chartWidth + 20} ${chartHeight + 20}`} className="w-full h-full" preserveAspectRatio="xMidYMid meet">
+                      <svg viewBox={`0 0 ${chartWidth + 50} ${chartHeight + 40}`} className="w-full h-full" preserveAspectRatio="xMidYMid meet">
                         {/* Y-axis labels */}
-                        <text x="0" y="15" className="text-[3px] fill-gray-400">{maxQty}</text>
-                        <text x="0" y={chartHeight / 2 + 10} className="text-[3px] fill-gray-400">{Math.round(maxQty / 2)}</text>
-                        <text x="0" y={chartHeight + 5} className="text-[3px] fill-gray-400">0</text>
+                        <text x="5" y="20" fontSize="10" fill="#6b7280">{maxQty}</text>
+                        <text x="5" y={chartHeight / 2 + 15} fontSize="10" fill="#6b7280">{Math.round(maxQty / 2)}</text>
+                        <text x="5" y={chartHeight + 5} fontSize="10" fill="#6b7280">0</text>
                         
                         {/* Grid lines */}
                         {[0, 0.25, 0.5, 0.75, 1].map((pct, idx) => (
-                          <line key={idx} x1="15" y1={chartHeight * pct + 5} x2={chartWidth + 15} y2={chartHeight * pct + 5} stroke="#e5e7eb" strokeWidth="0.5" />
+                          <line key={idx} x1="35" y1={chartHeight * pct + 10} x2={chartWidth + 35} y2={chartHeight * pct + 10} stroke="#e5e7eb" strokeWidth="1" />
                         ))}
                         
                         {/* Lines for each selected item */}
                         {selectedData.map((item, itemIdx) => {
                           const points = allDates.map((date, dateIdx) => {
                             const dp = item.dataPoints.find(p => p.date === date);
-                            const x = 15 + (dateIdx / Math.max(allDates.length - 1, 1)) * chartWidth;
-                            const y = 5 + chartHeight - (dp ? (dp.quantity / maxQty) * chartHeight : 0);
+                            const x = 35 + (dateIdx / Math.max(allDates.length - 1, 1)) * chartWidth;
+                            const y = 10 + chartHeight - (dp ? (dp.quantity / maxQty) * chartHeight : 0);
                             return `${x},${y}`;
                           }).join(' ');
-                          return <polyline key={item.key} points={points} fill="none" stroke={CHART_COLORS[itemIdx % CHART_COLORS.length]} strokeWidth="1.5" />;
+                          return <polyline key={item.key} points={points} fill="none" stroke={CHART_COLORS[itemIdx % CHART_COLORS.length]} strokeWidth="2" />;
                         })}
                         
                         {/* X-axis date labels */}
                         {allDates.map((date, idx) => (
-                          <text key={idx} x={15 + (idx / Math.max(allDates.length - 1, 1)) * chartWidth} y={chartHeight + 15} textAnchor="middle" className="text-[2.5px] fill-gray-500">
+                          <text key={idx} x={35 + (idx / Math.max(allDates.length - 1, 1)) * chartWidth} y={chartHeight + 25} textAnchor="middle" fontSize="9" fill="#6b7280">
                             {new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                           </text>
                         ))}
@@ -980,7 +1020,7 @@
 
           <div className="bg-white p-6 rounded-xl shadow-sm">
             <h2 className="text-lg font-bold text-accent mb-4 flex items-center gap-2">
-              <span>📋</span> Submission History
+              <span className="text-accent">{Icons.list}</span> Submission History
             </h2>
             {submissions && submissions.length > 0 ? (
               <div className="space-y-2">
@@ -1015,7 +1055,7 @@
           </div>
           
           <div className="bg-white p-6 rounded-xl shadow-sm text-center">
-            <div className="text-6xl mb-4">💬</div>
+            <div className="flex justify-center mb-4 text-primary">{React.cloneElement(Icons.chat, { className: 'w-16 h-16' })}</div>
             <h2 className="text-xl font-semibold text-gray-800 mb-2">Need Assistance?</h2>
             <p className="text-gray-600 mb-6">
               Our support team is ready to help you with any questions or issues.
@@ -1096,7 +1136,7 @@
               <div dangerouslySetInnerHTML={{ __html: settings.filesFormEmbed }} />
             ) : (
               <div className="text-center py-8 text-gray-500">
-                <div className="text-4xl mb-2">📁</div>
+                <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.folder, { className: 'w-10 h-10' })}</div>
                 <p>File upload form not configured yet.</p>
                 <p className="text-sm mt-2">Please contact your administrator.</p>
               </div>
@@ -1113,6 +1153,7 @@
       const [announcements, setAnnouncements] = useState([]);
       const [documents, setDocuments] = useState([]);
       const [loading, setLoading] = useState(true);
+      const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
       
       const slug = getSlugFromUrl();
       
@@ -1150,14 +1191,25 @@
       }
       
       return (
-        <div className="flex">
+        <div className="flex min-h-screen">
+          {/* Mobile header */}
+          <div className="fixed top-0 left-0 right-0 bg-white border-b z-30 lg:hidden p-4 flex justify-between items-center">
+            <button onClick={() => setMobileMenuOpen(true)} className="text-gray-600 hover:text-gray-800">
+              {Icons.menu}
+            </button>
+            <img src="https://thrive365labs.com/wp-content/uploads/2023/04/Thrive-365-Labs-Logo-white-background.png" alt="Thrive 365 Labs" className="h-8" />
+            <div className="w-6"></div>
+          </div>
+          
           <Sidebar 
             activePage={activePage} 
             onNavigate={setActivePage} 
             user={data?.user || user}
+            isMobileOpen={mobileMenuOpen}
+            onClose={() => setMobileMenuOpen(false)}
           />
           
-          <main className="flex-1 ml-64 p-8">
+          <main className="flex-1 lg:ml-64 p-4 lg:p-8 mt-16 lg:mt-0">
             {activePage === 'home' && <HomePage data={data} announcements={announcements} />}
             {activePage === 'milestones' && <MilestonesPage data={data} />}
             {activePage === 'inventory' && <InventoryPage token={token} slug={slug} />}
@@ -1186,12 +1238,21 @@
         setUser(newUser);
       };
       
+      // Handle central /portal login (no slug) - show login page
       if (!slug) {
+        if (!token || !user) {
+          return <LoginPage slug={null} onLogin={handleLogin} />;
+        }
+        // User logged in from central portal but has no slug in URL - redirect
+        if (user.slug) {
+          window.location.href = `/portal/${user.slug}`;
+          return null;
+        }
         return (
           <div className="min-h-screen flex items-center justify-center bg-gray-100">
             <div className="text-center">
               <h1 className="text-2xl font-bold text-red-600">Portal Not Found</h1>
-              <p className="text-gray-600 mt-2">Invalid portal URL.</p>
+              <p className="text-gray-600 mt-2">Invalid portal configuration.</p>
             </div>
           </div>
         );

@@ -71,6 +71,18 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes (January 2026)
 
+### UI/UX Improvements (Jan 4)
+- **Central Client Portal Login**: New /portal URL where clients can log in and be redirected to their practice-specific portal
+- **Implementation App Title**: Login page now titled "New Client Implementations" with "Thrive 365 Labs Launch Tracker" subtitle
+- **Logo Consistency**: Fixed Thrive 365 Labs logo across all pages using official logo from thrive365labs.com
+- **SVG Icon System**: Replaced emoji icons with branded SVG icons using Thrive primary color (#045E9F)
+- **Mobile Responsive Portal**: Added hamburger menu, collapsible sidebar, and responsive layouts for mobile devices
+- **Launch Milestones Access**: Now shown automatically when client has assigned projects (removed manual checkbox toggle)
+- **Scrollable Announcements**: Announcements section on portal homepage now scrollable for long lists
+- **Enlarged Charts**: Inventory report chart increased from h-48 to h-80 with improved axis labels and line visibility
+
+
+
 ### Inventory Management System
 - **Quick Update Table**: Full inventory form with 79 items across 4 categories (Ancillary Supplies, Calibrators, Controls, Reagent)
 - **Batch Tracking**: Each item supports multiple lots/expiry dates with data structure `{ batches: [{lotNumber, expiry, openQty, openDate, closedQty, notes}] }`
