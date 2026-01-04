@@ -563,7 +563,7 @@ const AppHeader = ({ user, onLogout, children }) => {
       <div className="bg-white border-b shadow-sm">
         <div className="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
           <div className="flex items-center gap-4">
-            <img src="https://thrive365labs.com/wp-content/uploads/2023/04/Thrive-365-Labs-Logo-white-background.png" alt="Thrive 365 Labs" className="h-12" />
+            <img src="/thrive365-logo.svg" alt="Thrive 365 Labs" className="h-12" />
           </div>
           <nav className="flex items-center gap-6">
             {children}
@@ -748,7 +748,7 @@ const AuthScreen = ({ onLogin }) => {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center p-4">
       <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
         <div className="flex justify-center mb-6">
-          <img src="https://thrive365labs.com/wp-content/uploads/2023/04/Thrive-365-Labs-Logo-white-background.png" alt="Thrive 365 Labs" className="h-16" />
+          <img src="/thrive365-logo.svg" alt="Thrive 365 Labs" className="h-16" />
         </div>
         <h1 className="text-2xl font-bold mb-2 text-accent text-center">New Client Implementations</h1>
         <p className="text-gray-600 mb-6 text-center">Thrive 365 Labs Launch Tracker</p>
@@ -2176,7 +2176,7 @@ const SoftPilotChecklist = ({ token, project, tasks, teamMembers, onClose, onSub
   </style>
 </head>
 <body>
-  <img src="https://thrive365labs.com/wp-content/uploads/2023/04/Thrive-365-Labs-Logo-white-background.png" alt="Thrive 365 Labs" style="max-width: 200px; margin-bottom: 20px;">
+  <img src="/thrive365-logo.svg" alt="Thrive 365 Labs" style="max-width: 200px; margin-bottom: 20px;">
   <h1>Soft-Pilot Checklist</h1>
   <p style="color: #6b7280; margin-bottom: 5px;"><strong>Project:</strong> ${project.name}</p>
   <p style="color: #6b7280; margin-bottom: 20px;"><strong>Client:</strong> ${project.clientName}</p>
