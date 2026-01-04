@@ -64,7 +64,10 @@
         fetch(`${API_URL}/api/portal-settings`).then(r => r.json()),
       
       getAnnouncements: () =>
-        fetch(`${API_URL}/api/announcements`).then(r => r.json())
+        fetch(`${API_URL}/api/announcements`).then(r => r.json()),
+      
+      getClientDocuments: (slug) =>
+        fetch(`${API_URL}/api/client-documents/${slug}`).then(r => r.json())
     };
     
     const LoginPage = ({ slug, onLogin }) => {
@@ -417,20 +420,70 @@
       );
     };
     
-    const FilesPage = ({ settings }) => {
+    const FilesPage = ({ settings, documents }) => {
+      const groupedDocs = (documents || []).reduce((acc, doc) => {
+        const cat = doc.category || 'General';
+        if (!acc[cat]) acc[cat] = [];
+        acc[cat].push(doc);
+        return acc;
+      }, {});
+
       return (
         <div className="space-y-6">
           <div className="bg-white p-6 rounded-xl shadow-sm">
             <h1 className="text-2xl font-bold text-accent">Files</h1>
-            <p className="text-gray-600 mt-1">Upload and manage your documents</p>
+            <p className="text-gray-600 mt-1">Access your documents and upload files</p>
           </div>
           
           <div className="bg-white p-6 rounded-xl shadow-sm">
+            <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <span>📥</span> Documents For You
+            </h2>
+            {documents && documents.length > 0 ? (
+              <div className="space-y-4">
+                {Object.entries(groupedDocs).map(([category, docs]) => (
+                  <div key={category}>
+                    <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">{category}</h3>
+                    <div className="space-y-2">
+                      {docs.map(doc => (
+                        <a
+                          key={doc.id}
+                          href={doc.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-3 p-3 rounded-lg border hover:bg-gray-50 transition group"
+                        >
+                          <span className="text-2xl">📄</span>
+                          <div className="flex-1">
+                            <p className="font-medium text-gray-800 group-hover:text-primary">{doc.title}</p>
+                            {doc.description && (
+                              <p className="text-sm text-gray-500">{doc.description}</p>
+                            )}
+                          </div>
+                          <span className="text-primary text-sm">Download →</span>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <div className="text-4xl mb-2">📂</div>
+                <p>No documents available yet.</p>
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white p-6 rounded-xl shadow-sm">
+            <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <span>📤</span> Upload Files
+            </h2>
             {settings?.filesFormEmbed ? (
               <div dangerouslySetInnerHTML={{ __html: settings.filesFormEmbed }} />
             ) : (
-              <div className="text-center py-12 text-gray-500">
-                <div className="text-4xl mb-4">📁</div>
+              <div className="text-center py-8 text-gray-500">
+                <div className="text-4xl mb-2">📁</div>
                 <p>File upload form not configured yet.</p>
                 <p className="text-sm mt-2">Please contact your administrator.</p>
               </div>
@@ -445,19 +498,24 @@
       const [data, setData] = useState(null);
       const [settings, setSettings] = useState(null);
       const [announcements, setAnnouncements] = useState([]);
+      const [documents, setDocuments] = useState([]);
       const [loading, setLoading] = useState(true);
+      
+      const slug = getSlugFromUrl();
       
       useEffect(() => {
         const loadData = async () => {
           try {
-            const [portalData, portalSettings, announcementsData] = await Promise.all([
+            const [portalData, portalSettings, announcementsData, docsData] = await Promise.all([
               api.getPortalData(token),
               api.getPortalSettings(),
-              api.getAnnouncements()
+              api.getAnnouncements(),
+              api.getClientDocuments(slug)
             ]);
             setData(portalData);
             setSettings(portalSettings);
             setAnnouncements(announcementsData);
+            setDocuments(docsData);
           } catch (err) {
             console.error('Failed to load portal data:', err);
           } finally {
@@ -465,7 +523,7 @@
           }
         };
         loadData();
-      }, [token]);
+      }, [token, slug]);
       
       if (loading) {
         return (
@@ -491,7 +549,7 @@
             {activePage === 'milestones' && <MilestonesPage data={data} />}
             {activePage === 'inventory' && <InventoryPage settings={settings} />}
             {activePage === 'support' && <SupportPage settings={settings} />}
-            {activePage === 'files' && <FilesPage settings={settings} />}
+            {activePage === 'files' && <FilesPage settings={settings} documents={documents} />}
             
             <footer className="mt-12 text-center text-sm text-gray-500">
               <p>Powered by Thrive365Labs | Developed by Bianca G. C. Ume, MD, MBA, MS</p>
