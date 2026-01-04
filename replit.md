@@ -73,13 +73,38 @@ Preferred communication style: Simple, everyday language.
 
 ### UI/UX Improvements (Jan 4)
 - **Central Client Portal Login**: New /portal URL where clients can log in and be redirected to their practice-specific portal
+- **Admin Portal Access**: Admins can log into /portal with admin credentials to access portal management features
+- **Admin Portal Dashboard**: Dedicated admin view with Portal Settings, Announcements Manager, Client Documents, and Client Users pages
 - **Implementation App Title**: Login page now titled "New Client Implementations" with "Thrive 365 Labs Launch Tracker" subtitle
 - **Logo Consistency**: Fixed Thrive 365 Labs logo across all pages using official logo from thrive365labs.com
 - **SVG Icon System**: Replaced emoji icons with branded SVG icons using Thrive primary color (#045E9F)
-- **Mobile Responsive Portal**: Added hamburger menu, collapsible sidebar, and responsive layouts for mobile devices
+- **Responsive Design**: Optimized for both desktop web AND mobile with hamburger menu, collapsible sidebar, responsive grids (grid-cols-1 sm:grid-cols-2 lg:grid-cols-3), and flexible layouts
 - **Launch Milestones Access**: Now shown automatically when client has assigned projects (removed manual checkbox toggle)
 - **Scrollable Announcements**: Announcements section on portal homepage now scrollable for long lists
 - **Enlarged Charts**: Inventory report chart increased from h-48 to h-80 with improved axis labels and line visibility
+
+## Application Link Tree
+
+### Internal (Admin/Staff) Links
+| URL | Description | Access |
+|-----|-------------|--------|
+| `/` | Implementation App Login | Admin, Users |
+| `/` (after login) | Project Management Dashboard | Admin, Users |
+| `/thrive365labsLAUNCH` | Alternative login path | Admin, Users |
+
+### Client Portal Links
+| URL | Description | Access |
+|-----|-------------|--------|
+| `/portal` | Central Client Portal Login | Clients, Admins |
+| `/portal/{slug}` | Practice-specific client portal | Client (specific practice) |
+| `/portal/admin` | Admin Portal Dashboard | Admins only |
+
+### Admin Portal Features (via /portal/admin)
+- **Admin Dashboard**: Overview stats, quick links to Implementation App
+- **Portal Settings**: Configure HubSpot embed codes and support URL
+- **Announcements**: Create/edit/delete portal-wide announcements
+- **Client Documents**: Upload and manage documents per client
+- **Client Users**: View client user list and portal URLs
 
 
 

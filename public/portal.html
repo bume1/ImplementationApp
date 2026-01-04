@@ -179,19 +179,29 @@
       close: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>
     };
     
+    // Additional icons for admin portal
+    const AdminIcons = {
+      settings: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>,
+      users: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>,
+      document: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>,
+      back: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+    };
+    
     const Sidebar = ({ activePage, onNavigate, user, isMobileOpen, onClose }) => {
       const [inventoryExpanded, setInventoryExpanded] = useState(activePage === 'inventory' || activePage === 'reports');
+      const [adminExpanded, setAdminExpanded] = useState(activePage.startsWith('admin_'));
+      const isAdmin = user?.role === 'admin';
       
       const mainItems = [
-        { id: 'home', label: 'Home', icon: Icons.home }
+        { id: 'home', label: isAdmin ? 'Admin Dashboard' : 'Home', icon: Icons.home }
       ];
       
       // Show Launch Milestones for clients with assigned projects
-      if (user?.assignedProjects?.length > 0) {
+      if (user?.assignedProjects?.length > 0 && !isAdmin) {
         mainItems.push({ id: 'milestones', label: 'Launch Milestones', icon: Icons.target });
       }
       
-      const bottomItems = [
+      const bottomItems = isAdmin ? [] : [
         { id: 'support', label: 'Customer Support', icon: Icons.chat },
         { id: 'files', label: 'Files', icon: Icons.folder }
       ];
@@ -275,6 +285,49 @@
                   </div>
                 )}
               </div>
+              
+              {/* Admin Portal Management Menu */}
+              {isAdmin && (
+                <div className="mt-4 pt-4 border-t">
+                  <p className="px-4 text-xs font-semibold text-gray-400 uppercase mb-2">Portal Management</p>
+                  <button
+                    onClick={() => handleNavigate('admin_settings')}
+                    className={`w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center gap-3 ${
+                      activePage === 'admin_settings' ? 'active' : 'text-gray-700'
+                    }`}
+                  >
+                    <span className="text-primary">{AdminIcons.settings}</span>
+                    <span className="font-medium">Portal Settings</span>
+                  </button>
+                  <button
+                    onClick={() => handleNavigate('admin_announcements')}
+                    className={`w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center gap-3 ${
+                      activePage === 'admin_announcements' ? 'active' : 'text-gray-700'
+                    }`}
+                  >
+                    <span className="text-primary">{Icons.megaphone}</span>
+                    <span className="font-medium">Announcements</span>
+                  </button>
+                  <button
+                    onClick={() => handleNavigate('admin_documents')}
+                    className={`w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center gap-3 ${
+                      activePage === 'admin_documents' ? 'active' : 'text-gray-700'
+                    }`}
+                  >
+                    <span className="text-primary">{AdminIcons.document}</span>
+                    <span className="font-medium">Client Documents</span>
+                  </button>
+                  <button
+                    onClick={() => handleNavigate('admin_clients')}
+                    className={`w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center gap-3 ${
+                      activePage === 'admin_clients' ? 'active' : 'text-gray-700'
+                    }`}
+                  >
+                    <span className="text-primary">{AdminIcons.users}</span>
+                    <span className="font-medium">Client Users</span>
+                  </button>
+                </div>
+              )}
               
               {bottomItems.map(item => (
                 <button
@@ -1146,6 +1199,569 @@
       );
     };
     
+    // ============== ADMIN PORTAL PAGES ==============
+    
+    const AdminHomePage = ({ token }) => {
+      const [stats, setStats] = useState({ clients: 0, announcements: 0, documents: 0 });
+      
+      useEffect(() => {
+        const loadStats = async () => {
+          try {
+            const [clientsRes, announcementsRes] = await Promise.all([
+              fetch(`${API_URL}/api/users`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()),
+              fetch(`${API_URL}/api/announcements`).then(r => r.json())
+            ]);
+            setStats({
+              clients: Array.isArray(clientsRes) ? clientsRes.filter(u => u.role === 'client').length : 0,
+              announcements: Array.isArray(announcementsRes) ? announcementsRes.length : 0
+            });
+          } catch (err) {
+            console.error('Failed to load stats:', err);
+          }
+        };
+        loadStats();
+      }, [token]);
+      
+      return (
+        <div className="space-y-6">
+          <div className="bg-gradient-to-r from-accent to-primary text-white p-6 md:p-8 rounded-xl">
+            <h1 className="text-2xl md:text-3xl font-bold">Admin Portal Dashboard</h1>
+            <p className="mt-2 opacity-90">Manage your client portal settings and content</p>
+          </div>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+            <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-primary">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-gray-500 text-sm">Client Users</p>
+                  <p className="text-3xl font-bold text-accent">{stats.clients}</p>
+                </div>
+                <div className="text-primary opacity-50">{React.cloneElement(AdminIcons.users, { className: 'w-12 h-12' })}</div>
+              </div>
+            </div>
+            <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-green-500">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-gray-500 text-sm">Announcements</p>
+                  <p className="text-3xl font-bold text-accent">{stats.announcements}</p>
+                </div>
+                <div className="text-green-500 opacity-50">{React.cloneElement(Icons.megaphone, { className: 'w-12 h-12' })}</div>
+              </div>
+            </div>
+            <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-orange-500">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-gray-500 text-sm">Portal Status</p>
+                  <p className="text-lg font-bold text-green-600">Active</p>
+                </div>
+                <div className="text-orange-500 opacity-50">{React.cloneElement(AdminIcons.settings, { className: 'w-12 h-12' })}</div>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white p-6 rounded-xl shadow-sm">
+            <h2 className="text-lg font-bold text-accent mb-4">Quick Actions</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <a href="/" className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg hover:bg-primary/10 transition group">
+                <span className="text-primary">{AdminIcons.back}</span>
+                <span className="font-medium text-gray-700 group-hover:text-primary">Implementation App</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      );
+    };
+    
+    const AdminSettingsPage = ({ token, settings, onSettingsChange }) => {
+      const [formData, setFormData] = useState({
+        inventoryFormEmbed: settings?.inventoryFormEmbed || '',
+        filesFormEmbed: settings?.filesFormEmbed || '',
+        supportUrl: settings?.supportUrl || ''
+      });
+      const [saving, setSaving] = useState(false);
+      const [message, setMessage] = useState('');
+      
+      const handleSave = async () => {
+        setSaving(true);
+        setMessage('');
+        try {
+          const res = await fetch(`${API_URL}/api/portal-settings`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData)
+          });
+          if (res.ok) {
+            setMessage('Settings saved successfully!');
+            if (onSettingsChange) onSettingsChange(formData);
+          } else {
+            const data = await res.json();
+            setMessage(data.error || 'Failed to save settings');
+          }
+        } catch (err) {
+          setMessage('Error saving settings');
+        } finally {
+          setSaving(false);
+        }
+      };
+      
+      return (
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-xl shadow-sm">
+            <h1 className="text-2xl font-bold text-accent mb-2">Portal Settings</h1>
+            <p className="text-gray-600">Configure HubSpot embed codes and support settings</p>
+          </div>
+          
+          <div className="bg-white p-6 rounded-xl shadow-sm space-y-6">
+            {message && (
+              <div className={`p-4 rounded-lg ${message.includes('success') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                {message}
+              </div>
+            )}
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Inventory Form Embed Code (HubSpot)</label>
+              <textarea
+                value={formData.inventoryFormEmbed}
+                onChange={(e) => setFormData({ ...formData, inventoryFormEmbed: e.target.value })}
+                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary h-32 font-mono text-sm"
+                placeholder="Paste HubSpot embed code here..."
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Files Upload Form Embed Code (HubSpot)</label>
+              <textarea
+                value={formData.filesFormEmbed}
+                onChange={(e) => setFormData({ ...formData, filesFormEmbed: e.target.value })}
+                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary h-32 font-mono text-sm"
+                placeholder="Paste HubSpot embed code here..."
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Customer Support URL</label>
+              <input
+                type="url"
+                value={formData.supportUrl}
+                onChange={(e) => setFormData({ ...formData, supportUrl: e.target.value })}
+                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
+                placeholder="https://support.example.com"
+              />
+            </div>
+            
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="bg-primary text-white px-6 py-2 rounded-lg font-medium hover:bg-accent transition disabled:opacity-50"
+            >
+              {saving ? 'Saving...' : 'Save Settings'}
+            </button>
+          </div>
+        </div>
+      );
+    };
+    
+    const AdminAnnouncementsPage = ({ token }) => {
+      const [announcements, setAnnouncements] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [showForm, setShowForm] = useState(false);
+      const [editingId, setEditingId] = useState(null);
+      const [formData, setFormData] = useState({ title: '', content: '', type: 'info' });
+      
+      const loadAnnouncements = async () => {
+        try {
+          const res = await fetch(`${API_URL}/api/announcements`);
+          const data = await res.json();
+          setAnnouncements(Array.isArray(data) ? data : []);
+        } catch (err) {
+          console.error('Failed to load announcements:', err);
+        } finally {
+          setLoading(false);
+        }
+      };
+      
+      useEffect(() => { loadAnnouncements(); }, []);
+      
+      const handleSave = async () => {
+        try {
+          const method = editingId ? 'PUT' : 'POST';
+          const url = editingId ? `${API_URL}/api/announcements/${editingId}` : `${API_URL}/api/announcements`;
+          const res = await fetch(url, {
+            method,
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData)
+          });
+          if (res.ok) {
+            setShowForm(false);
+            setEditingId(null);
+            setFormData({ title: '', content: '', type: 'info' });
+            loadAnnouncements();
+          }
+        } catch (err) {
+          console.error('Failed to save:', err);
+        }
+      };
+      
+      const handleDelete = async (id) => {
+        if (!confirm('Delete this announcement?')) return;
+        try {
+          await fetch(`${API_URL}/api/announcements/${id}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          loadAnnouncements();
+        } catch (err) {
+          console.error('Failed to delete:', err);
+        }
+      };
+      
+      const startEdit = (ann) => {
+        setFormData({ title: ann.title, content: ann.content, type: ann.type || 'info' });
+        setEditingId(ann.id);
+        setShowForm(true);
+      };
+      
+      return (
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-accent">Announcements Manager</h1>
+              <p className="text-gray-600">Create and manage portal announcements</p>
+            </div>
+            <button
+              onClick={() => { setShowForm(true); setEditingId(null); setFormData({ title: '', content: '', type: 'info' }); }}
+              className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-accent transition flex items-center gap-2"
+            >
+              <span>+</span> New Announcement
+            </button>
+          </div>
+          
+          {showForm && (
+            <div className="bg-white p-6 rounded-xl shadow-sm border-2 border-primary/20">
+              <h2 className="text-lg font-bold mb-4">{editingId ? 'Edit Announcement' : 'New Announcement'}</h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                  <input
+                    type="text"
+                    value={formData.title}
+                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Content</label>
+                  <textarea
+                    value={formData.content}
+                    onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary h-24"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                  <select
+                    value={formData.type}
+                    onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="info">Info (Blue)</option>
+                    <option value="success">Success (Green)</option>
+                    <option value="warning">Warning (Yellow)</option>
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={handleSave} className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-accent">
+                    {editingId ? 'Update' : 'Create'}
+                  </button>
+                  <button onClick={() => { setShowForm(false); setEditingId(null); }} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+            {loading ? (
+              <div className="p-8 text-center text-gray-500">Loading...</div>
+            ) : announcements.length === 0 ? (
+              <div className="p-8 text-center text-gray-500">No announcements yet</div>
+            ) : (
+              <div className="divide-y">
+                {announcements.map(ann => (
+                  <div key={ann.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-semibold text-gray-800">{ann.title}</h3>
+                        <span className={`px-2 py-0.5 text-xs rounded ${
+                          ann.type === 'warning' ? 'bg-yellow-100 text-yellow-700' :
+                          ann.type === 'success' ? 'bg-green-100 text-green-700' :
+                          'bg-blue-100 text-blue-700'
+                        }`}>{ann.type || 'info'}</span>
+                      </div>
+                      <p className="text-sm text-gray-600 mt-1">{ann.content}</p>
+                      <p className="text-xs text-gray-400 mt-1">{new Date(ann.createdAt).toLocaleDateString()}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => startEdit(ann)} className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">Edit</button>
+                      <button onClick={() => handleDelete(ann.id)} className="px-3 py-1 text-sm bg-red-50 text-red-600 hover:bg-red-100 rounded">Delete</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    };
+    
+    const AdminDocumentsPage = ({ token }) => {
+      const [clients, setClients] = useState([]);
+      const [selectedClient, setSelectedClient] = useState('');
+      const [documents, setDocuments] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [showForm, setShowForm] = useState(false);
+      const [formData, setFormData] = useState({ title: '', url: '', description: '', category: '' });
+      
+      useEffect(() => {
+        const loadClients = async () => {
+          try {
+            const res = await fetch(`${API_URL}/api/users`, { headers: { 'Authorization': `Bearer ${token}` } });
+            const data = await res.json();
+            setClients(Array.isArray(data) ? data.filter(u => u.role === 'client') : []);
+          } catch (err) {
+            console.error('Failed to load clients:', err);
+          } finally {
+            setLoading(false);
+          }
+        };
+        loadClients();
+      }, [token]);
+      
+      useEffect(() => {
+        if (selectedClient) {
+          const loadDocs = async () => {
+            try {
+              const res = await fetch(`${API_URL}/api/client-documents/${selectedClient}`);
+              const data = await res.json();
+              setDocuments(Array.isArray(data) ? data : []);
+            } catch (err) {
+              console.error('Failed to load docs:', err);
+            }
+          };
+          loadDocs();
+        }
+      }, [selectedClient]);
+      
+      const handleAdd = async () => {
+        try {
+          const res = await fetch(`${API_URL}/api/client-documents/${selectedClient}`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData)
+          });
+          if (res.ok) {
+            setShowForm(false);
+            setFormData({ title: '', url: '', description: '', category: '' });
+            const data = await fetch(`${API_URL}/api/client-documents/${selectedClient}`).then(r => r.json());
+            setDocuments(Array.isArray(data) ? data : []);
+          }
+        } catch (err) {
+          console.error('Failed to add doc:', err);
+        }
+      };
+      
+      const handleDelete = async (docId) => {
+        if (!confirm('Delete this document?')) return;
+        try {
+          await fetch(`${API_URL}/api/client-documents/${selectedClient}/${docId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await fetch(`${API_URL}/api/client-documents/${selectedClient}`).then(r => r.json());
+          setDocuments(Array.isArray(data) ? data : []);
+        } catch (err) {
+          console.error('Failed to delete doc:', err);
+        }
+      };
+      
+      return (
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-xl shadow-sm">
+            <h1 className="text-2xl font-bold text-accent mb-2">Client Documents</h1>
+            <p className="text-gray-600">Manage documents for each client portal</p>
+          </div>
+          
+          <div className="bg-white p-6 rounded-xl shadow-sm">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Select Client</label>
+            <select
+              value={selectedClient}
+              onChange={(e) => setSelectedClient(e.target.value)}
+              className="w-full md:w-1/2 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
+            >
+              <option value="">-- Select a client --</option>
+              {clients.map(c => (
+                <option key={c.id} value={c.slug}>{c.practiceName || c.name} ({c.email})</option>
+              ))}
+            </select>
+          </div>
+          
+          {selectedClient && (
+            <>
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <h2 className="text-lg font-semibold text-gray-800">Documents for {clients.find(c => c.slug === selectedClient)?.practiceName || selectedClient}</h2>
+                <button
+                  onClick={() => setShowForm(true)}
+                  className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-accent transition"
+                >
+                  + Add Document
+                </button>
+              </div>
+              
+              {showForm && (
+                <div className="bg-white p-6 rounded-xl shadow-sm border-2 border-primary/20">
+                  <h3 className="text-lg font-bold mb-4">Add Document</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                      <input
+                        type="text"
+                        value={formData.title}
+                        onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">URL</label>
+                      <input
+                        type="url"
+                        value={formData.url}
+                        onChange={(e) => setFormData({ ...formData, url: e.target.value })}
+                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                      <input
+                        type="text"
+                        value={formData.category}
+                        onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
+                        placeholder="e.g., Training, Documentation"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                      <input
+                        type="text"
+                        value={formData.description}
+                        onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mt-4">
+                    <button onClick={handleAdd} className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-accent">Add</button>
+                    <button onClick={() => setShowForm(false)} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg">Cancel</button>
+                  </div>
+                </div>
+              )}
+              
+              <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+                {documents.length === 0 ? (
+                  <div className="p-8 text-center text-gray-500">No documents for this client</div>
+                ) : (
+                  <div className="divide-y">
+                    {documents.map(doc => (
+                      <div key={doc.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-gray-800">{doc.title}</h3>
+                          {doc.category && <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">{doc.category}</span>}
+                          {doc.description && <p className="text-sm text-gray-500 mt-1">{doc.description}</p>}
+                          <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline">{doc.url}</a>
+                        </div>
+                        <button onClick={() => handleDelete(doc.id)} className="px-3 py-1 text-sm bg-red-50 text-red-600 hover:bg-red-100 rounded">Delete</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      );
+    };
+    
+    const AdminClientsPage = ({ token }) => {
+      const [clients, setClients] = useState([]);
+      const [loading, setLoading] = useState(true);
+      
+      useEffect(() => {
+        const loadClients = async () => {
+          try {
+            const res = await fetch(`${API_URL}/api/users`, { headers: { 'Authorization': `Bearer ${token}` } });
+            const data = await res.json();
+            setClients(Array.isArray(data) ? data.filter(u => u.role === 'client') : []);
+          } catch (err) {
+            console.error('Failed to load clients:', err);
+          } finally {
+            setLoading(false);
+          }
+        };
+        loadClients();
+      }, [token]);
+      
+      return (
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-xl shadow-sm">
+            <h1 className="text-2xl font-bold text-accent mb-2">Client Users</h1>
+            <p className="text-gray-600">View client portal users (manage in Implementation App)</p>
+          </div>
+          
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+            {loading ? (
+              <div className="p-8 text-center text-gray-500">Loading...</div>
+            ) : clients.length === 0 ? (
+              <div className="p-8 text-center text-gray-500">No client users found</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Practice</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Portal URL</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {clients.map(c => (
+                      <tr key={c.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 text-sm text-gray-800">{c.name}</td>
+                        <td className="px-4 py-3 text-sm text-gray-600">{c.email}</td>
+                        <td className="px-4 py-3 text-sm text-gray-600">{c.practiceName || '-'}</td>
+                        <td className="px-4 py-3 text-sm">
+                          {c.slug ? (
+                            <a href={`/portal/${c.slug}`} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                              /portal/{c.slug}
+                            </a>
+                          ) : '-'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+          
+          <div className="bg-blue-50 p-4 rounded-lg text-sm text-blue-700">
+            <p><strong>Note:</strong> To add or edit client users, use the <a href="/" className="underline">Implementation App</a>.</p>
+          </div>
+        </div>
+      );
+    };
+    
     const Portal = ({ token, user }) => {
       const [activePage, setActivePage] = useState('home');
       const [data, setData] = useState(null);
@@ -1156,10 +1772,19 @@
       const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
       
       const slug = getSlugFromUrl();
+      const isAdmin = user?.role === 'admin';
       
       useEffect(() => {
         const loadData = async () => {
           try {
+            // Admin doesn't need portal data for their own view
+            if (isAdmin) {
+              const portalSettings = await api.getPortalSettings();
+              setSettings(portalSettings);
+              setData({ user });
+              setLoading(false);
+              return;
+            }
             const [portalData, portalSettings, announcementsData, docsData] = await Promise.all([
               api.getPortalData(token),
               api.getPortalSettings(),
@@ -1177,7 +1802,11 @@
           }
         };
         loadData();
-      }, [token, slug]);
+      }, [token, slug, isAdmin]);
+      
+      const handleSettingsChange = (newSettings) => {
+        setSettings({ ...settings, ...newSettings });
+      };
       
       if (loading) {
         return (
@@ -1189,6 +1818,30 @@
           </div>
         );
       }
+      
+      const renderPage = () => {
+        // Admin pages
+        if (isAdmin) {
+          if (activePage === 'home') return <AdminHomePage token={token} />;
+          if (activePage === 'admin_settings') return <AdminSettingsPage token={token} settings={settings} onSettingsChange={handleSettingsChange} />;
+          if (activePage === 'admin_announcements') return <AdminAnnouncementsPage token={token} />;
+          if (activePage === 'admin_documents') return <AdminDocumentsPage token={token} />;
+          if (activePage === 'admin_clients') return <AdminClientsPage token={token} />;
+          // Admin can also view inventory/reports for all clients
+          if (activePage === 'inventory') return <InventoryPage token={token} slug={slug} />;
+          if (activePage === 'reports') return <ReportsPage token={token} slug={slug} />;
+        }
+        
+        // Client pages
+        if (activePage === 'home') return <HomePage data={data} announcements={announcements} />;
+        if (activePage === 'milestones') return <MilestonesPage data={data} />;
+        if (activePage === 'inventory') return <InventoryPage token={token} slug={slug} />;
+        if (activePage === 'reports') return <ReportsPage token={token} slug={slug} />;
+        if (activePage === 'support') return <SupportPage settings={settings} />;
+        if (activePage === 'files') return <FilesPage settings={settings} documents={documents} />;
+        
+        return null;
+      };
       
       return (
         <div className="flex min-h-screen">
@@ -1209,13 +1862,8 @@
             onClose={() => setMobileMenuOpen(false)}
           />
           
-          <main className="flex-1 lg:ml-64 p-4 lg:p-8 mt-16 lg:mt-0">
-            {activePage === 'home' && <HomePage data={data} announcements={announcements} />}
-            {activePage === 'milestones' && <MilestonesPage data={data} />}
-            {activePage === 'inventory' && <InventoryPage token={token} slug={slug} />}
-            {activePage === 'reports' && <ReportsPage token={token} slug={slug} />}
-            {activePage === 'support' && <SupportPage settings={settings} />}
-            {activePage === 'files' && <FilesPage settings={settings} documents={documents} />}
+          <main className="flex-1 lg:ml-64 p-4 lg:p-8 mt-16 lg:mt-0 max-w-7xl">
+            {renderPage()}
             
             <footer className="mt-12 text-center text-sm text-gray-500">
               <p>Powered by Thrive365Labs | Developed by Bianca G. C. Ume, MD, MBA, MS</p>
