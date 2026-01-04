@@ -1575,9 +1575,56 @@ const DEFAULT_INVENTORY_ITEMS = [
   { category: 'Ancillary Supplies', items: ['Acid Wash Solution', 'Alkaline Wash Solution'] },
   { category: 'Calibrators', items: ['BHB - L1 - Cal', 'Creatinine - L1', 'Creatinine - L2', 'Glucose - L1', 'Hemo - L1', 'HS Nitrite - L1 - Cal', 'HS Nitrite - L2 - Cal', 'HS Nitrite - L3 - Cal', 'Leukocyte Esterase - L1 - Cal', 'Leukocyte Esterase - L2 - Cal', 'Leukocyte Esterase - L3 - Cal', 'Microalbumin - L1', 'Microalbumin - L2', 'Microalbumin - L3', 'Microalbumin - L4', 'Microalbumin - L5', 'Microalbumin - L6', 'Microprotein - L1', 'pH - L1', 'pH - L2', 'SG - L1', 'SG - L2', 'Urobilinogen - L1', 'Urobilinogen - L2', 'Urobilinogen - L3', 'Urobilinogen - L4', 'Urobilinogen - L5'] },
   { category: 'Controls', items: ['A-Level - L4', 'A-Level - L5', 'A-Level - L6', 'BHB - L1', 'BHB - L2', 'Bilirubin Stock 30', 'Bilirubin Zero', 'Biorad - L1', 'Biorad - L2', 'Hemoglobin 500 - L1', 'Hemoglobin 5000 - L2', 'HS Nitrite - L1', 'HS Nitrite - L2', 'Leukocyte Esterase - L1', 'Leukocyte Esterase - L2', 'Leukocyte Esterase - L3', 'Urobilinogen - Control 1', 'Urobilinogen - Control 2'] },
-  { category: 'Reagent', items: ['BHB - R1', 'BHB - R2', 'Bilirubin - R1', 'Bilirubin - R2', 'Creatinine - R1', 'Creatinine - R2', 'Glucose - R1', 'Hemoglobin - R1', 'HS Nitrite - R1', 'HS Nitrite - R2', 'Leukocyte Esterase - R1', 'Leukocyte Esterase - R2', 'Microalbumin - R1', 'Microalbumin - R2', 'Microprotein - R1', 'pH - R1', 'SG - R1', 'Urobilinogen - R1', 'Urobilinogen - R2'] },
-  { category: 'Validation', items: ['pH Linearity Set', 'Specificity Creatinine', 'Absorbic Acid', 'Audit Microcontrols', 'BHB Linearity Set', 'Bilirubin Linearity Set', 'CREA Linearity Set', 'Hemoglobin Linearity Set', 'HS-Nitrite Linearity Set', 'Leukocyte Linearity Set', 'NIT Linearity Set', 'Specific Gravity Linearity Set', 'Uro Linearity Kit - L1', 'Uro Linearity Kit - L2', 'Uro Linearity Kit - L3', 'Uro Linearity Kit - L4'] }
+  { category: 'Reagent', items: ['BHB - R1', 'BHB - R2', 'Bilirubin - R1', 'Bilirubin - R2', 'Creatinine - R1', 'Creatinine - R2', 'Glucose - R1', 'Hemoglobin - R1', 'HS Nitrite - R1', 'HS Nitrite - R2', 'Leukocyte Esterase - R1', 'Leukocyte Esterase - R2', 'Microalbumin - R1', 'Microalbumin - R2', 'Microprotein - R1', 'pH - R1', 'SG - R1', 'Urobilinogen - R1', 'Urobilinogen - R2'] }
 ];
+
+app.get('/api/inventory/custom-items/:slug', authenticateToken, async (req, res) => {
+  try {
+    const { slug } = req.params;
+    if (req.user.role === 'client' && req.user.slug !== slug) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    const customItems = (await db.get(`inventory_custom_${slug}`)) || [];
+    res.json(customItems);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/inventory/custom-items/:slug', authenticateToken, async (req, res) => {
+  try {
+    const { slug } = req.params;
+    if (req.user.role === 'client' && req.user.slug !== slug) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    const { category, itemName } = req.body;
+    if (!category || !itemName) {
+      return res.status(400).json({ error: 'Category and item name required' });
+    }
+    const customItems = (await db.get(`inventory_custom_${slug}`)) || [];
+    const newItem = { id: uuidv4(), category, itemName, createdAt: new Date().toISOString() };
+    customItems.push(newItem);
+    await db.set(`inventory_custom_${slug}`, customItems);
+    res.json(newItem);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.delete('/api/inventory/custom-items/:slug/:itemId', authenticateToken, async (req, res) => {
+  try {
+    const { slug, itemId } = req.params;
+    if (req.user.role === 'client' && req.user.slug !== slug) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    const customItems = (await db.get(`inventory_custom_${slug}`)) || [];
+    const filtered = customItems.filter(i => i.id !== itemId);
+    await db.set(`inventory_custom_${slug}`, filtered);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 
 app.get('/api/inventory/template', async (req, res) => {
   try {
@@ -1612,6 +1659,18 @@ app.get('/api/inventory/submissions/:slug', authenticateToken, async (req, res) 
   }
 });
 
+const normalizeInventoryData = (data) => {
+  const normalized = {};
+  Object.entries(data || {}).forEach(([key, value]) => {
+    if (value && value.batches) {
+      normalized[key] = value;
+    } else {
+      normalized[key] = { batches: [value || {}] };
+    }
+  });
+  return normalized;
+};
+
 app.get('/api/inventory/latest/:slug', authenticateToken, async (req, res) => {
   try {
     const { slug } = req.params;
@@ -1628,20 +1687,14 @@ app.get('/api/inventory/latest/:slug', authenticateToken, async (req, res) => {
       const emptyData = {};
       template.forEach(cat => {
         cat.items.forEach(item => {
-          emptyData[`${cat.category}|${item}`] = {
-            lotNumber: '',
-            expiry: '',
-            openQty: '',
-            openDate: '',
-            closedQty: '',
-            notes: ''
-          };
+          emptyData[`${cat.category}|${item}`] = { batches: [{ lotNumber: '', expiry: '', openQty: '', openDate: '', closedQty: '', notes: '' }] };
         });
       });
       return res.json({ data: emptyData, submittedAt: null });
     }
     
-    res.json(clientSubmissions[0]);
+    const latest = clientSubmissions[0];
+    res.json({ ...latest, data: normalizeInventoryData(latest.data) });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }
@@ -1696,9 +1749,10 @@ app.get('/api/inventory/report/:slug', authenticateToken, async (req, res) => {
     const clientSubmissions = allSubmissions
       .filter(s => s.slug === slug)
       .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))
-      .slice(0, 12);
+      .slice(0, 52);
     
     const template = (await db.get('inventory_template')) || DEFAULT_INVENTORY_ITEMS;
+    const customItems = (await db.get(`inventory_custom_${slug}`)) || [];
     
     const lowStockItems = [];
     const expiringItems = [];
@@ -1709,28 +1763,47 @@ app.get('/api/inventory/report/:slug', authenticateToken, async (req, res) => {
       const latest = clientSubmissions[0].data;
       Object.entries(latest).forEach(([key, value]) => {
         const [category, itemName] = key.split('|');
-        const totalQty = (parseInt(value.openQty) || 0) + (parseInt(value.closedQty) || 0);
         
-        if (totalQty > 0 && totalQty <= 2) {
-          lowStockItems.push({ category, itemName, quantity: totalQty });
-        }
+        const batches = Array.isArray(value.batches) ? value.batches : [value];
         
-        if (value.expiry) {
-          const expiryDate = new Date(value.expiry);
-          if (expiryDate <= thirtyDaysFromNow && expiryDate >= today) {
-            expiringItems.push({ category, itemName, expiry: value.expiry, daysUntilExpiry: Math.ceil((expiryDate - today) / (1000 * 60 * 60 * 24)) });
+        batches.forEach((batch, batchIdx) => {
+          const totalQty = (parseInt(batch.openQty) || 0) + (parseInt(batch.closedQty) || 0);
+          const lotLabel = batch.lotNumber ? ` (Lot: ${batch.lotNumber})` : (batches.length > 1 ? ` (Batch ${batchIdx + 1})` : '');
+          
+          if (totalQty > 0 && totalQty <= 2) {
+            lowStockItems.push({ category, itemName: itemName + lotLabel, quantity: totalQty, lotNumber: batch.lotNumber });
           }
-        }
+          
+          if (batch.expiry) {
+            const expiryDate = new Date(batch.expiry);
+            if (expiryDate <= thirtyDaysFromNow && expiryDate >= today) {
+              expiringItems.push({ 
+                category, 
+                itemName: itemName + lotLabel, 
+                expiry: batch.expiry, 
+                lotNumber: batch.lotNumber,
+                daysUntilExpiry: Math.ceil((expiryDate - today) / (1000 * 60 * 60 * 24)) 
+              });
+            }
+          }
+        });
       });
     }
     
+    const usageTrends = clientSubmissions.slice(0, 12).reverse().map(sub => ({
+      date: sub.submittedAt,
+      itemCount: Object.keys(sub.data).length
+    }));
+    
     res.json({
-      submissions: clientSubmissions,
+      submissions: clientSubmissions.slice(0, 12),
       template,
+      customItems,
       alerts: {
-        lowStock: lowStockItems,
-        expiringSoon: expiringItems
-      }
+        lowStock: lowStockItems.sort((a, b) => a.quantity - b.quantity),
+        expiringSoon: expiringItems.sort((a, b) => a.daysUntilExpiry - b.daysUntilExpiry)
+      },
+      usageTrends
     });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
