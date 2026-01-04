@@ -2991,6 +2991,10 @@ app.get('/portal/:slug/login', async (req, res) => {
 
 // Client portal pages: /portal/:slug, /portal/:slug/*
 app.get('/portal/:slug', async (req, res) => {
+  // Allow 'admin' slug for admin portal access
+  if (req.params.slug === 'admin') {
+    return res.sendFile(__dirname + '/public/portal.html');
+  }
   const users = await getUsers();
   const clientUser = users.find(u => u.role === 'client' && u.slug === req.params.slug);
   if (clientUser) {
@@ -3001,6 +3005,10 @@ app.get('/portal/:slug', async (req, res) => {
 });
 
 app.get('/portal/:slug/*', async (req, res) => {
+  // Allow 'admin' slug for admin portal access
+  if (req.params.slug === 'admin') {
+    return res.sendFile(__dirname + '/public/portal.html');
+  }
   const users = await getUsers();
   const clientUser = users.find(u => u.role === 'client' && u.slug === req.params.slug);
   if (clientUser) {
