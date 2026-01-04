@@ -6119,6 +6119,14 @@ const App = () => {
   }, [token, pendingInternalSlug]);
 
   const handleLogin = (newToken, newUser) => {
+    // Redirect client users to their portal
+    if (newUser.role === 'client' && newUser.slug) {
+      // Set portal tokens so they're logged in when redirected
+      localStorage.setItem('portal_token', newToken);
+      localStorage.setItem('portal_user', JSON.stringify(newUser));
+      window.location.href = `/portal/${newUser.slug}`;
+      return;
+    }
     setToken(newToken);
     setUser(newUser);
     localStorage.setItem('token', newToken);
