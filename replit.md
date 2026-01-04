@@ -82,6 +82,11 @@ Preferred communication style: Simple, everyday language.
 ### Inventory Reports (Client Portal)
 - **Low Stock Alerts**: Items with total quantity <= 2 highlighted with warning
 - **Expiring Items**: Items expiring within 30 days shown with alert
+- **Usage Trends**: 
+  - Top Consumed Items table comparing current vs previous submission
+  - Weekly consumption rate calculation for each item
+  - Estimated weeks remaining before depletion (color-coded: red ≤2wks, orange ≤4wks, green >4wks)
+  - Total Inventory Over Time bar chart showing quantity trends across submissions
 - **Submission History**: List of past submissions with item counts and timestamps
 - **Portal Navigation**: Dedicated "Inventory Reports" page in client portal sidebar
 
