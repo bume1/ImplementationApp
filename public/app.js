@@ -865,7 +865,7 @@ const StatusBadge = ({ status }) => {
 };
 
 // ============== PROJECT LIST COMPONENT ==============
-const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, onManageTemplates, onManageHubSpot, onViewReporting, onManagePortalSettings, onManageAnnouncements, onManageClientDocuments }) => {
+const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, onManageTemplates, onManageHubSpot, onViewReporting }) => {
   const [projects, setProjects] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -1112,30 +1112,14 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                     HubSpot Settings
                   </button>
                 )}
-                {onManagePortalSettings && (
-                  <button
-                    onClick={() => { onManagePortalSettings(); setShowSettingsMenu(false); }}
-                    className="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 text-sm"
-                  >
-                    Portal Settings
-                  </button>
-                )}
-                {onManageAnnouncements && (
-                  <button
-                    onClick={() => { onManageAnnouncements(); setShowSettingsMenu(false); }}
-                    className="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 text-sm"
-                  >
-                    Announcements
-                  </button>
-                )}
-                {onManageClientDocuments && (
-                  <button
-                    onClick={() => { onManageClientDocuments(); setShowSettingsMenu(false); }}
-                    className="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 text-sm"
-                  >
-                    Client Documents
-                  </button>
-                )}
+                <a
+                  href="/portal"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 text-sm"
+                >
+                  Admin Portal
+                </a>
               </div>
             )}
           </div>
@@ -6476,39 +6460,6 @@ const App = () => {
     );
   }
 
-  if (view === 'portal-settings' && user.role === 'admin') {
-    return (
-      <PortalSettings
-        token={token}
-        user={user}
-        onBack={handleBackToList}
-        onLogout={handleLogout}
-      />
-    );
-  }
-
-  if (view === 'announcements' && user.role === 'admin') {
-    return (
-      <AnnouncementsManager
-        token={token}
-        user={user}
-        onBack={handleBackToList}
-        onLogout={handleLogout}
-      />
-    );
-  }
-
-  if (view === 'client-documents' && user.role === 'admin') {
-    return (
-      <ClientDocumentsManager
-        token={token}
-        user={user}
-        onBack={handleBackToList}
-        onLogout={handleLogout}
-      />
-    );
-  }
-
   if (view === 'reporting') {
     return (
       <Reporting
@@ -6530,9 +6481,6 @@ const App = () => {
       onManageTemplates={() => setView('templates')}
       onManageHubSpot={() => setView('hubspot')}
       onViewReporting={() => setView('reporting')}
-      onManagePortalSettings={() => setView('portal-settings')}
-      onManageAnnouncements={() => setView('announcements')}
-      onManageClientDocuments={() => setView('client-documents')}
     />
   );
 };
