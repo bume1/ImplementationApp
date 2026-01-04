@@ -387,6 +387,42 @@ const api = {
       headers: { 'Authorization': `Bearer ${token}` }
     }).then(r => r.json()),
 
+  getClientDocuments: (token) =>
+    fetch(`${API_URL}/api/client-documents`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.json()),
+  
+  createClientDocument: (token, doc) =>
+    fetch(`${API_URL}/api/client-documents`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(doc)
+    }).then(r => r.json()),
+  
+  updateClientDocument: (token, id, doc) =>
+    fetch(`${API_URL}/api/client-documents/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(doc)
+    }).then(r => r.json()),
+  
+  deleteClientDocument: (token, id) =>
+    fetch(`${API_URL}/api/client-documents/${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.json()),
+  
+  getClientUsers: (token) =>
+    fetch(`${API_URL}/api/users`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.json()).then(users => users.filter(u => u.role === 'client')),
+
   handlePasswordResetRequest: (token, requestId, status) =>
     fetch(`${API_URL}/api/admin/password-reset-requests/${requestId}`, {
       method: 'PUT',
@@ -829,7 +865,7 @@ const StatusBadge = ({ status }) => {
 };
 
 // ============== PROJECT LIST COMPONENT ==============
-const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, onManageTemplates, onManageHubSpot, onViewReporting, onManagePortalSettings, onManageAnnouncements }) => {
+const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, onManageTemplates, onManageHubSpot, onViewReporting, onManagePortalSettings, onManageAnnouncements, onManageClientDocuments }) => {
   const [projects, setProjects] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -1090,6 +1126,14 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                     className="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 text-sm"
                   >
                     Announcements
+                  </button>
+                )}
+                {onManageClientDocuments && (
+                  <button
+                    onClick={() => { onManageClientDocuments(); setShowSettingsMenu(false); }}
+                    className="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 text-sm"
+                  >
+                    Client Documents
                   </button>
                 )}
               </div>
@@ -6088,6 +6132,198 @@ const AnnouncementsManager = ({ token, user, onBack, onLogout }) => {
   );
 };
 
+// ============== CLIENT DOCUMENTS MANAGER COMPONENT ==============
+const ClientDocumentsManager = ({ token, user, onBack, onLogout }) => {
+  const [documents, setDocuments] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({ slug: '', title: '', description: '', url: '', category: 'General' });
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      const [docs, clientUsers] = await Promise.all([
+        api.getClientDocuments(token),
+        api.getClientUsers(token)
+      ]);
+      setDocuments(docs);
+      setClients(clientUsers);
+    } catch (err) {
+      console.error('Failed to load documents:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreate = async () => {
+    if (!form.slug || !form.title || !form.url) return;
+    try {
+      await api.createClientDocument(token, form);
+      setForm({ slug: '', title: '', description: '', url: '', category: 'General' });
+      setShowAdd(false);
+      loadData();
+    } catch (err) {
+      console.error('Failed to create document:', err);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('Delete this document?')) return;
+    try {
+      await api.deleteClientDocument(token, id);
+      loadData();
+    } catch (err) {
+      console.error('Failed to delete document:', err);
+    }
+  };
+
+  const categories = ['General', 'Training', 'Contracts', 'Manuals', 'Compliance', 'Other'];
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <AppHeader user={user} onLogout={onLogout}>
+        <button onClick={onBack} className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide">
+          ← Back
+        </button>
+      </AppHeader>
+
+      <div className="p-6 max-w-5xl mx-auto">
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-6 flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Client Documents</h1>
+            <p className="text-gray-600">Upload documents for clients to download in their portal</p>
+          </div>
+          <button
+            onClick={() => setShowAdd(true)}
+            className="px-4 py-2 bg-primary text-white rounded-md hover:bg-accent"
+          >
+            + Add Document
+          </button>
+        </div>
+
+        {showAdd && (
+          <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+            <h2 className="text-lg font-bold mb-4">Add Document</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Client Portal</label>
+                <select
+                  value={form.slug}
+                  onChange={(e) => setForm({...form, slug: e.target.value})}
+                  className="w-full px-3 py-2 border rounded-md"
+                >
+                  <option value="">Select client...</option>
+                  {clients.map(c => (
+                    <option key={c.id} value={c.slug}>{c.practiceName} ({c.slug})</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Category</label>
+                <select
+                  value={form.category}
+                  onChange={(e) => setForm({...form, category: e.target.value})}
+                  className="w-full px-3 py-2 border rounded-md"
+                >
+                  {categories.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium mb-1">Document Title</label>
+                <input
+                  value={form.title}
+                  onChange={(e) => setForm({...form, title: e.target.value})}
+                  className="w-full px-3 py-2 border rounded-md"
+                  placeholder="e.g., Equipment Manual"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium mb-1">Document URL</label>
+                <input
+                  value={form.url}
+                  onChange={(e) => setForm({...form, url: e.target.value})}
+                  className="w-full px-3 py-2 border rounded-md"
+                  placeholder="https://drive.google.com/..."
+                />
+                <p className="text-xs text-gray-500 mt-1">Enter a direct link to the document (Google Drive, Dropbox, etc.)</p>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium mb-1">Description (optional)</label>
+                <input
+                  value={form.description}
+                  onChange={(e) => setForm({...form, description: e.target.value})}
+                  className="w-full px-3 py-2 border rounded-md"
+                  placeholder="Brief description of the document"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button onClick={handleCreate} className="px-4 py-2 bg-primary text-white rounded-md hover:bg-accent">
+                Add Document
+              </button>
+              <button onClick={() => setShowAdd(false)} className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {loading ? (
+          <div className="text-center py-12">Loading documents...</div>
+        ) : documents.length === 0 ? (
+          <div className="bg-white rounded-lg shadow-sm p-12 text-center text-gray-500">
+            No documents yet. Add documents for clients to download.
+          </div>
+        ) : (
+          <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Client</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Document</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Category</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Added</th>
+                  <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {documents.map(doc => (
+                  <tr key={doc.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 text-sm">
+                      <span className="font-medium">{doc.slug}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium">
+                        {doc.title}
+                      </a>
+                      {doc.description && <p className="text-xs text-gray-500">{doc.description}</p>}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{doc.category}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500">
+                      {new Date(doc.createdAt).toLocaleDateString()}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button onClick={() => handleDelete(doc.id)} className="text-red-600 hover:underline text-sm">
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const App = () => {
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [user, setUser] = useState(JSON.parse(localStorage.getItem('user') || 'null'));
@@ -6227,6 +6463,17 @@ const App = () => {
     );
   }
 
+  if (view === 'client-documents' && user.role === 'admin') {
+    return (
+      <ClientDocumentsManager
+        token={token}
+        user={user}
+        onBack={handleBackToList}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
   if (view === 'reporting') {
     return (
       <Reporting
@@ -6250,6 +6497,7 @@ const App = () => {
       onViewReporting={() => setView('reporting')}
       onManagePortalSettings={() => setView('portal-settings')}
       onManageAnnouncements={() => setView('announcements')}
+      onManageClientDocuments={() => setView('client-documents')}
     />
   );
 };

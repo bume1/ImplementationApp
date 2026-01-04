@@ -1420,6 +1420,113 @@ app.put('/api/portal-settings', authenticateToken, requireAdmin, async (req, res
   }
 });
 
+// ============== CLIENT DOCUMENTS ==============
+// Get documents for a specific client (by slug or for all if admin)
+app.get('/api/client-documents', authenticateToken, async (req, res) => {
+  try {
+    const documents = (await db.get('client_documents')) || [];
+    
+    if (req.user.role === 'client') {
+      // Clients only see documents for their slug
+      const clientDocs = documents.filter(d => d.slug === req.user.slug && d.active);
+      return res.json(clientDocs);
+    }
+    
+    // Admins see all documents
+    res.json(documents);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get documents for a specific slug (client portal)
+app.get('/api/client-documents/:slug', async (req, res) => {
+  try {
+    const documents = (await db.get('client_documents')) || [];
+    const clientDocs = documents.filter(d => d.slug === req.params.slug && d.active);
+    res.json(clientDocs);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Add a document for a client (admin only)
+app.post('/api/client-documents', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { slug, title, description, url, category } = req.body;
+    if (!slug || !title || !url) {
+      return res.status(400).json({ error: 'Missing required fields (slug, title, url)' });
+    }
+    
+    const documents = (await db.get('client_documents')) || [];
+    const newDoc = {
+      id: require('uuid').v4(),
+      slug,
+      title,
+      description: description || '',
+      url,
+      category: category || 'General',
+      active: true,
+      createdAt: new Date().toISOString(),
+      createdBy: req.user.name
+    };
+    
+    documents.push(newDoc);
+    await db.set('client_documents', documents);
+    
+    // Log activity
+    await logActivity(null, 'document_added', req.user.name, {
+      documentTitle: title,
+      clientSlug: slug
+    });
+    
+    res.json(newDoc);
+  } catch (error) {
+    console.error('Add document error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update a document (admin only)
+app.put('/api/client-documents/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const documents = (await db.get('client_documents')) || [];
+    const idx = documents.findIndex(d => d.id === req.params.id);
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+    
+    const { title, description, url, category, active } = req.body;
+    documents[idx] = {
+      ...documents[idx],
+      title: title || documents[idx].title,
+      description: description !== undefined ? description : documents[idx].description,
+      url: url || documents[idx].url,
+      category: category || documents[idx].category,
+      active: active !== undefined ? active : documents[idx].active,
+      updatedAt: new Date().toISOString(),
+      updatedBy: req.user.name
+    };
+    
+    await db.set('client_documents', documents);
+    res.json(documents[idx]);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete a document (admin only)
+app.delete('/api/client-documents/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const documents = (await db.get('client_documents')) || [];
+    const filtered = documents.filter(d => d.id !== req.params.id);
+    await db.set('client_documents', filtered);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ============== HUBSPOT INTEGRATION ==============
 app.get('/api/hubspot/test', authenticateToken, async (req, res) => {
   try {
