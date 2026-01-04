@@ -2971,6 +2971,11 @@ app.get('/thrive365labslaunch/:slug', async (req, res) => {
 });
 
 // ============== AUTHENTICATED CLIENT PORTAL ROUTES ==============
+// Central client portal login: /portal
+app.get('/portal', (req, res) => {
+  res.sendFile(__dirname + '/public/portal.html');
+});
+
 // Client portal login page: /portal/:slug/login
 app.get('/portal/:slug/login', async (req, res) => {
   const users = await getUsers();
