@@ -66,3 +66,23 @@ Preferred communication style: Simple, everyday language.
 ### Environment Variables
 - `PORT`
 - `JWT_SECRET`
+- `HUBSPOT_WEBHOOK_SECRET` (optional) - Shared secret for validating HubSpot webhook calls
+
+## Recent Changes (January 2026)
+
+### Inventory Management System
+- **Quick Update Table**: Full inventory form with 95+ items across 5 categories (Ancillary Supplies, Calibrators, Controls, Reagent, Validation)
+- **Pre-populated Data**: Each client's inventory form pre-fills with their last submission
+- **Weekly Submissions**: Clients submit inventory with lot numbers, expiry dates, open/closed quantities, and notes
+- **Alerts**: Automatic detection of low stock (<=2 items) and expiring items (within 30 days)
+- **History Tracking**: Up to 1000 submissions stored per client with timestamps
+
+### HubSpot Webhook Integration
+- **Endpoint**: POST /api/webhooks/hubspot receives form submission notifications
+- **Security**: Optional shared secret validation via HUBSPOT_WEBHOOK_SECRET env var
+- **Activity Logging**: Form submissions logged to activity feed (sanitized, no raw payloads)
+
+### Activity Feed Enhancements
+- Displays inventory submissions with package icon
+- Shows HubSpot form submissions with document icon
+- Phase completions highlighted with celebration icon
