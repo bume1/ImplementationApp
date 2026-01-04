@@ -10,7 +10,8 @@ Preferred communication style: Simple, everyday language.
 
 ### UI/UX Decisions
 - **Branding**: Thrive 365 Labs logo, primary color #045E9F (blue), accent color #00205A (dark navy), Open Sans font.
-- **Client Portal**: Authenticated client portal with practice-specific logins at /portal/{slug}. Includes sidebar navigation: Home (announcements, activity feed), Launch Milestones (for new clients), Inventory Management, Customer Support, and Files.
+- **Client Portal**: Authenticated client portal with practice-specific logins at /portal/{slug}. Includes sidebar navigation: Home (announcements, activity feed), Launch Milestones (for new clients), Inventory (collapsible with Weekly Update and Reports & Alerts subpages), Customer Support, and Files.
+- **Practice Branding**: Admins can upload client logos when creating/editing client users. Logo displays in portal sidebar and homepage hero section.
 - **Portal Settings**: Admin-configurable HubSpot embed codes for inventory forms and file uploads, plus customer support URL.
 - **Announcements Manager**: Admin component to create/edit/delete announcements visible on client portal homepage.
 - **Reporting**: Dedicated "Launch Reports" page with summary statistics and charts (Launches by Client, Go-Live Timelines).
@@ -88,7 +89,8 @@ Preferred communication style: Simple, everyday language.
   - Estimated weeks remaining before depletion (color-coded: red ≤2wks, orange ≤4wks, green >4wks)
   - Total Inventory Over Time bar chart showing quantity trends across submissions
 - **Submission History**: List of past submissions with item counts and timestamps
-- **Portal Navigation**: Dedicated "Inventory Reports" page in client portal sidebar
+- **Portal Navigation**: Collapsible "Inventory" menu with "Weekly Update" and "Reports & Alerts" subpages
+- **Reporting Guide**: Collapsible help section explaining all metrics, calculations, and color codes
 
 ### HubSpot Webhook Integration
 - **Endpoint**: POST /api/webhooks/hubspot receives form submission notifications
