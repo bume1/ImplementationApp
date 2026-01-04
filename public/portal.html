@@ -754,14 +754,15 @@
                   <p className="text-xs text-gray-500">Action: Prioritize using expiring items; plan replacement orders.</p>
                 </div>
                 <div>
-                  <h4 className="font-semibold text-purple-600 mb-2">Top Consumed Items</h4>
-                  <p className="mb-2">Shows items with the largest quantity decrease between your last two submissions. The system calculates:</p>
+                  <h4 className="font-semibold text-purple-600 mb-2">Top Consumed Items (Rolling Average)</h4>
+                  <p className="mb-2">Shows your highest-consumption items with accurate usage rates calculated across up to 12 submissions:</p>
                   <ul className="list-disc list-inside text-xs space-y-1 mt-1">
-                    <li><strong>Used:</strong> Previous quantity minus current quantity</li>
-                    <li><strong>Weekly Rate:</strong> Estimated usage per week based on time between submissions</li>
-                    <li><strong>Weeks Left:</strong> How long until depleted at current rate</li>
+                    <li><strong>Total Used:</strong> Sum of all consumption across analyzed periods</li>
+                    <li><strong>Avg Weekly:</strong> Average usage per week based on total consumed divided by total days, smoothed across multiple submissions</li>
+                    <li><strong>Weeks Left:</strong> Estimated time until depletion at the average rate</li>
+                    <li><strong>Periods:</strong> Number of submission intervals used in the calculation</li>
                   </ul>
-                  <p className="text-xs text-gray-500 mt-2">Color codes: Red = 2 weeks or less | Orange = 2-4 weeks | Green = 4+ weeks</p>
+                  <p className="text-xs text-gray-500 mt-2">More submissions = more accurate predictions. Color codes: Red = 2 weeks or less | Orange = 2-4 weeks | Green = 4+ weeks</p>
                 </div>
                 <div>
                   <h4 className="font-semibold text-blue-600 mb-2">Total Inventory Over Time</h4>
@@ -828,17 +829,17 @@
           {usageTrends?.consumptionRate?.length > 0 && (
             <div className="bg-white p-6 rounded-xl shadow-sm">
               <h2 className="text-lg font-bold text-purple-600 mb-4 flex items-center gap-2">
-                <span>📊</span> Top Consumed Items (vs. Previous Submission)
+                <span>📊</span> Top Consumed Items (Rolling Average)
               </h2>
+              <p className="text-xs text-gray-500 mb-3">Average weekly usage calculated across up to 12 submissions for accuracy</p>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b">
                       <th className="text-left py-2 font-medium text-gray-600">Item</th>
-                      <th className="text-right py-2 font-medium text-gray-600">Previous</th>
-                      <th className="text-right py-2 font-medium text-gray-600">Current</th>
-                      <th className="text-right py-2 font-medium text-gray-600">Used</th>
-                      <th className="text-right py-2 font-medium text-gray-600">Weekly Rate</th>
+                      <th className="text-right py-2 font-medium text-gray-600">Current Stock</th>
+                      <th className="text-right py-2 font-medium text-gray-600">Total Used</th>
+                      <th className="text-right py-2 font-medium text-gray-600">Avg Weekly</th>
                       <th className="text-right py-2 font-medium text-gray-600">Weeks Left</th>
                     </tr>
                   </thead>
@@ -847,11 +848,10 @@
                       <tr key={idx} className="border-b hover:bg-gray-50">
                         <td className="py-2">
                           <p className="font-medium text-gray-800">{item.itemName}</p>
-                          <p className="text-xs text-gray-500">{item.category}</p>
+                          <p className="text-xs text-gray-500">{item.category} {item.dataPoints && `(${item.dataPoints} periods)`}</p>
                         </td>
-                        <td className="text-right text-gray-600">{item.prevQty}</td>
                         <td className="text-right text-gray-600">{item.currentQty}</td>
-                        <td className="text-right text-red-600 font-medium">{Math.abs(item.change)}</td>
+                        <td className="text-right text-red-600 font-medium">{item.totalConsumed}</td>
                         <td className="text-right text-gray-600">{item.weeklyRate}/wk</td>
                         <td className="text-right">
                           <span className={`font-medium ${item.weeksRemaining <= 2 ? 'text-red-600' : item.weeksRemaining <= 4 ? 'text-orange-600' : 'text-green-600'}`}>

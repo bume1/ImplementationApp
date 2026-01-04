@@ -84,9 +84,10 @@ Preferred communication style: Simple, everyday language.
 - **Low Stock Alerts**: Items with total quantity <= 2 highlighted with warning
 - **Expiring Items**: Items expiring within 30 days shown with alert
 - **Usage Trends**: 
-  - Top Consumed Items table comparing current vs previous submission
-  - Weekly consumption rate calculation for each item
+  - Top Consumed Items table with rolling average calculation across up to 12 submissions
+  - Average weekly consumption rate using total consumed / total days formula
   - Estimated weeks remaining before depletion (color-coded: red ≤2wks, orange ≤4wks, green >4wks)
+  - Data points indicator showing how many periods were used in the calculation
   - Total Inventory Over Time bar chart showing quantity trends across submissions
 - **Submission History**: List of past submissions with item counts and timestamps
 - **Portal Navigation**: Collapsible "Inventory" menu with "Weekly Update" and "Reports & Alerts" subpages
