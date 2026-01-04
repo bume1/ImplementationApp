@@ -72,6 +72,8 @@ Preferred communication style: Simple, everyday language.
 ## Recent Changes (January 2026)
 
 ### UI/UX Improvements (Jan 4)
+- **Portal Milestones View**: Redesigned to match public client view (/thrive365labslaunch/{slug}) exactly with header showing logo, project name, client name, progress percentage; view toggles (List View, Timeline, Calendar); phase gradient headers; stage cards with left border, completion counts, Target Due Date; tasks with strikethrough for completed, owner and completion date display
+- **Admin Portal Route Fix**: Server now correctly accepts 'admin' slug for /portal/admin access
 - **Central Client Portal Login**: New /portal URL where clients can log in and be redirected to their practice-specific portal
 - **Admin Portal Access**: Admins can log into /portal with admin credentials to access portal management features
 - **Admin Portal Dashboard**: Dedicated admin view with Portal Settings, Announcements Manager, Client Documents, and Client Users pages
