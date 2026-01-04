@@ -71,11 +71,19 @@ Preferred communication style: Simple, everyday language.
 ## Recent Changes (January 2026)
 
 ### Inventory Management System
-- **Quick Update Table**: Full inventory form with 95+ items across 5 categories (Ancillary Supplies, Calibrators, Controls, Reagent, Validation)
+- **Quick Update Table**: Full inventory form with 79 items across 4 categories (Ancillary Supplies, Calibrators, Controls, Reagent)
+- **Batch Tracking**: Each item supports multiple lots/expiry dates with data structure `{ batches: [{lotNumber, expiry, openQty, openDate, closedQty, notes}] }`
+- **Custom Items**: Clients can add custom inventory items not in the predefined template
 - **Pre-populated Data**: Each client's inventory form pre-fills with their last submission
 - **Weekly Submissions**: Clients submit inventory with lot numbers, expiry dates, open/closed quantities, and notes
-- **Alerts**: Automatic detection of low stock (<=2 items) and expiring items (within 30 days)
+- **Backward Compatibility**: Server-side normalization converts legacy flat format to batch array structure
 - **History Tracking**: Up to 1000 submissions stored per client with timestamps
+
+### Inventory Reports (Client Portal)
+- **Low Stock Alerts**: Items with total quantity <= 2 highlighted with warning
+- **Expiring Items**: Items expiring within 30 days shown with alert
+- **Submission History**: List of past submissions with item counts and timestamps
+- **Portal Navigation**: Dedicated "Inventory Reports" page in client portal sidebar
 
 ### HubSpot Webhook Integration
 - **Endpoint**: POST /api/webhooks/hubspot receives form submission notifications
