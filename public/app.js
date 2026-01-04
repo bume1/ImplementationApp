@@ -714,7 +714,7 @@ const AuthScreen = ({ onLogin }) => {
         <div className="flex justify-center mb-6">
           <img src="/logo.webp" alt="Thrive 365 Labs" className="h-16" />
         </div>
-        <h1 className="text-2xl font-bold mb-2 text-accent text-center">New Client Launch Implementation</h1>
+        <h1 className="text-2xl font-bold mb-2 text-accent text-center">Portal</h1>
         <p className="text-gray-600 mb-6 text-center">Thrive 365 Labs Web App</p>
 
 
@@ -1119,7 +1119,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
               <div className="flex-1 overflow-y-auto p-6 space-y-6">
                 <section>
                   <h3 className="text-lg font-bold text-primary mb-3">Getting Started</h3>
-                  <p className="text-gray-700 mb-2">Welcome to the New Client Launch Implementation tracker! This application helps you manage clinical laboratory equipment installations with a structured phase-based approach.</p>
+                  <p className="text-gray-700 mb-2">Welcome to the Thrive 365 Labs Portal! This application helps you manage clinical laboratory equipment installations with a structured phase-based approach.</p>
                   <ul className="list-disc ml-5 text-gray-600 space-y-1">
                     <li><strong>Create a Project:</strong> Click "+ New Project" to start a new client launch</li>
                     <li><strong>Select a Template:</strong> Choose from pre-built templates with tasks already set up</li>
@@ -2171,7 +2171,7 @@ const SoftPilotChecklist = ({ token, project, tasks, teamMembers, onClose, onSub
 
   <footer style="margin-top: 50px; text-align: center; color: #9ca3af; font-size: 12px;">
     <p>Powered by Thrive365Labs | Developed by Bianca G. C. Ume, MD, MBA, MS</p>
-    <p>Thrive 365 Labs - New Client Launch Implementation</p>
+    <p>Thrive 365 Labs - Portal</p>
   </footer>
 </body>
 </html>
@@ -5599,7 +5599,7 @@ const Reporting = ({ token, user, onBack, onLogout }) => {
       <div className="max-w-6xl mx-auto">
         <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
           <h1 className="text-2xl font-bold text-gray-900">Launch Reports</h1>
-          <p className="text-gray-600 mb-4">New Client Launch Implementation - Thrive 365 Labs Web App</p>
+          <p className="text-gray-600 mb-4">Portal - Thrive 365 Labs</p>
 
           {/* Summary Stats */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
