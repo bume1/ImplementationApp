@@ -156,26 +156,29 @@
     };
     
     const Sidebar = ({ activePage, onNavigate, user }) => {
-      const menuItems = [
-        { id: 'home', label: 'Home', icon: '🏠' },
-        { id: 'inventory', label: 'Inventory Management', icon: '📦' },
-        { id: 'reports', label: 'Inventory Reports', icon: '📊' },
+      const [inventoryExpanded, setInventoryExpanded] = useState(activePage === 'inventory' || activePage === 'reports');
+      
+      const mainItems = [
+        { id: 'home', label: 'Home', icon: '🏠' }
+      ];
+      
+      if (user?.isNewClient) {
+        mainItems.push({ id: 'milestones', label: 'Launch Milestones', icon: '🎯' });
+      }
+      
+      const bottomItems = [
         { id: 'support', label: 'Customer Support', icon: '💬' },
         { id: 'files', label: 'Files', icon: '📁' }
       ];
       
-      if (user?.isNewClient) {
-        menuItems.splice(1, 0, { id: 'milestones', label: 'Launch Milestones', icon: '🎯' });
-      }
-      
       return (
         <aside className="w-64 bg-white border-r min-h-screen fixed left-0 top-0">
           <div className="p-4 border-b">
-            <img 
-              src="https://www.thrive365labs.com/wp-content/uploads/2024/05/Thrive-Logo-Blue-Gradient.png" 
-              alt="Thrive 365 Labs" 
-              className="h-10"
-            />
+            {user?.logo ? (
+              <img src={user.logo} alt={user.practiceName || 'Practice Logo'} className="h-12 max-w-full object-contain" />
+            ) : (
+              <img src="https://www.thrive365labs.com/wp-content/uploads/2024/05/Thrive-Logo-Blue-Gradient.png" alt="Thrive 365 Labs" className="h-10" />
+            )}
           </div>
           
           <div className="p-4 border-b bg-gray-50">
@@ -185,7 +188,56 @@
           </div>
           
           <nav className="p-2">
-            {menuItems.map(item => (
+            {mainItems.map(item => (
+              <button
+                key={item.id}
+                onClick={() => onNavigate(item.id)}
+                className={`w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center gap-3 ${
+                  activePage === item.id ? 'active' : 'text-gray-700'
+                }`}
+              >
+                <span className="text-lg">{item.icon}</span>
+                <span className="font-medium">{item.label}</span>
+              </button>
+            ))}
+            
+            <div className="mt-1">
+              <button
+                onClick={() => setInventoryExpanded(!inventoryExpanded)}
+                className={`w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center justify-between ${
+                  (activePage === 'inventory' || activePage === 'reports') ? 'active' : 'text-gray-700'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-lg">📦</span>
+                  <span className="font-medium">Inventory</span>
+                </div>
+                <span className="text-xs">{inventoryExpanded ? '▼' : '▶'}</span>
+              </button>
+              
+              {inventoryExpanded && (
+                <div className="ml-6 mt-1 space-y-1">
+                  <button
+                    onClick={() => onNavigate('inventory')}
+                    className={`w-full text-left px-4 py-2 rounded-lg text-sm flex items-center gap-2 ${
+                      activePage === 'inventory' ? 'bg-primary/10 text-primary font-medium' : 'text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    <span>📋</span> Weekly Update
+                  </button>
+                  <button
+                    onClick={() => onNavigate('reports')}
+                    className={`w-full text-left px-4 py-2 rounded-lg text-sm flex items-center gap-2 ${
+                      activePage === 'reports' ? 'bg-primary/10 text-primary font-medium' : 'text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    <span>📊</span> Reports & Alerts
+                  </button>
+                </div>
+              )}
+            </div>
+            
+            {bottomItems.map(item => (
               <button
                 key={item.id}
                 onClick={() => onNavigate(item.id)}
@@ -220,10 +272,17 @@
       return (
         <div className="space-y-6">
           <div className="bg-gradient-to-r from-primary to-accent text-white p-6 rounded-xl">
-            <h1 className="text-2xl font-bold">Welcome to Your Portal</h1>
-            <p className="mt-2 opacity-90">
-              {data?.user?.practiceName || 'Your Practice'}
-            </p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-bold">Welcome to Your Portal</h1>
+                <p className="mt-2 opacity-90">
+                  {data?.user?.practiceName || 'Your Practice'}
+                </p>
+              </div>
+              {data?.user?.logo && (
+                <img src={data.user.logo} alt={data?.user?.practiceName || 'Practice Logo'} className="h-16 max-w-[200px] object-contain bg-white/20 rounded-lg p-2" />
+              )}
+            </div>
           </div>
           
           <div className="grid md:grid-cols-2 gap-6">
@@ -665,12 +724,54 @@
       const lowStock = alerts?.lowStock || [];
       const expiring = alerts?.expiringSoon || [];
 
+      const [showGuide, setShowGuide] = useState(false);
+
       return (
         <div className="space-y-6">
           <div className="bg-white p-6 rounded-xl shadow-sm">
-            <h1 className="text-2xl font-bold text-accent">Inventory Reports</h1>
-            <p className="text-gray-600 mt-1">View alerts and usage trends for your inventory</p>
+            <div className="flex justify-between items-start">
+              <div>
+                <h1 className="text-2xl font-bold text-accent">Inventory Reports</h1>
+                <p className="text-gray-600 mt-1">View alerts and usage trends for your inventory</p>
+              </div>
+              <button onClick={() => setShowGuide(!showGuide)} className="text-primary hover:text-accent text-sm flex items-center gap-1">
+                <span>ℹ️</span> {showGuide ? 'Hide Guide' : 'How to Use This Report'}
+              </button>
+            </div>
           </div>
+
+          {showGuide && (
+            <div className="bg-blue-50 border border-blue-200 p-6 rounded-xl">
+              <h3 className="text-lg font-bold text-blue-800 mb-4">Understanding Your Inventory Reports</h3>
+              <div className="grid md:grid-cols-2 gap-6 text-sm text-gray-700">
+                <div>
+                  <h4 className="font-semibold text-red-600 mb-2">Low Stock Alerts</h4>
+                  <p className="mb-2">Items with a combined quantity (open + closed) of 2 or fewer units are flagged here. These require immediate attention to prevent stockouts.</p>
+                  <p className="text-xs text-gray-500">Action: Reorder these items as soon as possible.</p>
+                </div>
+                <div>
+                  <h4 className="font-semibold text-orange-600 mb-2">Expiring Soon</h4>
+                  <p className="mb-2">Items with expiration dates within the next 30 days appear here. Use these items first to minimize waste.</p>
+                  <p className="text-xs text-gray-500">Action: Prioritize using expiring items; plan replacement orders.</p>
+                </div>
+                <div>
+                  <h4 className="font-semibold text-purple-600 mb-2">Top Consumed Items</h4>
+                  <p className="mb-2">Shows items with the largest quantity decrease between your last two submissions. The system calculates:</p>
+                  <ul className="list-disc list-inside text-xs space-y-1 mt-1">
+                    <li><strong>Used:</strong> Previous quantity minus current quantity</li>
+                    <li><strong>Weekly Rate:</strong> Estimated usage per week based on time between submissions</li>
+                    <li><strong>Weeks Left:</strong> How long until depleted at current rate</li>
+                  </ul>
+                  <p className="text-xs text-gray-500 mt-2">Color codes: Red = 2 weeks or less | Orange = 2-4 weeks | Green = 4+ weeks</p>
+                </div>
+                <div>
+                  <h4 className="font-semibold text-blue-600 mb-2">Total Inventory Over Time</h4>
+                  <p className="mb-2">A visual chart showing your total inventory quantity across recent submissions. Helps identify if overall stock is trending up or down.</p>
+                  <p className="text-xs text-gray-500">Tip: Submit inventory weekly for accurate trend analysis.</p>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="grid md:grid-cols-2 gap-6">
             <div className="bg-white p-6 rounded-xl shadow-sm">
