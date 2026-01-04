@@ -1834,17 +1834,51 @@ app.get('/api/inventory/report/:slug', authenticateToken, async (req, res) => {
     });
     
     const consumptionRate = [];
-    if (clientSubmissions.length >= 2) {
-      Object.entries(itemUsage)
-        .filter(([_, v]) => v.change < 0)
-        .sort((a, b) => a[1].change - b[1].change)
-        .slice(0, 10)
-        .forEach(([key, v]) => {
-          const daysBetween = Math.max(1, Math.ceil((new Date(clientSubmissions[0].submittedAt) - new Date(clientSubmissions[1].submittedAt)) / (1000 * 60 * 60 * 24)));
-          const weeklyRate = Math.abs(v.change) * (7 / daysBetween);
-          const weeksRemaining = v.currentQty > 0 ? Math.ceil(v.currentQty / weeklyRate) : 0;
-          consumptionRate.push({ ...v, weeklyRate: weeklyRate.toFixed(1), weeksRemaining });
+    const submissionsToAnalyze = clientSubmissions.slice(0, 12);
+    
+    if (submissionsToAnalyze.length >= 2) {
+      const itemConsumption = {};
+      
+      for (let i = 0; i < submissionsToAnalyze.length - 1; i++) {
+        const newer = submissionsToAnalyze[i];
+        const older = submissionsToAnalyze[i + 1];
+        const daysBetween = Math.max(1, Math.ceil((new Date(newer.submittedAt) - new Date(older.submittedAt)) / (1000 * 60 * 60 * 24)));
+        
+        const allKeys = new Set([...Object.keys(newer.data || {}), ...Object.keys(older.data || {})]);
+        allKeys.forEach(key => {
+          const newerQty = getItemTotal(newer.data, key);
+          const olderQty = getItemTotal(older.data, key);
+          const consumed = olderQty - newerQty;
+          
+          if (consumed > 0) {
+            if (!itemConsumption[key]) {
+              const [category, itemName] = key.split('|');
+              itemConsumption[key] = { category, itemName, totalConsumed: 0, totalDays: 0, dataPoints: 0 };
+            }
+            itemConsumption[key].totalConsumed += consumed;
+            itemConsumption[key].totalDays += daysBetween;
+            itemConsumption[key].dataPoints += 1;
+          }
         });
+      }
+      
+      Object.entries(itemConsumption)
+        .filter(([_, v]) => v.totalConsumed > 0 && v.totalDays > 0)
+        .map(([key, v]) => {
+          const avgWeeklyRate = (v.totalConsumed / v.totalDays) * 7;
+          const currentQty = getItemTotal(submissionsToAnalyze[0].data, key);
+          const weeksRemaining = avgWeeklyRate > 0 && currentQty > 0 ? Math.ceil(currentQty / avgWeeklyRate) : 0;
+          return { 
+            ...v, 
+            currentQty,
+            weeklyRate: avgWeeklyRate.toFixed(1), 
+            weeksRemaining,
+            avgWeeklyRate
+          };
+        })
+        .sort((a, b) => b.avgWeeklyRate - a.avgWeeklyRate)
+        .slice(0, 10)
+        .forEach(item => consumptionRate.push(item));
     }
     
     res.json({
