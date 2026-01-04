@@ -1833,6 +1833,25 @@ app.get('/api/inventory/report/:slug', authenticateToken, async (req, res) => {
       return { date: sub.submittedAt, totalQuantity: totalQty, itemCount: Object.keys(sub.data).length };
     });
     
+    // Build per-item time series for charting individual items
+    const itemTimeSeries = {};
+    const recentSubs = clientSubmissions.slice(0, 12).reverse();
+    recentSubs.forEach(sub => {
+      Object.entries(sub.data || {}).forEach(([key, val]) => {
+        const [category, itemName] = key.split('|');
+        if (!itemTimeSeries[key]) {
+          itemTimeSeries[key] = { category, itemName, dataPoints: [] };
+        }
+        const batches = Array.isArray(val?.batches) ? val.batches : [val || {}];
+        const qty = batches.reduce((s, b) => s + (parseInt(b.openQty) || 0) + (parseInt(b.closedQty) || 0), 0);
+        itemTimeSeries[key].dataPoints.push({ date: sub.submittedAt, quantity: qty });
+      });
+    });
+    // Convert to array and sort by category/name
+    const itemTimeSeriesArray = Object.entries(itemTimeSeries)
+      .map(([key, val]) => ({ key, ...val }))
+      .sort((a, b) => a.category.localeCompare(b.category) || a.itemName.localeCompare(b.itemName));
+    
     const consumptionRate = [];
     const submissionsToAnalyze = clientSubmissions.slice(0, 12);
     
@@ -1889,7 +1908,7 @@ app.get('/api/inventory/report/:slug', authenticateToken, async (req, res) => {
         lowStock: lowStockItems.sort((a, b) => a.quantity - b.quantity),
         expiringSoon: expiringItems.sort((a, b) => a.daysUntilExpiry - b.daysUntilExpiry)
       },
-      usageTrends: { itemChanges: Object.values(itemUsage), usageSummary, consumptionRate }
+      usageTrends: { itemChanges: Object.values(itemUsage), usageSummary, consumptionRate, itemTimeSeries: itemTimeSeriesArray }
     });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });

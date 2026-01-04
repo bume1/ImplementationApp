@@ -88,7 +88,7 @@ Preferred communication style: Simple, everyday language.
   - Average weekly consumption rate using total consumed / total days formula
   - Estimated weeks remaining before depletion (color-coded: red ≤2wks, orange ≤4wks, green >4wks)
   - Data points indicator showing how many periods were used in the calculation
-  - Total Inventory Over Time bar chart showing quantity trends across submissions
+  - Item Quantities Over Time chart with searchable item selector, category filter chips, and line chart comparing up to 5 items
 - **Submission History**: List of past submissions with item counts and timestamps
 - **Portal Navigation**: Collapsible "Inventory" menu with "Weekly Update" and "Reports & Alerts" subpages
 - **Reporting Guide**: Collapsible help section explaining all metrics, calculations, and color codes

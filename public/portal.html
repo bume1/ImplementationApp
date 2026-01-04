@@ -709,6 +709,11 @@
       const [report, setReport] = useState(null);
       const [loading, setLoading] = useState(true);
       const [showGuide, setShowGuide] = useState(false);
+      const [selectedItems, setSelectedItems] = useState([]);
+      const [itemSearch, setItemSearch] = useState('');
+      const [categoryFilter, setCategoryFilter] = useState('All');
+      
+      const CHART_COLORS = ['#045E9F', '#00205A', '#10B981', '#F59E0B', '#EF4444'];
 
       useEffect(() => {
         fetch(`${API_URL}/api/inventory/report/${slug}`, { headers: { 'Authorization': `Bearer ${token}` } })
@@ -765,9 +770,14 @@
                   <p className="text-xs text-gray-500 mt-2">More submissions = more accurate predictions. Color codes: Red = 2 weeks or less | Orange = 2-4 weeks | Green = 4+ weeks</p>
                 </div>
                 <div>
-                  <h4 className="font-semibold text-blue-600 mb-2">Total Inventory Over Time</h4>
-                  <p className="mb-2">A visual chart showing your total inventory quantity across recent submissions. Helps identify if overall stock is trending up or down.</p>
-                  <p className="text-xs text-gray-500">Tip: Submit inventory weekly for accurate trend analysis.</p>
+                  <h4 className="font-semibold text-blue-600 mb-2">Item Quantities Over Time</h4>
+                  <p className="mb-2">Select individual items to see their quantity trends across submissions. Compare up to 5 items at once to spot patterns.</p>
+                  <ul className="list-disc list-inside text-xs space-y-1 mt-1">
+                    <li>Use category chips to filter by item type</li>
+                    <li>Search to find specific items quickly</li>
+                    <li>Color-coded lines show each item's trend</li>
+                  </ul>
+                  <p className="text-xs text-gray-500 mt-2">Tip: Compare similar items to identify usage patterns.</p>
                 </div>
               </div>
             </div>
@@ -866,24 +876,105 @@
             </div>
           )}
 
-          {usageTrends?.usageSummary?.length > 1 && (
+          {usageTrends?.itemTimeSeries?.length > 0 && (
             <div className="bg-white p-6 rounded-xl shadow-sm">
               <h2 className="text-lg font-bold text-blue-600 mb-4 flex items-center gap-2">
-                <span>📈</span> Total Inventory Over Time
+                <span>📈</span> Item Quantities Over Time
               </h2>
-              <div className="flex items-end gap-2 h-40">
-                {usageTrends.usageSummary.map((s, idx) => {
-                  const maxQty = Math.max(...usageTrends.usageSummary.map(x => x.totalQuantity));
-                  const height = maxQty > 0 ? (s.totalQuantity / maxQty) * 100 : 0;
-                  return (
-                    <div key={idx} className="flex-1 flex flex-col items-center">
-                      <div className="w-full bg-primary rounded-t" style={{ height: `${height}%`, minHeight: '4px' }} title={`${s.totalQuantity} units`}></div>
-                      <p className="text-xs text-gray-500 mt-1 truncate w-full text-center">{new Date(s.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>
-                    </div>
-                  );
-                })}
+              <p className="text-xs text-gray-500 mb-3">Select up to 5 items to compare their quantity trends across submissions</p>
+              
+              {/* Category filter chips */}
+              <div className="flex flex-wrap gap-2 mb-3">
+                {['All', ...new Set(usageTrends.itemTimeSeries.map(i => i.category))].map(cat => (
+                  <button key={cat} onClick={() => setCategoryFilter(cat)} className={`px-3 py-1 rounded-full text-xs font-medium transition ${categoryFilter === cat ? 'bg-primary text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{cat}</button>
+                ))}
               </div>
-              <p className="text-xs text-gray-400 text-center mt-2">Total quantity across all items per submission</p>
+              
+              {/* Item search and selector */}
+              <div className="mb-4">
+                <input type="text" placeholder="Search items..." value={itemSearch} onChange={e => setItemSearch(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm mb-2" />
+                <div className="max-h-32 overflow-y-auto border rounded-lg p-2 bg-gray-50">
+                  {usageTrends.itemTimeSeries
+                    .filter(item => (categoryFilter === 'All' || item.category === categoryFilter) && item.itemName.toLowerCase().includes(itemSearch.toLowerCase()))
+                    .map(item => {
+                      const isSelected = selectedItems.includes(item.key);
+                      return (
+                        <label key={item.key} className={`flex items-center gap-2 p-1 rounded cursor-pointer hover:bg-gray-100 ${isSelected ? 'bg-blue-50' : ''}`}>
+                          <input type="checkbox" checked={isSelected} disabled={!isSelected && selectedItems.length >= 5} onChange={() => {
+                            if (isSelected) setSelectedItems(selectedItems.filter(k => k !== item.key));
+                            else if (selectedItems.length < 5) setSelectedItems([...selectedItems, item.key]);
+                          }} className="rounded" />
+                          <span className="text-sm text-gray-700">{item.itemName}</span>
+                          <span className="text-xs text-gray-400">({item.category})</span>
+                        </label>
+                      );
+                    })}
+                </div>
+              </div>
+              
+              {/* Selected items legend */}
+              {selectedItems.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {selectedItems.map((key, idx) => {
+                    const item = usageTrends.itemTimeSeries.find(i => i.key === key);
+                    return (
+                      <span key={key} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs text-white" style={{ backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] }}>
+                        {item?.itemName}
+                        <button onClick={() => setSelectedItems(selectedItems.filter(k => k !== key))} className="ml-1 hover:opacity-75">×</button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+              
+              {/* Line chart */}
+              {selectedItems.length > 0 ? (
+                <div className="relative h-48 border rounded-lg p-4 bg-gray-50">
+                  {(() => {
+                    const selectedData = selectedItems.map(key => usageTrends.itemTimeSeries.find(i => i.key === key)).filter(Boolean);
+                    const allDates = [...new Set(selectedData.flatMap(item => item.dataPoints.map(dp => dp.date)))].sort();
+                    const maxQty = Math.max(...selectedData.flatMap(item => item.dataPoints.map(dp => dp.quantity)), 1);
+                    const chartWidth = 100;
+                    const chartHeight = 100;
+                    
+                    return (
+                      <svg viewBox={`0 0 ${chartWidth + 20} ${chartHeight + 20}`} className="w-full h-full" preserveAspectRatio="xMidYMid meet">
+                        {/* Y-axis labels */}
+                        <text x="0" y="15" className="text-[3px] fill-gray-400">{maxQty}</text>
+                        <text x="0" y={chartHeight / 2 + 10} className="text-[3px] fill-gray-400">{Math.round(maxQty / 2)}</text>
+                        <text x="0" y={chartHeight + 5} className="text-[3px] fill-gray-400">0</text>
+                        
+                        {/* Grid lines */}
+                        {[0, 0.25, 0.5, 0.75, 1].map((pct, idx) => (
+                          <line key={idx} x1="15" y1={chartHeight * pct + 5} x2={chartWidth + 15} y2={chartHeight * pct + 5} stroke="#e5e7eb" strokeWidth="0.5" />
+                        ))}
+                        
+                        {/* Lines for each selected item */}
+                        {selectedData.map((item, itemIdx) => {
+                          const points = allDates.map((date, dateIdx) => {
+                            const dp = item.dataPoints.find(p => p.date === date);
+                            const x = 15 + (dateIdx / Math.max(allDates.length - 1, 1)) * chartWidth;
+                            const y = 5 + chartHeight - (dp ? (dp.quantity / maxQty) * chartHeight : 0);
+                            return `${x},${y}`;
+                          }).join(' ');
+                          return <polyline key={item.key} points={points} fill="none" stroke={CHART_COLORS[itemIdx % CHART_COLORS.length]} strokeWidth="1.5" />;
+                        })}
+                        
+                        {/* X-axis date labels */}
+                        {allDates.map((date, idx) => (
+                          <text key={idx} x={15 + (idx / Math.max(allDates.length - 1, 1)) * chartWidth} y={chartHeight + 15} textAnchor="middle" className="text-[2.5px] fill-gray-500">
+                            {new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          </text>
+                        ))}
+                      </svg>
+                    );
+                  })()}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-400 border rounded-lg bg-gray-50">
+                  <p>Select items above to see their quantity trends</p>
+                </div>
+              )}
             </div>
           )}
 
