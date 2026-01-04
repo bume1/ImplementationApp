@@ -306,7 +306,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// Client portal login endpoint
+// Client portal login endpoint (also supports admin access to portal management)
 app.post('/api/auth/client-login', async (req, res) => {
   try {
     const { email, password, slug } = req.body;
@@ -314,12 +314,13 @@ app.post('/api/auth/client-login', async (req, res) => {
       return res.status(400).json({ error: 'Missing credentials' });
     }
     const users = await getUsers();
-    const user = users.find(u => u.email === email && u.role === 'client');
+    // Allow both clients and admins to log into the portal
+    const user = users.find(u => u.email === email && (u.role === 'client' || u.role === 'admin'));
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
-    // Optionally verify slug matches if provided
-    if (slug && user.slug !== slug) {
+    // For clients, optionally verify slug matches if provided
+    if (user.role === 'client' && slug && user.slug !== slug) {
       return res.status(400).json({ error: 'Invalid portal access' });
     }
     const token = jwt.sign(
@@ -336,7 +337,7 @@ app.post('/api/auth/client-login', async (req, res) => {
         role: user.role,
         practiceName: user.practiceName,
         isNewClient: user.isNewClient,
-        slug: user.slug,
+        slug: user.role === 'admin' ? 'admin' : user.slug,
         logo: user.logo || '',
         assignedProjects: user.assignedProjects || []
       }
