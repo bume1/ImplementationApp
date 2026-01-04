@@ -220,7 +220,7 @@ app.post('/api/users', authenticateToken, async (req, res) => {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Admin access required' });
     }
-    const { email, password, name, role, practiceName, isNewClient, assignedProjects } = req.body;
+    const { email, password, name, role, practiceName, isNewClient, assignedProjects, logo } = req.body;
     if (!email || !password || !name) {
       return res.status(400).json({ error: 'Email, password, and name are required' });
     }
@@ -247,6 +247,7 @@ app.post('/api/users', authenticateToken, async (req, res) => {
       newUser.isNewClient = isNewClient || false;
       newUser.slug = await generateClientUserSlug(practiceName);
       newUser.assignedProjects = assignedProjects || [];
+      if (logo) newUser.logo = logo;
     }
     
     users.push(newUser);
@@ -260,6 +261,7 @@ app.post('/api/users', authenticateToken, async (req, res) => {
       isNewClient: newUser.isNewClient,
       slug: newUser.slug,
       assignedProjects: newUser.assignedProjects,
+      logo: newUser.logo || '',
       createdAt: newUser.createdAt 
     });
   } catch (error) {
@@ -335,6 +337,7 @@ app.post('/api/auth/client-login', async (req, res) => {
         practiceName: user.practiceName,
         isNewClient: user.isNewClient,
         slug: user.slug,
+        logo: user.logo || '',
         assignedProjects: user.assignedProjects || []
       }
     });
@@ -448,7 +451,8 @@ app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
       // Client-specific fields
       practiceName: u.practiceName || null,
       isNewClient: u.isNewClient || false,
-      slug: u.slug || null
+      slug: u.slug || null,
+      logo: u.logo || ''
     }));
     res.json(safeUsers);
   } catch (error) {
@@ -459,7 +463,7 @@ app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
 app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
-    const { name, email, role, password, assignedProjects, practiceName, isNewClient } = req.body;
+    const { name, email, role, password, assignedProjects, practiceName, isNewClient, logo } = req.body;
     const users = await getUsers();
     const idx = users.findIndex(u => u.id === userId);
     if (idx === -1) return res.status(404).json({ error: 'User not found' });
@@ -480,6 +484,7 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
       }
     }
     if (isNewClient !== undefined) users[idx].isNewClient = isNewClient;
+    if (logo !== undefined) users[idx].logo = logo;
     
     await db.set('users', users);
     res.json({ 
@@ -490,7 +495,8 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
       assignedProjects: users[idx].assignedProjects || [],
       practiceName: users[idx].practiceName || null,
       isNewClient: users[idx].isNewClient || false,
-      slug: users[idx].slug || null
+      slug: users[idx].slug || null,
+      logo: users[idx].logo || ''
     });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
@@ -1372,11 +1378,14 @@ app.get('/api/client-portal/data', authenticateToken, async (req, res) => {
       )
       .slice(0, 20);
     
+    const clientUser = users.find(u => u.id === req.user.id);
+    
     res.json({
       user: {
         name: req.user.name,
-        practiceName: req.user.practiceName,
-        isNewClient: req.user.isNewClient
+        practiceName: clientUser?.practiceName || req.user.practiceName,
+        isNewClient: clientUser?.isNewClient || req.user.isNewClient,
+        logo: clientUser?.logo || ''
       },
       projects: projectsWithTasks,
       announcements: announcements.slice(0, 10),

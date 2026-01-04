@@ -4206,7 +4206,7 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
   const [editingUser, setEditingUser] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAddUser, setShowAddUser] = useState(false);
-  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'user', practiceName: '', isNewClient: false, assignedProjects: [] });
+  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'user', practiceName: '', isNewClient: false, assignedProjects: [], logo: '' });
   const [addError, setAddError] = useState('');
   const [passwordResetRequests, setPasswordResetRequests] = useState([]);
 
@@ -4299,7 +4299,7 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
         return;
       }
       await loadUsers();
-      setNewUser({ name: '', email: '', password: '', role: 'user', practiceName: '', isNewClient: false, assignedProjects: [] });
+      setNewUser({ name: '', email: '', password: '', role: 'user', practiceName: '', isNewClient: false, assignedProjects: [], logo: '' });
       setShowAddUser(false);
       setAddError('');
     } catch (err) {
@@ -4316,7 +4316,8 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
         role: editingUser.role,
         assignedProjects: editingUser.assignedProjects || [],
         practiceName: editingUser.practiceName || '',
-        isNewClient: editingUser.isNewClient || false
+        isNewClient: editingUser.isNewClient || false,
+        logo: editingUser.logo || ''
       };
       if (editingUser.newPassword) {
         updates.password = editingUser.newPassword;
@@ -4488,6 +4489,35 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
                       New Client (show Launch Milestones)
                     </label>
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Practice Logo</label>
+                    <div className="space-y-2">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files[0];
+                          if (file) {
+                            if (file.size > 2 * 1024 * 1024) {
+                              setAddError('Logo must be under 2MB');
+                              return;
+                            }
+                            const reader = new FileReader();
+                            reader.onload = (ev) => setNewUser({...newUser, logo: ev.target.result});
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                        className="w-full text-sm"
+                      />
+                      {newUser.logo && (
+                        <div className="flex items-center gap-2">
+                          <img src={newUser.logo} alt="Preview" className="h-10 object-contain border rounded" />
+                          <button type="button" onClick={() => setNewUser({...newUser, logo: ''})} className="text-red-600 text-xs hover:underline">Remove</button>
+                        </div>
+                      )}
+                      <p className="text-xs text-gray-500">Max 2MB. PNG or JPG recommended. Shows in client portal header.</p>
+                    </div>
+                  </div>
                 </>
               )}
             </div>
@@ -4522,7 +4552,7 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
                 Create User
               </button>
               <button
-                onClick={() => { setShowAddUser(false); setAddError(''); setNewUser({ name: '', email: '', password: '', role: 'user', practiceName: '', isNewClient: false, assignedProjects: [] }); }}
+                onClick={() => { setShowAddUser(false); setAddError(''); setNewUser({ name: '', email: '', password: '', role: 'user', practiceName: '', isNewClient: false, assignedProjects: [], logo: '' }); }}
                 className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400"
               >
                 Cancel
@@ -4664,6 +4694,35 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
                       <label htmlFor="editIsNewClient" className="text-sm font-medium">
                         New Client (show Launch Milestones)
                       </label>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Practice Logo</label>
+                      <div className="space-y-2">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files[0];
+                            if (file) {
+                              if (file.size > 2 * 1024 * 1024) {
+                                alert('Logo must be under 2MB');
+                                return;
+                              }
+                              const reader = new FileReader();
+                              reader.onload = (ev) => setEditingUser({...editingUser, logo: ev.target.result});
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                          className="w-full text-sm"
+                        />
+                        {editingUser.logo && (
+                          <div className="flex items-center gap-2">
+                            <img src={editingUser.logo} alt="Preview" className="h-10 object-contain border rounded" />
+                            <button type="button" onClick={() => setEditingUser({...editingUser, logo: ''})} className="text-red-600 text-xs hover:underline">Remove</button>
+                          </div>
+                        )}
+                        <p className="text-xs text-gray-500">Max 2MB. PNG or JPG recommended. Shows in client portal header.</p>
+                      </div>
                     </div>
                   </>
                 )}
