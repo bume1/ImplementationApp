@@ -159,6 +159,7 @@
       const menuItems = [
         { id: 'home', label: 'Home', icon: '🏠' },
         { id: 'inventory', label: 'Inventory Management', icon: '📦' },
+        { id: 'reports', label: 'Inventory Reports', icon: '📊' },
         { id: 'support', label: 'Customer Support', icon: '💬' },
         { id: 'files', label: 'Files', icon: '📁' }
       ];
@@ -385,53 +386,78 @@
     
     const InventoryPage = ({ token, slug }) => {
       const [template, setTemplate] = useState([]);
+      const [customItems, setCustomItems] = useState([]);
       const [inventoryData, setInventoryData] = useState({});
       const [loading, setLoading] = useState(true);
       const [saving, setSaving] = useState(false);
       const [lastSubmitted, setLastSubmitted] = useState(null);
       const [expandedCategories, setExpandedCategories] = useState({});
       const [message, setMessage] = useState('');
+      const [showAddItem, setShowAddItem] = useState(false);
+      const [newItemCategory, setNewItemCategory] = useState('');
+      const [newItemName, setNewItemName] = useState('');
 
-      useEffect(() => {
-        loadInventory();
-      }, []);
+      useEffect(() => { loadInventory(); }, []);
 
       const loadInventory = async () => {
         try {
-          const [templateData, latestData] = await Promise.all([
+          const [templateData, latestData, customData] = await Promise.all([
             fetch(`${API_URL}/api/inventory/template`).then(r => r.json()),
-            fetch(`${API_URL}/api/inventory/latest/${slug}`, {
-              headers: { 'Authorization': `Bearer ${token}` }
-            }).then(r => r.json())
+            fetch(`${API_URL}/api/inventory/latest/${slug}`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()),
+            fetch(`${API_URL}/api/inventory/custom-items/${slug}`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json())
           ]);
           setTemplate(templateData);
-          setInventoryData(latestData.data || {});
+          setCustomItems(customData || []);
+          const normalized = {};
+          Object.entries(latestData.data || {}).forEach(([key, value]) => {
+            if (value.batches) { normalized[key] = value; }
+            else { normalized[key] = { batches: [value] }; }
+          });
+          setInventoryData(normalized);
           setLastSubmitted(latestData.submittedAt);
-          
           const expanded = {};
-          templateData.forEach(cat => { expanded[cat.category] = true; });
+          templateData.forEach(cat => { expanded[cat.category] = false; });
+          expanded['Custom Items'] = false;
           setExpandedCategories(expanded);
-        } catch (err) {
-          console.error('Failed to load inventory:', err);
-        } finally {
-          setLoading(false);
+        } catch (err) { console.error('Failed to load inventory:', err); }
+        finally { setLoading(false); }
+      };
+
+      const getBatches = (category, item) => {
+        const key = `${category}|${item}`;
+        const data = inventoryData[key];
+        if (!data || !data.batches || data.batches.length === 0) {
+          return [{ lotNumber: '', expiry: '', openQty: '', openDate: '', closedQty: '', notes: '' }];
         }
+        return data.batches;
       };
 
-      const updateItem = (category, item, field, value) => {
+      const updateBatch = (category, item, batchIdx, field, value) => {
         const key = `${category}|${item}`;
-        setInventoryData(prev => ({
-          ...prev,
-          [key]: {
-            ...(prev[key] || {}),
-            [field]: value
-          }
-        }));
+        setInventoryData(prev => {
+          const current = prev[key] || { batches: [{}] };
+          const batches = [...(current.batches || [{}])];
+          batches[batchIdx] = { ...(batches[batchIdx] || {}), [field]: value };
+          return { ...prev, [key]: { batches } };
+        });
       };
 
-      const getItemData = (category, item) => {
+      const addBatch = (category, item) => {
         const key = `${category}|${item}`;
-        return inventoryData[key] || { lotNumber: '', expiry: '', openQty: '', openDate: '', closedQty: '', notes: '' };
+        setInventoryData(prev => {
+          const current = prev[key] || { batches: [] };
+          const batches = [...(current.batches || []), { lotNumber: '', expiry: '', openQty: '', openDate: '', closedQty: '', notes: '' }];
+          return { ...prev, [key]: { batches } };
+        });
+      };
+
+      const removeBatch = (category, item, batchIdx) => {
+        const key = `${category}|${item}`;
+        setInventoryData(prev => {
+          const current = prev[key] || { batches: [] };
+          const batches = current.batches.filter((_, i) => i !== batchIdx);
+          return { ...prev, [key]: { batches: batches.length ? batches : [{}] } };
+        });
       };
 
       const handleSubmit = async () => {
@@ -440,10 +466,7 @@
         try {
           const response = await fetch(`${API_URL}/api/inventory/submit`, {
             method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            },
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ slug, data: inventoryData })
           });
           const result = await response.json();
@@ -451,14 +474,25 @@
             setMessage('Inventory submitted successfully!');
             setLastSubmitted(new Date().toISOString());
             setTimeout(() => setMessage(''), 5000);
-          } else {
-            setMessage('Failed to submit inventory');
-          }
-        } catch (err) {
-          setMessage('Error submitting inventory');
-        } finally {
-          setSaving(false);
-        }
+          } else { setMessage('Failed to submit inventory'); }
+        } catch (err) { setMessage('Error submitting inventory'); }
+        finally { setSaving(false); }
+      };
+
+      const addCustomItem = async () => {
+        if (!newItemCategory || !newItemName) return;
+        try {
+          const response = await fetch(`${API_URL}/api/inventory/custom-items/${slug}`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ category: newItemCategory, itemName: newItemName })
+          });
+          const newItem = await response.json();
+          setCustomItems(prev => [...prev, newItem]);
+          setNewItemCategory('');
+          setNewItemName('');
+          setShowAddItem(false);
+        } catch (err) { console.error('Failed to add custom item:', err); }
       };
 
       const toggleCategory = (category) => {
@@ -466,141 +500,252 @@
       };
 
       if (loading) {
-        return (
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent"></div>
-          </div>
-        );
+        return (<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent"></div></div>);
       }
+
+      const allCategories = [...template];
+      const customByCategory = {};
+      customItems.forEach(ci => {
+        if (!customByCategory[ci.category]) customByCategory[ci.category] = [];
+        customByCategory[ci.category].push(ci.itemName);
+      });
+
+      const renderItemRows = (category, items, isCustom = false) => {
+        return items.map(item => {
+          const batches = getBatches(category, item);
+          return (
+            <React.Fragment key={`${category}|${item}`}>
+              {batches.map((batch, bIdx) => (
+                <tr key={`${category}|${item}|${bIdx}`} className="hover:bg-gray-50 border-b">
+                  <td className="px-3 py-2 font-medium text-gray-800">
+                    {bIdx === 0 ? item : ''}
+                    {bIdx === 0 && <button onClick={() => addBatch(category, item)} className="ml-2 text-xs text-primary hover:underline">+Lot</button>}
+                  </td>
+                  <td className="px-1 py-1"><input type="text" value={batch.lotNumber || ''} onChange={(e) => updateBatch(category, item, bIdx, 'lotNumber', e.target.value)} className="w-full px-2 py-1 border rounded text-sm" placeholder="Lot #" /></td>
+                  <td className="px-1 py-1"><input type="date" value={batch.expiry || ''} onChange={(e) => updateBatch(category, item, bIdx, 'expiry', e.target.value)} className="w-full px-1 py-1 border rounded text-sm" /></td>
+                  <td className="px-1 py-1"><input type="number" value={batch.openQty || ''} onChange={(e) => updateBatch(category, item, bIdx, 'openQty', e.target.value)} className="w-16 px-1 py-1 border rounded text-sm text-center" min="0" /></td>
+                  <td className="px-1 py-1"><input type="date" value={batch.openDate || ''} onChange={(e) => updateBatch(category, item, bIdx, 'openDate', e.target.value)} className="w-full px-1 py-1 border rounded text-sm" /></td>
+                  <td className="px-1 py-1"><input type="number" value={batch.closedQty || ''} onChange={(e) => updateBatch(category, item, bIdx, 'closedQty', e.target.value)} className="w-16 px-1 py-1 border rounded text-sm text-center" min="0" /></td>
+                  <td className="px-1 py-1"><input type="text" value={batch.notes || ''} onChange={(e) => updateBatch(category, item, bIdx, 'notes', e.target.value)} className="w-full px-2 py-1 border rounded text-sm" placeholder="Notes" /></td>
+                  <td className="px-1 py-1 text-center">{batches.length > 1 && <button onClick={() => removeBatch(category, item, bIdx)} className="text-red-500 hover:text-red-700 text-xs">x</button>}</td>
+                </tr>
+              ))}
+            </React.Fragment>
+          );
+        });
+      };
 
       return (
         <div className="space-y-6">
           <div className="bg-white p-6 rounded-xl shadow-sm">
-            <div className="flex justify-between items-start">
+            <div className="flex justify-between items-start flex-wrap gap-4">
               <div>
                 <h1 className="text-2xl font-bold text-accent">Inventory Management</h1>
                 <p className="text-gray-600 mt-1">Update your weekly inventory counts</p>
-                {lastSubmitted && (
-                  <p className="text-sm text-gray-500 mt-2">
-                    Last submitted: {new Date(lastSubmitted).toLocaleString()}
-                  </p>
-                )}
+                {lastSubmitted && <p className="text-sm text-gray-500 mt-2">Last submitted: {new Date(lastSubmitted).toLocaleString()}</p>}
               </div>
-              <button
-                onClick={handleSubmit}
-                disabled={saving}
-                className="px-6 py-3 bg-primary text-white rounded-lg font-medium hover:bg-accent transition disabled:opacity-50"
-              >
-                {saving ? 'Saving...' : 'Submit Inventory'}
-              </button>
+              <div className="flex gap-2">
+                <button onClick={() => setShowAddItem(true)} className="px-4 py-2 border border-primary text-primary rounded-lg font-medium hover:bg-primary hover:text-white transition">+ Add Item</button>
+                <button onClick={handleSubmit} disabled={saving} className="px-6 py-2 bg-primary text-white rounded-lg font-medium hover:bg-accent transition disabled:opacity-50">{saving ? 'Saving...' : 'Submit Inventory'}</button>
+              </div>
             </div>
-            {message && (
-              <div className={`mt-4 p-3 rounded-lg ${message.includes('success') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                {message}
-              </div>
-            )}
+            {message && <div className={`mt-4 p-3 rounded-lg ${message.includes('success') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{message}</div>}
           </div>
 
-          {template.map(cat => (
-            <div key={cat.category} className="bg-white rounded-xl shadow-sm overflow-hidden">
-              <button
-                onClick={() => toggleCategory(cat.category)}
-                className="w-full px-6 py-4 flex justify-between items-center bg-gray-50 hover:bg-gray-100 transition"
-              >
-                <h2 className="text-lg font-bold text-gray-800">{cat.category}</h2>
-                <span className="text-gray-500">{expandedCategories[cat.category] ? '▼' : '▶'}</span>
+          {showAddItem && (
+            <div className="bg-white p-6 rounded-xl shadow-sm border-2 border-primary">
+              <h3 className="font-bold text-lg mb-4">Add Custom Item</h3>
+              <div className="grid md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                  <select value={newItemCategory} onChange={(e) => setNewItemCategory(e.target.value)} className="w-full px-3 py-2 border rounded-lg">
+                    <option value="">Select category...</option>
+                    {template.map(cat => <option key={cat.category} value={cat.category}>{cat.category}</option>)}
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Item Name</label>
+                  <input type="text" value={newItemName} onChange={(e) => setNewItemName(e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="Enter item name" />
+                </div>
+                <div className="flex items-end gap-2">
+                  <button onClick={addCustomItem} className="px-4 py-2 bg-primary text-white rounded-lg">Add</button>
+                  <button onClick={() => setShowAddItem(false)} className="px-4 py-2 border rounded-lg">Cancel</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {allCategories.map(cat => {
+            const standardItems = cat.items;
+            const customCatItems = customByCategory[cat.category] || [];
+            const allItems = [...standardItems, ...customCatItems];
+            return (
+              <div key={cat.category} className="bg-white rounded-xl shadow-sm overflow-hidden">
+                <button onClick={() => toggleCategory(cat.category)} className="w-full px-6 py-4 flex justify-between items-center bg-gray-50 hover:bg-gray-100 transition">
+                  <h2 className="text-lg font-bold text-gray-800">{cat.category} <span className="text-sm font-normal text-gray-500">({allItems.length} items)</span></h2>
+                  <span className="text-gray-500">{expandedCategories[cat.category] ? '▼' : '▶'}</span>
+                </button>
+                {expandedCategories[cat.category] && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 border-b">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-medium text-gray-600 w-48">Item</th>
+                          <th className="px-1 py-2 text-left font-medium text-gray-600 w-24">Lot #</th>
+                          <th className="px-1 py-2 text-left font-medium text-gray-600 w-28">Expiry</th>
+                          <th className="px-1 py-2 text-left font-medium text-gray-600 w-16">Open</th>
+                          <th className="px-1 py-2 text-left font-medium text-gray-600 w-28">Open Date</th>
+                          <th className="px-1 py-2 text-left font-medium text-gray-600 w-16">Closed</th>
+                          <th className="px-1 py-2 text-left font-medium text-gray-600">Notes</th>
+                          <th className="w-8"></th>
+                        </tr>
+                      </thead>
+                      <tbody>{renderItemRows(cat.category, allItems)}</tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {Object.keys(customByCategory).filter(c => !template.find(t => t.category === c)).length > 0 && (
+            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+              <button onClick={() => toggleCategory('Other')} className="w-full px-6 py-4 flex justify-between items-center bg-gray-50 hover:bg-gray-100 transition">
+                <h2 className="text-lg font-bold text-gray-800">Other Custom Items</h2>
+                <span className="text-gray-500">{expandedCategories['Other'] ? '▼' : '▶'}</span>
               </button>
-              
-              {expandedCategories[cat.category] && (
+              {expandedCategories['Other'] && (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 border-b">
                       <tr>
-                        <th className="px-4 py-2 text-left font-medium text-gray-600">Item</th>
-                        <th className="px-4 py-2 text-left font-medium text-gray-600 w-24">Lot #</th>
-                        <th className="px-4 py-2 text-left font-medium text-gray-600 w-28">Expiry</th>
-                        <th className="px-4 py-2 text-left font-medium text-gray-600 w-20">Open Qty</th>
-                        <th className="px-4 py-2 text-left font-medium text-gray-600 w-28">Open Date</th>
-                        <th className="px-4 py-2 text-left font-medium text-gray-600 w-20">Closed Qty</th>
-                        <th className="px-4 py-2 text-left font-medium text-gray-600">Notes</th>
+                        <th className="px-3 py-2 text-left font-medium text-gray-600 w-48">Item</th>
+                        <th className="px-1 py-2 text-left font-medium text-gray-600 w-24">Lot #</th>
+                        <th className="px-1 py-2 text-left font-medium text-gray-600 w-28">Expiry</th>
+                        <th className="px-1 py-2 text-left font-medium text-gray-600 w-16">Open</th>
+                        <th className="px-1 py-2 text-left font-medium text-gray-600 w-28">Open Date</th>
+                        <th className="px-1 py-2 text-left font-medium text-gray-600 w-16">Closed</th>
+                        <th className="px-1 py-2 text-left font-medium text-gray-600">Notes</th>
+                        <th className="w-8"></th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y">
-                      {cat.items.map(item => {
-                        const data = getItemData(cat.category, item);
-                        return (
-                          <tr key={item} className="hover:bg-gray-50">
-                            <td className="px-4 py-2 font-medium text-gray-800">{item}</td>
-                            <td className="px-2 py-1">
-                              <input
-                                type="text"
-                                value={data.lotNumber}
-                                onChange={(e) => updateItem(cat.category, item, 'lotNumber', e.target.value)}
-                                className="w-full px-2 py-1 border rounded text-sm"
-                                placeholder="Lot"
-                              />
-                            </td>
-                            <td className="px-2 py-1">
-                              <input
-                                type="date"
-                                value={data.expiry}
-                                onChange={(e) => updateItem(cat.category, item, 'expiry', e.target.value)}
-                                className="w-full px-2 py-1 border rounded text-sm"
-                              />
-                            </td>
-                            <td className="px-2 py-1">
-                              <input
-                                type="number"
-                                value={data.openQty}
-                                onChange={(e) => updateItem(cat.category, item, 'openQty', e.target.value)}
-                                className="w-full px-2 py-1 border rounded text-sm text-center"
-                                min="0"
-                              />
-                            </td>
-                            <td className="px-2 py-1">
-                              <input
-                                type="date"
-                                value={data.openDate}
-                                onChange={(e) => updateItem(cat.category, item, 'openDate', e.target.value)}
-                                className="w-full px-2 py-1 border rounded text-sm"
-                              />
-                            </td>
-                            <td className="px-2 py-1">
-                              <input
-                                type="number"
-                                value={data.closedQty}
-                                onChange={(e) => updateItem(cat.category, item, 'closedQty', e.target.value)}
-                                className="w-full px-2 py-1 border rounded text-sm text-center"
-                                min="0"
-                              />
-                            </td>
-                            <td className="px-2 py-1">
-                              <input
-                                type="text"
-                                value={data.notes}
-                                onChange={(e) => updateItem(cat.category, item, 'notes', e.target.value)}
-                                className="w-full px-2 py-1 border rounded text-sm"
-                                placeholder="Notes"
-                              />
-                            </td>
-                          </tr>
-                        );
-                      })}
+                    <tbody>
+                      {Object.entries(customByCategory).filter(([c]) => !template.find(t => t.category === c)).map(([cat, items]) => renderItemRows(cat, items, true))}
                     </tbody>
                   </table>
                 </div>
               )}
             </div>
-          ))}
+          )}
 
           <div className="bg-white p-6 rounded-xl shadow-sm text-center">
-            <button
-              onClick={handleSubmit}
-              disabled={saving}
-              className="px-8 py-3 bg-primary text-white rounded-lg font-medium hover:bg-accent transition disabled:opacity-50"
-            >
-              {saving ? 'Saving...' : 'Submit Weekly Inventory'}
-            </button>
+            <button onClick={handleSubmit} disabled={saving} className="px-8 py-3 bg-primary text-white rounded-lg font-medium hover:bg-accent transition disabled:opacity-50">{saving ? 'Saving...' : 'Submit Weekly Inventory'}</button>
+          </div>
+        </div>
+      );
+    };
+
+    const ReportsPage = ({ token, slug }) => {
+      const [report, setReport] = useState(null);
+      const [loading, setLoading] = useState(true);
+
+      useEffect(() => {
+        fetch(`${API_URL}/api/inventory/report/${slug}`, { headers: { 'Authorization': `Bearer ${token}` } })
+          .then(r => r.json())
+          .then(data => { setReport(data); setLoading(false); })
+          .catch(err => { console.error(err); setLoading(false); });
+      }, []);
+
+      if (loading) {
+        return (<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent"></div></div>);
+      }
+
+      const { alerts, submissions, usageTrends } = report || {};
+      const lowStock = alerts?.lowStock || [];
+      const expiring = alerts?.expiringSoon || [];
+
+      return (
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-xl shadow-sm">
+            <h1 className="text-2xl font-bold text-accent">Inventory Reports</h1>
+            <p className="text-gray-600 mt-1">View alerts and usage trends for your inventory</p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            <div className="bg-white p-6 rounded-xl shadow-sm">
+              <h2 className="text-lg font-bold text-red-600 mb-4 flex items-center gap-2">
+                <span>⚠️</span> Low Stock Alerts ({lowStock.length})
+              </h2>
+              {lowStock.length > 0 ? (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {lowStock.map((item, idx) => (
+                    <div key={idx} className="flex justify-between items-center p-3 bg-red-50 rounded-lg border-l-4 border-red-500">
+                      <div>
+                        <p className="font-medium text-gray-800">{item.itemName}</p>
+                        <p className="text-xs text-gray-500">{item.category}</p>
+                      </div>
+                      <span className="text-red-600 font-bold">{item.quantity} left</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <div className="text-4xl mb-2">✓</div>
+                  <p>All items are well stocked</p>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white p-6 rounded-xl shadow-sm">
+              <h2 className="text-lg font-bold text-orange-600 mb-4 flex items-center gap-2">
+                <span>📅</span> Expiring Soon ({expiring.length})
+              </h2>
+              {expiring.length > 0 ? (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {expiring.map((item, idx) => (
+                    <div key={idx} className="flex justify-between items-center p-3 bg-orange-50 rounded-lg border-l-4 border-orange-500">
+                      <div>
+                        <p className="font-medium text-gray-800">{item.itemName}</p>
+                        <p className="text-xs text-gray-500">{item.category}</p>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-orange-600 font-bold">{item.daysUntilExpiry} days</span>
+                        <p className="text-xs text-gray-500">{new Date(item.expiry).toLocaleDateString()}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <div className="text-4xl mb-2">✓</div>
+                  <p>No items expiring soon</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-xl shadow-sm">
+            <h2 className="text-lg font-bold text-accent mb-4 flex items-center gap-2">
+              <span>📈</span> Submission History
+            </h2>
+            {submissions && submissions.length > 0 ? (
+              <div className="space-y-2">
+                {submissions.slice(0, 10).map((sub, idx) => (
+                  <div key={idx} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                    <div>
+                      <p className="font-medium text-gray-800">{new Date(sub.submittedAt).toLocaleDateString()}</p>
+                      <p className="text-xs text-gray-500">Submitted by {sub.submittedBy}</p>
+                    </div>
+                    <span className="text-gray-600">{Object.keys(sub.data || {}).length} items tracked</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <p>No submissions yet</p>
+              </div>
+            )}
           </div>
         </div>
       );
@@ -763,6 +908,7 @@
             {activePage === 'home' && <HomePage data={data} announcements={announcements} />}
             {activePage === 'milestones' && <MilestonesPage data={data} />}
             {activePage === 'inventory' && <InventoryPage token={token} slug={slug} />}
+            {activePage === 'reports' && <ReportsPage token={token} slug={slug} />}
             {activePage === 'support' && <SupportPage settings={settings} />}
             {activePage === 'files' && <FilesPage settings={settings} documents={documents} />}
             
