@@ -708,6 +708,7 @@
     const ReportsPage = ({ token, slug }) => {
       const [report, setReport] = useState(null);
       const [loading, setLoading] = useState(true);
+      const [showGuide, setShowGuide] = useState(false);
 
       useEffect(() => {
         fetch(`${API_URL}/api/inventory/report/${slug}`, { headers: { 'Authorization': `Bearer ${token}` } })
@@ -723,8 +724,6 @@
       const { alerts, submissions, usageTrends } = report || {};
       const lowStock = alerts?.lowStock || [];
       const expiring = alerts?.expiringSoon || [];
-
-      const [showGuide, setShowGuide] = useState(false);
 
       return (
         <div className="space-y-6">
