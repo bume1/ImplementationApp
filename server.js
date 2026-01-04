@@ -1790,10 +1790,53 @@ app.get('/api/inventory/report/:slug', authenticateToken, async (req, res) => {
       });
     }
     
-    const usageTrends = clientSubmissions.slice(0, 12).reverse().map(sub => ({
-      date: sub.submittedAt,
-      itemCount: Object.keys(sub.data).length
-    }));
+    const getItemTotal = (data, key) => {
+      const value = data[key];
+      if (!value) return 0;
+      const batches = Array.isArray(value.batches) ? value.batches : [value];
+      return batches.reduce((sum, b) => sum + (parseInt(b.openQty) || 0) + (parseInt(b.closedQty) || 0), 0);
+    };
+    
+    const itemUsage = {};
+    if (clientSubmissions.length >= 2) {
+      const current = clientSubmissions[0].data;
+      const previous = clientSubmissions[1].data;
+      const allKeys = new Set([...Object.keys(current), ...Object.keys(previous)]);
+      
+      allKeys.forEach(key => {
+        const currentQty = getItemTotal(current, key);
+        const prevQty = getItemTotal(previous, key);
+        const change = currentQty - prevQty;
+        const [category, itemName] = key.split('|');
+        if (prevQty > 0 || currentQty > 0) {
+          itemUsage[key] = { category, itemName, currentQty, prevQty, change, 
+            trend: change > 0 ? 'up' : change < 0 ? 'down' : 'stable' };
+        }
+      });
+    }
+    
+    const usageSummary = clientSubmissions.slice(0, 8).reverse().map(sub => {
+      let totalQty = 0;
+      Object.values(sub.data).forEach(v => {
+        const batches = Array.isArray(v?.batches) ? v.batches : [v || {}];
+        totalQty += batches.reduce((s, b) => s + (parseInt(b.openQty) || 0) + (parseInt(b.closedQty) || 0), 0);
+      });
+      return { date: sub.submittedAt, totalQuantity: totalQty, itemCount: Object.keys(sub.data).length };
+    });
+    
+    const consumptionRate = [];
+    if (clientSubmissions.length >= 2) {
+      Object.entries(itemUsage)
+        .filter(([_, v]) => v.change < 0)
+        .sort((a, b) => a[1].change - b[1].change)
+        .slice(0, 10)
+        .forEach(([key, v]) => {
+          const daysBetween = Math.max(1, Math.ceil((new Date(clientSubmissions[0].submittedAt) - new Date(clientSubmissions[1].submittedAt)) / (1000 * 60 * 60 * 24)));
+          const weeklyRate = Math.abs(v.change) * (7 / daysBetween);
+          const weeksRemaining = v.currentQty > 0 ? Math.ceil(v.currentQty / weeklyRate) : 0;
+          consumptionRate.push({ ...v, weeklyRate: weeklyRate.toFixed(1), weeksRemaining });
+        });
+    }
     
     res.json({
       submissions: clientSubmissions.slice(0, 12),
@@ -1803,7 +1846,7 @@ app.get('/api/inventory/report/:slug', authenticateToken, async (req, res) => {
         lowStock: lowStockItems.sort((a, b) => a.quantity - b.quantity),
         expiringSoon: expiringItems.sort((a, b) => a.daysUntilExpiry - b.daysUntilExpiry)
       },
-      usageTrends
+      usageTrends: { itemChanges: Object.values(itemUsage), usageSummary, consumptionRate }
     });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
