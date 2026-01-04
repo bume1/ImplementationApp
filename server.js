@@ -1386,7 +1386,8 @@ app.get('/api/client-portal/data', authenticateToken, async (req, res) => {
         name: req.user.name,
         practiceName: clientUser?.practiceName || req.user.practiceName,
         isNewClient: clientUser?.isNewClient || req.user.isNewClient,
-        logo: clientUser?.logo || ''
+        logo: clientUser?.logo || '',
+        assignedProjects: req.user.assignedProjects || []
       },
       projects: projectsWithTasks,
       announcements: announcements.slice(0, 10),
