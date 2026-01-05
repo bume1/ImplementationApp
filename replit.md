@@ -81,6 +81,14 @@ Preferred communication style: Simple, everyday language.
 - **File Type Support**: Supports PDF, DOC, DOCX, XLS, XLSX, PNG, JPG, GIF, TXT, CSV (max 10MB)
 - **Category Options**: Contracts, Onboarding, Inserts, Certificates of Analysis, SOP Templates, Other
 
+### Admin Inventory Reports (Jan 5)
+- **Aggregate Reports**: Admin portal shows "All Clients Report" instead of "Weekly Update" in the Inventory menu
+- **Cross-Client Metrics**: Summary stats (total clients, clients with data, low stock alerts, expiring items)
+- **Client Summary Table**: Shows each client's last update date, item count, quantities, and alert counts
+- **Inactive Clients Warning**: Highlights clients who haven't submitted inventory in over 7 days
+- **Consolidated Alerts**: Low stock and expiring items from all clients in one view with client names
+- **API Endpoint**: GET /api/inventory/report-all (admin only) returns aggregated data
+
 ### Client Portal UX Improvements (Jan 5)
 - **Clickable Quick Access Buttons**: Bottom buttons on portal home (Inventory, Customer Support, Files) now navigate to respective pages
 - **Document Category Dropdown**: Admin client documents form uses dropdown instead of free text with predefined categories
