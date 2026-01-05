@@ -1689,9 +1689,10 @@
       );
     };
     
-    const FilesPage = ({ settings, documents, token, projects }) => {
+    const FilesPage = ({ settings, documents: initialDocuments, token, projects }) => {
       const projectsWithHubSpot = (projects || []).filter(p => p.hubspotRecordId);
       
+      const [documents, setDocuments] = useState(initialDocuments || []);
       const [selectedFile, setSelectedFile] = useState(null);
       const [selectedProject, setSelectedProject] = useState(projectsWithHubSpot.length === 1 ? projectsWithHubSpot[0].id : '');
       const [category, setCategory] = useState('');
@@ -1699,7 +1700,23 @@
       const [uploading, setUploading] = useState(false);
       const [uploadMessage, setUploadMessage] = useState(null);
       
-      const groupedDocs = (documents || []).reduce((acc, doc) => {
+      const slug = localStorage.getItem('portal_user') ? JSON.parse(localStorage.getItem('portal_user')).slug : null;
+      
+      const refreshDocuments = async () => {
+        if (!slug) return;
+        try {
+          const response = await fetch(`${API_URL}/api/client-documents/${slug}`);
+          const data = await response.json();
+          setDocuments(data || []);
+        } catch (err) {
+          console.error('Failed to refresh documents:', err);
+        }
+      };
+      
+      const adminDocs = (documents || []).filter(doc => doc.uploadedBy !== 'client');
+      const clientUploads = (documents || []).filter(doc => doc.uploadedBy === 'client');
+      
+      const groupedAdminDocs = adminDocs.reduce((acc, doc) => {
         const cat = doc.category || 'General';
         if (!acc[cat]) acc[cat] = [];
         acc[cat].push(doc);
@@ -1739,6 +1756,7 @@
             setNote('');
             setCategory('');
             document.getElementById('clientFileInput').value = '';
+            refreshDocuments();
           } else {
             setUploadMessage({ type: 'error', text: result.error || 'Upload failed' });
           }
@@ -1758,13 +1776,13 @@
           
           <div className="bg-white p-6 rounded-xl shadow-sm">
             <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-              <span>📥</span> Documents For You
+              <span>📥</span> Documents From Thrive 365 Labs
             </h2>
-            {documents && documents.length > 0 ? (
+            {adminDocs.length > 0 ? (
               <div className="space-y-4">
-                {Object.entries(groupedDocs).map(([category, docs]) => (
-                  <div key={category}>
-                    <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">{category}</h3>
+                {Object.entries(groupedAdminDocs).map(([cat, docs]) => (
+                  <div key={cat}>
+                    <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">{cat}</h3>
                     <div className="space-y-2">
                       {docs.map(doc => (
                         <a
@@ -1791,10 +1809,41 @@
             ) : (
               <div className="text-center py-8 text-gray-500">
                 <div className="text-4xl mb-2">📂</div>
-                <p>No documents available yet.</p>
+                <p>No documents from Thrive 365 Labs yet.</p>
               </div>
             )}
           </div>
+          
+          {clientUploads.length > 0 && (
+            <div className="bg-white p-6 rounded-xl shadow-sm">
+              <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <span>📤</span> Your Uploaded Files
+              </h2>
+              <p className="text-sm text-gray-500 mb-4">Files you've uploaded to Thrive 365 Labs via HubSpot</p>
+              <div className="space-y-2">
+                {clientUploads.map(doc => (
+                  <div
+                    key={doc.id}
+                    className="flex items-center gap-3 p-3 rounded-lg border bg-green-50 border-green-200"
+                  >
+                    <span className="text-2xl">✅</span>
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-800">{doc.title}</p>
+                      <div className="flex flex-wrap gap-2 text-xs text-gray-500 mt-1">
+                        {doc.category && <span className="bg-gray-100 px-2 py-0.5 rounded">{doc.category}</span>}
+                        <span>Uploaded {new Date(doc.createdAt).toLocaleDateString()}</span>
+                        {doc.projectName && <span>• {doc.projectName}</span>}
+                      </div>
+                      {doc.description && (
+                        <p className="text-sm text-gray-600 mt-1">{doc.description}</p>
+                      )}
+                    </div>
+                    <span className="text-green-600 text-sm font-medium">Sent to HubSpot</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {projectsWithHubSpot.length > 0 && (
             <div className="bg-white p-6 rounded-xl shadow-sm">
@@ -2442,12 +2491,24 @@
                 ) : (
                   <div className="divide-y">
                     {documents.map(doc => (
-                      <div key={doc.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div key={doc.id} className={`p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${doc.uploadedBy === 'client' ? 'bg-green-50 border-l-4 border-green-500' : ''}`}>
                         <div className="flex-1">
-                          <h3 className="font-semibold text-gray-800">{doc.title}</h3>
-                          {doc.category && <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">{doc.category}</span>}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="font-semibold text-gray-800">{doc.title}</h3>
+                            {doc.uploadedBy === 'client' && (
+                              <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded font-medium">Client Upload</span>
+                            )}
+                            {doc.hubspotFileId && (
+                              <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded">HubSpot</span>
+                            )}
+                          </div>
+                          {doc.category && <span className="text-xs bg-gray-100 px-2 py-0.5 rounded mr-2">{doc.category}</span>}
+                          {doc.uploadedBy === 'client' && doc.uploadedByName && (
+                            <span className="text-xs text-gray-500">Uploaded by {doc.uploadedByName} on {new Date(doc.createdAt).toLocaleDateString()}</span>
+                          )}
                           {doc.description && <p className="text-sm text-gray-500 mt-1">{doc.description}</p>}
-                          <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline">{doc.url}</a>
+                          {doc.url && <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline block mt-1">{doc.url}</a>}
+                          {doc.projectName && <p className="text-xs text-gray-400 mt-1">Project: {doc.projectName}</p>}
                         </div>
                         <button onClick={() => handleDelete(doc.id)} className="px-3 py-1 text-sm bg-red-50 text-red-600 hover:bg-red-100 rounded">Delete</button>
                       </div>
