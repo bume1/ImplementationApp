@@ -165,6 +165,7 @@ const authenticateToken = async (req, res, next) => {
       name: freshUser.name,
       role: freshUser.role,
       assignedProjects: freshUser.assignedProjects || [],
+      projectAccessLevels: freshUser.projectAccessLevels || {},
       // Client-specific fields
       isNewClient: freshUser.isNewClient || false,
       slug: freshUser.slug || null,
@@ -309,6 +310,11 @@ app.post('/api/auth/login', async (req, res) => {
       userResponse.isNewClient = user.isNewClient;
       userResponse.slug = user.slug;
       userResponse.assignedProjects = user.assignedProjects || [];
+    }
+    // Include project access levels for team members
+    if (user.role === 'user') {
+      userResponse.assignedProjects = user.assignedProjects || [];
+      userResponse.projectAccessLevels = user.projectAccessLevels || {};
     }
     res.json({ token, user: userResponse });
   } catch (error) {
@@ -460,6 +466,7 @@ app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
       role: u.role,
       createdAt: u.createdAt,
       assignedProjects: u.assignedProjects || [],
+      projectAccessLevels: u.projectAccessLevels || {},
       // Client-specific fields
       practiceName: u.practiceName || null,
       isNewClient: u.isNewClient || false,
@@ -479,7 +486,7 @@ app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
 app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
-    const { name, email, role, password, assignedProjects, practiceName, isNewClient, logo, hubspotCompanyId, hubspotDealId, hubspotContactId } = req.body;
+    const { name, email, role, password, assignedProjects, projectAccessLevels, practiceName, isNewClient, logo, hubspotCompanyId, hubspotDealId, hubspotContactId } = req.body;
     const users = await getUsers();
     const idx = users.findIndex(u => u.id === userId);
     if (idx === -1) return res.status(404).json({ error: 'User not found' });
@@ -489,6 +496,7 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
     if (role) users[idx].role = role;
     if (password) users[idx].password = await bcrypt.hash(password, 10);
     if (assignedProjects !== undefined) users[idx].assignedProjects = assignedProjects;
+    if (projectAccessLevels !== undefined) users[idx].projectAccessLevels = projectAccessLevels;
     
     // Client-specific fields
     if (practiceName !== undefined) {
@@ -514,6 +522,7 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
       name: users[idx].name, 
       role: users[idx].role,
       assignedProjects: users[idx].assignedProjects || [],
+      projectAccessLevels: users[idx].projectAccessLevels || {},
       practiceName: users[idx].practiceName || null,
       isNewClient: users[idx].isNewClient || false,
       slug: users[idx].slug || null,

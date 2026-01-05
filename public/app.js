@@ -1696,7 +1696,61 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
         )}
 
         {/* Fullscreen Calendar Modal */}
-        {fullScreenCalendar && (
+        {fullScreenCalendar && (() => {
+          const parseGoLiveDateFs = (dateStr) => {
+            if (!dateStr) return null;
+            let d;
+            if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+              d = new Date(dateStr + 'T12:00:00');
+            } else if (dateStr.includes('T') && dateStr.endsWith('Z')) {
+              const datePart = dateStr.split('T')[0];
+              d = new Date(datePart + 'T12:00:00');
+            } else if (dateStr.includes('T')) {
+              d = new Date(dateStr);
+            } else {
+              d = new Date(dateStr);
+            }
+            return isNaN(d.getTime()) ? null : d;
+          };
+          
+          const calendarEntriesMap = {};
+          projects.forEach(p => {
+            if (p.goLiveDate) {
+              const d = parseGoLiveDateFs(p.goLiveDate);
+              if (d) {
+                const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                if (!calendarEntriesMap[dateKey]) calendarEntriesMap[dateKey] = [];
+                calendarEntriesMap[dateKey].push({
+                  label: p.clientName,
+                  type: p.status === 'Paused' ? 'golive-paused' : p.status === 'Completed' ? 'golive-completed' : 'golive',
+                  project: p
+                });
+              }
+            }
+            if (p.trainingStartDate && p.trainingEndDate) {
+              const startD = parseGoLiveDateFs(p.trainingStartDate);
+              const endD = parseGoLiveDateFs(p.trainingEndDate);
+              if (startD && endD) {
+                const current = new Date(startD);
+                while (current <= endD) {
+                  const dateKey = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`;
+                  if (!calendarEntriesMap[dateKey]) calendarEntriesMap[dateKey] = [];
+                  if (!calendarEntriesMap[dateKey].find(e => e.project?.id === p.id && e.type === 'training')) {
+                    calendarEntriesMap[dateKey].push({
+                      label: `Training: ${p.clientName}`,
+                      type: 'training',
+                      project: p
+                    });
+                  }
+                  current.setDate(current.getDate() + 1);
+                }
+              }
+            }
+          });
+          
+          const getCalendarEntries = (dateStr) => calendarEntriesMap[dateStr] || [];
+          
+          return (
           <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-xl shadow-2xl w-full h-full max-w-7xl max-h-[95vh] overflow-auto">
               <div className="bg-gradient-to-r from-primary to-accent text-white px-6 py-4 sticky top-0 z-10">
@@ -1887,7 +1941,8 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
               </div>
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {loading ? (
           <div className="text-center py-12">
@@ -3008,6 +3063,8 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
   const [creatingTemplate, setCreatingTemplate] = useState(false);
 
   const isAdmin = user.role === 'admin';
+  const userAccessLevel = isAdmin ? 'edit' : ((user.projectAccessLevels || {})[project.id] || 'edit');
+  const canEdit = isAdmin || userAccessLevel === 'edit';
   
   const handleCreateTemplate = async () => {
     const templateName = prompt('Enter a name for this template:', `${project.name} Template`);
@@ -3816,6 +3873,13 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
 
       <div className="p-6">
       <div className="max-w-7xl mx-auto">
+        {!canEdit && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 flex items-center gap-2">
+            <span className="text-amber-600">👁</span>
+            <span className="text-amber-800 text-sm font-medium">View Only Mode</span>
+            <span className="text-amber-700 text-sm">- You can view this project but cannot make changes</span>
+          </div>
+        )}
         <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
           <div className="flex justify-between items-start mb-4">
             <div>
@@ -4302,7 +4366,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                             View & Complete Checklist
                           </button>
                         )}
-                        {viewMode === 'internal' && (
+                        {viewMode === 'internal' && canEdit && (
                           <button
                             onClick={() => {
                               setNewTask({
@@ -4334,23 +4398,35 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                           />
                         )}
                         {viewMode === 'internal' && !bulkMode && (
-                          <button
-                            onClick={() => handleToggleComplete(task.id)}
-                            className="mt-1 flex-shrink-0"
-                            title={hasIncompleteDependencies(task) ? 'Complete dependencies first' : ''}
-                          >
-                            {task.completed ? (
-                              <div className="w-6 h-6 bg-green-600 rounded-full flex items-center justify-center text-white text-sm">
-                                ✓
-                              </div>
-                            ) : hasIncompleteDependencies(task) ? (
-                              <div className="w-6 h-6 border-2 border-orange-300 bg-orange-50 rounded-full flex items-center justify-center text-orange-400 text-xs cursor-not-allowed" title="Dependencies incomplete">
-                                ⏳
-                              </div>
-                            ) : (
-                              <div className="w-6 h-6 border-2 border-gray-300 rounded-full hover:border-gray-400" />
-                            )}
-                          </button>
+                          canEdit ? (
+                            <button
+                              onClick={() => handleToggleComplete(task.id)}
+                              className="mt-1 flex-shrink-0"
+                              title={hasIncompleteDependencies(task) ? 'Complete dependencies first' : ''}
+                            >
+                              {task.completed ? (
+                                <div className="w-6 h-6 bg-green-600 rounded-full flex items-center justify-center text-white text-sm">
+                                  ✓
+                                </div>
+                              ) : hasIncompleteDependencies(task) ? (
+                                <div className="w-6 h-6 border-2 border-orange-300 bg-orange-50 rounded-full flex items-center justify-center text-orange-400 text-xs cursor-not-allowed" title="Dependencies incomplete">
+                                  ⏳
+                                </div>
+                              ) : (
+                                <div className="w-6 h-6 border-2 border-gray-300 rounded-full hover:border-gray-400" />
+                              )}
+                            </button>
+                          ) : (
+                            <div className="mt-1 flex-shrink-0">
+                              {task.completed ? (
+                                <div className="w-6 h-6 bg-green-600 rounded-full flex items-center justify-center text-white text-sm">
+                                  ✓
+                                </div>
+                              ) : (
+                                <div className="w-6 h-6 border-2 border-gray-300 rounded-full" />
+                              )}
+                            </div>
+                          )
                         )}
                         {viewMode === 'client' && (
                           <div className="mt-1 flex-shrink-0">
@@ -4578,7 +4654,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                   {getTaskName(task)}
                                 </h3>
                                 <div className="flex gap-2 flex-shrink-0">
-                                  {viewMode === 'internal' && (isAdmin || task.createdBy === user.id || !task.createdBy) && (
+                                  {viewMode === 'internal' && canEdit && (isAdmin || task.createdBy === user.id || !task.createdBy) && (
                                     <button
                                       onClick={() => handleEditTask(task.id)}
                                       className="text-gray-400 hover:text-primary"
@@ -4586,7 +4662,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                       {isAdmin ? 'Edit' : (task.createdBy === user.id ? 'Edit' : 'Update Status')}
                                     </button>
                                   )}
-                                  {viewMode === 'internal' && (isAdmin || (task.createdBy && task.createdBy === user.id)) && (
+                                  {viewMode === 'internal' && canEdit && (isAdmin || (task.createdBy && task.createdBy === user.id)) && (
                                     <button
                                       onClick={() => handleDeleteProjectTask(task.id)}
                                       className="text-gray-400 hover:text-red-600"
@@ -4658,12 +4734,14 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                   <span className="text-sm text-purple-600">
                                     Subtasks ({(task.subtasks || []).filter(s => s.completed || s.notApplicable || s.status === 'Complete' || s.status === 'N/A').length}/{(task.subtasks || []).length})
                                   </span>
-                                  <button
-                                    onClick={() => setNewSubtask({ taskId: task.id, title: '', owner: '', dueDate: '' })}
-                                    className="text-sm text-green-600 hover:underline"
-                                  >
-                                    + Add Subtask
-                                  </button>
+                                  {canEdit && (
+                                    <button
+                                      onClick={() => setNewSubtask({ taskId: task.id, title: '', owner: '', dueDate: '' })}
+                                      className="text-sm text-green-600 hover:underline"
+                                    >
+                                      + Add Subtask
+                                    </button>
+                                  )}
                                   {hasIncompleteSubtasks(task) && (
                                     <span className="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded">
                                       Subtasks incomplete
@@ -4734,20 +4812,22 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                       ))
                                     )}
                                   </div>
-                                  <div className="flex gap-2">
-                                    <input
-                                      value={newNote}
-                                      onChange={(e) => setNewNote(e.target.value)}
-                                      placeholder="Add a status update..."
-                                      className="flex-1 px-3 py-2 border rounded-md text-sm"
-                                    />
-                                    <button
-                                      onClick={() => handleAddNote(task.id)}
-                                      className="px-3 py-2 bg-primary text-white rounded-md text-sm hover:bg-accent"
-                                    >
-                                      Add
-                                    </button>
-                                  </div>
+                                  {canEdit && (
+                                    <div className="flex gap-2">
+                                      <input
+                                        value={newNote}
+                                        onChange={(e) => setNewNote(e.target.value)}
+                                        placeholder="Add a status update..."
+                                        className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                      />
+                                      <button
+                                        onClick={() => handleAddNote(task.id)}
+                                        className="px-3 py-2 bg-primary text-white rounded-md text-sm hover:bg-accent"
+                                      >
+                                        Add
+                                      </button>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                               {viewMode === 'internal' && (task.subtasks || []).length > 0 && (
@@ -4797,37 +4877,52 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                           </div>
                                         ) : (
                                           <div key={subtask.id} className="flex items-center gap-2 bg-white p-2 rounded border text-sm">
-                                            <select
-                                              value={getSubtaskStatus(subtask)}
-                                              onChange={(e) => handleSubtaskStatusChange(task.id, subtask.id, e.target.value)}
-                                              className={`px-2 py-1 border rounded text-xs ${
+                                            {canEdit ? (
+                                              <select
+                                                value={getSubtaskStatus(subtask)}
+                                                onChange={(e) => handleSubtaskStatusChange(task.id, subtask.id, e.target.value)}
+                                                className={`px-2 py-1 border rounded text-xs ${
+                                                  getSubtaskStatus(subtask) === 'completed' ? 'bg-green-100 text-green-700' :
+                                                  getSubtaskStatus(subtask) === 'not_applicable' ? 'bg-gray-100 text-gray-600' :
+                                                  'bg-yellow-50 text-yellow-700'
+                                                }`}
+                                              >
+                                                <option value="pending">Pending</option>
+                                                <option value="completed">Complete</option>
+                                                <option value="not_applicable">N/A</option>
+                                              </select>
+                                            ) : (
+                                              <span className={`px-2 py-1 border rounded text-xs ${
                                                 getSubtaskStatus(subtask) === 'completed' ? 'bg-green-100 text-green-700' :
                                                 getSubtaskStatus(subtask) === 'not_applicable' ? 'bg-gray-100 text-gray-600' :
                                                 'bg-yellow-50 text-yellow-700'
-                                              }`}
-                                            >
-                                              <option value="pending">Pending</option>
-                                              <option value="completed">Complete</option>
-                                              <option value="not_applicable">N/A</option>
-                                            </select>
+                                              }`}>
+                                                {getSubtaskStatus(subtask) === 'completed' ? 'Complete' : 
+                                                 getSubtaskStatus(subtask) === 'not_applicable' ? 'N/A' : 'Pending'}
+                                              </span>
+                                            )}
                                             <span className={getSubtaskStatus(subtask) !== 'pending' ? 'line-through text-gray-400 flex-1' : 'flex-1'}>
                                               {subtask.title}
                                             </span>
-                                            <input
-                                              type="date"
-                                              value={subtask.dueDate || ''}
-                                              onChange={(e) => handleSubtaskDueDateChange(task.id, subtask.id, e.target.value)}
-                                              className={`text-xs px-2 py-1 border rounded ${
-                                                subtask.dueDate && new Date(subtask.dueDate) < new Date() && getSubtaskStatus(subtask) === 'pending'
-                                                  ? 'border-red-300 bg-red-50 text-red-700'
-                                                  : 'border-gray-200'
-                                              }`}
-                                              title="Due Date"
-                                            />
+                                            {canEdit ? (
+                                              <input
+                                                type="date"
+                                                value={subtask.dueDate || ''}
+                                                onChange={(e) => handleSubtaskDueDateChange(task.id, subtask.id, e.target.value)}
+                                                className={`text-xs px-2 py-1 border rounded ${
+                                                  subtask.dueDate && new Date(subtask.dueDate) < new Date() && getSubtaskStatus(subtask) === 'pending'
+                                                    ? 'border-red-300 bg-red-50 text-red-700'
+                                                    : 'border-gray-200'
+                                                }`}
+                                                title="Due Date"
+                                              />
+                                            ) : subtask.dueDate && (
+                                              <span className="text-xs text-gray-500">{subtask.dueDate}</span>
+                                            )}
                                             {subtask.owner && (
                                               <span className="text-xs text-gray-500">{getOwnerName(subtask.owner)}</span>
                                             )}
-                                            {canEditSubtask(subtask) && (
+                                            {canEdit && canEditSubtask(subtask) && (
                                               <button
                                                 onClick={() => handleEditSubtask(task.id, subtask)}
                                                 className="text-blue-500 hover:text-blue-700 text-xs"
@@ -4836,7 +4931,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                                 ✎
                                               </button>
                                             )}
-                                            {isAdmin && (
+                                            {canEdit && isAdmin && (
                                               <button
                                                 onClick={() => handleDeleteSubtask(task.id, subtask.id)}
                                                 className="text-red-400 hover:text-red-600 text-xs"
@@ -5154,14 +5249,32 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
   const toggleProjectAssignment = (projectId) => {
     if (!editingUser) return;
     const current = editingUser.assignedProjects || [];
-    const updated = current.includes(projectId)
-      ? current.filter(id => id !== projectId)
-      : [...current, projectId];
-    setEditingUser({ ...editingUser, assignedProjects: updated });
+    const currentAccessLevels = editingUser.projectAccessLevels || {};
+    if (current.includes(projectId)) {
+      const updated = current.filter(id => id !== projectId);
+      const { [projectId]: removed, ...remainingLevels } = currentAccessLevels;
+      setEditingUser({ ...editingUser, assignedProjects: updated, projectAccessLevels: remainingLevels });
+    } else {
+      const updated = [...current, projectId];
+      setEditingUser({ 
+        ...editingUser, 
+        assignedProjects: updated, 
+        projectAccessLevels: { ...currentAccessLevels, [projectId]: 'edit' }
+      });
+    }
+  };
+
+  const setProjectAccessLevel = (projectId, level) => {
+    if (!editingUser) return;
+    const currentAccessLevels = editingUser.projectAccessLevels || {};
+    setEditingUser({
+      ...editingUser,
+      projectAccessLevels: { ...currentAccessLevels, [projectId]: level }
+    });
   };
 
   const openEditModal = (u) => {
-    setEditingUser({ ...u, newPassword: '', assignedProjects: u.assignedProjects || [] });
+    setEditingUser({ ...u, newPassword: '', assignedProjects: u.assignedProjects || [], projectAccessLevels: u.projectAccessLevels || {} });
     setShowEditModal(true);
   };
 
@@ -5201,6 +5314,7 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
         email: editingUser.email,
         role: editingUser.role,
         assignedProjects: editingUser.assignedProjects || [],
+        projectAccessLevels: editingUser.projectAccessLevels || {},
         practiceName: editingUser.practiceName || '',
         isNewClient: editingUser.isNewClient || false,
         logo: editingUser.logo || '',
@@ -5671,25 +5785,47 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
               {editingUser.role !== 'admin' && (
                 <div className="mb-6">
                   <label className="block text-sm font-medium mb-2">Assigned Projects</label>
-                  <p className="text-xs text-gray-500 mb-3">Select which projects this user can access. Admins can access all projects automatically.</p>
+                  <p className="text-xs text-gray-500 mb-3">
+                    {editingUser.role === 'user' 
+                      ? 'Select which projects this user can access and set their access level (Edit = full access, View Only = read-only).'
+                      : 'Select which projects this user can access. Admins can access all projects automatically.'}
+                  </p>
                   <div className="border rounded-md max-h-60 overflow-y-auto">
                     {projects.length === 0 ? (
                       <div className="p-4 text-gray-500 text-center">No projects available</div>
                     ) : (
-                      projects.map(p => (
-                        <label key={p.id} className="flex items-center gap-3 p-3 hover:bg-gray-50 border-b last:border-b-0 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={(editingUser.assignedProjects || []).includes(p.id)}
-                            onChange={() => toggleProjectAssignment(p.id)}
-                            className="w-4 h-4 text-primary rounded"
-                          />
-                          <div>
-                            <div className="font-medium text-gray-900">{p.name}</div>
-                            <div className="text-sm text-gray-500">{p.clientName}</div>
+                      projects.map(p => {
+                        const isAssigned = (editingUser.assignedProjects || []).includes(p.id);
+                        const accessLevel = (editingUser.projectAccessLevels || {})[p.id] || 'edit';
+                        return (
+                          <div key={p.id} className="flex items-center justify-between gap-3 p-3 hover:bg-gray-50 border-b last:border-b-0">
+                            <label className="flex items-center gap-3 cursor-pointer flex-1">
+                              <input
+                                type="checkbox"
+                                checked={isAssigned}
+                                onChange={() => toggleProjectAssignment(p.id)}
+                                className="w-4 h-4 text-primary rounded"
+                              />
+                              <div>
+                                <div className="font-medium text-gray-900">{p.name}</div>
+                                <div className="text-sm text-gray-500">{p.clientName}</div>
+                              </div>
+                            </label>
+                            {isAssigned && editingUser.role === 'user' && (
+                              <select
+                                value={accessLevel}
+                                onChange={(e) => setProjectAccessLevel(p.id, e.target.value)}
+                                className={`text-xs px-2 py-1 border rounded ${
+                                  accessLevel === 'view' ? 'bg-gray-100 text-gray-700' : 'bg-green-100 text-green-700'
+                                }`}
+                              >
+                                <option value="edit">Edit</option>
+                                <option value="view">View Only</option>
+                              </select>
+                            )}
                           </div>
-                        </label>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 </div>
