@@ -890,7 +890,7 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
 
 app.post('/api/projects', authenticateToken, async (req, res) => {
   try {
-    const { name, clientName, projectManager, hubspotRecordId, hubspotDealStage, template } = req.body;
+    const { name, clientName, projectManager, hubspotRecordId, hubspotRecordType, hubspotDealStage, template } = req.body;
     if (!name || !clientName) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
@@ -903,6 +903,7 @@ app.post('/api/projects', authenticateToken, async (req, res) => {
       clientName,
       projectManager: projectManager || '',
       hubspotRecordId: hubspotRecordId || '',
+      hubspotRecordType: hubspotRecordType || 'companies',
       hubspotDealStage: hubspotDealStage || '',
       hubspotCompanyId: '',
       hubspotContactId: '',
@@ -977,7 +978,7 @@ app.put('/api/projects/:id', authenticateToken, async (req, res) => {
       });
     }
     
-    const allowedFields = ['name', 'clientName', 'projectManager', 'hubspotRecordId', 'status', 'clientPortalDomain', 'goLiveDate'];
+    const allowedFields = ['name', 'clientName', 'projectManager', 'hubspotRecordId', 'hubspotRecordType', 'status', 'clientPortalDomain', 'goLiveDate'];
     allowedFields.forEach(field => {
       if (req.body[field] !== undefined) {
         let value = req.body[field];
@@ -1577,13 +1578,14 @@ app.post('/api/hubspot/upload-to-deal', authenticateToken, requireAdmin, upload.
     const contentType = req.file.mimetype;
     
     const customNote = noteText || `File uploaded: ${fileName}${category ? ` (Category: ${category})` : ''}`;
+    const recordType = req.body.recordType || 'companies';
     
-    const result = await hubspot.uploadFileAndAttachToDeal(
+    const result = await hubspot.uploadFileAndAttachToRecord(
       dealId,
       fileContent,
       fileName,
       customNote,
-      { isBase64: true }
+      { isBase64: true, recordType: recordType }
     );
     
     const activityLog = (await db.get('activity_log')) || [];
@@ -1622,7 +1624,8 @@ app.get('/api/hubspot/deals', authenticateToken, requireAdmin, async (req, res) 
         projectId: p.id,
         projectName: p.name,
         clientName: p.clientName,
-        hubspotRecordId: p.hubspotRecordId
+        hubspotRecordId: p.hubspotRecordId,
+        hubspotRecordType: p.hubspotRecordType || 'companies'
       }));
     res.json(dealsWithHubSpot);
   } catch (error) {
@@ -1678,12 +1681,14 @@ app.post('/api/client/hubspot/upload', authenticateToken, upload.single('file'),
     let fullNoteText = category ? `[${category}] ` : '';
     fullNoteText += noteText || `File uploaded by ${req.user.name}`;
     
-    const result = await hubspot.uploadFileAndAttachToDeal(
+    const recordType = project.hubspotRecordType || 'companies';
+    
+    const result = await hubspot.uploadFileAndAttachToRecord(
       project.hubspotRecordId,
       fileContent,
       fileName,
       fullNoteText,
-      { isBase64: true }
+      { isBase64: true, recordType: recordType }
     );
     
     // Log activity
