@@ -1396,6 +1396,14 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                   <div className="text-xs text-gray-500 mt-1">
                     {project.completedTasks || 0} of {project.totalTasks || 0} tasks complete
                   </div>
+                  {project.goLiveDate && (
+                    <div className="flex items-center gap-2 mt-2 text-xs">
+                      <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <span className="font-medium text-gray-700">Go-Live: {new Date(project.goLiveDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2 text-sm text-gray-500 mb-4">
