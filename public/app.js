@@ -459,6 +459,16 @@ const api = {
       headers: { 'Authorization': `Bearer ${token}` }
     }).then(r => r.json()),
 
+  reorderTask: (token, projectId, taskId, direction) =>
+    fetch(`${API_URL}/api/projects/${projectId}/tasks/${taskId}/reorder`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ direction })
+    }).then(r => r.json()),
+
   getTemplates: (token) =>
     fetch(`${API_URL}/api/templates`, {
       headers: { 'Authorization': `Bearer ${token}` }
@@ -3198,6 +3208,17 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
     }
   };
 
+  const handleReorderTask = async (taskId, direction) => {
+    try {
+      const result = await api.reorderTask(token, project.id, taskId, direction);
+      if (result.tasks) {
+        setTasks(result.tasks);
+      }
+    } catch (err) {
+      console.error('Failed to reorder task:', err);
+    }
+  };
+
   const handleAddNote = async (taskId) => {
     if (!newNote.trim()) return;
     try {
@@ -3442,13 +3463,22 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
   const progressPercentage = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
   // Group filtered tasks by phase and stage
-  const rawGroupedByPhase = getFilteredTasks().reduce((acc, task) => {
+  const rawGroupedByPhase = getFilteredTasks().reduce((acc, task, idx) => {
     if (!acc[task.phase]) acc[task.phase] = {};
     const stageKey = task.stage || 'General';
     if (!acc[task.phase][stageKey]) acc[task.phase][stageKey] = [];
-    acc[task.phase][stageKey].push(task);
+    acc[task.phase][stageKey].push({ ...task, _originalIdx: idx });
     return acc;
   }, {});
+
+  // Sort tasks within each stage by stageOrder (or original index as fallback)
+  Object.keys(rawGroupedByPhase).forEach(phase => {
+    Object.keys(rawGroupedByPhase[phase]).forEach(stage => {
+      rawGroupedByPhase[phase][stage].sort((a, b) => 
+        (a.stageOrder || a._originalIdx + 1) - (b.stageOrder || b._originalIdx + 1)
+      );
+    });
+  });
 
   // Ensure all phases and stages are always visible (even if empty)
   const groupedByPhase = ensureAllPhasesAndStages(rawGroupedByPhase);
@@ -4159,19 +4189,40 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                   )}
                                 </div>
                               )}
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={handleSaveEdit}
-                                  className="px-4 py-2 bg-green-600 text-white rounded-md"
-                                >
-                                  Save
-                                </button>
-                                <button
-                                  onClick={() => setEditingTask(null)}
-                                  className="px-4 py-2 bg-gray-300 rounded-md"
-                                >
-                                  Cancel
-                                </button>
+                              <div className="flex gap-2 items-center justify-between">
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={handleSaveEdit}
+                                    className="px-4 py-2 bg-green-600 text-white rounded-md"
+                                  >
+                                    Save
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingTask(null)}
+                                    className="px-4 py-2 bg-gray-300 rounded-md"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                                {isAdmin && (
+                                  <div className="flex gap-1 items-center">
+                                    <span className="text-xs text-gray-500 mr-2">Reorder:</span>
+                                    <button
+                                      onClick={() => { handleReorderTask(editingTask.id, 'up'); setEditingTask(null); }}
+                                      className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-sm"
+                                      title="Move task up within stage"
+                                    >
+                                      ↑ Up
+                                    </button>
+                                    <button
+                                      onClick={() => { handleReorderTask(editingTask.id, 'down'); setEditingTask(null); }}
+                                      className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-sm"
+                                      title="Move task down within stage"
+                                    >
+                                      ↓ Down
+                                    </button>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           ) : (

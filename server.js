@@ -894,9 +894,9 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
       
       const phase3Tasks = tasks.filter(t => t.phase === 'Phase 3' && t.stage && t.stage.toLowerCase().includes('training'));
       
-      // Find "Review Install SOP/Training Presentation" task for start date
+      // Find "Complete necessary analyzer reboot or washes" task for start date
       const trainingStartTask = phase3Tasks.find(t => 
-        t.taskTitle && t.taskTitle.toLowerCase().includes('review install sop')
+        t.taskTitle && t.taskTitle.toLowerCase().includes('complete necessary analyzer reboot')
       );
       if (trainingStartTask && trainingStartTask.dueDate) {
         trainingStartDate = trainingStartTask.dueDate;
@@ -1297,6 +1297,79 @@ app.delete('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (r
     await db.set(`tasks_${projectId}`, filtered);
     res.json({ message: 'Task deleted' });
   } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Reorder task (move up or down within same stage)
+app.post('/api/projects/:projectId/tasks/:taskId/reorder', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { projectId, taskId } = req.params;
+    const { direction } = req.body; // 'up' or 'down'
+    
+    if (!direction || !['up', 'down'].includes(direction)) {
+      return res.status(400).json({ error: 'Direction must be "up" or "down"' });
+    }
+    
+    const tasks = await getTasks(projectId);
+    
+    // Normalize task ID comparison
+    const normalizeId = (id) => typeof id === 'string' ? id : String(id);
+    const targetTaskId = normalizeId(taskId);
+    
+    const taskIndex = tasks.findIndex(t => normalizeId(t.id) === targetTaskId);
+    
+    if (taskIndex === -1) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+    
+    const task = tasks[taskIndex];
+    
+    // Get tasks in the same stage with their global indices
+    const stageTasks = tasks
+      .map((t, idx) => ({ task: t, globalIdx: idx, originalIdx: idx }))
+      .filter(item => item.task.phase === task.phase && item.task.stage === task.stage);
+    
+    // Sort by existing stageOrder first (preserve user-defined ordering), fallback to array order
+    stageTasks.sort((a, b) => {
+      const aOrder = a.task.stageOrder !== undefined ? a.task.stageOrder : a.originalIdx + 1000;
+      const bOrder = b.task.stageOrder !== undefined ? b.task.stageOrder : b.originalIdx + 1000;
+      return aOrder - bOrder;
+    });
+    
+    // Normalize stageOrder to sequential values (1, 2, 3, ...) preserving the sorted order
+    stageTasks.forEach((item, idx) => {
+      tasks[item.globalIdx].stageOrder = idx + 1;
+    });
+    
+    // Now find the task's position in the sorted/normalized stage array
+    const positionInStage = stageTasks.findIndex(item => normalizeId(item.task.id) === targetTaskId);
+    
+    if (positionInStage === -1) {
+      return res.status(404).json({ error: 'Task not found in stage' });
+    }
+    
+    // Determine swap target position
+    let swapPosition;
+    if (direction === 'up' && positionInStage > 0) {
+      swapPosition = positionInStage - 1;
+    } else if (direction === 'down' && positionInStage < stageTasks.length - 1) {
+      swapPosition = positionInStage + 1;
+    } else {
+      return res.status(400).json({ error: 'Cannot move further in that direction', tasks });
+    }
+    
+    // Swap stageOrder values between the two tasks
+    const currentGlobalIdx = stageTasks[positionInStage].globalIdx;
+    const swapGlobalIdx = stageTasks[swapPosition].globalIdx;
+    
+    tasks[currentGlobalIdx].stageOrder = swapPosition + 1;
+    tasks[swapGlobalIdx].stageOrder = positionInStage + 1;
+    
+    await db.set(`tasks_${projectId}`, tasks);
+    res.json({ message: 'Task reordered', tasks });
+  } catch (error) {
+    console.error('Reorder task error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
