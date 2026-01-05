@@ -361,7 +361,7 @@
       );
     };
     
-    const HomePage = ({ data, announcements }) => {
+    const HomePage = ({ data, announcements, onNavigate }) => {
       return (
         <div className="space-y-6">
           <div className="bg-gradient-to-r from-primary to-accent text-white p-6 rounded-xl">
@@ -444,21 +444,21 @@
           </div>
           
           <div className="grid md:grid-cols-3 gap-4">
-            <a href="#" onClick={(e) => { e.preventDefault(); }} className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center">
+            <button onClick={() => onNavigate('inventory')} className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center cursor-pointer w-full">
               <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.package, { className: 'w-10 h-10' })}</div>
               <h3 className="font-semibold text-gray-800">Inventory Management</h3>
               <p className="text-sm text-gray-500 mt-1">Submit inventory requests</p>
-            </a>
-            <a href="#" onClick={(e) => { e.preventDefault(); }} className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center">
+            </button>
+            <button onClick={() => onNavigate('support')} className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center cursor-pointer w-full">
               <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.chat, { className: 'w-10 h-10' })}</div>
               <h3 className="font-semibold text-gray-800">Customer Support</h3>
               <p className="text-sm text-gray-500 mt-1">Get help from our team</p>
-            </a>
-            <a href="#" onClick={(e) => { e.preventDefault(); }} className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center">
+            </button>
+            <button onClick={() => onNavigate('files')} className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center cursor-pointer w-full">
               <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.folder, { className: 'w-10 h-10' })}</div>
               <h3 className="font-semibold text-gray-800">Files</h3>
               <p className="text-sm text-gray-500 mt-1">Upload and view documents</p>
-            </a>
+            </button>
           </div>
         </div>
       );
@@ -1864,13 +1864,18 @@
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                      <input
-                        type="text"
+                      <select
                         value={formData.category}
                         onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                         className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
-                        placeholder="e.g., Training, Documentation"
-                      />
+                      >
+                        <option value="">Select a category...</option>
+                        <option value="Contracts">Contracts</option>
+                        <option value="Onboarding">Onboarding</option>
+                        <option value="Inserts">Inserts</option>
+                        <option value="Certificates of Analysis">Certificates of Analysis</option>
+                        <option value="SOP Templates">SOP Templates</option>
+                      </select>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
@@ -2055,7 +2060,7 @@
         }
         
         // Client pages
-        if (activePage === 'home') return <HomePage data={data} announcements={announcements} />;
+        if (activePage === 'home') return <HomePage data={data} announcements={announcements} onNavigate={setActivePage} />;
         if (activePage === 'milestones') return <MilestonesPage data={data} />;
         if (activePage === 'inventory') return <InventoryPage token={token} slug={slug} />;
         if (activePage === 'reports') return <ReportsPage token={token} slug={slug} />;
