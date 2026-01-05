@@ -142,10 +142,14 @@ async function loadTemplate() {
   }
 }
 
-// Auth middleware
+// Auth middleware (accepts token from header or query param for downloads)
 const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  let token = authHeader && authHeader.split(' ')[1];
+  // Also accept token from query param (for file downloads)
+  if (!token && req.query.token) {
+    token = req.query.token;
+  }
   if (!token) return res.status(401).json({ error: 'Access denied' });
   jwt.verify(token, JWT_SECRET, async (err, tokenUser) => {
     if (err) return res.status(403).json({ error: 'Invalid token' });
@@ -1838,6 +1842,116 @@ app.get('/api/inventory/submissions/:slug', authenticateToken, async (req, res) 
     const clientSubmissions = allSubmissions.filter(s => s.slug === slug);
     res.json(clientSubmissions);
   } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Export inventory submission as CSV (client-specific)
+app.get('/api/inventory/export/:slug', authenticateToken, async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const { submissionId } = req.query;
+    
+    if (req.user.role === 'client' && req.user.slug !== slug) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    const allSubmissions = (await db.get('inventory_submissions')) || [];
+    const clientSubmissions = allSubmissions
+      .filter(s => s.slug === slug)
+      .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
+    
+    let dataToExport;
+    if (submissionId) {
+      const submission = clientSubmissions.find(s => s.id === submissionId);
+      if (!submission) return res.status(404).json({ error: 'Submission not found' });
+      dataToExport = [submission];
+    } else {
+      dataToExport = clientSubmissions;
+    }
+    
+    // Build CSV
+    const headers = ['Submission Date', 'Submitted By', 'Category', 'Item', 'Lot Number', 'Expiry Date', 'Open Qty', 'Open Date', 'Closed Qty', 'Notes'];
+    let csv = headers.join(',') + '\n';
+    
+    dataToExport.forEach(sub => {
+      Object.entries(sub.data || {}).forEach(([key, value]) => {
+        const [category, itemName] = key.split('|');
+        const batches = Array.isArray(value?.batches) ? value.batches : [value || {}];
+        batches.forEach(batch => {
+          const row = [
+            `"${new Date(sub.submittedAt).toLocaleString()}"`,
+            `"${sub.submittedBy || ''}"`,
+            `"${category}"`,
+            `"${itemName}"`,
+            `"${batch.lotNumber || ''}"`,
+            `"${batch.expiry || ''}"`,
+            batch.openQty || 0,
+            `"${batch.openDate || ''}"`,
+            batch.closedQty || 0,
+            `"${(batch.notes || '').replace(/"/g, '""')}"`
+          ];
+          csv += row.join(',') + '\n';
+        });
+      });
+    });
+    
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="inventory_${slug}_${new Date().toISOString().split('T')[0]}.csv"`);
+    res.send(csv);
+  } catch (error) {
+    console.error('Export error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Admin: Export all clients inventory data
+app.get('/api/inventory/export-all', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const allSubmissions = (await db.get('inventory_submissions')) || [];
+    const users = await getUsers();
+    const clientUsers = users.filter(u => u.role === 'client');
+    
+    // Get client names mapping
+    const clientNames = {};
+    clientUsers.forEach(u => { clientNames[u.slug] = u.practiceName || u.name || u.slug; });
+    
+    // Build CSV with client info
+    const headers = ['Client', 'Submission Date', 'Submitted By', 'Category', 'Item', 'Lot Number', 'Expiry Date', 'Open Qty', 'Open Date', 'Closed Qty', 'Notes'];
+    let csv = headers.join(',') + '\n';
+    
+    // Sort by date descending
+    allSubmissions.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
+    
+    allSubmissions.forEach(sub => {
+      const clientName = clientNames[sub.slug] || sub.slug;
+      Object.entries(sub.data || {}).forEach(([key, value]) => {
+        const [category, itemName] = key.split('|');
+        const batches = Array.isArray(value?.batches) ? value.batches : [value || {}];
+        batches.forEach(batch => {
+          const row = [
+            `"${clientName}"`,
+            `"${new Date(sub.submittedAt).toLocaleString()}"`,
+            `"${sub.submittedBy || ''}"`,
+            `"${category}"`,
+            `"${itemName}"`,
+            `"${batch.lotNumber || ''}"`,
+            `"${batch.expiry || ''}"`,
+            batch.openQty || 0,
+            `"${batch.openDate || ''}"`,
+            batch.closedQty || 0,
+            `"${(batch.notes || '').replace(/"/g, '""')}"`
+          ];
+          csv += row.join(',') + '\n';
+        });
+      });
+    });
+    
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="all_inventory_${new Date().toISOString().split('T')[0]}.csv"`);
+    res.send(csv);
+  } catch (error) {
+    console.error('Export all error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });

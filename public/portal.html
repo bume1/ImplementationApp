@@ -177,7 +177,8 @@
       list: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>,
       menu: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"/></svg>,
       close: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>,
-      upload: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+      upload: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>,
+      download: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
     };
     
     // Additional icons for admin portal
@@ -189,7 +190,7 @@
     };
     
     const Sidebar = ({ activePage, onNavigate, user, isMobileOpen, onClose }) => {
-      const [inventoryExpanded, setInventoryExpanded] = useState(activePage === 'inventory' || activePage === 'reports');
+      const [inventoryExpanded, setInventoryExpanded] = useState(activePage === 'inventory' || activePage === 'reports' || activePage === 'submission_history');
       const [adminExpanded, setAdminExpanded] = useState(activePage.startsWith('admin_'));
       const isAdmin = user?.role === 'admin';
       
@@ -255,7 +256,7 @@
                 <button
                   onClick={() => setInventoryExpanded(!inventoryExpanded)}
                   className={`w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center justify-between ${
-                    (activePage === 'inventory' || activePage === 'reports') ? 'active' : 'text-gray-700'
+                    (activePage === 'inventory' || activePage === 'reports' || activePage === 'submission_history') ? 'active' : 'text-gray-700'
                   }`}
                 >
                   <div className="flex items-center gap-3">
@@ -284,6 +285,14 @@
                       }`}
                     >
                       <span className="text-primary">{Icons.chart}</span> {isAdmin ? 'All Clients Report' : 'Reports & Alerts'}
+                    </button>
+                    <button
+                      onClick={() => handleNavigate('submission_history')}
+                      className={`w-full text-left px-4 py-2 rounded-lg text-sm flex items-center gap-2 ${
+                        activePage === 'submission_history' ? 'bg-primary/10 text-primary font-medium' : 'text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      <span className="text-primary">{Icons.list}</span> Submission History
                     </button>
                   </div>
                 )}
@@ -1057,17 +1066,29 @@
       const lowStock = alerts?.lowStock || [];
       const expiring = alerts?.expiringSoon || [];
 
+      const handleDownload = () => {
+        window.open(`${API_URL}/api/inventory/export/${slug}?token=${token}`, '_blank');
+      };
+
       return (
         <div className="space-y-6">
           <div className="bg-white p-6 rounded-xl shadow-sm">
-            <div className="flex justify-between items-start">
+            <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
               <div>
                 <h1 className="text-2xl font-bold text-accent">Inventory Reports</h1>
                 <p className="text-gray-600 mt-1">View alerts and usage trends for your inventory</p>
               </div>
-              <button onClick={() => setShowGuide(!showGuide)} className="text-primary hover:text-accent text-sm flex items-center gap-1">
-                <span>ℹ️</span> {showGuide ? 'Hide Guide' : 'How to Use This Report'}
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={handleDownload} className="bg-primary text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-accent transition-colors flex items-center gap-1">
+                  {Icons.download} Download CSV
+                </button>
+                <button onClick={() => onNavigate('submission_history')} className="border border-primary text-primary px-3 py-2 rounded-lg text-sm font-medium hover:bg-primary/10 transition-colors flex items-center gap-1">
+                  {Icons.list} View History
+                </button>
+                <button onClick={() => setShowGuide(!showGuide)} className="text-primary hover:text-accent text-sm flex items-center gap-1">
+                  <span>ℹ️</span> {showGuide ? 'Hide Guide' : 'How to Use'}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1332,7 +1353,7 @@
     };
     
     // Admin Aggregate Inventory Report Page
-    const AdminReportsPage = ({ token }) => {
+    const AdminReportsPage = ({ token, onNavigate }) => {
       const [report, setReport] = useState(null);
       const [loading, setLoading] = useState(true);
 
@@ -1342,6 +1363,10 @@
           .then(data => { setReport(data); setLoading(false); })
           .catch(err => { console.error(err); setLoading(false); });
       }, []);
+
+      const handleDownloadAll = () => {
+        window.open(`${API_URL}/api/inventory/export-all?token=${token}`, '_blank');
+      };
 
       if (loading) {
         return (<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent"></div></div>);
@@ -1353,9 +1378,19 @@
 
       return (
         <div className="space-y-6">
-          <div className="bg-white p-6 rounded-xl shadow-sm">
-            <h1 className="text-2xl font-bold text-accent">All Clients Inventory Report</h1>
-            <p className="text-gray-600 mt-1">Aggregated inventory metrics across all client sites</p>
+          <div className="bg-white p-6 rounded-xl shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-accent">All Clients Inventory Report</h1>
+              <p className="text-gray-600 mt-1">Aggregated inventory metrics across all client sites</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={handleDownloadAll} className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-accent transition-colors flex items-center gap-2">
+                {Icons.download} Download All CSV
+              </button>
+              <button onClick={() => onNavigate('submission_history')} className="border border-primary text-primary px-4 py-2 rounded-lg font-medium hover:bg-primary/10 transition-colors flex items-center gap-2">
+                {Icons.list} Submission History
+              </button>
+            </div>
           </div>
 
           {/* Summary Stats */}
@@ -1496,6 +1531,140 @@
               )}
             </div>
           </div>
+        </div>
+      );
+    };
+
+    // Client Submission History Page
+    const SubmissionHistoryPage = ({ token, slug, isAdmin, onNavigate }) => {
+      const [submissions, setSubmissions] = useState([]);
+      const [allSubmissions, setAllSubmissions] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [selectedClient, setSelectedClient] = useState('');
+      const [clientList, setClientList] = useState([]);
+
+      useEffect(() => {
+        if (isAdmin) {
+          // Admin: fetch all submissions
+          fetch(`${API_URL}/api/inventory/report-all`, { headers: { 'Authorization': `Bearer ${token}` } })
+            .then(r => r.json())
+            .then(data => {
+              setClientList(data.clientSummaries || []);
+              setLoading(false);
+            })
+            .catch(err => { console.error(err); setLoading(false); });
+        } else {
+          // Client: fetch own submissions
+          fetch(`${API_URL}/api/inventory/submissions/${slug}`, { headers: { 'Authorization': `Bearer ${token}` } })
+            .then(r => r.json())
+            .then(data => { setSubmissions(data.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))); setLoading(false); })
+            .catch(err => { console.error(err); setLoading(false); });
+        }
+      }, []);
+
+      useEffect(() => {
+        if (isAdmin && selectedClient) {
+          fetch(`${API_URL}/api/inventory/submissions/${selectedClient}`, { headers: { 'Authorization': `Bearer ${token}` } })
+            .then(r => r.json())
+            .then(data => setSubmissions(data.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))))
+            .catch(console.error);
+        }
+      }, [selectedClient]);
+
+      const handleDownload = (submissionId) => {
+        const clientSlug = isAdmin ? selectedClient : slug;
+        const url = submissionId 
+          ? `${API_URL}/api/inventory/export/${clientSlug}?submissionId=${submissionId}`
+          : `${API_URL}/api/inventory/export/${clientSlug}`;
+        window.open(url + `&token=${token}`, '_blank');
+      };
+
+      const handleDownloadAll = () => {
+        if (isAdmin) {
+          window.open(`${API_URL}/api/inventory/export-all?token=${token}`, '_blank');
+        } else {
+          window.open(`${API_URL}/api/inventory/export/${slug}?token=${token}`, '_blank');
+        }
+      };
+
+      if (loading) {
+        return (<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent"></div></div>);
+      }
+
+      return (
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-xl shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-accent">Submission History</h1>
+              <p className="text-gray-600 mt-1">{isAdmin ? 'View and download inventory submissions from all clients' : 'View and download your past inventory submissions'}</p>
+            </div>
+            <button
+              onClick={handleDownloadAll}
+              className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-accent transition-colors flex items-center gap-2"
+            >
+              {Icons.download} Download All CSV
+            </button>
+          </div>
+
+          {isAdmin && (
+            <div className="bg-white p-4 rounded-xl shadow-sm">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Select Client</label>
+              <select
+                value={selectedClient}
+                onChange={(e) => setSelectedClient(e.target.value)}
+                className="w-full md:w-64 p-2 border rounded-lg"
+              >
+                <option value="">Choose a client...</option>
+                {clientList.map(c => (
+                  <option key={c.slug} value={c.slug}>{c.clientName}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {(isAdmin && !selectedClient) ? (
+            <div className="bg-white p-6 rounded-xl shadow-sm text-center py-12">
+              <div className="flex justify-center mb-4 text-gray-400">{React.cloneElement(Icons.list, { className: 'w-16 h-16' })}</div>
+              <p className="text-gray-500">Select a client above to view their submission history</p>
+            </div>
+          ) : submissions.length === 0 ? (
+            <div className="bg-white p-6 rounded-xl shadow-sm text-center py-12">
+              <div className="flex justify-center mb-4 text-gray-400">{React.cloneElement(Icons.list, { className: 'w-16 h-16' })}</div>
+              <p className="text-gray-500">No submissions found</p>
+            </div>
+          ) : (
+            <div className="bg-white p-6 rounded-xl shadow-sm">
+              <div className="space-y-3">
+                {submissions.map((sub, idx) => {
+                  const itemCount = Object.keys(sub.data || {}).length;
+                  let totalQty = 0;
+                  Object.values(sub.data || {}).forEach(v => {
+                    const batches = Array.isArray(v?.batches) ? v.batches : [v || {}];
+                    totalQty += batches.reduce((s, b) => s + (parseInt(b.openQty) || 0) + (parseInt(b.closedQty) || 0), 0);
+                  });
+                  
+                  return (
+                    <div key={sub.id || idx} className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 bg-gray-50 rounded-lg border hover:border-primary/30 transition-colors gap-3">
+                      <div>
+                        <p className="font-semibold text-gray-800">{new Date(sub.submittedAt).toLocaleString()}</p>
+                        <p className="text-sm text-gray-500">Submitted by {sub.submittedBy}</p>
+                        <div className="flex gap-4 mt-1 text-xs text-gray-500">
+                          <span>{itemCount} items tracked</span>
+                          <span>{totalQty} total units</span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDownload(sub.id)}
+                        className="text-primary hover:text-accent font-medium text-sm flex items-center gap-1"
+                      >
+                        {Icons.download} Download CSV
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       );
     };
@@ -2525,14 +2694,16 @@
           if (activePage === 'admin_clients') return <AdminClientsPage token={token} />;
           if (activePage === 'admin_hubspot_files') return <AdminHubSpotFilesPage token={token} />;
           // Admin views aggregate inventory reports across all clients
-          if (activePage === 'reports') return <AdminReportsPage token={token} />;
+          if (activePage === 'reports') return <AdminReportsPage token={token} onNavigate={setActivePage} />;
+          if (activePage === 'submission_history') return <SubmissionHistoryPage token={token} slug={slug} isAdmin={true} onNavigate={setActivePage} />;
         }
         
         // Client pages
         if (activePage === 'home') return <HomePage data={data} announcements={announcements} onNavigate={setActivePage} />;
         if (activePage === 'milestones') return <MilestonesPage data={data} />;
         if (activePage === 'inventory') return <InventoryPage token={token} slug={slug} />;
-        if (activePage === 'reports') return <ReportsPage token={token} slug={slug} />;
+        if (activePage === 'reports') return <ReportsPage token={token} slug={slug} onNavigate={setActivePage} />;
+        if (activePage === 'submission_history') return <SubmissionHistoryPage token={token} slug={slug} isAdmin={false} onNavigate={setActivePage} />;
         if (activePage === 'support') return <SupportPage settings={settings} />;
         if (activePage === 'files') return <FilesPage settings={settings} documents={documents} token={token} projects={portalData?.projects || []} />;
         
