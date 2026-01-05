@@ -73,13 +73,19 @@ Preferred communication style: Simple, everyday language.
 ## Recent Changes (January 2026)
 
 ### HubSpot File Upload Integration (Jan 5)
-- **Admin HubSpot Files Page**: New page in admin portal for uploading files directly to HubSpot deal records
-- **Admin File Upload API**: POST /api/hubspot/upload-to-deal (admin only) - uploads file to HubSpot Files API and attaches to deal as a note
-- **Admin Deal Selection**: GET /api/hubspot/deals (admin only) - returns projects with linked HubSpot record IDs
-- **Client File Upload**: POST /api/client/hubspot/upload - clients can upload files to their own project's HubSpot deal (restricted to assigned projects only)
-- **Client Files Page**: Enhanced with HubSpot upload form showing only when project has linked HubSpot record; auto-selects project if client has only one
+- **Client-Only HubSpot Upload**: HubSpot file upload moved from admin portal to client portal Files page
+- **Company & Deal Support**: File uploads work with both HubSpot Company and Deal record types (auto-detected from project settings)
+- **Record Type Field**: Projects now have `hubspotRecordType` field (defaults to 'companies') to specify HubSpot object type
+- **Client File Upload API**: POST /api/client/hubspot/upload - clients can upload files to their own project's HubSpot record (restricted to assigned projects only)
+- **Client Files Page**: Shows admin documents + HubSpot upload form when project has linked HubSpot record
 - **File Type Support**: Supports PDF, DOC, DOCX, XLS, XLSX, PNG, JPG, GIF, TXT, CSV (max 10MB)
 - **Category Options**: Contracts, Onboarding, Inserts, Certificates of Analysis, SOP Templates, Other
+
+### Admin Client Documents Enhancement (Jan 5)
+- **Dual Upload Mode**: Admin can add documents via cloud link OR direct file upload
+- **File Upload Storage**: Uploaded files stored in /uploads/documents/ directory with unique filenames
+- **Document Upload API**: POST /api/client-documents/:slug/upload for admin file uploads
+- **Static File Serving**: /uploads route serves uploaded document files
 
 ### Admin Inventory Reports (Jan 5)
 - **Aggregate Reports**: Admin portal shows "All Clients Report" instead of "Weekly Update" in the Inventory menu
