@@ -269,8 +269,10 @@ async function uploadFileAndAttachToDeal(dealId, fileContent, fileName, customNo
     };
     const contentType = mimeTypes[ext] || 'application/octet-stream';
     
-    formData.append('file', fileBuffer, fileName);
-    formData.append('fileName', fileName);
+    formData.append('file', fileBuffer, {
+      filename: fileName,
+      contentType: contentType
+    });
     
     const folderPath = options.folderPath || '/client-uploads';
     formData.append('folderPath', folderPath);
@@ -281,21 +283,27 @@ async function uploadFileAndAttachToDeal(dealId, fileContent, fileName, customNo
       duplicateValidationScope: 'ENTIRE_PORTAL'
     }));
     
-    const uploadResponse = await fetch('https://api.hubapi.com/files/v3/files', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${privateAppToken}`,
-        ...formData.getHeaders()
-      },
-      body: formData
-    });
+    console.log(`📤 Uploading file to HubSpot: ${fileName} (${fileBuffer.length} bytes, ${contentType})`);
+    console.log(`📤 Token prefix: ${privateAppToken.substring(0, 15)}...`);
     
-    if (!uploadResponse.ok) {
-      const errorText = await uploadResponse.text();
-      throw new Error(`File upload failed: ${errorText}`);
-    }
+    const axios = require('axios');
     
-    const fileData = await uploadResponse.json();
+    const uploadResponse = await axios.post(
+      'https://api.hubapi.com/files/v3/files',
+      formData,
+      {
+        headers: {
+          'Authorization': `Bearer ${privateAppToken}`,
+          ...formData.getHeaders()
+        },
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity
+      }
+    );
+    
+    console.log(`📤 HubSpot response status: ${uploadResponse.status}`);
+    
+    const fileData = uploadResponse.data;
     console.log(`✅ File uploaded to HubSpot: ${fileData.id}`);
     
     const noteBody = customNote 
@@ -326,6 +334,13 @@ async function uploadFileAndAttachToDeal(dealId, fileContent, fileName, customNo
     
     return { fileId: fileData.id, noteId: noteResponse.id };
   } catch (error) {
+    if (error.response) {
+      console.error('Error uploading file to HubSpot:', error.response.status, error.response.data);
+      const errorMessage = typeof error.response.data === 'object' 
+        ? JSON.stringify(error.response.data) 
+        : error.response.data;
+      throw new Error(`HubSpot file upload failed (${error.response.status}): ${errorMessage}`);
+    }
     console.error('Error uploading file to HubSpot:', error.message);
     throw error;
   }
