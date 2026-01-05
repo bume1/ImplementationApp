@@ -3001,6 +3001,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
   const [selectedTasks, setSelectedTasks] = useState([]);
   const [bulkMode, setBulkMode] = useState(false);
   const [newSubtask, setNewSubtask] = useState({ taskId: null, title: '', owner: '', dueDate: '' });
+  const [editingSubtask, setEditingSubtask] = useState(null);
   const [expandedSubtasksId, setExpandedSubtasksId] = useState(null);
   const [clientPortalDomain, setClientPortalDomain] = useState('');
   const [showSoftPilotChecklist, setShowSoftPilotChecklist] = useState(false);
@@ -3343,6 +3344,46 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
     }
   };
 
+  const handleEditSubtask = (taskId, subtask) => {
+    setEditingSubtask({
+      taskId,
+      subtaskId: subtask.id,
+      title: subtask.title,
+      owner: subtask.owner || '',
+      dueDate: subtask.dueDate || ''
+    });
+  };
+
+  const handleSaveSubtaskEdit = async () => {
+    if (!editingSubtask) return;
+    try {
+      const updates = {
+        title: editingSubtask.title,
+        owner: editingSubtask.owner,
+        dueDate: editingSubtask.dueDate
+      };
+      await api.updateSubtask(token, project.id, editingSubtask.taskId, editingSubtask.subtaskId, updates);
+      setTasks(tasks.map(t => {
+        if (t.id === editingSubtask.taskId) {
+          return {
+            ...t,
+            subtasks: (t.subtasks || []).map(s =>
+              s.id === editingSubtask.subtaskId ? { ...s, ...updates } : s
+            )
+          };
+        }
+        return t;
+      }));
+      setEditingSubtask(null);
+    } catch (err) {
+      console.error('Failed to save subtask edit:', err);
+    }
+  };
+
+  const canEditSubtask = (subtask) => {
+    return isAdmin || user.email === subtask.owner;
+  };
+
   const handleToggleComplete = async (taskId) => {
     const task = tasks.find(t => t.id === taskId);
     const newCompleted = !task.completed;
@@ -3410,6 +3451,8 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
     setEditingTask({
       id: taskId,
       taskTitle: task.taskTitle,
+      phase: task.phase || '',
+      stage: task.stage || '',
       dateCompleted: normalizeDateForInput(task.dateCompleted) || '',
       dueDate: normalizeDateForInput(task.dueDate) || '',
       owner: task.owner || '',
@@ -3430,6 +3473,8 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
       };
 
       if (isAdmin) {
+        updates.phase = editingTask.phase;
+        updates.stage = editingTask.stage;
         updates.owner = editingTask.owner;
         updates.secondaryOwner = editingTask.secondaryOwner || null;
         updates.dueDate = editingTask.dueDate || null;
@@ -4333,6 +4378,40 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                 {isAdmin && (
                                   <>
                                     <div>
+                                      <label className="block text-xs text-gray-500 mb-1">Phase</label>
+                                      <select
+                                        value={editingTask.phase || ''}
+                                        onChange={(e) => {
+                                          const newPhase = e.target.value;
+                                          const newStages = STANDARD_PHASES[newPhase]?.stages || [];
+                                          setEditingTask({
+                                            ...editingTask, 
+                                            phase: newPhase,
+                                            stage: newStages[0] || ''
+                                          });
+                                        }}
+                                        className="w-full px-3 py-2 border rounded-md"
+                                      >
+                                        {PHASE_ORDER.map(phase => (
+                                          <option key={phase} value={phase}>{phase}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label className="block text-xs text-gray-500 mb-1">Stage</label>
+                                      <select
+                                        value={editingTask.stage || ''}
+                                        onChange={(e) =>
+                                          setEditingTask({...editingTask, stage: e.target.value})
+                                        }
+                                        className="w-full px-3 py-2 border rounded-md"
+                                      >
+                                        {(STANDARD_PHASES[editingTask.phase]?.stages || []).map(stage => (
+                                          <option key={stage} value={stage}>{stage}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                    <div>
                                       <label className="block text-xs text-gray-500 mb-1">Primary Owner <span className="text-red-500">*</span></label>
                                       <select
                                         value={editingTask.owner || ''}
@@ -4679,44 +4758,94 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                       <p className="text-sm text-gray-400 italic">No subtasks</p>
                                     ) : (
                                       (task.subtasks || []).map(subtask => (
-                                        <div key={subtask.id} className="flex items-center gap-2 bg-white p-2 rounded border text-sm">
-                                          <select
-                                            value={getSubtaskStatus(subtask)}
-                                            onChange={(e) => handleSubtaskStatusChange(task.id, subtask.id, e.target.value)}
-                                            className={`px-2 py-1 border rounded text-xs ${
-                                              getSubtaskStatus(subtask) === 'completed' ? 'bg-green-100 text-green-700' :
-                                              getSubtaskStatus(subtask) === 'not_applicable' ? 'bg-gray-100 text-gray-600' :
-                                              'bg-yellow-50 text-yellow-700'
-                                            }`}
-                                          >
-                                            <option value="pending">Pending</option>
-                                            <option value="completed">Complete</option>
-                                            <option value="not_applicable">N/A</option>
-                                          </select>
-                                          <span className={getSubtaskStatus(subtask) !== 'pending' ? 'line-through text-gray-400 flex-1' : 'flex-1'}>
-                                            {subtask.title}
-                                          </span>
-                                          <input
-                                            type="date"
-                                            value={subtask.dueDate || ''}
-                                            onChange={(e) => handleSubtaskDueDateChange(task.id, subtask.id, e.target.value)}
-                                            className={`text-xs px-2 py-1 border rounded ${
-                                              subtask.dueDate && new Date(subtask.dueDate) < new Date() && getSubtaskStatus(subtask) === 'pending'
-                                                ? 'border-red-300 bg-red-50 text-red-700'
-                                                : 'border-gray-200'
-                                            }`}
-                                            title="Due Date"
-                                          />
-                                          {subtask.owner && (
-                                            <span className="text-xs text-gray-500">{getOwnerName(subtask.owner)}</span>
-                                          )}
-                                          <button
-                                            onClick={() => handleDeleteSubtask(task.id, subtask.id)}
-                                            className="text-red-400 hover:text-red-600 text-xs"
-                                          >
-                                            x
-                                          </button>
-                                        </div>
+                                        editingSubtask?.taskId === task.id && editingSubtask?.subtaskId === subtask.id ? (
+                                          <div key={subtask.id} className="flex items-center gap-2 bg-blue-50 p-2 rounded border-2 border-blue-300 text-sm">
+                                            <input
+                                              value={editingSubtask.title}
+                                              onChange={(e) => setEditingSubtask({...editingSubtask, title: e.target.value})}
+                                              className="flex-1 px-2 py-1 border rounded text-sm"
+                                              placeholder="Subtask title"
+                                            />
+                                            <select
+                                              value={editingSubtask.owner}
+                                              onChange={(e) => setEditingSubtask({...editingSubtask, owner: e.target.value})}
+                                              className="px-2 py-1 border rounded text-xs"
+                                            >
+                                              <option value="">No owner</option>
+                                              {allOwners.map(owner => (
+                                                <option key={owner.email} value={owner.email}>{owner.name}</option>
+                                              ))}
+                                            </select>
+                                            <input
+                                              type="date"
+                                              value={editingSubtask.dueDate || ''}
+                                              onChange={(e) => setEditingSubtask({...editingSubtask, dueDate: e.target.value})}
+                                              className="text-xs px-2 py-1 border rounded"
+                                            />
+                                            <button
+                                              onClick={handleSaveSubtaskEdit}
+                                              className="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700"
+                                            >
+                                              Save
+                                            </button>
+                                            <button
+                                              onClick={() => setEditingSubtask(null)}
+                                              className="px-2 py-1 bg-gray-300 rounded text-xs hover:bg-gray-400"
+                                            >
+                                              Cancel
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <div key={subtask.id} className="flex items-center gap-2 bg-white p-2 rounded border text-sm">
+                                            <select
+                                              value={getSubtaskStatus(subtask)}
+                                              onChange={(e) => handleSubtaskStatusChange(task.id, subtask.id, e.target.value)}
+                                              className={`px-2 py-1 border rounded text-xs ${
+                                                getSubtaskStatus(subtask) === 'completed' ? 'bg-green-100 text-green-700' :
+                                                getSubtaskStatus(subtask) === 'not_applicable' ? 'bg-gray-100 text-gray-600' :
+                                                'bg-yellow-50 text-yellow-700'
+                                              }`}
+                                            >
+                                              <option value="pending">Pending</option>
+                                              <option value="completed">Complete</option>
+                                              <option value="not_applicable">N/A</option>
+                                            </select>
+                                            <span className={getSubtaskStatus(subtask) !== 'pending' ? 'line-through text-gray-400 flex-1' : 'flex-1'}>
+                                              {subtask.title}
+                                            </span>
+                                            <input
+                                              type="date"
+                                              value={subtask.dueDate || ''}
+                                              onChange={(e) => handleSubtaskDueDateChange(task.id, subtask.id, e.target.value)}
+                                              className={`text-xs px-2 py-1 border rounded ${
+                                                subtask.dueDate && new Date(subtask.dueDate) < new Date() && getSubtaskStatus(subtask) === 'pending'
+                                                  ? 'border-red-300 bg-red-50 text-red-700'
+                                                  : 'border-gray-200'
+                                              }`}
+                                              title="Due Date"
+                                            />
+                                            {subtask.owner && (
+                                              <span className="text-xs text-gray-500">{getOwnerName(subtask.owner)}</span>
+                                            )}
+                                            {canEditSubtask(subtask) && (
+                                              <button
+                                                onClick={() => handleEditSubtask(task.id, subtask)}
+                                                className="text-blue-500 hover:text-blue-700 text-xs"
+                                                title="Edit subtask"
+                                              >
+                                                ✎
+                                              </button>
+                                            )}
+                                            {isAdmin && (
+                                              <button
+                                                onClick={() => handleDeleteSubtask(task.id, subtask.id)}
+                                                className="text-red-400 hover:text-red-600 text-xs"
+                                              >
+                                                x
+                                              </button>
+                                            )}
+                                          </div>
+                                        )
                                       ))
                                     )}
                                   </div>
