@@ -88,6 +88,9 @@ Preferred communication style: Simple, everyday language.
 - **Admin Portal View**: Client Documents page shows client uploads with green highlight and "Client Upload" badge
 
 ### HubSpot File Upload (Jan 5)
-- **Client-Only Upload**: File upload moved to client portal Files page
-- **Company & Deal Support**: Uploads work with both HubSpot Company and Deal records
+- **Client-Level HubSpot IDs**: Clients now have hubspotCompanyId, hubspotDealId, and hubspotContactId fields stored at the user level (not project level)
+- **Multi-Record Upload**: When clients upload files, they are automatically attached to all configured HubSpot records (Company, Deal, and/or Contact)
+- **No Project Required**: File uploads work for clients even without assigned projects, using client-level HubSpot IDs
+- **Admin Management**: Admins can configure HubSpot IDs for each client in the User Management section
 - **Private App Token**: Uses HUBSPOT_PRIVATE_APP_TOKEN for file uploads (supports files scope)
+- **Updated Language**: Portal now says "upload documents directly to your account record" instead of project record

@@ -464,7 +464,11 @@ app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
       practiceName: u.practiceName || null,
       isNewClient: u.isNewClient || false,
       slug: u.slug || null,
-      logo: u.logo || ''
+      logo: u.logo || '',
+      // HubSpot record IDs for client-level uploads
+      hubspotCompanyId: u.hubspotCompanyId || '',
+      hubspotDealId: u.hubspotDealId || '',
+      hubspotContactId: u.hubspotContactId || ''
     }));
     res.json(safeUsers);
   } catch (error) {
@@ -475,7 +479,7 @@ app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
 app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
-    const { name, email, role, password, assignedProjects, practiceName, isNewClient, logo } = req.body;
+    const { name, email, role, password, assignedProjects, practiceName, isNewClient, logo, hubspotCompanyId, hubspotDealId, hubspotContactId } = req.body;
     const users = await getUsers();
     const idx = users.findIndex(u => u.id === userId);
     if (idx === -1) return res.status(404).json({ error: 'User not found' });
@@ -498,6 +502,11 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
     if (isNewClient !== undefined) users[idx].isNewClient = isNewClient;
     if (logo !== undefined) users[idx].logo = logo;
     
+    // HubSpot record IDs for client-level uploads
+    if (hubspotCompanyId !== undefined) users[idx].hubspotCompanyId = hubspotCompanyId;
+    if (hubspotDealId !== undefined) users[idx].hubspotDealId = hubspotDealId;
+    if (hubspotContactId !== undefined) users[idx].hubspotContactId = hubspotContactId;
+    
     await db.set('users', users);
     res.json({ 
       id: users[idx].id, 
@@ -508,7 +517,10 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
       practiceName: users[idx].practiceName || null,
       isNewClient: users[idx].isNewClient || false,
       slug: users[idx].slug || null,
-      logo: users[idx].logo || ''
+      logo: users[idx].logo || '',
+      hubspotCompanyId: users[idx].hubspotCompanyId || '',
+      hubspotDealId: users[idx].hubspotDealId || '',
+      hubspotContactId: users[idx].hubspotContactId || ''
     });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
@@ -1422,7 +1434,10 @@ app.get('/api/client-portal/data', authenticateToken, async (req, res) => {
         practiceName: clientUser?.practiceName || req.user.practiceName,
         isNewClient: clientUser?.isNewClient || req.user.isNewClient,
         logo: clientUser?.logo || '',
-        assignedProjects: req.user.assignedProjects || []
+        assignedProjects: req.user.assignedProjects || [],
+        hubspotCompanyId: clientUser?.hubspotCompanyId || '',
+        hubspotDealId: clientUser?.hubspotDealId || '',
+        hubspotContactId: clientUser?.hubspotContactId || ''
       },
       projects: projectsWithTasks,
       announcements: announcements.slice(0, 10),
@@ -1700,7 +1715,7 @@ app.get('/api/hubspot/deals', authenticateToken, requireAdmin, async (req, res) 
 });
 
 // ============== CLIENT HUBSPOT FILE UPLOAD ==============
-// Client uploads file to their own project's HubSpot deal
+// Client uploads file to their account's HubSpot records (Company, Deal, Contact)
 app.post('/api/client/hubspot/upload', authenticateToken, upload.single('file'), async (req, res) => {
   try {
     // Only clients can use this endpoint
@@ -1712,28 +1727,23 @@ app.post('/api/client/hubspot/upload', authenticateToken, upload.single('file'),
       return res.status(400).json({ error: 'No file uploaded' });
     }
     
-    const { projectId, noteText, category } = req.body;
+    const { noteText, category } = req.body;
     
-    if (!projectId) {
-      return res.status(400).json({ error: 'Project ID is required' });
+    // Get fresh user data with HubSpot IDs
+    const users = await getUsers();
+    const clientUser = users.find(u => u.id === req.user.id);
+    
+    if (!clientUser) {
+      return res.status(404).json({ error: 'User not found' });
     }
     
-    // Verify client has access to this project
-    const assignedProjects = req.user.assignedProjects || [];
-    if (!assignedProjects.includes(projectId)) {
-      return res.status(403).json({ error: 'You do not have access to this project' });
-    }
+    const hubspotCompanyId = clientUser.hubspotCompanyId || '';
+    const hubspotDealId = clientUser.hubspotDealId || '';
+    const hubspotContactId = clientUser.hubspotContactId || '';
     
-    // Get project and verify it has HubSpot record
-    const projects = await getProjects();
-    const project = projects.find(p => p.id === projectId);
-    
-    if (!project) {
-      return res.status(404).json({ error: 'Project not found' });
-    }
-    
-    if (!project.hubspotRecordId) {
-      return res.status(400).json({ error: 'This project is not linked to HubSpot' });
+    // Check if at least one HubSpot ID is configured
+    if (!hubspotCompanyId && !hubspotDealId && !hubspotContactId) {
+      return res.status(400).json({ error: 'Your account is not linked to HubSpot. Please contact your administrator.' });
     }
     
     const fileName = req.file.originalname;
@@ -1746,15 +1756,64 @@ app.post('/api/client/hubspot/upload', authenticateToken, upload.single('file'),
     let fullNoteText = category ? `[${category}] ` : '';
     fullNoteText += noteText || `File uploaded by ${req.user.name}`;
     
-    const recordType = project.hubspotRecordType || 'companies';
+    // Upload to all configured HubSpot records
+    const uploadResults = [];
+    let primaryResult = null;
     
-    const result = await hubspot.uploadFileAndAttachToRecord(
-      project.hubspotRecordId,
-      fileContent,
-      fileName,
-      fullNoteText,
-      { isBase64: true, recordType: recordType }
-    );
+    // Upload to Company
+    if (hubspotCompanyId) {
+      try {
+        const result = await hubspot.uploadFileAndAttachToRecord(
+          hubspotCompanyId,
+          fileContent,
+          fileName,
+          fullNoteText,
+          { isBase64: true, recordType: 'companies' }
+        );
+        uploadResults.push({ type: 'company', id: hubspotCompanyId, ...result });
+        if (!primaryResult) primaryResult = result;
+      } catch (err) {
+        console.error('Error uploading to HubSpot Company:', err.message);
+      }
+    }
+    
+    // Upload to Deal
+    if (hubspotDealId) {
+      try {
+        const result = await hubspot.uploadFileAndAttachToRecord(
+          hubspotDealId,
+          fileContent,
+          fileName,
+          fullNoteText,
+          { isBase64: true, recordType: 'deals' }
+        );
+        uploadResults.push({ type: 'deal', id: hubspotDealId, ...result });
+        if (!primaryResult) primaryResult = result;
+      } catch (err) {
+        console.error('Error uploading to HubSpot Deal:', err.message);
+      }
+    }
+    
+    // Upload to Contact
+    if (hubspotContactId) {
+      try {
+        const result = await hubspot.uploadFileAndAttachToRecord(
+          hubspotContactId,
+          fileContent,
+          fileName,
+          fullNoteText,
+          { isBase64: true, recordType: 'contacts' }
+        );
+        uploadResults.push({ type: 'contact', id: hubspotContactId, ...result });
+        if (!primaryResult) primaryResult = result;
+      } catch (err) {
+        console.error('Error uploading to HubSpot Contact:', err.message);
+      }
+    }
+    
+    if (uploadResults.length === 0) {
+      return res.status(500).json({ error: 'Failed to upload to any HubSpot records' });
+    }
     
     // Save document record for visibility in both portals
     const documents = (await db.get('client_documents')) || [];
@@ -1769,10 +1828,9 @@ app.post('/api/client/hubspot/upload', authenticateToken, upload.single('file'),
       uploadedBy: 'client',
       uploadedByName: req.user.name,
       uploadedByEmail: req.user.email,
-      hubspotFileId: result.fileId,
-      hubspotNoteId: result.noteId,
-      projectId: projectId,
-      projectName: project.name,
+      hubspotFileId: primaryResult.fileId,
+      hubspotNoteId: primaryResult.noteId,
+      hubspotRecords: uploadResults.map(r => ({ type: r.type, recordId: r.id })),
       createdAt: new Date().toISOString()
     };
     documents.push(newDoc);
@@ -1784,22 +1842,24 @@ app.post('/api/client/hubspot/upload', authenticateToken, upload.single('file'),
       id: require('uuid').v4(),
       action: 'hubspot_file_upload',
       entityType: 'client_file',
-      entityId: result.fileId,
-      projectId: projectId,
+      entityId: primaryResult.fileId,
       userId: req.user.id,
+      slug: req.user.slug,
       userName: req.user.name,
-      details: `Client uploaded file "${fileName}" to HubSpot (${category || 'No category'})`,
+      details: fileName,
       timestamp: new Date().toISOString()
     });
     if (activityLog.length > 500) activityLog.length = 500;
     await db.set('activity_log', activityLog);
     
+    const recordTypes = uploadResults.map(r => r.type).join(', ');
     res.json({ 
       success: true, 
-      fileId: result.fileId,
-      noteId: result.noteId,
+      fileId: primaryResult.fileId,
+      noteId: primaryResult.noteId,
       documentId: docId,
-      message: `File "${fileName}" uploaded successfully`
+      uploadedTo: uploadResults,
+      message: `File "${fileName}" uploaded to ${recordTypes}`
     });
   } catch (error) {
     console.error('Client HubSpot file upload error:', error);

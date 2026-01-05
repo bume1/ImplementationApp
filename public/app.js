@@ -4502,7 +4502,7 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
   const [editingUser, setEditingUser] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAddUser, setShowAddUser] = useState(false);
-  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'user', practiceName: '', isNewClient: false, assignedProjects: [], logo: '' });
+  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'user', practiceName: '', isNewClient: false, assignedProjects: [], logo: '', hubspotCompanyId: '', hubspotDealId: '', hubspotContactId: '' });
   const [addError, setAddError] = useState('');
   const [passwordResetRequests, setPasswordResetRequests] = useState([]);
 
@@ -4595,7 +4595,7 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
         return;
       }
       await loadUsers();
-      setNewUser({ name: '', email: '', password: '', role: 'user', practiceName: '', isNewClient: false, assignedProjects: [], logo: '' });
+      setNewUser({ name: '', email: '', password: '', role: 'user', practiceName: '', isNewClient: false, assignedProjects: [], logo: '', hubspotCompanyId: '', hubspotDealId: '', hubspotContactId: '' });
       setShowAddUser(false);
       setAddError('');
     } catch (err) {
@@ -4613,7 +4613,10 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
         assignedProjects: editingUser.assignedProjects || [],
         practiceName: editingUser.practiceName || '',
         isNewClient: editingUser.isNewClient || false,
-        logo: editingUser.logo || ''
+        logo: editingUser.logo || '',
+        hubspotCompanyId: editingUser.hubspotCompanyId || '',
+        hubspotDealId: editingUser.hubspotDealId || '',
+        hubspotContactId: editingUser.hubspotContactId || ''
       };
       if (editingUser.newPassword) {
         updates.password = editingUser.newPassword;
@@ -4802,6 +4805,39 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
                       <p className="text-xs text-gray-500">Max 2MB. PNG or JPG recommended. Shows in client portal header.</p>
                     </div>
                   </div>
+                  <div className="md:col-span-2 border-t pt-4 mt-2">
+                    <h4 className="text-sm font-semibold text-gray-700 mb-3">HubSpot Record IDs (for file uploads)</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Company ID</label>
+                        <input
+                          value={newUser.hubspotCompanyId || ''}
+                          onChange={(e) => setNewUser({...newUser, hubspotCompanyId: e.target.value})}
+                          className="w-full px-3 py-2 border rounded-md text-sm"
+                          placeholder="e.g., 12345678"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Deal ID</label>
+                        <input
+                          value={newUser.hubspotDealId || ''}
+                          onChange={(e) => setNewUser({...newUser, hubspotDealId: e.target.value})}
+                          className="w-full px-3 py-2 border rounded-md text-sm"
+                          placeholder="e.g., 87654321"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Contact ID</label>
+                        <input
+                          value={newUser.hubspotContactId || ''}
+                          onChange={(e) => setNewUser({...newUser, hubspotContactId: e.target.value})}
+                          className="w-full px-3 py-2 border rounded-md text-sm"
+                          placeholder="e.g., 11223344"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">Files uploaded by this client will be attached to these HubSpot records.</p>
+                  </div>
                 </>
               )}
             </div>
@@ -4836,7 +4872,7 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
                 Create User
               </button>
               <button
-                onClick={() => { setShowAddUser(false); setAddError(''); setNewUser({ name: '', email: '', password: '', role: 'user', practiceName: '', isNewClient: false, assignedProjects: [], logo: '' }); }}
+                onClick={() => { setShowAddUser(false); setAddError(''); setNewUser({ name: '', email: '', password: '', role: 'user', practiceName: '', isNewClient: false, assignedProjects: [], logo: '', hubspotCompanyId: '', hubspotDealId: '', hubspotContactId: '' }); }}
                 className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400"
               >
                 Cancel
@@ -4995,6 +5031,39 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
                         )}
                         <p className="text-xs text-gray-500">Max 2MB. PNG or JPG recommended. Shows in client portal header.</p>
                       </div>
+                    </div>
+                    <div className="md:col-span-2 border-t pt-4 mt-2">
+                      <h4 className="text-sm font-semibold text-gray-700 mb-3">HubSpot Record IDs (for file uploads)</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Company ID</label>
+                          <input
+                            value={editingUser.hubspotCompanyId || ''}
+                            onChange={(e) => setEditingUser({...editingUser, hubspotCompanyId: e.target.value})}
+                            className="w-full px-3 py-2 border rounded-md text-sm"
+                            placeholder="e.g., 12345678"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Deal ID</label>
+                          <input
+                            value={editingUser.hubspotDealId || ''}
+                            onChange={(e) => setEditingUser({...editingUser, hubspotDealId: e.target.value})}
+                            className="w-full px-3 py-2 border rounded-md text-sm"
+                            placeholder="e.g., 87654321"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Contact ID</label>
+                          <input
+                            value={editingUser.hubspotContactId || ''}
+                            onChange={(e) => setEditingUser({...editingUser, hubspotContactId: e.target.value})}
+                            className="w-full px-3 py-2 border rounded-md text-sm"
+                            placeholder="e.g., 11223344"
+                          />
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-2">Files uploaded by this client will be attached to these HubSpot records.</p>
                     </div>
                   </>
                 )}
