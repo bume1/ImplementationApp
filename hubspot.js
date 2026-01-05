@@ -310,27 +310,32 @@ async function uploadFileAndAttachToDeal(dealId, fileContent, fileName, customNo
       ? `[Project Tracker] ${customNote}\n\nFile: ${fileName}\nFile ID: ${fileData.id}\nFile URL: ${fileData.url || 'Available in HubSpot Files'}`
       : `[Project Tracker] Soft-Pilot Checklist Submitted\n\nA signed soft-pilot checklist has been submitted for this deal.\n\nFile: ${fileName}\nFile ID: ${fileData.id}\nFile URL: ${fileData.url || 'Available in HubSpot Files'}`;
     
-    const noteObj = {
-      properties: {
-        hs_timestamp: Date.now().toString(),
-        hs_note_body: noteBody,
-        hs_attachment_ids: fileData.id.toString()
-      },
-      associations: [
-        {
-          to: { id: dealId },
-          types: [
-            {
-              associationCategory: 'HUBSPOT_DEFINED',
-              associationTypeId: 214
-            }
-          ]
-        }
-      ]
+    const cleanDealId = dealId.toString().replace(/\D/g, '');
+    console.log(`📤 Creating note for deal: ${cleanDealId}`);
+    
+    const noteProperties = {
+      hs_timestamp: Date.now().toString(),
+      hs_note_body: noteBody,
+      hs_attachment_ids: fileData.id.toString()
     };
     
-    const noteResponse = await privateAppClient.crm.objects.notes.basicApi.create(noteObj);
-    console.log(`✅ Note with attachment created for deal ${dealId}`);
+    const noteResponse = await privateAppClient.crm.objects.notes.basicApi.create({
+      properties: noteProperties
+    });
+    
+    console.log(`✅ Note created: ${noteResponse.id}`);
+    
+    try {
+      await privateAppClient.crm.objects.notes.associationsApi.create(
+        noteResponse.id,
+        'deals',
+        cleanDealId,
+        [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 214 }]
+      );
+      console.log(`✅ Note associated with deal ${cleanDealId}`);
+    } catch (assocError) {
+      console.error('Failed to associate note with deal:', assocError.message);
+    }
     
     return { fileId: fileData.id, noteId: noteResponse.id };
   } catch (error) {
