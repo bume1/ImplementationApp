@@ -308,9 +308,10 @@ async function uploadFileAndAttachToRecord(recordId, fileContent, fileName, cust
     const fileData = uploadResponse.data;
     console.log(`✅ File uploaded to HubSpot: ${fileData.id}`);
     
+    const notePrefix = options.notePrefix || '[Project Tracker]';
     const noteBody = customNote 
-      ? `[Project Tracker] ${customNote}\n\nFile: ${fileName}\nFile ID: ${fileData.id}\nFile URL: ${fileData.url || 'Available in HubSpot Files'}`
-      : `[Project Tracker] Soft-Pilot Checklist Submitted\n\nA signed soft-pilot checklist has been submitted for this deal.\n\nFile: ${fileName}\nFile ID: ${fileData.id}\nFile URL: ${fileData.url || 'Available in HubSpot Files'}`;
+      ? `${notePrefix} ${customNote}\n\nFile: ${fileName}\nFile ID: ${fileData.id}\nFile URL: ${fileData.url || 'Available in HubSpot Files'}`
+      : `${notePrefix} Soft-Pilot Checklist Submitted\n\nA signed soft-pilot checklist has been submitted for this deal.\n\nFile: ${fileName}\nFile ID: ${fileData.id}\nFile URL: ${fileData.url || 'Available in HubSpot Files'}`;
     
     const cleanRecordId = recordId.toString().replace(/\D/g, '');
     console.log(`📤 Creating note for ${recordType}: ${cleanRecordId}`);
