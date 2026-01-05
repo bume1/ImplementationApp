@@ -346,7 +346,7 @@ async function uploadFileAndAttachToRecord(recordId, fileContent, fileName, cust
       console.error(`Failed to associate note with ${recordType}:`, assocError.response?.data || assocError.message);
     }
     
-    return { fileId: fileData.id, noteId: noteResponse.id };
+    return { fileId: fileData.id, noteId: noteResponse.id, fileUrl: fileData.url || null };
   } catch (error) {
     if (error.response) {
       console.error('Error uploading file to HubSpot:', error.response.status, error.response.data);

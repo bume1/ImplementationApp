@@ -1830,6 +1830,7 @@ app.post('/api/client/hubspot/upload', authenticateToken, upload.single('file'),
       uploadedByEmail: req.user.email,
       hubspotFileId: primaryResult.fileId,
       hubspotNoteId: primaryResult.noteId,
+      hubspotFileUrl: primaryResult.fileUrl || null,
       hubspotRecords: uploadResults.map(r => ({ type: r.type, recordId: r.id })),
       createdAt: new Date().toISOString()
     };
