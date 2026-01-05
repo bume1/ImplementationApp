@@ -1022,7 +1022,8 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
         projectManager: editingProject.projectManager,
         hubspotRecordId: editingProject.hubspotRecordId,
         status: editingProject.status,
-        clientPortalDomain: editingProject.clientPortalDomain || ''
+        clientPortalDomain: editingProject.clientPortalDomain || '',
+        goLiveDate: editingProject.goLiveDate || ''
       });
       setEditingProject(null);
       loadProjects();
@@ -1546,6 +1547,16 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                     placeholder="e.g., https://deapps.pro"
                   />
                   <p className="text-xs text-gray-500 mt-1">Custom domain for this project's client portal link. Leave empty to use default.</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Target Go-Live Date</label>
+                  <input
+                    type="date"
+                    value={editingProject.goLiveDate || ''}
+                    onChange={(e) => setEditingProject({...editingProject, goLiveDate: e.target.value})}
+                    className="w-full px-3 py-2 border rounded-md"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Expected go-live date for this implementation.</p>
                 </div>
               </div>
               <div className="flex gap-2 mt-6">
