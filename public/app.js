@@ -3052,6 +3052,27 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
     }
   };
 
+  const handleSubtaskDueDateChange = async (taskId, subtaskId, dueDate) => {
+    try {
+      const updates = { dueDate: dueDate || null };
+      await api.updateSubtask(token, project.id, taskId, subtaskId, updates);
+      // Update local state using functional updater to avoid stale state
+      setTasks(prevTasks => prevTasks.map(t => {
+        if (t.id === taskId) {
+          return {
+            ...t,
+            subtasks: (t.subtasks || []).map(s =>
+              s.id === subtaskId ? { ...s, ...updates } : s
+            )
+          };
+        }
+        return t;
+      }));
+    } catch (err) {
+      console.error('Failed to update subtask due date:', err);
+    }
+  };
+
   const getSubtaskStatus = (subtask) => {
     if (subtask.notApplicable) return 'not_applicable';
     if (subtask.completed) return 'completed';
@@ -4435,15 +4456,17 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                           <span className={getSubtaskStatus(subtask) !== 'pending' ? 'line-through text-gray-400 flex-1' : 'flex-1'}>
                                             {subtask.title}
                                           </span>
-                                          {subtask.dueDate && (
-                                            <span className={`text-xs px-2 py-0.5 rounded ${
-                                              new Date(subtask.dueDate) < new Date() && getSubtaskStatus(subtask) === 'pending' 
-                                                ? 'bg-red-100 text-red-700' 
-                                                : 'bg-gray-100 text-gray-600'
-                                            }`}>
-                                              Due: {new Date(subtask.dueDate + 'T12:00:00').toLocaleDateString()}
-                                            </span>
-                                          )}
+                                          <input
+                                            type="date"
+                                            value={subtask.dueDate || ''}
+                                            onChange={(e) => handleSubtaskDueDateChange(task.id, subtask.id, e.target.value)}
+                                            className={`text-xs px-2 py-1 border rounded ${
+                                              subtask.dueDate && new Date(subtask.dueDate) < new Date() && getSubtaskStatus(subtask) === 'pending'
+                                                ? 'border-red-300 bg-red-50 text-red-700'
+                                                : 'border-gray-200'
+                                            }`}
+                                            title="Due Date"
+                                          />
                                           {subtask.owner && (
                                             <span className="text-xs text-gray-500">{getOwnerName(subtask.owner)}</span>
                                           )}
