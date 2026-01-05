@@ -1463,7 +1463,10 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                         };
                         
                         const projectsByDate = {};
+                        const trainingByDate = {};
+                        
                         projects.forEach(p => {
+                          // Add go-live dates
                           if (p.goLiveDate) {
                             const d = parseGoLiveDate(p.goLiveDate);
                             if (d && d.getMonth() === calendarMonth && d.getFullYear() === calendarYear) {
@@ -1472,24 +1475,64 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                               projectsByDate[day].push(p);
                             }
                           }
+                          
+                          // Add training week dates
+                          if (p.trainingStartDate && p.trainingEndDate) {
+                            const startD = parseGoLiveDate(p.trainingStartDate);
+                            const endD = parseGoLiveDate(p.trainingEndDate);
+                            if (startD && endD) {
+                              // Check each day in the training range
+                              const current = new Date(startD);
+                              while (current <= endD) {
+                                if (current.getMonth() === calendarMonth && current.getFullYear() === calendarYear) {
+                                  const day = current.getDate();
+                                  if (!trainingByDate[day]) trainingByDate[day] = [];
+                                  if (!trainingByDate[day].find(t => t.id === p.id)) {
+                                    trainingByDate[day].push({
+                                      ...p,
+                                      isTrainingStart: current.getTime() === startD.getTime(),
+                                      isTrainingEnd: current.getTime() === endD.getTime()
+                                    });
+                                  }
+                                }
+                                current.setDate(current.getDate() + 1);
+                              }
+                            }
+                          }
                         });
                         
                         const cells = [];
                         for (let i = 0; i < firstDay; i++) {
-                          cells.push(<div key={`empty-${i}`} className="min-h-[80px]"></div>);
+                          cells.push(<div key={`empty-${i}`} className="min-h-[100px]"></div>);
                         }
                         
                         for (let day = 1; day <= daysInMonth; day++) {
                           const isToday = isCurrentMonth && today.getDate() === day;
                           const dayProjects = projectsByDate[day] || [];
+                          const dayTraining = trainingByDate[day] || [];
                           
                           cells.push(
                             <div 
                               key={day} 
-                              className={`min-h-[80px] border rounded-lg p-2 ${isToday ? 'border-primary bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}
+                              className={`min-h-[100px] border rounded-lg p-2 ${isToday ? 'border-primary bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}
                             >
                               <div className={`text-sm font-semibold mb-1 ${isToday ? 'text-primary' : 'text-gray-700'}`}>{day}</div>
                               <div className="space-y-1">
+                                {/* Training week entries */}
+                                {dayTraining.slice(0, 1).map(p => (
+                                  <div 
+                                    key={`training-${p.id}`} 
+                                    className="text-xs px-2 py-1 rounded-md truncate cursor-pointer transition-colors bg-purple-100 text-purple-800 hover:bg-purple-200"
+                                    title={`Training/Validation - ${p.clientName}`}
+                                    onClick={() => onSelectProject(p)}
+                                  >
+                                    {p.clientName.length > 10 ? p.clientName.substring(0, 10) + '...' : p.clientName} (T)
+                                  </div>
+                                ))}
+                                {dayTraining.length > 1 && (
+                                  <div className="text-xs text-purple-500 font-medium">+{dayTraining.length - 1} training</div>
+                                )}
+                                {/* Go-live entries */}
                                 {dayProjects.slice(0, 2).map(p => (
                                   <div 
                                     key={p.id} 
@@ -1498,7 +1541,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                                       p.status === 'paused' ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200' :
                                       'bg-primary/10 text-primary hover:bg-primary/20'
                                     }`}
-                                    title={`${p.name} - ${p.clientName}`}
+                                    title={`Go-Live: ${p.name} - ${p.clientName}`}
                                     onClick={() => onSelectProject(p)}
                                   >
                                     {p.clientName.length > 12 ? p.clientName.substring(0, 12) + '...' : p.clientName}
@@ -1609,16 +1652,20 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                 {/* Legend */}
                 <div className="px-4 pb-4 flex flex-wrap gap-4 text-xs">
                   <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded bg-purple-100"></div>
+                    <span className="text-gray-600">Training/Validation Week</span>
+                  </div>
+                  <div className="flex items-center gap-2">
                     <div className="w-3 h-3 rounded bg-primary/20"></div>
-                    <span className="text-gray-600">In Progress</span>
+                    <span className="text-gray-600">Go-Live (In Progress)</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-3 h-3 rounded bg-green-100"></div>
-                    <span className="text-gray-600">Completed</span>
+                    <span className="text-gray-600">Go-Live (Completed)</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-3 h-3 rounded bg-yellow-100"></div>
-                    <span className="text-gray-600">Paused</span>
+                    <span className="text-gray-600">Go-Live (Paused)</span>
                   </div>
                 </div>
               </div>
@@ -2737,7 +2784,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
   const [teamMembers, setTeamMembers] = useState([]);
   const [selectedTasks, setSelectedTasks] = useState([]);
   const [bulkMode, setBulkMode] = useState(false);
-  const [newSubtask, setNewSubtask] = useState({ taskId: null, title: '', owner: '' });
+  const [newSubtask, setNewSubtask] = useState({ taskId: null, title: '', owner: '', dueDate: '' });
   const [expandedSubtasksId, setExpandedSubtasksId] = useState(null);
   const [clientPortalDomain, setClientPortalDomain] = useState('');
   const [showSoftPilotChecklist, setShowSoftPilotChecklist] = useState(false);
@@ -2880,19 +2927,20 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
     try {
       const result = await api.addSubtask(token, project.id, taskId, {
         title: newSubtask.title,
-        owner: newSubtask.owner
+        owner: newSubtask.owner,
+        dueDate: newSubtask.dueDate
       });
       // Update local state with the new subtask
       setTasks(tasks.map(t => {
         if (t.id === taskId) {
           return {
             ...t,
-            subtasks: [...(t.subtasks || []), result.subtask || { id: Date.now().toString(), title: newSubtask.title, owner: newSubtask.owner, completed: false, notApplicable: false }]
+            subtasks: [...(t.subtasks || []), result.subtask || { id: Date.now().toString(), title: newSubtask.title, owner: newSubtask.owner, dueDate: newSubtask.dueDate, completed: false, notApplicable: false }]
           };
         }
         return t;
       }));
-      setNewSubtask({ taskId: null, title: '', owner: '' });
+      setNewSubtask({ taskId: null, title: '', owner: '', dueDate: '' });
     } catch (err) {
       console.error('Failed to add subtask:', err);
     }
@@ -4137,7 +4185,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                     {expandedSubtasksId === task.id ? 'Hide Subtasks' : `Subtasks (${(task.subtasks || []).filter(s => s.completed || s.notApplicable).length}/${(task.subtasks || []).length})`}
                                   </button>
                                   <button
-                                    onClick={() => setNewSubtask({ taskId: task.id, title: '', owner: '' })}
+                                    onClick={() => setNewSubtask({ taskId: task.id, title: '', owner: '', dueDate: '' })}
                                     className="text-sm text-green-600 hover:underline"
                                   >
                                     + Add Subtask
@@ -4253,6 +4301,15 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                           <span className={getSubtaskStatus(subtask) !== 'pending' ? 'line-through text-gray-400 flex-1' : 'flex-1'}>
                                             {subtask.title}
                                           </span>
+                                          {subtask.dueDate && (
+                                            <span className={`text-xs px-2 py-0.5 rounded ${
+                                              new Date(subtask.dueDate) < new Date() && getSubtaskStatus(subtask) === 'pending' 
+                                                ? 'bg-red-100 text-red-700' 
+                                                : 'bg-gray-100 text-gray-600'
+                                            }`}>
+                                              Due: {new Date(subtask.dueDate + 'T12:00:00').toLocaleDateString()}
+                                            </span>
+                                          )}
                                           {subtask.owner && (
                                             <span className="text-xs text-gray-500">{getOwnerName(subtask.owner)}</span>
                                           )}
@@ -4268,10 +4325,41 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                   </div>
                                 </div>
                               )}
+                              {viewMode === 'client' && task.showToClient && (task.subtasks || []).length > 0 && (
+                                <div className="w-full mt-2 bg-purple-50 rounded-lg p-3">
+                                  <h4 className="text-sm font-medium text-gray-700 mb-2">Subtasks</h4>
+                                  <div className="space-y-2">
+                                    {(task.subtasks || []).map(subtask => (
+                                      <div key={subtask.id} className="flex items-center gap-2 bg-white p-2 rounded border text-sm">
+                                        <span className={`px-2 py-1 rounded text-xs ${
+                                          getSubtaskStatus(subtask) === 'completed' ? 'bg-green-100 text-green-700' :
+                                          getSubtaskStatus(subtask) === 'not_applicable' ? 'bg-gray-100 text-gray-600' :
+                                          'bg-yellow-50 text-yellow-700'
+                                        }`}>
+                                          {getSubtaskStatus(subtask) === 'completed' ? 'Complete' : 
+                                           getSubtaskStatus(subtask) === 'not_applicable' ? 'N/A' : 'Pending'}
+                                        </span>
+                                        <span className={getSubtaskStatus(subtask) !== 'pending' ? 'line-through text-gray-400 flex-1' : 'flex-1'}>
+                                          {subtask.title}
+                                        </span>
+                                        {subtask.dueDate && (
+                                          <span className={`text-xs px-2 py-0.5 rounded ${
+                                            new Date(subtask.dueDate) < new Date() && getSubtaskStatus(subtask) === 'pending' 
+                                              ? 'bg-red-100 text-red-700' 
+                                              : 'bg-gray-100 text-gray-600'
+                                          }`}>
+                                            Due: {new Date(subtask.dueDate + 'T12:00:00').toLocaleDateString()}
+                                          </span>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                               {viewMode === 'internal' && newSubtask.taskId === task.id && (
                                 <div className="w-full mt-2 bg-green-50 rounded-lg p-3">
                                   <h4 className="text-sm font-medium text-gray-700 mb-2">Add New Subtask</h4>
-                                  <div className="flex gap-2 flex-wrap">
+                                  <div className="flex gap-2 flex-wrap items-center">
                                     <input
                                       value={newSubtask.title}
                                       onChange={(e) => setNewSubtask({...newSubtask, title: e.target.value})}
@@ -4288,6 +4376,13 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                         <option key={owner.email} value={owner.email}>{owner.name}</option>
                                       ))}
                                     </select>
+                                    <input
+                                      type="date"
+                                      value={newSubtask.dueDate}
+                                      onChange={(e) => setNewSubtask({...newSubtask, dueDate: e.target.value})}
+                                      className="px-2 py-2 border rounded-md text-sm"
+                                      title="Due Date"
+                                    />
                                     <button
                                       onClick={() => handleAddSubtask(task.id)}
                                       className="px-3 py-2 bg-green-600 text-white rounded-md text-sm hover:bg-green-700"
@@ -4295,7 +4390,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                       Add
                                     </button>
                                     <button
-                                      onClick={() => setNewSubtask({ taskId: null, title: '', owner: '' })}
+                                      onClick={() => setNewSubtask({ taskId: null, title: '', owner: '', dueDate: '' })}
                                       className="px-3 py-2 bg-gray-300 rounded-md text-sm"
                                     >
                                       Cancel

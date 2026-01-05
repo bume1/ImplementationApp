@@ -578,7 +578,7 @@ app.post('/api/projects/:projectId/tasks/:taskId/subtasks', authenticateToken, a
       return res.status(403).json({ error: 'Access denied to this project' });
     }
     
-    const { title, owner } = req.body;
+    const { title, owner, dueDate } = req.body;
     if (!title) return res.status(400).json({ error: 'Subtask title is required' });
     
     const tasks = await getTasks(projectId);
@@ -589,6 +589,7 @@ app.post('/api/projects/:projectId/tasks/:taskId/subtasks', authenticateToken, a
       id: uuidv4(),
       title,
       owner: owner || '',
+      dueDate: dueDate || '',
       completed: false,
       createdAt: new Date().toISOString(),
       createdBy: req.user.id
@@ -613,7 +614,7 @@ app.put('/api/projects/:projectId/tasks/:taskId/subtasks/:subtaskId', authentica
       return res.status(403).json({ error: 'Access denied to this project' });
     }
     
-    const { title, owner, completed, notApplicable } = req.body;
+    const { title, owner, dueDate, completed, notApplicable } = req.body;
     
     const tasks = await getTasks(projectId);
     const taskIdx = tasks.findIndex(t => t.id === parseInt(taskId));
@@ -625,6 +626,7 @@ app.put('/api/projects/:projectId/tasks/:taskId/subtasks/:subtaskId', authentica
     
     if (title !== undefined) tasks[taskIdx].subtasks[subtaskIdx].title = title;
     if (owner !== undefined) tasks[taskIdx].subtasks[subtaskIdx].owner = owner;
+    if (dueDate !== undefined) tasks[taskIdx].subtasks[subtaskIdx].dueDate = dueDate;
     if (completed !== undefined) tasks[taskIdx].subtasks[subtaskIdx].completed = completed;
     if (notApplicable !== undefined) tasks[taskIdx].subtasks[subtaskIdx].notApplicable = notApplicable;
     
@@ -885,13 +887,37 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
         }
       }
       
+      // Find training/validation week dates from Phase 3 tasks
+      let trainingStartDate = null;
+      let trainingEndDate = null;
+      
+      const phase3Tasks = tasks.filter(t => t.phase === 'Phase 3' && t.stage && t.stage.toLowerCase().includes('training'));
+      
+      // Find "Review Install SOP/Training Presentation" task for start date
+      const trainingStartTask = phase3Tasks.find(t => 
+        t.taskTitle && t.taskTitle.toLowerCase().includes('review install sop')
+      );
+      if (trainingStartTask && trainingStartTask.dueDate) {
+        trainingStartDate = trainingStartTask.dueDate;
+      }
+      
+      // Find "Patient Correlation Studies" task for end date
+      const trainingEndTask = phase3Tasks.find(t => 
+        t.taskTitle && t.taskTitle.toLowerCase().includes('patient correlation')
+      );
+      if (trainingEndTask && trainingEndTask.dueDate) {
+        trainingEndDate = trainingEndTask.dueDate;
+      }
+      
       return {
         ...project,
         templateName: template ? template.name : project.template,
         launchDurationWeeks,
         totalTasks,
         completedTasks,
-        progressPercent
+        progressPercent,
+        trainingStartDate,
+        trainingEndDate
       };
     }));
     
