@@ -890,6 +890,7 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
       // Find training/validation week dates from Phase 3 tasks
       let trainingStartDate = null;
       let trainingEndDate = null;
+      let trainingStartTaskId = null;
       
       const phase3Tasks = tasks.filter(t => t.phase === 'Phase 3' && t.stage && t.stage.toLowerCase().includes('training'));
       
@@ -899,6 +900,7 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
       );
       if (trainingStartTask && trainingStartTask.dueDate) {
         trainingStartDate = trainingStartTask.dueDate;
+        trainingStartTaskId = trainingStartTask.id;
       }
       
       // Find "Patient Correlation Studies" task for end date
@@ -909,6 +911,12 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
         trainingEndDate = trainingEndTask.dueDate;
       }
       
+      // Find go-live task ID for calendar navigation
+      const goLiveTask = tasks.find(t => 
+        t.taskTitle && t.taskTitle.toLowerCase().includes('first live patient samples')
+      );
+      const goLiveTaskId = goLiveTask ? goLiveTask.id : null;
+      
       return {
         ...project,
         templateName: template ? template.name : project.template,
@@ -917,7 +925,9 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
         completedTasks,
         progressPercent,
         trainingStartDate,
-        trainingEndDate
+        trainingEndDate,
+        trainingStartTaskId,
+        goLiveTaskId
       };
     }));
     

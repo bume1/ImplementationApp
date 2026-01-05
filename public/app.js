@@ -1524,7 +1524,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                                     key={`training-${p.id}`} 
                                     className="text-xs px-2 py-1 rounded-md truncate cursor-pointer transition-colors bg-purple-100 text-purple-800 hover:bg-purple-200"
                                     title={`Training/Validation - ${p.clientName}`}
-                                    onClick={() => onSelectProject(p)}
+                                    onClick={() => onSelectProject(p, p.trainingStartTaskId)}
                                   >
                                     {p.clientName.length > 10 ? p.clientName.substring(0, 10) + '...' : p.clientName} (T)
                                   </div>
@@ -1542,7 +1542,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                                       'bg-primary/10 text-primary hover:bg-primary/20'
                                     }`}
                                     title={`Go-Live: ${p.name} - ${p.clientName}`}
-                                    onClick={() => onSelectProject(p)}
+                                    onClick={() => onSelectProject(p, p.goLiveTaskId)}
                                   >
                                     {p.clientName.length > 12 ? p.clientName.substring(0, 12) + '...' : p.clientName}
                                   </div>
@@ -2762,7 +2762,7 @@ const SoftPilotChecklist = ({ token, project, tasks, teamMembers, onClose, onSub
 };
 
 // ============== PROJECT TRACKER COMPONENT ==============
-const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
+const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout }) => {
   const [tasks, setTasks] = useState([]);
   const [viewMode, setViewMode] = useState('internal');
   const [viewType, setViewType] = useState('list');
@@ -2788,14 +2788,86 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
   const [expandedSubtasksId, setExpandedSubtasksId] = useState(null);
   const [clientPortalDomain, setClientPortalDomain] = useState('');
   const [showSoftPilotChecklist, setShowSoftPilotChecklist] = useState(false);
+  const [creatingTemplate, setCreatingTemplate] = useState(false);
 
   const isAdmin = user.role === 'admin';
+  
+  const handleCreateTemplate = async () => {
+    const templateName = prompt('Enter a name for this template:', `${project.name} Template`);
+    if (!templateName) return;
+    
+    setCreatingTemplate(true);
+    try {
+      // Create ID mapping from original task IDs to new sequential IDs
+      const idMap = {};
+      tasks.forEach((task, idx) => {
+        idMap[task.id] = idx + 1;
+      });
+      
+      // Create template tasks from current project tasks
+      // Preserve task structure but strip runtime data (owners, due dates, completion, notes)
+      const templateTasks = tasks.map((task, idx) => ({
+        id: idx + 1,
+        taskTitle: task.taskTitle,
+        phase: task.phase,
+        stage: task.stage,
+        showToClient: task.showToClient !== undefined ? task.showToClient : true,
+        clientName: task.clientName || '',
+        description: task.description || '',
+        // Remap dependencies to new sequential IDs
+        dependencies: (task.dependencies || []).map(depId => idMap[depId]).filter(Boolean),
+        order: task.order || idx + 1,
+        subtasks: (task.subtasks || []).map((st, stIdx) => ({
+          id: stIdx + 1,
+          title: st.title,
+          description: st.description || ''
+        }))
+      }));
+      
+      const result = await api.createTemplate(token, {
+        name: templateName,
+        description: `Created from ${project.name} on ${new Date().toLocaleDateString()}`,
+        tasks: templateTasks
+      });
+      
+      if (result.error) {
+        alert('Failed to create template: ' + result.error);
+      } else {
+        alert(`Template "${templateName}" created successfully with ${templateTasks.length} tasks!`);
+      }
+    } catch (err) {
+      console.error('Failed to create template:', err);
+      alert('Failed to create template');
+    } finally {
+      setCreatingTemplate(false);
+    }
+  };
 
   useEffect(() => {
     loadTasks();
     loadTeamMembers();
     loadClientPortalDomain();
   }, []);
+  
+  // Scroll to specific task if scrollToTaskId is provided
+  useEffect(() => {
+    if (scrollToTaskId && !loading && tasks.length > 0) {
+      // Set view to list to ensure task is visible
+      setViewType('list');
+      // Small delay to ensure DOM is rendered
+      setTimeout(() => {
+        const taskElement = document.getElementById(`task-${scrollToTaskId}`);
+        if (taskElement) {
+          taskElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // Highlight the task briefly
+          taskElement.classList.add('ring-2', 'ring-primary', 'ring-offset-2');
+          setTimeout(() => {
+            taskElement.classList.remove('ring-2', 'ring-primary', 'ring-offset-2');
+          }, 3000);
+        }
+      }, 300);
+    }
+  }, [scrollToTaskId, loading, tasks]);
 
   const loadClientPortalDomain = async () => {
     try {
@@ -3468,6 +3540,20 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
               >
                 Calendar
               </button>
+              
+              {isAdmin && viewType === 'list' && (
+                <>
+                  <div className="border-l border-gray-300 mx-2"></div>
+                  <button
+                    onClick={handleCreateTemplate}
+                    disabled={creatingTemplate || tasks.length === 0}
+                    className="px-3 py-1.5 rounded-md text-sm bg-green-600 text-white hover:bg-green-700 disabled:bg-gray-400"
+                    title="Create a reusable template from this board's tasks"
+                  >
+                    {creatingTemplate ? 'Creating...' : 'Create Template'}
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
@@ -4178,12 +4264,9 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                   >
                                     {expandedTaskId === task.id ? 'Hide Notes' : `Notes (${(task.notes || []).length})`}
                                   </button>
-                                  <button
-                                    onClick={() => setExpandedSubtasksId(expandedSubtasksId === task.id ? null : task.id)}
-                                    className="text-sm text-purple-600 hover:underline"
-                                  >
-                                    {expandedSubtasksId === task.id ? 'Hide Subtasks' : `Subtasks (${(task.subtasks || []).filter(s => s.completed || s.notApplicable).length}/${(task.subtasks || []).length})`}
-                                  </button>
+                                  <span className="text-sm text-purple-600">
+                                    Subtasks ({(task.subtasks || []).filter(s => s.completed || s.notApplicable).length}/{(task.subtasks || []).length})
+                                  </span>
                                   <button
                                     onClick={() => setNewSubtask({ taskId: task.id, title: '', owner: '', dueDate: '' })}
                                     className="text-sm text-green-600 hover:underline"
@@ -4276,7 +4359,7 @@ const ProjectTracker = ({ token, user, project, onBack, onLogout }) => {
                                   </div>
                                 </div>
                               )}
-                              {viewMode === 'internal' && expandedSubtasksId === task.id && (
+                              {viewMode === 'internal' && (task.subtasks || []).length > 0 && (
                                 <div className="w-full mt-2 bg-purple-50 rounded-lg p-3">
                                   <h4 className="text-sm font-medium text-gray-700 mb-2">Subtasks</h4>
                                   <div className="space-y-2 mb-3">
@@ -6823,6 +6906,7 @@ const App = () => {
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [user, setUser] = useState(JSON.parse(localStorage.getItem('user') || 'null'));
   const [selectedProject, setSelectedProject] = useState(null);
+  const [scrollToTaskId, setScrollToTaskId] = useState(null);
   const [view, setView] = useState('list');
   const [pendingInternalSlug, setPendingInternalSlug] = useState(null);
 
@@ -6874,8 +6958,9 @@ const App = () => {
     window.history.pushState({}, '', '/thrive365labslaunch/login');
   };
 
-  const handleSelectProject = (project) => {
+  const handleSelectProject = (project, taskId = null) => {
     setSelectedProject(project);
+    setScrollToTaskId(taskId);
     setView('tracker');
     const slug = project.clientLinkSlug || project.clientLinkId;
     window.history.pushState({}, '', `/thrive365labslaunch/${slug}-internal`);
@@ -6897,6 +6982,7 @@ const App = () => {
         token={token}
         user={user}
         project={selectedProject}
+        scrollToTaskId={scrollToTaskId}
         onBack={handleBackToList}
         onLogout={handleLogout}
       />
