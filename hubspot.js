@@ -269,14 +269,17 @@ async function uploadFileAndAttachToDeal(dealId, fileContent, fileName, customNo
     };
     const contentType = mimeTypes[ext] || 'application/octet-stream';
     
-    formData.append('file', fileBuffer, {
-      filename: fileName,
-      contentType: contentType
-    });
+    formData.append('file', fileBuffer, fileName);
+    formData.append('fileName', fileName);
     
     const folderPath = options.folderPath || '/client-uploads';
     formData.append('folderPath', folderPath);
-    formData.append('options', JSON.stringify({ access: 'PRIVATE' }));
+    formData.append('options', JSON.stringify({ 
+      access: 'PRIVATE',
+      overwrite: false,
+      duplicateValidationStrategy: 'NONE',
+      duplicateValidationScope: 'ENTIRE_PORTAL'
+    }));
     
     const uploadResponse = await fetch('https://api.hubapi.com/files/v3/files', {
       method: 'POST',
