@@ -1382,6 +1382,7 @@ app.get('/api/client-portal/data', authenticateToken, async (req, res) => {
         name: project.name,
         clientName: project.clientName,
         status: project.status,
+        hubspotRecordId: project.hubspotRecordId || null,
         tasks: clientTasks
       };
     }));
@@ -1622,6 +1623,90 @@ app.get('/api/hubspot/deals', authenticateToken, requireAdmin, async (req, res) 
   } catch (error) {
     console.error('Error fetching HubSpot deals:', error);
     res.status(500).json({ error: 'Failed to fetch deals' });
+  }
+});
+
+// ============== CLIENT HUBSPOT FILE UPLOAD ==============
+// Client uploads file to their own project's HubSpot deal
+app.post('/api/client/hubspot/upload', authenticateToken, upload.single('file'), async (req, res) => {
+  try {
+    // Only clients can use this endpoint
+    if (req.user.role !== 'client') {
+      return res.status(403).json({ error: 'Client access required' });
+    }
+    
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    
+    const { projectId, noteText, category } = req.body;
+    
+    if (!projectId) {
+      return res.status(400).json({ error: 'Project ID is required' });
+    }
+    
+    // Verify client has access to this project
+    const assignedProjects = req.user.assignedProjects || [];
+    if (!assignedProjects.includes(projectId)) {
+      return res.status(403).json({ error: 'You do not have access to this project' });
+    }
+    
+    // Get project and verify it has HubSpot record
+    const projects = await getProjects();
+    const project = projects.find(p => p.id === projectId);
+    
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    
+    if (!project.hubspotRecordId) {
+      return res.status(400).json({ error: 'This project is not linked to HubSpot' });
+    }
+    
+    const fileName = req.file.originalname;
+    const fileBuffer = req.file.buffer;
+    const mimeType = req.file.mimetype;
+    
+    // Convert buffer to base64
+    const fileContent = fileBuffer.toString('base64');
+    
+    // Build note text with category
+    let fullNoteText = category ? `[${category}] ` : '';
+    fullNoteText += noteText || `File uploaded by ${req.user.name}`;
+    
+    const result = await hubspot.uploadFileAndAttachToDeal(
+      project.hubspotRecordId,
+      fileContent,
+      fileName,
+      mimeType,
+      fullNoteText
+    );
+    
+    // Log activity
+    const activityLog = (await db.get('activity_log')) || [];
+    activityLog.unshift({
+      id: require('uuid').v4(),
+      action: 'hubspot_file_upload',
+      entityType: 'client_file',
+      entityId: result.fileId,
+      projectId: projectId,
+      userId: req.user.id,
+      userName: req.user.name,
+      details: `Client uploaded file "${fileName}" to HubSpot (${category || 'No category'})`,
+      timestamp: new Date().toISOString()
+    });
+    if (activityLog.length > 500) activityLog.length = 500;
+    await db.set('activity_log', activityLog);
+    
+    res.json({ 
+      success: true, 
+      fileId: result.fileId,
+      noteId: result.noteId,
+      message: `File "${fileName}" uploaded successfully`
+    });
+  } catch (error) {
+    console.error('Client HubSpot file upload error:', error);
+    res.status(500).json({ error: error.message || 'Failed to upload file' });
   }
 });
 
