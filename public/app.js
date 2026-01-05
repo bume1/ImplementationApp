@@ -2794,7 +2794,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
   const [teamMembers, setTeamMembers] = useState([]);
   const [selectedTasks, setSelectedTasks] = useState([]);
   const [bulkMode, setBulkMode] = useState(false);
-  const [newSubtask, setNewSubtask] = useState({ taskId: null, title: '', owner: '', dueDate: '' });
+  const [newSubtask, setNewSubtask] = useState({ taskId: null, title: '', owner: '', dueDate: '', showToClient: true });
   const [expandedSubtasksId, setExpandedSubtasksId] = useState(null);
   const [clientPortalDomain, setClientPortalDomain] = useState('');
   const [showSoftPilotChecklist, setShowSoftPilotChecklist] = useState(false);
@@ -3017,19 +3017,20 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
       const result = await api.addSubtask(token, project.id, taskId, {
         title: newSubtask.title,
         owner: newSubtask.owner,
-        dueDate: newSubtask.dueDate
+        dueDate: newSubtask.dueDate,
+        showToClient: newSubtask.showToClient !== false
       });
       // Update local state with the new subtask
       setTasks(tasks.map(t => {
         if (t.id === taskId) {
           return {
             ...t,
-            subtasks: [...(t.subtasks || []), result.subtask || { id: Date.now().toString(), title: newSubtask.title, owner: newSubtask.owner, dueDate: newSubtask.dueDate, completed: false, notApplicable: false }]
+            subtasks: [...(t.subtasks || []), result.subtask || { id: Date.now().toString(), title: newSubtask.title, owner: newSubtask.owner, dueDate: newSubtask.dueDate, showToClient: newSubtask.showToClient !== false, completed: false, notApplicable: false }]
           };
         }
         return t;
       }));
-      setNewSubtask({ taskId: null, title: '', owner: '', dueDate: '' });
+      setNewSubtask({ taskId: null, title: '', owner: '', dueDate: '', showToClient: true });
     } catch (err) {
       console.error('Failed to add subtask:', err);
     }
@@ -3077,6 +3078,26 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
       }));
     } catch (err) {
       console.error('Failed to update subtask due date:', err);
+    }
+  };
+
+  const handleSubtaskShowToClientChange = async (taskId, subtaskId, showToClient) => {
+    try {
+      const updates = { showToClient };
+      await api.updateSubtask(token, project.id, taskId, subtaskId, updates);
+      setTasks(prevTasks => prevTasks.map(t => {
+        if (t.id === taskId) {
+          return {
+            ...t,
+            subtasks: (t.subtasks || []).map(s =>
+              s.id === subtaskId ? { ...s, ...updates } : s
+            )
+          };
+        }
+        return t;
+      }));
+    } catch (err) {
+      console.error('Failed to update subtask visibility:', err);
     }
   };
 
@@ -4352,7 +4373,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                     Subtasks ({(task.subtasks || []).filter(s => s.completed || s.notApplicable || s.status === 'Complete' || s.status === 'N/A').length}/{(task.subtasks || []).length})
                                   </span>
                                   <button
-                                    onClick={() => setNewSubtask({ taskId: task.id, title: '', owner: '', dueDate: '' })}
+                                    onClick={() => setNewSubtask({ taskId: task.id, title: '', owner: '', dueDate: '', showToClient: true })}
                                     className="text-sm text-green-600 hover:underline"
                                   >
                                     + Add Subtask
@@ -4482,6 +4503,15 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                           {subtask.owner && (
                                             <span className="text-xs text-gray-500">{getOwnerName(subtask.owner)}</span>
                                           )}
+                                          <label className="flex items-center gap-1 text-xs text-gray-500" title="Show to Client">
+                                            <input
+                                              type="checkbox"
+                                              checked={subtask.showToClient !== false}
+                                              onChange={(e) => handleSubtaskShowToClientChange(task.id, subtask.id, e.target.checked)}
+                                              className="w-3 h-3"
+                                            />
+                                            Client
+                                          </label>
                                           <button
                                             onClick={() => handleDeleteSubtask(task.id, subtask.id)}
                                             className="text-red-400 hover:text-red-600 text-xs"
@@ -4494,11 +4524,11 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                   </div>
                                 </div>
                               )}
-                              {viewMode === 'client' && task.showToClient && (task.subtasks || []).length > 0 && (
+                              {viewMode === 'client' && task.showToClient && (task.subtasks || []).filter(s => s.showToClient !== false).length > 0 && (
                                 <div className="w-full mt-2 bg-purple-50 rounded-lg p-3">
                                   <h4 className="text-sm font-medium text-gray-700 mb-2">Subtasks</h4>
                                   <div className="space-y-2">
-                                    {(task.subtasks || []).map(subtask => (
+                                    {(task.subtasks || []).filter(s => s.showToClient !== false).map(subtask => (
                                       <div key={subtask.id} className="flex items-center gap-2 bg-white p-2 rounded border text-sm">
                                         <span className={`px-2 py-1 rounded text-xs ${
                                           getSubtaskStatus(subtask) === 'completed' ? 'bg-green-100 text-green-700' :
@@ -4552,6 +4582,14 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                       className="px-2 py-2 border rounded-md text-sm"
                                       title="Due Date"
                                     />
+                                    <label className="flex items-center gap-1 text-sm text-gray-600">
+                                      <input
+                                        type="checkbox"
+                                        checked={newSubtask.showToClient !== false}
+                                        onChange={(e) => setNewSubtask({...newSubtask, showToClient: e.target.checked})}
+                                      />
+                                      Show to Client
+                                    </label>
                                     <button
                                       onClick={() => handleAddSubtask(task.id)}
                                       className="px-3 py-2 bg-green-600 text-white rounded-md text-sm hover:bg-green-700"
@@ -4559,7 +4597,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                       Add
                                     </button>
                                     <button
-                                      onClick={() => setNewSubtask({ taskId: null, title: '', owner: '', dueDate: '' })}
+                                      onClick={() => setNewSubtask({ taskId: null, title: '', owner: '', dueDate: '', showToClient: true })}
                                       className="px-3 py-2 bg-gray-300 rounded-md text-sm"
                                     >
                                       Cancel
