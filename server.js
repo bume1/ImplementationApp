@@ -578,7 +578,7 @@ app.post('/api/projects/:projectId/tasks/:taskId/subtasks', authenticateToken, a
       return res.status(403).json({ error: 'Access denied to this project' });
     }
     
-    const { title, owner, dueDate } = req.body;
+    const { title, owner, dueDate, showToClient } = req.body;
     if (!title) return res.status(400).json({ error: 'Subtask title is required' });
     
     const tasks = await getTasks(projectId);
@@ -590,6 +590,7 @@ app.post('/api/projects/:projectId/tasks/:taskId/subtasks', authenticateToken, a
       title,
       owner: owner || '',
       dueDate: dueDate || '',
+      showToClient: showToClient !== false,
       completed: false,
       createdAt: new Date().toISOString(),
       createdBy: req.user.id
@@ -614,7 +615,7 @@ app.put('/api/projects/:projectId/tasks/:taskId/subtasks/:subtaskId', authentica
       return res.status(403).json({ error: 'Access denied to this project' });
     }
     
-    const { title, owner, dueDate, completed, notApplicable } = req.body;
+    const { title, owner, dueDate, completed, notApplicable, showToClient } = req.body;
     
     const tasks = await getTasks(projectId);
     const taskIdx = tasks.findIndex(t => t.id === parseInt(taskId));
@@ -629,6 +630,7 @@ app.put('/api/projects/:projectId/tasks/:taskId/subtasks/:subtaskId', authentica
     if (dueDate !== undefined) tasks[taskIdx].subtasks[subtaskIdx].dueDate = dueDate;
     if (completed !== undefined) tasks[taskIdx].subtasks[subtaskIdx].completed = completed;
     if (notApplicable !== undefined) tasks[taskIdx].subtasks[subtaskIdx].notApplicable = notApplicable;
+    if (showToClient !== undefined) tasks[taskIdx].subtasks[subtaskIdx].showToClient = showToClient;
     
     await db.set(`tasks_${projectId}`, tasks);
     res.json(tasks[taskIdx].subtasks[subtaskIdx]);
