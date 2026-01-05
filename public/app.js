@@ -882,6 +882,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
   const [showCalendar, setShowCalendar] = useState(true);
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
   const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
+  const [calendarViewMode, setCalendarViewMode] = useState('month'); // 'month' or 'year'
   const [newProject, setNewProject] = useState({
     name: '',
     clientName: '',
@@ -1374,7 +1375,9 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                   <div className="flex items-center justify-between">
                     <button
                       onClick={() => {
-                        if (calendarMonth === 0) {
+                        if (calendarViewMode === 'year') {
+                          setCalendarYear(calendarYear - 1);
+                        } else if (calendarMonth === 0) {
                           setCalendarMonth(11);
                           setCalendarYear(calendarYear - 1);
                         } else {
@@ -1387,12 +1390,32 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                       </svg>
                     </button>
-                    <h3 className="text-xl font-bold">
-                      {new Date(calendarYear, calendarMonth).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-                    </h3>
+                    <div className="flex items-center gap-4">
+                      <h3 className="text-xl font-bold">
+                        {calendarViewMode === 'year' 
+                          ? calendarYear 
+                          : new Date(calendarYear, calendarMonth).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                      </h3>
+                      <div className="flex bg-white/20 rounded-lg p-1">
+                        <button
+                          onClick={() => setCalendarViewMode('month')}
+                          className={`px-3 py-1 text-sm rounded-md transition-colors ${calendarViewMode === 'month' ? 'bg-white text-primary font-medium' : 'hover:bg-white/20'}`}
+                        >
+                          Month
+                        </button>
+                        <button
+                          onClick={() => setCalendarViewMode('year')}
+                          className={`px-3 py-1 text-sm rounded-md transition-colors ${calendarViewMode === 'year' ? 'bg-white text-primary font-medium' : 'hover:bg-white/20'}`}
+                        >
+                          Year
+                        </button>
+                      </div>
+                    </div>
                     <button
                       onClick={() => {
-                        if (calendarMonth === 11) {
+                        if (calendarViewMode === 'year') {
+                          setCalendarYear(calendarYear + 1);
+                        } else if (calendarMonth === 11) {
                           setCalendarMonth(0);
                           setCalendarYear(calendarYear + 1);
                         } else {
@@ -1408,90 +1431,180 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                   </div>
                 </div>
                 
-                <div className="p-4">
-                  <div className="grid grid-cols-7 gap-1 mb-2">
-                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                      <div key={day} className="text-center text-xs font-semibold text-gray-500 py-2">{day}</div>
-                    ))}
-                  </div>
-                  
-                  <div className="grid grid-cols-7 gap-1">
-                    {(() => {
-                      const firstDay = new Date(calendarYear, calendarMonth, 1).getDay();
-                      const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
-                      const today = new Date();
-                      const isCurrentMonth = today.getMonth() === calendarMonth && today.getFullYear() === calendarYear;
-                      
-                      const parseGoLiveDate = (dateStr) => {
-                        if (!dateStr) return null;
-                        let d;
-                        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-                          d = new Date(dateStr + 'T12:00:00');
-                        } else if (dateStr.includes('T') && dateStr.endsWith('Z')) {
-                          const datePart = dateStr.split('T')[0];
-                          d = new Date(datePart + 'T12:00:00');
-                        } else if (dateStr.includes('T')) {
-                          d = new Date(dateStr);
-                        } else {
-                          d = new Date(dateStr);
-                        }
-                        return isNaN(d.getTime()) ? null : d;
-                      };
-                      
-                      const projectsByDate = {};
-                      projects.forEach(p => {
-                        if (p.goLiveDate) {
-                          const d = parseGoLiveDate(p.goLiveDate);
-                          if (d && d.getMonth() === calendarMonth && d.getFullYear() === calendarYear) {
-                            const day = d.getDate();
-                            if (!projectsByDate[day]) projectsByDate[day] = [];
-                            projectsByDate[day].push(p);
-                          }
-                        }
-                      });
-                      
-                      const cells = [];
-                      for (let i = 0; i < firstDay; i++) {
-                        cells.push(<div key={`empty-${i}`} className="min-h-[80px]"></div>);
-                      }
-                      
-                      for (let day = 1; day <= daysInMonth; day++) {
-                        const isToday = isCurrentMonth && today.getDate() === day;
-                        const dayProjects = projectsByDate[day] || [];
+                {calendarViewMode === 'month' ? (
+                  <div className="p-4">
+                    <div className="grid grid-cols-7 gap-1 mb-2">
+                      {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                        <div key={day} className="text-center text-xs font-semibold text-gray-500 py-2">{day}</div>
+                      ))}
+                    </div>
+                    
+                    <div className="grid grid-cols-7 gap-1">
+                      {(() => {
+                        const firstDay = new Date(calendarYear, calendarMonth, 1).getDay();
+                        const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+                        const today = new Date();
+                        const isCurrentMonth = today.getMonth() === calendarMonth && today.getFullYear() === calendarYear;
                         
-                        cells.push(
-                          <div 
-                            key={day} 
-                            className={`min-h-[80px] border rounded-lg p-2 ${isToday ? 'border-primary bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}
-                          >
-                            <div className={`text-sm font-semibold mb-1 ${isToday ? 'text-primary' : 'text-gray-700'}`}>{day}</div>
-                            <div className="space-y-1">
-                              {dayProjects.slice(0, 2).map(p => (
-                                <div 
-                                  key={p.id} 
-                                  className={`text-xs px-2 py-1 rounded-md truncate cursor-pointer transition-colors ${
-                                    p.status === 'completed' ? 'bg-green-100 text-green-800 hover:bg-green-200' : 
-                                    p.status === 'paused' ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200' :
-                                    'bg-primary/10 text-primary hover:bg-primary/20'
-                                  }`}
-                                  title={`${p.name} - ${p.clientName}`}
-                                  onClick={() => onSelectProject(p)}
-                                >
-                                  {p.clientName.length > 12 ? p.clientName.substring(0, 12) + '...' : p.clientName}
+                        const parseGoLiveDate = (dateStr) => {
+                          if (!dateStr) return null;
+                          let d;
+                          if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+                            d = new Date(dateStr + 'T12:00:00');
+                          } else if (dateStr.includes('T') && dateStr.endsWith('Z')) {
+                            const datePart = dateStr.split('T')[0];
+                            d = new Date(datePart + 'T12:00:00');
+                          } else if (dateStr.includes('T')) {
+                            d = new Date(dateStr);
+                          } else {
+                            d = new Date(dateStr);
+                          }
+                          return isNaN(d.getTime()) ? null : d;
+                        };
+                        
+                        const projectsByDate = {};
+                        projects.forEach(p => {
+                          if (p.goLiveDate) {
+                            const d = parseGoLiveDate(p.goLiveDate);
+                            if (d && d.getMonth() === calendarMonth && d.getFullYear() === calendarYear) {
+                              const day = d.getDate();
+                              if (!projectsByDate[day]) projectsByDate[day] = [];
+                              projectsByDate[day].push(p);
+                            }
+                          }
+                        });
+                        
+                        const cells = [];
+                        for (let i = 0; i < firstDay; i++) {
+                          cells.push(<div key={`empty-${i}`} className="min-h-[80px]"></div>);
+                        }
+                        
+                        for (let day = 1; day <= daysInMonth; day++) {
+                          const isToday = isCurrentMonth && today.getDate() === day;
+                          const dayProjects = projectsByDate[day] || [];
+                          
+                          cells.push(
+                            <div 
+                              key={day} 
+                              className={`min-h-[80px] border rounded-lg p-2 ${isToday ? 'border-primary bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}
+                            >
+                              <div className={`text-sm font-semibold mb-1 ${isToday ? 'text-primary' : 'text-gray-700'}`}>{day}</div>
+                              <div className="space-y-1">
+                                {dayProjects.slice(0, 2).map(p => (
+                                  <div 
+                                    key={p.id} 
+                                    className={`text-xs px-2 py-1 rounded-md truncate cursor-pointer transition-colors ${
+                                      p.status === 'completed' ? 'bg-green-100 text-green-800 hover:bg-green-200' : 
+                                      p.status === 'paused' ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200' :
+                                      'bg-primary/10 text-primary hover:bg-primary/20'
+                                    }`}
+                                    title={`${p.name} - ${p.clientName}`}
+                                    onClick={() => onSelectProject(p)}
+                                  >
+                                    {p.clientName.length > 12 ? p.clientName.substring(0, 12) + '...' : p.clientName}
+                                  </div>
+                                ))}
+                                {dayProjects.length > 2 && (
+                                  <div className="text-xs text-gray-500 font-medium">+{dayProjects.length - 2} more</div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        }
+                        
+                        return cells;
+                      })()}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4">
+                    <div className="grid grid-cols-3 md:grid-cols-4 gap-4">
+                      {(() => {
+                        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                        const today = new Date();
+                        
+                        const parseGoLiveDate = (dateStr) => {
+                          if (!dateStr) return null;
+                          let d;
+                          if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+                            d = new Date(dateStr + 'T12:00:00');
+                          } else if (dateStr.includes('T') && dateStr.endsWith('Z')) {
+                            const datePart = dateStr.split('T')[0];
+                            d = new Date(datePart + 'T12:00:00');
+                          } else if (dateStr.includes('T')) {
+                            d = new Date(dateStr);
+                          } else {
+                            d = new Date(dateStr);
+                          }
+                          return isNaN(d.getTime()) ? null : d;
+                        };
+                        
+                        const projectsByMonth = {};
+                        projects.forEach(p => {
+                          if (p.goLiveDate) {
+                            const d = parseGoLiveDate(p.goLiveDate);
+                            if (d && d.getFullYear() === calendarYear) {
+                              const month = d.getMonth();
+                              if (!projectsByMonth[month]) projectsByMonth[month] = [];
+                              projectsByMonth[month].push(p);
+                            }
+                          }
+                        });
+                        
+                        return months.map((monthName, monthIndex) => {
+                          const isCurrentMonth = today.getMonth() === monthIndex && today.getFullYear() === calendarYear;
+                          const monthProjects = projectsByMonth[monthIndex] || [];
+                          
+                          return (
+                            <div 
+                              key={monthIndex}
+                              className={`border rounded-lg p-3 cursor-pointer transition-all hover:shadow-md ${
+                                isCurrentMonth ? 'border-primary bg-blue-50' : 'border-gray-200 hover:border-primary/50'
+                              }`}
+                              onClick={() => {
+                                setCalendarMonth(monthIndex);
+                                setCalendarViewMode('month');
+                              }}
+                            >
+                              <div className={`text-sm font-bold mb-2 ${isCurrentMonth ? 'text-primary' : 'text-gray-800'}`}>
+                                {monthName}
+                              </div>
+                              <div className="space-y-1">
+                                {monthProjects.length === 0 ? (
+                                  <div className="text-xs text-gray-400 italic">No go-lives</div>
+                                ) : (
+                                  <>
+                                    {monthProjects.slice(0, 3).map(p => (
+                                      <div 
+                                        key={p.id}
+                                        className={`text-xs px-2 py-1 rounded truncate ${
+                                          p.status === 'completed' ? 'bg-green-100 text-green-800' : 
+                                          p.status === 'paused' ? 'bg-yellow-100 text-yellow-800' :
+                                          'bg-primary/10 text-primary'
+                                        }`}
+                                        title={`${p.clientName} - ${parseGoLiveDate(p.goLiveDate)?.getDate()}`}
+                                      >
+                                        {p.clientName.length > 10 ? p.clientName.substring(0, 10) + '...' : p.clientName}
+                                      </div>
+                                    ))}
+                                    {monthProjects.length > 3 && (
+                                      <div className="text-xs text-gray-500 font-medium">+{monthProjects.length - 3} more</div>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                              {monthProjects.length > 0 && (
+                                <div className="mt-2 text-xs text-gray-500 font-medium">
+                                  {monthProjects.length} go-live{monthProjects.length !== 1 ? 's' : ''}
                                 </div>
-                              ))}
-                              {dayProjects.length > 2 && (
-                                <div className="text-xs text-gray-500 font-medium">+{dayProjects.length - 2} more</div>
                               )}
                             </div>
-                          </div>
-                        );
-                      }
-                      
-                      return cells;
-                    })()}
+                          );
+                        });
+                      })()}
+                    </div>
                   </div>
-                </div>
+                )}
                 
                 {/* Legend */}
                 <div className="px-4 pb-4 flex flex-wrap gap-4 text-xs">
