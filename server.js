@@ -967,7 +967,7 @@ app.put('/api/projects/:id', authenticateToken, async (req, res) => {
       });
     }
     
-    const allowedFields = ['name', 'clientName', 'projectManager', 'hubspotRecordId', 'status', 'clientPortalDomain'];
+    const allowedFields = ['name', 'clientName', 'projectManager', 'hubspotRecordId', 'status', 'clientPortalDomain', 'goLiveDate'];
     allowedFields.forEach(field => {
       if (req.body[field] !== undefined) {
         projects[idx][field] = req.body[field];
