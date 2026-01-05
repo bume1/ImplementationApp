@@ -73,3 +73,21 @@ Preferred communication style: Simple, everyday language.
 - `PORT`
 - `JWT_SECRET`
 - `HUBSPOT_WEBHOOK_SECRET` (optional)
+- `HUBSPOT_PRIVATE_APP_TOKEN` - Private app token for HubSpot file uploads
+
+## Recent Changes (January 2026)
+
+### Client Activity Feed (Jan 5)
+- **Activity Types Tracked**: Inventory submissions, file uploads to HubSpot, support tickets, task/stage/phase completions
+- **Activity Filtering**: Client sees only their own activities (by userId or slug) plus project-based activities
+- **Activity Display**: Each activity type has distinct icon and color (blue=inventory, green=files, purple=support, orange=stages, yellow=phases)
+
+### Client Upload Visibility (Jan 5)
+- **Upload Records Saved**: When clients upload files to HubSpot, a record is saved in client_documents database
+- **Client Portal View**: Files page shows "Documents From Thrive 365 Labs" and "Your Uploaded Files" sections
+- **Admin Portal View**: Client Documents page shows client uploads with green highlight and "Client Upload" badge
+
+### HubSpot File Upload (Jan 5)
+- **Client-Only Upload**: File upload moved to client portal Files page
+- **Company & Deal Support**: Uploads work with both HubSpot Company and Deal records
+- **Private App Token**: Uses HUBSPOT_PRIVATE_APP_TOKEN for file uploads (supports files scope)

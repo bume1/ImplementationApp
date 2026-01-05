@@ -424,16 +424,24 @@
                 <div className="space-y-2">
                   {data.activities.slice(0, 5).map((act, idx) => {
                     const getIcon = () => {
-                      if (act.action === 'inventory_submitted') return { icon: Icons.package, color: 'text-blue-500' };
+                      if (act.action === 'inventory_submitted') return { icon: Icons.clipboard, color: 'text-blue-500' };
+                      if (act.action === 'hubspot_file_upload') return { icon: Icons.folder, color: 'text-green-500' };
+                      if (act.action === 'support_ticket_submitted') return { icon: Icons.chat, color: 'text-purple-500' };
                       if (act.action === 'form_submitted') return { icon: Icons.clipboard, color: 'text-purple-500' };
                       if (act.action === 'phase_completed') return { icon: Icons.target, color: 'text-yellow-500' };
-                      return { icon: Icons.target, color: 'text-green-500' };
+                      if (act.action === 'stage_completed') return { icon: Icons.target, color: 'text-orange-500' };
+                      if (act.action === 'task_completed') return { icon: Icons.target, color: 'text-green-500' };
+                      return { icon: Icons.activity, color: 'text-gray-500' };
                     };
                     const getLabel = () => {
-                      if (act.action === 'inventory_submitted') return 'Weekly inventory submitted';
+                      if (act.action === 'inventory_submitted') return `Inventory submitted (${act.details?.itemCount || 0} items)`;
+                      if (act.action === 'hubspot_file_upload') return `File uploaded: ${act.details || 'Document'}`;
+                      if (act.action === 'support_ticket_submitted') return 'Support ticket submitted';
                       if (act.action === 'form_submitted') return `Form submitted: ${act.formType || 'Unknown'}`;
                       if (act.action === 'phase_completed') return `Phase completed: ${act.details?.phase || ''}`;
-                      return act.details?.taskTitle || 'Task completed';
+                      if (act.action === 'stage_completed') return `Stage completed: ${act.details?.stage || ''}`;
+                      if (act.action === 'task_completed') return act.details?.taskTitle || 'Task completed';
+                      return act.details || 'Activity recorded';
                     };
                     const { icon, color } = getIcon();
                     return (
