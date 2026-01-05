@@ -106,3 +106,9 @@ Preferred communication style: Simple, everyday language.
 - **Auto-Expanded Subtasks**: Subtasks are now always visible in the task board (no toggle required)
 - **Create Template Button**: Admin users can create reusable templates from any launch board in list view, preserving task structure without runtime data (owners, due dates)
 - **Calendar Task Navigation**: Clicking tasks in the implementations calendar navigates directly to that specific task on the launch board with visual highlighting
+- **Task Reordering**: Admins can reorder tasks within stages using up/down arrow buttons in edit mode
+  - Uses `stageOrder` property to track per-stage ordering
+  - Preserves user-defined ordering across reloads
+  - Sorts by existing stageOrder before normalization to maintain prior moves
+  - Sequential normalization ensures clean 1, 2, 3... values after each operation
+- **Training Week Start**: Calendar training entries now start from "Complete necessary analyzer reboot" task (Phase 3)
