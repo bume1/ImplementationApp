@@ -326,15 +326,20 @@ async function uploadFileAndAttachToDeal(dealId, fileContent, fileName, customNo
     console.log(`✅ Note created: ${noteResponse.id}`);
     
     try {
-      await privateAppClient.crm.objects.notes.associationsApi.create(
-        noteResponse.id,
-        'deals',
-        cleanDealId,
-        [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 214 }]
+      const axios = require('axios');
+      await axios.put(
+        `https://api.hubapi.com/crm/v4/objects/notes/${noteResponse.id}/associations/deals/${cleanDealId}`,
+        [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 214 }],
+        {
+          headers: {
+            'Authorization': `Bearer ${privateAppToken}`,
+            'Content-Type': 'application/json'
+          }
+        }
       );
       console.log(`✅ Note associated with deal ${cleanDealId}`);
     } catch (assocError) {
-      console.error('Failed to associate note with deal:', assocError.message);
+      console.error('Failed to associate note with deal:', assocError.response?.data || assocError.message);
     }
     
     return { fileId: fileData.id, noteId: noteResponse.id };
