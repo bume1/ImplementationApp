@@ -3076,14 +3076,19 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
   };
 
   const getSubtaskStatus = (subtask) => {
-    if (subtask.notApplicable) return 'not_applicable';
-    if (subtask.completed) return 'completed';
+    // Support both new format (completed boolean) and old format (status string)
+    if (subtask.notApplicable || subtask.status === 'N/A' || subtask.status === 'not_applicable') return 'not_applicable';
+    if (subtask.completed || subtask.status === 'Complete' || subtask.status === 'completed') return 'completed';
     return 'pending';
   };
 
   const hasIncompleteSubtasks = (task) => {
     if (!task.subtasks || task.subtasks.length === 0) return false;
-    return task.subtasks.some(s => !s.completed && !s.notApplicable);
+    return task.subtasks.some(s => {
+      const isComplete = s.completed || s.status === 'Complete' || s.status === 'completed';
+      const isNotApplicable = s.notApplicable || s.status === 'N/A' || s.status === 'not_applicable';
+      return !isComplete && !isNotApplicable;
+    });
   };
 
   const handleDeleteSubtask = async (taskId, subtaskId) => {
@@ -4339,7 +4344,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                     {expandedTaskId === task.id ? 'Hide Notes' : `Notes (${(task.notes || []).length})`}
                                   </button>
                                   <span className="text-sm text-purple-600">
-                                    Subtasks ({(task.subtasks || []).filter(s => s.completed || s.notApplicable).length}/{(task.subtasks || []).length})
+                                    Subtasks ({(task.subtasks || []).filter(s => s.completed || s.notApplicable || s.status === 'Complete' || s.status === 'N/A').length}/{(task.subtasks || []).length})
                                   </span>
                                   <button
                                     onClick={() => setNewSubtask({ taskId: task.id, title: '', owner: '', dueDate: '' })}
