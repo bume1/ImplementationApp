@@ -94,3 +94,10 @@ Preferred communication style: Simple, everyday language.
 - **Admin Management**: Admins can configure HubSpot IDs for each client in the User Management section
 - **Private App Token**: Uses HUBSPOT_PRIVATE_APP_TOKEN for file uploads (supports files scope)
 - **Updated Language**: Portal now says "upload documents directly to your account record" instead of project record
+
+### Subtask Due Dates & Client Visibility (Jan 5)
+- **Subtask Due Dates**: Subtasks now support optional due dates with date picker in admin interface
+- **Overdue Styling**: Pending subtasks past their due date display with red highlighting
+- **Client-Visible Subtasks**: When parent task has showToClient=true, subtasks are now visible to clients in all portal views
+- **Portal Integration**: Both public client view (client.html) and authenticated portal (portal.html) display subtasks with status badges and due dates
+- **Training/Validation Week**: Implementations calendar now shows purple training entries based on Phase 3 Training/Validation task due dates
