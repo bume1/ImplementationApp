@@ -89,6 +89,16 @@ Preferred communication style: Simple, everyday language.
 - **Consolidated Alerts**: Low stock and expiring items from all clients in one view with client names
 - **API Endpoint**: GET /api/inventory/report-all (admin only) returns aggregated data
 
+### Submission History & CSV Export (Jan 5)
+- **Submission History Page**: New page in Inventory submenu for viewing all past inventory submissions
+- **Download CSV**: Both clients and admins can download inventory data as CSV files
+- **Per-Submission Export**: Download individual submissions or all submissions at once
+- **Admin Multi-Client View**: Admins can select any client to view their submission history
+- **Admin Full Export**: GET /api/inventory/export-all exports all clients' inventory data with client names
+- **Client Export**: GET /api/inventory/export/:slug exports specific client's inventory data
+- **Report Page Links**: Alerts sections in reports now link to Submission History page
+- **Token Auth for Downloads**: Export endpoints accept token in query params for secure downloads
+
 ### Client Portal UX Improvements (Jan 5)
 - **Clickable Quick Access Buttons**: Bottom buttons on portal home (Inventory, Customer Support, Files) now navigate to respective pages
 - **Document Category Dropdown**: Admin client documents form uses dropdown instead of free text with predefined categories
