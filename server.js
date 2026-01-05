@@ -2089,6 +2089,136 @@ app.get('/api/inventory/report/:slug', authenticateToken, async (req, res) => {
   }
 });
 
+// ============== ADMIN AGGREGATE INVENTORY REPORT ==============
+app.get('/api/inventory/report-all', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const allSubmissions = (await db.get('inventory_submissions')) || [];
+    const users = await getUsers();
+    const clientUsers = users.filter(u => u.role === 'client');
+    
+    // Group submissions by slug (client)
+    const submissionsBySlug = {};
+    allSubmissions.forEach(sub => {
+      if (!submissionsBySlug[sub.slug]) {
+        submissionsBySlug[sub.slug] = [];
+      }
+      submissionsBySlug[sub.slug].push(sub);
+    });
+    
+    // Sort each client's submissions and keep recent ones
+    Object.keys(submissionsBySlug).forEach(slug => {
+      submissionsBySlug[slug].sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
+      submissionsBySlug[slug] = submissionsBySlug[slug].slice(0, 12);
+    });
+    
+    const today = new Date();
+    const thirtyDaysFromNow = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
+    
+    // Aggregate data across all clients
+    const allLowStock = [];
+    const allExpiring = [];
+    const clientSummaries = [];
+    
+    const getItemTotal = (data, key) => {
+      const value = data[key];
+      if (!value) return 0;
+      const batches = Array.isArray(value.batches) ? value.batches : [value];
+      return batches.reduce((sum, b) => sum + (parseInt(b.openQty) || 0) + (parseInt(b.closedQty) || 0), 0);
+    };
+    
+    Object.entries(submissionsBySlug).forEach(([slug, submissions]) => {
+      if (submissions.length === 0) return;
+      
+      const clientUser = clientUsers.find(u => u.slug === slug);
+      const clientName = clientUser?.practiceName || clientUser?.name || slug;
+      
+      const latest = submissions[0];
+      let totalItems = 0;
+      let totalQuantity = 0;
+      let lowStockCount = 0;
+      let expiringCount = 0;
+      
+      Object.entries(latest.data || {}).forEach(([key, value]) => {
+        const [category, itemName] = key.split('|');
+        const batches = Array.isArray(value.batches) ? value.batches : [value];
+        
+        batches.forEach((batch, batchIdx) => {
+          const qty = (parseInt(batch.openQty) || 0) + (parseInt(batch.closedQty) || 0);
+          totalQuantity += qty;
+          totalItems++;
+          
+          const lotLabel = batch.lotNumber ? ` (Lot: ${batch.lotNumber})` : '';
+          
+          if (qty > 0 && qty <= 2) {
+            lowStockCount++;
+            allLowStock.push({ 
+              clientName, 
+              slug, 
+              category, 
+              itemName: itemName + lotLabel, 
+              quantity: qty 
+            });
+          }
+          
+          if (batch.expiry) {
+            const expiryDate = new Date(batch.expiry);
+            if (expiryDate <= thirtyDaysFromNow && expiryDate >= today) {
+              expiringCount++;
+              allExpiring.push({ 
+                clientName, 
+                slug, 
+                category, 
+                itemName: itemName + lotLabel, 
+                expiry: batch.expiry,
+                daysUntilExpiry: Math.ceil((expiryDate - today) / (1000 * 60 * 60 * 24))
+              });
+            }
+          }
+        });
+      });
+      
+      clientSummaries.push({
+        slug,
+        clientName,
+        lastSubmission: latest.submittedAt,
+        totalItems,
+        totalQuantity,
+        lowStockCount,
+        expiringCount,
+        submissionCount: submissions.length
+      });
+    });
+    
+    // Calculate submission frequency stats
+    const activeClients = clientSummaries.filter(c => c.submissionCount > 0).length;
+    const totalClients = clientUsers.length;
+    
+    // Get clients who haven't submitted in over 7 days
+    const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const inactiveClients = clientSummaries.filter(c => 
+      new Date(c.lastSubmission) < sevenDaysAgo
+    );
+    
+    res.json({
+      summary: {
+        totalClients,
+        activeClients,
+        totalLowStockAlerts: allLowStock.length,
+        totalExpiringAlerts: allExpiring.length
+      },
+      alerts: {
+        lowStock: allLowStock.sort((a, b) => a.quantity - b.quantity),
+        expiringSoon: allExpiring.sort((a, b) => a.daysUntilExpiry - b.daysUntilExpiry)
+      },
+      clientSummaries: clientSummaries.sort((a, b) => new Date(b.lastSubmission) - new Date(a.lastSubmission)),
+      inactiveClients: inactiveClients.sort((a, b) => new Date(a.lastSubmission) - new Date(b.lastSubmission))
+    });
+  } catch (error) {
+    console.error('Admin inventory report error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ============== HUBSPOT INTEGRATION ==============
 app.get('/api/hubspot/test', authenticateToken, async (req, res) => {
   try {
