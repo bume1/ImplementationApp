@@ -1768,7 +1768,7 @@ app.post('/api/client/hubspot/upload', authenticateToken, upload.single('file'),
           fileContent,
           fileName,
           fullNoteText,
-          { isBase64: true, recordType: 'companies' }
+          { isBase64: true, recordType: 'companies', notePrefix: '[Client Portal]' }
         );
         uploadResults.push({ type: 'company', id: hubspotCompanyId, ...result });
         if (!primaryResult) primaryResult = result;
@@ -1785,7 +1785,7 @@ app.post('/api/client/hubspot/upload', authenticateToken, upload.single('file'),
           fileContent,
           fileName,
           fullNoteText,
-          { isBase64: true, recordType: 'deals' }
+          { isBase64: true, recordType: 'deals', notePrefix: '[Client Portal]' }
         );
         uploadResults.push({ type: 'deal', id: hubspotDealId, ...result });
         if (!primaryResult) primaryResult = result;
@@ -1802,7 +1802,7 @@ app.post('/api/client/hubspot/upload', authenticateToken, upload.single('file'),
           fileContent,
           fileName,
           fullNoteText,
-          { isBase64: true, recordType: 'contacts' }
+          { isBase64: true, recordType: 'contacts', notePrefix: '[Client Portal]' }
         );
         uploadResults.push({ type: 'contact', id: hubspotContactId, ...result });
         if (!primaryResult) primaryResult = result;
