@@ -2961,7 +2961,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
     try {
       await api.bulkUpdateTasks(token, project.id, selectedTasks, completed);
       // Update local state
-      const dateCompleted = completed ? new Date().toLocaleDateString() : null;
+      const dateCompleted = completed ? new Date().toISOString() : null;
       setTasks(tasks.map(t => 
         selectedTasks.includes(t.id) 
           ? { ...t, completed, dateCompleted: completed ? (t.dateCompleted || dateCompleted) : t.dateCompleted }
@@ -3166,7 +3166,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
     const updates = {
       completed: newCompleted,
       dateCompleted: newCompleted && !task.dateCompleted
-        ? new Date().toLocaleDateString()
+        ? new Date().toISOString()
         : task.dateCompleted
     };
 
