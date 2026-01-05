@@ -1744,6 +1744,28 @@ app.post('/api/client/hubspot/upload', authenticateToken, upload.single('file'),
       { isBase64: true, recordType: recordType }
     );
     
+    // Save document record for visibility in both portals
+    const documents = (await db.get('client_documents')) || [];
+    const docId = require('uuid').v4();
+    const newDoc = {
+      id: docId,
+      slug: req.user.slug,
+      title: fileName,
+      description: noteText || '',
+      category: category || 'HubSpot Upload',
+      active: true,
+      uploadedBy: 'client',
+      uploadedByName: req.user.name,
+      uploadedByEmail: req.user.email,
+      hubspotFileId: result.fileId,
+      hubspotNoteId: result.noteId,
+      projectId: projectId,
+      projectName: project.name,
+      createdAt: new Date().toISOString()
+    };
+    documents.push(newDoc);
+    await db.set('client_documents', documents);
+    
     // Log activity
     const activityLog = (await db.get('activity_log')) || [];
     activityLog.unshift({
@@ -1764,6 +1786,7 @@ app.post('/api/client/hubspot/upload', authenticateToken, upload.single('file'),
       success: true, 
       fileId: result.fileId,
       noteId: result.noteId,
+      documentId: docId,
       message: `File "${fileName}" uploaded successfully`
     });
   } catch (error) {
