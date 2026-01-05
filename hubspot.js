@@ -227,9 +227,11 @@ async function findOwnerByEmail(email) {
   }
 }
 
-async function uploadFileAndAttachToDeal(dealId, fileContent, fileName, customNote = null, options = {}) {
-  if (!dealId) {
-    throw new Error('Deal ID is required for file upload');
+async function uploadFileAndAttachToRecord(recordId, fileContent, fileName, customNote = null, options = {}) {
+  const recordType = options.recordType || 'companies';
+  
+  if (!recordId) {
+    throw new Error('Record ID is required for file upload');
   }
   if (!fileContent) {
     throw new Error('File content is required');
@@ -310,8 +312,8 @@ async function uploadFileAndAttachToDeal(dealId, fileContent, fileName, customNo
       ? `[Project Tracker] ${customNote}\n\nFile: ${fileName}\nFile ID: ${fileData.id}\nFile URL: ${fileData.url || 'Available in HubSpot Files'}`
       : `[Project Tracker] Soft-Pilot Checklist Submitted\n\nA signed soft-pilot checklist has been submitted for this deal.\n\nFile: ${fileName}\nFile ID: ${fileData.id}\nFile URL: ${fileData.url || 'Available in HubSpot Files'}`;
     
-    const cleanDealId = dealId.toString().replace(/\D/g, '');
-    console.log(`📤 Creating note for deal: ${cleanDealId}`);
+    const cleanRecordId = recordId.toString().replace(/\D/g, '');
+    console.log(`📤 Creating note for ${recordType}: ${cleanRecordId}`);
     
     const noteProperties = {
       hs_timestamp: Date.now().toString(),
@@ -327,9 +329,11 @@ async function uploadFileAndAttachToDeal(dealId, fileContent, fileName, customNo
     
     try {
       const axios = require('axios');
+      const associationTypeId = recordType === 'companies' ? 190 : 214;
+      
       await axios.put(
-        `https://api.hubapi.com/crm/v4/objects/notes/${noteResponse.id}/associations/deals/${cleanDealId}`,
-        [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 214 }],
+        `https://api.hubapi.com/crm/v4/objects/notes/${noteResponse.id}/associations/${recordType}/${cleanRecordId}`,
+        [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: associationTypeId }],
         {
           headers: {
             'Authorization': `Bearer ${privateAppToken}`,
@@ -337,9 +341,9 @@ async function uploadFileAndAttachToDeal(dealId, fileContent, fileName, customNo
           }
         }
       );
-      console.log(`✅ Note associated with deal ${cleanDealId}`);
+      console.log(`✅ Note associated with ${recordType} ${cleanRecordId}`);
     } catch (assocError) {
-      console.error('Failed to associate note with deal:', assocError.response?.data || assocError.message);
+      console.error(`Failed to associate note with ${recordType}:`, assocError.response?.data || assocError.message);
     }
     
     return { fileId: fileData.id, noteId: noteResponse.id };
@@ -409,5 +413,5 @@ module.exports = {
   getOwners,
   findOwnerByName,
   createTask,
-  uploadFileAndAttachToDeal
+  uploadFileAndAttachToRecord
 };
