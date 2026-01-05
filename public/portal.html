@@ -1358,13 +1358,65 @@
       );
     };
     
-    const FilesPage = ({ settings, documents }) => {
+    const FilesPage = ({ settings, documents, token, projects }) => {
+      const projectsWithHubSpot = (projects || []).filter(p => p.hubspotRecordId);
+      
+      const [selectedFile, setSelectedFile] = useState(null);
+      const [selectedProject, setSelectedProject] = useState(projectsWithHubSpot.length === 1 ? projectsWithHubSpot[0].id : '');
+      const [category, setCategory] = useState('');
+      const [note, setNote] = useState('');
+      const [uploading, setUploading] = useState(false);
+      const [uploadMessage, setUploadMessage] = useState(null);
+      
       const groupedDocs = (documents || []).reduce((acc, doc) => {
         const cat = doc.category || 'General';
         if (!acc[cat]) acc[cat] = [];
         acc[cat].push(doc);
         return acc;
       }, {});
+      
+      const categories = ['Contracts', 'Onboarding', 'Inserts', 'Certificates of Analysis', 'SOP Templates', 'Other'];
+      
+      const handleFileUpload = async (e) => {
+        e.preventDefault();
+        if (!selectedFile || !selectedProject) {
+          setUploadMessage({ type: 'error', text: 'Please select a file and project' });
+          return;
+        }
+        
+        setUploading(true);
+        setUploadMessage(null);
+        
+        try {
+          const formData = new FormData();
+          formData.append('file', selectedFile);
+          formData.append('projectId', selectedProject);
+          formData.append('category', category);
+          formData.append('noteText', note);
+          
+          const response = await fetch(`${API_URL}/api/client/hubspot/upload`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` },
+            body: formData
+          });
+          
+          const result = await response.json();
+          
+          if (response.ok) {
+            setUploadMessage({ type: 'success', text: result.message || 'File uploaded successfully!' });
+            setSelectedFile(null);
+            setNote('');
+            setCategory('');
+            document.getElementById('clientFileInput').value = '';
+          } else {
+            setUploadMessage({ type: 'error', text: result.error || 'Upload failed' });
+          }
+        } catch (error) {
+          setUploadMessage({ type: 'error', text: 'Failed to upload file. Please try again.' });
+        } finally {
+          setUploading(false);
+        }
+      };
 
       return (
         <div className="space-y-6">
@@ -1413,20 +1465,95 @@
             )}
           </div>
 
-          <div className="bg-white p-6 rounded-xl shadow-sm">
-            <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-              <span>📤</span> Upload Files
-            </h2>
-            {settings?.filesFormEmbed ? (
+          {projectsWithHubSpot.length > 0 && (
+            <div className="bg-white p-6 rounded-xl shadow-sm">
+              <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <span>📤</span> Upload Files to Thrive 365 Labs
+              </h2>
+              <p className="text-gray-600 text-sm mb-4">
+                Upload documents directly to your project record. Accepted formats: PDF, DOC, DOCX, XLS, XLSX, PNG, JPG, GIF, TXT, CSV (max 10MB)
+              </p>
+              
+              {uploadMessage && (
+                <div className={`p-3 rounded-lg mb-4 ${uploadMessage.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                  {uploadMessage.text}
+                </div>
+              )}
+              
+              <form onSubmit={handleFileUpload} className="space-y-4">
+                {projectsWithHubSpot.length > 1 && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Select Project</label>
+                    <select
+                      value={selectedProject}
+                      onChange={(e) => setSelectedProject(e.target.value)}
+                      className="w-full border rounded-lg p-2"
+                      required
+                    >
+                      <option value="">Choose a project...</option>
+                      {projectsWithHubSpot.map(p => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className="w-full border rounded-lg p-2"
+                  >
+                    <option value="">Select category (optional)</option>
+                    {categories.map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">File</label>
+                  <input
+                    id="clientFileInput"
+                    type="file"
+                    onChange={(e) => setSelectedFile(e.target.files[0])}
+                    className="w-full border rounded-lg p-2"
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.gif,.txt,.csv"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Note (optional)</label>
+                  <textarea
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    className="w-full border rounded-lg p-2"
+                    rows="2"
+                    placeholder="Add a note about this file..."
+                  />
+                </div>
+                
+                <button
+                  type="submit"
+                  disabled={uploading || !selectedFile || (projectsWithHubSpot.length > 1 && !selectedProject)}
+                  className="w-full bg-primary text-white py-2 px-4 rounded-lg font-medium hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {uploading ? 'Uploading...' : 'Upload File'}
+                </button>
+              </form>
+            </div>
+          )}
+
+          {settings?.filesFormEmbed && (
+            <div className="bg-white p-6 rounded-xl shadow-sm">
+              <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <span>📝</span> Additional Upload Options
+              </h2>
               <div dangerouslySetInnerHTML={{ __html: settings.filesFormEmbed }} />
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.folder, { className: 'w-10 h-10' })}</div>
-                <p>File upload form not configured yet.</p>
-                <p className="text-sm mt-2">Please contact your administrator.</p>
-              </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       );
     };
@@ -2237,7 +2364,7 @@
         if (activePage === 'inventory') return <InventoryPage token={token} slug={slug} />;
         if (activePage === 'reports') return <ReportsPage token={token} slug={slug} />;
         if (activePage === 'support') return <SupportPage settings={settings} />;
-        if (activePage === 'files') return <FilesPage settings={settings} documents={documents} />;
+        if (activePage === 'files') return <FilesPage settings={settings} documents={documents} token={token} projects={portalData?.projects || []} />;
         
         return null;
       };

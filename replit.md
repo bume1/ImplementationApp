@@ -74,10 +74,12 @@ Preferred communication style: Simple, everyday language.
 
 ### HubSpot File Upload Integration (Jan 5)
 - **Admin HubSpot Files Page**: New page in admin portal for uploading files directly to HubSpot deal records
-- **File Upload API**: POST /api/hubspot/upload-to-deal (admin only) - uploads file to HubSpot Files API and attaches to deal as a note
-- **Deal Selection**: GET /api/hubspot/deals (admin only) - returns projects with linked HubSpot record IDs
+- **Admin File Upload API**: POST /api/hubspot/upload-to-deal (admin only) - uploads file to HubSpot Files API and attaches to deal as a note
+- **Admin Deal Selection**: GET /api/hubspot/deals (admin only) - returns projects with linked HubSpot record IDs
+- **Client File Upload**: POST /api/client/hubspot/upload - clients can upload files to their own project's HubSpot deal (restricted to assigned projects only)
+- **Client Files Page**: Enhanced with HubSpot upload form showing only when project has linked HubSpot record; auto-selects project if client has only one
 - **File Type Support**: Supports PDF, DOC, DOCX, XLS, XLSX, PNG, JPG, GIF, TXT, CSV (max 10MB)
-- **Category Options**: Contracts, Onboarding, Inserts, Certificates of Analysis, SOP Templates
+- **Category Options**: Contracts, Onboarding, Inserts, Certificates of Analysis, SOP Templates, Other
 
 ### Client Portal UX Improvements (Jan 5)
 - **Clickable Quick Access Buttons**: Bottom buttons on portal home (Inventory, Customer Support, Files) now navigate to respective pages
