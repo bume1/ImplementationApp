@@ -1118,7 +1118,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                   </button>
                 )}
                 <a
-                  href="/portal"
+                  href="/portal/admin"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="block w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 text-sm"
