@@ -1582,7 +1582,8 @@ app.post('/api/hubspot/upload-to-deal', authenticateToken, requireAdmin, upload.
       dealId,
       fileContent,
       fileName,
-      customNote
+      customNote,
+      { isBase64: true }
     );
     
     const activityLog = (await db.get('activity_log')) || [];
@@ -1669,7 +1670,6 @@ app.post('/api/client/hubspot/upload', authenticateToken, upload.single('file'),
     
     const fileName = req.file.originalname;
     const fileBuffer = req.file.buffer;
-    const mimeType = req.file.mimetype;
     
     // Convert buffer to base64
     const fileContent = fileBuffer.toString('base64');
@@ -1682,8 +1682,8 @@ app.post('/api/client/hubspot/upload', authenticateToken, upload.single('file'),
       project.hubspotRecordId,
       fileContent,
       fileName,
-      mimeType,
-      fullNoteText
+      fullNoteText,
+      { isBase64: true }
     );
     
     // Log activity

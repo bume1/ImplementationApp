@@ -238,9 +238,13 @@ async function uploadFileAndAttachToDeal(dealId, fileContent, fileName, customNo
     throw new Error('File name is required');
   }
   
+  const privateAppToken = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
+  if (!privateAppToken) {
+    throw new Error('HubSpot Private App token not configured. File uploads require HUBSPOT_PRIVATE_APP_TOKEN environment variable.');
+  }
+  
   try {
-    const client = await getHubSpotClient();
-    const accessToken = await getAccessToken();
+    const privateAppClient = new Client({ accessToken: privateAppToken });
     
     const FormData = require('form-data');
     const formData = new FormData();
@@ -277,7 +281,7 @@ async function uploadFileAndAttachToDeal(dealId, fileContent, fileName, customNo
     const uploadResponse = await fetch('https://api.hubapi.com/files/v3/files', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${accessToken}`,
+        'Authorization': `Bearer ${privateAppToken}`,
         ...formData.getHeaders()
       },
       body: formData
@@ -314,7 +318,7 @@ async function uploadFileAndAttachToDeal(dealId, fileContent, fileName, customNo
       ]
     };
     
-    const noteResponse = await client.crm.objects.notes.basicApi.create(noteObj);
+    const noteResponse = await privateAppClient.crm.objects.notes.basicApi.create(noteObj);
     console.log(`✅ Note with attachment created for deal ${dealId}`);
     
     return { fileId: fileData.id, noteId: noteResponse.id };
