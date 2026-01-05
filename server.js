@@ -7,8 +7,14 @@ const Database = require('@replit/database');
 const bodyParser = require('body-parser');
 const fs = require('fs').promises;
 const path = require('path');
+const multer = require('multer');
 const hubspot = require('./hubspot');
 const googledrive = require('./googledrive');
+
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }
+});
 
 const app = express();
 const db = new Database();
@@ -1544,6 +1550,78 @@ app.delete('/api/client-documents/:id', authenticateToken, requireAdmin, async (
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============== HUBSPOT FILE UPLOAD ==============
+// Upload file to HubSpot and attach to a deal record (admin only)
+app.post('/api/hubspot/upload-to-deal', authenticateToken, requireAdmin, upload.single('file'), async (req, res) => {
+  try {
+    const { dealId, noteText, category } = req.body;
+    
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file provided' });
+    }
+    
+    if (!dealId) {
+      return res.status(400).json({ error: 'Deal ID is required' });
+    }
+    
+    const fileName = req.file.originalname;
+    const fileContent = req.file.buffer.toString('base64');
+    const contentType = req.file.mimetype;
+    
+    const customNote = noteText || `File uploaded: ${fileName}${category ? ` (Category: ${category})` : ''}`;
+    
+    const result = await hubspot.uploadFileAndAttachToDeal(
+      dealId,
+      fileContent,
+      fileName,
+      customNote
+    );
+    
+    const activityLog = (await db.get('activity_log')) || [];
+    activityLog.unshift({
+      id: uuidv4(),
+      action: 'file_uploaded_hubspot',
+      dealId: dealId,
+      fileName: fileName,
+      category: category || 'General',
+      timestamp: new Date().toISOString(),
+      user: req.user.name,
+      details: `File "${fileName}" uploaded to HubSpot deal ${dealId}`
+    });
+    if (activityLog.length > 500) activityLog.length = 500;
+    await db.set('activity_log', activityLog);
+    
+    res.json({ 
+      success: true, 
+      fileId: result.fileId,
+      noteId: result.noteId,
+      message: `File "${fileName}" uploaded and attached to deal`
+    });
+  } catch (error) {
+    console.error('HubSpot file upload error:', error);
+    res.status(500).json({ error: error.message || 'Failed to upload file to HubSpot' });
+  }
+});
+
+// Get HubSpot deal info for file upload targeting (admin only)
+app.get('/api/hubspot/deals', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const projects = await getProjects();
+    const dealsWithHubSpot = projects
+      .filter(p => p.hubspotRecordId)
+      .map(p => ({
+        projectId: p.id,
+        projectName: p.name,
+        clientName: p.clientName,
+        hubspotRecordId: p.hubspotRecordId
+      }));
+    res.json(dealsWithHubSpot);
+  } catch (error) {
+    console.error('Error fetching HubSpot deals:', error);
+    res.status(500).json({ error: 'Failed to fetch deals' });
   }
 });
 

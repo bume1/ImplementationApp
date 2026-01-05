@@ -57,6 +57,7 @@ Preferred communication style: Simple, everyday language.
 - `@replit/database`
 - `body-parser`
 - `googleapis`
+- `multer` - File upload handling
 
 ### CDN Dependencies (Frontend)
 - React 18
@@ -70,6 +71,17 @@ Preferred communication style: Simple, everyday language.
 - `HUBSPOT_WEBHOOK_SECRET` (optional) - Shared secret for validating HubSpot webhook calls
 
 ## Recent Changes (January 2026)
+
+### HubSpot File Upload Integration (Jan 5)
+- **Admin HubSpot Files Page**: New page in admin portal for uploading files directly to HubSpot deal records
+- **File Upload API**: POST /api/hubspot/upload-to-deal (admin only) - uploads file to HubSpot Files API and attaches to deal as a note
+- **Deal Selection**: GET /api/hubspot/deals (admin only) - returns projects with linked HubSpot record IDs
+- **File Type Support**: Supports PDF, DOC, DOCX, XLS, XLSX, PNG, JPG, GIF, TXT, CSV (max 10MB)
+- **Category Options**: Contracts, Onboarding, Inserts, Certificates of Analysis, SOP Templates
+
+### Client Portal UX Improvements (Jan 5)
+- **Clickable Quick Access Buttons**: Bottom buttons on portal home (Inventory, Customer Support, Files) now navigate to respective pages
+- **Document Category Dropdown**: Admin client documents form uses dropdown instead of free text with predefined categories
 
 ### Go-Live Date & Implementations Calendar (Jan 5)
 - **Go-Live Date Field**: New `goLiveDate` field on projects, editable via Edit Project modal
@@ -111,8 +123,9 @@ Preferred communication style: Simple, everyday language.
 - **Admin Dashboard**: Overview stats, quick links to Implementation App
 - **Portal Settings**: Configure HubSpot embed codes and support URL
 - **Announcements**: Create/edit/delete portal-wide announcements
-- **Client Documents**: Upload and manage documents per client
+- **Client Documents**: Upload and manage documents per client with category dropdown (Contracts, Onboarding, Inserts, Certificates of Analysis, SOP Templates)
 - **Client Users**: View client user list and portal URLs
+- **HubSpot Files**: Upload files directly to HubSpot deal records with category tagging and optional notes
 
 
 

@@ -227,12 +227,12 @@ async function findOwnerByEmail(email) {
   }
 }
 
-async function uploadFileAndAttachToDeal(dealId, fileContent, fileName, customNote = null) {
+async function uploadFileAndAttachToDeal(dealId, fileContent, fileName, customNote = null, options = {}) {
   if (!dealId) {
     throw new Error('Deal ID is required for file upload');
   }
-  if (!fileContent || typeof fileContent !== 'string') {
-    throw new Error('File content must be a non-empty string');
+  if (!fileContent) {
+    throw new Error('File content is required');
   }
   if (!fileName) {
     throw new Error('File name is required');
@@ -244,11 +244,34 @@ async function uploadFileAndAttachToDeal(dealId, fileContent, fileName, customNo
     
     const FormData = require('form-data');
     const formData = new FormData();
-    formData.append('file', Buffer.from(fileContent, 'utf8'), {
+    
+    const isBase64 = options.isBase64 || (typeof fileContent === 'string' && /^[A-Za-z0-9+/=]+$/.test(fileContent.slice(0, 100)));
+    const fileBuffer = isBase64 ? Buffer.from(fileContent, 'base64') : Buffer.from(fileContent, 'utf8');
+    
+    const ext = fileName.split('.').pop().toLowerCase();
+    const mimeTypes = {
+      'pdf': 'application/pdf',
+      'doc': 'application/msword',
+      'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'xls': 'application/vnd.ms-excel',
+      'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'png': 'image/png',
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'gif': 'image/gif',
+      'html': 'text/html',
+      'txt': 'text/plain',
+      'csv': 'text/csv'
+    };
+    const contentType = mimeTypes[ext] || 'application/octet-stream';
+    
+    formData.append('file', fileBuffer, {
       filename: fileName,
-      contentType: 'text/html; charset=utf-8'
+      contentType: contentType
     });
-    formData.append('folderPath', '/soft-pilot-checklists');
+    
+    const folderPath = options.folderPath || '/client-uploads';
+    formData.append('folderPath', folderPath);
     formData.append('options', JSON.stringify({ access: 'PRIVATE' }));
     
     const uploadResponse = await fetch('https://api.hubapi.com/files/v3/files', {
