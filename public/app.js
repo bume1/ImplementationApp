@@ -3021,7 +3021,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
       });
       
       // Create template tasks from current project tasks
-      // Preserve task structure but strip runtime data (owners, due dates, completion, notes)
+      // Preserve task structure including owners
       const templateTasks = tasks.map((task, idx) => ({
         id: idx + 1,
         taskTitle: task.taskTitle,
@@ -3030,6 +3030,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
         showToClient: task.showToClient !== undefined ? task.showToClient : true,
         clientName: task.clientName || '',
         description: task.description || '',
+        owner: task.owner || '',
         // Remap dependencies to new sequential IDs
         dependencies: (task.dependencies || []).map(depId => idMap[depId]).filter(Boolean),
         order: task.order || idx + 1,
