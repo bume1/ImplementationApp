@@ -101,3 +101,8 @@ Preferred communication style: Simple, everyday language.
 - **Client-Visible Subtasks**: When parent task has showToClient=true, subtasks are now visible to clients in all portal views
 - **Portal Integration**: Both public client view (client.html) and authenticated portal (portal.html) display subtasks with status badges and due dates
 - **Training/Validation Week**: Implementations calendar now shows purple training entries based on Phase 3 Training/Validation task due dates
+
+### Task Board Improvements (Jan 5)
+- **Auto-Expanded Subtasks**: Subtasks are now always visible in the task board (no toggle required)
+- **Create Template Button**: Admin users can create reusable templates from any launch board in list view, preserving task structure without runtime data (owners, due dates)
+- **Calendar Task Navigation**: Clicking tasks in the implementations calendar navigates directly to that specific task on the launch board with visual highlighting
