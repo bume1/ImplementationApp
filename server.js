@@ -1394,12 +1394,24 @@ app.get('/api/client-portal/data', authenticateToken, async (req, res) => {
       };
     }));
     
-    // Filter activities to client-safe events for their projects
+    // Filter activities to client-safe events
+    // Include project-based activities (task completion, etc.)
+    // AND client-specific activities (inventory, file uploads)
     const clientActivities = activities
-      .filter(a => 
-        (req.user.assignedProjects || []).includes(a.projectId) &&
-        ['task_completed', 'stage_completed', 'phase_completed'].includes(a.action)
-      )
+      .filter(a => {
+        // Project-based activities for assigned projects
+        if ((req.user.assignedProjects || []).includes(a.projectId) &&
+            ['task_completed', 'stage_completed', 'phase_completed'].includes(a.action)) {
+          return true;
+        }
+        // Client-specific activities (by slug or userId)
+        if (a.userId === req.user.id || a.details?.slug === req.user.slug) {
+          if (['inventory_submitted', 'hubspot_file_upload', 'support_ticket_submitted'].includes(a.action)) {
+            return true;
+          }
+        }
+        return false;
+      })
       .slice(0, 20);
     
     const clientUser = users.find(u => u.id === req.user.id);
