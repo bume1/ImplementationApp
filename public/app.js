@@ -2836,6 +2836,11 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
         }))
       }));
       
+      // Count subtasks for the success message
+      const totalSubtasks = templateTasks.reduce((sum, t) => sum + (t.subtasks?.length || 0), 0);
+      console.log('Creating template with tasks:', templateTasks.length, 'subtasks:', totalSubtasks);
+      console.log('Sample task with subtasks:', templateTasks.find(t => t.subtasks?.length > 0));
+      
       const result = await api.createTemplate(token, {
         name: templateName,
         description: `Created from ${project.name} on ${new Date().toLocaleDateString()}`,
@@ -2845,7 +2850,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
       if (result.error) {
         alert('Failed to create template: ' + result.error);
       } else {
-        alert(`Template "${templateName}" created successfully with ${templateTasks.length} tasks!`);
+        alert(`Template "${templateName}" created successfully with ${templateTasks.length} tasks and ${totalSubtasks} subtasks!`);
       }
     } catch (err) {
       console.error('Failed to create template:', err);
@@ -5691,7 +5696,7 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
             ) : 'Template Management'}
           </h1>
           <p className="text-gray-600">
-            {selectedTemplate ? `${selectedTemplate.tasks.length} tasks` : 'Manage project templates'}
+            {selectedTemplate ? `${selectedTemplate.tasks.length} tasks, ${selectedTemplate.tasks.reduce((sum, t) => sum + (t.subtasks?.length || 0), 0)} subtasks` : 'Manage project templates'}
           </p>
         </div>
 
@@ -5842,6 +5847,7 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phase</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stage</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Task Title</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Subtasks</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Owner</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Dependencies</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Client View</th>
@@ -5893,6 +5899,9 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
                               onChange={(e) => setEditingTask({...editingTask, taskTitle: e.target.value})}
                               className="w-full px-2 py-1 border rounded text-sm"
                             />
+                          </td>
+                          <td className="px-4 py-2 text-sm text-gray-500">
+                            {(editingTask.subtasks || []).length} subtasks
                           </td>
                           <td className="px-4 py-2">
                             <input
@@ -5967,6 +5976,13 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
                           <td className="px-4 py-2 text-sm">{task.phase}</td>
                           <td className="px-4 py-2 text-sm">{task.stage}</td>
                           <td className="px-4 py-2 text-sm font-medium">{task.taskTitle}</td>
+                          <td className="px-4 py-2 text-sm text-purple-600">
+                            {(task.subtasks || []).length > 0 ? (
+                              <span title={(task.subtasks || []).map(st => st.title).join(', ')}>
+                                {(task.subtasks || []).length} subtask{(task.subtasks || []).length > 1 ? 's' : ''}
+                              </span>
+                            ) : '-'}
+                          </td>
                           <td className="px-4 py-2 text-sm text-gray-500">{task.owner || '-'}</td>
                           <td className="px-4 py-2 text-xs text-gray-500 relative group">
                             {task.dependencies && task.dependencies.length > 0 ? (
