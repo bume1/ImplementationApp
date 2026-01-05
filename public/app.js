@@ -890,6 +890,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
   const [activityLog, setActivityLog] = useState([]);
   const [activityLoading, setActivityLoading] = useState(false);
   const [showCalendar, setShowCalendar] = useState(true);
+  const [fullScreenCalendar, setFullScreenCalendar] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
   const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
   const [calendarViewMode, setCalendarViewMode] = useState('month'); // 'month' or 'year'
@@ -1377,6 +1378,17 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
+              {showCalendar && (
+                <button
+                  onClick={() => setFullScreenCalendar(true)}
+                  className="flex items-center gap-1 text-sm text-primary hover:text-accent transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                  </svg>
+                  Full Screen
+                </button>
+              )}
             </div>
             
             {showCalendar && (
@@ -1680,6 +1692,200 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Fullscreen Calendar Modal */}
+        {fullScreenCalendar && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl shadow-2xl w-full h-full max-w-7xl max-h-[95vh] overflow-auto">
+              <div className="bg-gradient-to-r from-primary to-accent text-white px-6 py-4 sticky top-0 z-10">
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={() => {
+                      if (calendarViewMode === 'year') {
+                        setCalendarYear(calendarYear - 1);
+                      } else if (calendarMonth === 0) {
+                        setCalendarMonth(11);
+                        setCalendarYear(calendarYear - 1);
+                      } else {
+                        setCalendarMonth(calendarMonth - 1);
+                      }
+                    }}
+                    className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+                  <div className="flex items-center gap-4">
+                    <h3 className="text-xl font-bold">
+                      {calendarViewMode === 'year' 
+                        ? calendarYear 
+                        : new Date(calendarYear, calendarMonth).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                    </h3>
+                    <div className="flex bg-white/20 rounded-lg p-1">
+                      <button
+                        onClick={() => setCalendarViewMode('month')}
+                        className={`px-3 py-1 text-sm rounded-md transition-colors ${calendarViewMode === 'month' ? 'bg-white text-primary font-medium' : 'hover:bg-white/20'}`}
+                      >
+                        Month
+                      </button>
+                      <button
+                        onClick={() => setCalendarViewMode('year')}
+                        className={`px-3 py-1 text-sm rounded-md transition-colors ${calendarViewMode === 'year' ? 'bg-white text-primary font-medium' : 'hover:bg-white/20'}`}
+                      >
+                        Year
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        if (calendarViewMode === 'year') {
+                          setCalendarYear(calendarYear + 1);
+                        } else if (calendarMonth === 11) {
+                          setCalendarMonth(0);
+                          setCalendarYear(calendarYear + 1);
+                        } else {
+                          setCalendarMonth(calendarMonth + 1);
+                        }
+                      }}
+                      className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => setFullScreenCalendar(false)}
+                      className="p-2 hover:bg-white/20 rounded-lg transition-colors ml-4"
+                      title="Close"
+                    >
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Calendar Grid - Fullscreen Version */}
+              {calendarViewMode === 'month' ? (
+                <div className="p-6">
+                  <div className="grid grid-cols-7 gap-px bg-gray-200 rounded-lg overflow-hidden">
+                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                      <div key={day} className="bg-gray-50 p-3 text-center text-sm font-medium text-gray-600">{day}</div>
+                    ))}
+                    {(() => {
+                      const firstDay = new Date(calendarYear, calendarMonth, 1).getDay();
+                      const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+                      const cells = [];
+                      for (let i = 0; i < firstDay; i++) {
+                        cells.push(<div key={`empty-${i}`} className="bg-white p-3 min-h-[120px]"></div>);
+                      }
+                      for (let day = 1; day <= daysInMonth; day++) {
+                        const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                        const isToday = dateStr === new Date().toISOString().split('T')[0];
+                        const entries = getCalendarEntries(dateStr);
+                        cells.push(
+                          <div key={day} className={`bg-white p-2 min-h-[120px] ${isToday ? 'ring-2 ring-primary ring-inset' : ''}`}>
+                            <div className={`text-sm font-medium mb-2 ${isToday ? 'text-primary' : 'text-gray-700'}`}>{day}</div>
+                            <div className="space-y-1 overflow-y-auto max-h-[200px]">
+                              {entries.map((entry, idx) => (
+                                <div 
+                                  key={idx} 
+                                  className={`text-xs p-1.5 rounded cursor-pointer hover:opacity-80 ${
+                                    entry.type === 'training' ? 'bg-purple-100 text-purple-700' :
+                                    entry.type === 'golive-completed' ? 'bg-green-100 text-green-700' :
+                                    entry.type === 'golive-paused' ? 'bg-yellow-100 text-yellow-700' :
+                                    entry.type === 'golive' ? 'bg-primary/20 text-primary' :
+                                    'bg-gray-100 text-gray-700'
+                                  }`}
+                                  onClick={() => entry.project && onSelectProject(entry.project, entry.taskId)}
+                                  title={entry.label}
+                                >
+                                  <div className="font-medium truncate">{entry.label}</div>
+                                  {entry.project && <div className="text-[10px] opacity-75 truncate">{entry.project.name}</div>}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      }
+                      return cells;
+                    })()}
+                  </div>
+                </div>
+              ) : (
+                <div className="p-6 grid grid-cols-3 md:grid-cols-4 gap-4">
+                  {Array.from({ length: 12 }, (_, monthIdx) => {
+                    const monthName = new Date(calendarYear, monthIdx).toLocaleDateString('en-US', { month: 'short' });
+                    const firstDay = new Date(calendarYear, monthIdx, 1).getDay();
+                    const daysInMonth = new Date(calendarYear, monthIdx + 1, 0).getDate();
+                    return (
+                      <div 
+                        key={monthIdx} 
+                        className="bg-gray-50 rounded-lg p-3 cursor-pointer hover:bg-gray-100 transition-colors"
+                        onClick={() => {
+                          setCalendarMonth(monthIdx);
+                          setCalendarViewMode('month');
+                        }}
+                      >
+                        <h4 className="text-sm font-bold text-gray-700 mb-2 text-center">{monthName}</h4>
+                        <div className="grid grid-cols-7 gap-px text-[10px]">
+                          {['S','M','T','W','T','F','S'].map((d, i) => (
+                            <div key={i} className="text-center text-gray-400 font-medium">{d}</div>
+                          ))}
+                          {Array.from({ length: firstDay }, (_, i) => (
+                            <div key={`empty-${i}`}></div>
+                          ))}
+                          {Array.from({ length: daysInMonth }, (_, i) => {
+                            const day = i + 1;
+                            const dateStr = `${calendarYear}-${String(monthIdx + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                            const entries = getCalendarEntries(dateStr);
+                            const hasGolive = entries.some(e => e.type && e.type.startsWith('golive'));
+                            const hasTraining = entries.some(e => e.type === 'training');
+                            return (
+                              <div 
+                                key={day} 
+                                className={`text-center p-0.5 rounded ${
+                                  hasGolive ? 'bg-primary/30 text-primary font-bold' :
+                                  hasTraining ? 'bg-purple-200 text-purple-700' :
+                                  'text-gray-600'
+                                }`}
+                              >
+                                {day}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Legend */}
+              <div className="px-6 pb-6 flex flex-wrap gap-4 text-sm">
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded bg-purple-100"></div>
+                  <span className="text-gray-600">Training/Validation Week</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded bg-primary/20"></div>
+                  <span className="text-gray-600">Go-Live (In Progress)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded bg-green-100"></div>
+                  <span className="text-gray-600">Go-Live (Completed)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded bg-yellow-100"></div>
+                  <span className="text-gray-600">Go-Live (Paused)</span>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -2794,7 +3000,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
   const [teamMembers, setTeamMembers] = useState([]);
   const [selectedTasks, setSelectedTasks] = useState([]);
   const [bulkMode, setBulkMode] = useState(false);
-  const [newSubtask, setNewSubtask] = useState({ taskId: null, title: '', owner: '', dueDate: '', showToClient: true });
+  const [newSubtask, setNewSubtask] = useState({ taskId: null, title: '', owner: '', dueDate: '' });
   const [expandedSubtasksId, setExpandedSubtasksId] = useState(null);
   const [clientPortalDomain, setClientPortalDomain] = useState('');
   const [showSoftPilotChecklist, setShowSoftPilotChecklist] = useState(false);
@@ -3030,7 +3236,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
         }
         return t;
       }));
-      setNewSubtask({ taskId: null, title: '', owner: '', dueDate: '', showToClient: true });
+      setNewSubtask({ taskId: null, title: '', owner: '', dueDate: '' });
     } catch (err) {
       console.error('Failed to add subtask:', err);
     }
@@ -4373,7 +4579,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                     Subtasks ({(task.subtasks || []).filter(s => s.completed || s.notApplicable || s.status === 'Complete' || s.status === 'N/A').length}/{(task.subtasks || []).length})
                                   </span>
                                   <button
-                                    onClick={() => setNewSubtask({ taskId: task.id, title: '', owner: '', dueDate: '', showToClient: true })}
+                                    onClick={() => setNewSubtask({ taskId: task.id, title: '', owner: '', dueDate: '' })}
                                     className="text-sm text-green-600 hover:underline"
                                   >
                                     + Add Subtask
@@ -4503,15 +4709,6 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                           {subtask.owner && (
                                             <span className="text-xs text-gray-500">{getOwnerName(subtask.owner)}</span>
                                           )}
-                                          <label className="flex items-center gap-1 text-xs text-gray-500" title="Show to Client">
-                                            <input
-                                              type="checkbox"
-                                              checked={subtask.showToClient !== false}
-                                              onChange={(e) => handleSubtaskShowToClientChange(task.id, subtask.id, e.target.checked)}
-                                              className="w-3 h-3"
-                                            />
-                                            Client
-                                          </label>
                                           <button
                                             onClick={() => handleDeleteSubtask(task.id, subtask.id)}
                                             className="text-red-400 hover:text-red-600 text-xs"
@@ -4551,14 +4748,6 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                       className="px-2 py-2 border rounded-md text-sm"
                                       title="Due Date"
                                     />
-                                    <label className="flex items-center gap-1 text-sm text-gray-600">
-                                      <input
-                                        type="checkbox"
-                                        checked={newSubtask.showToClient !== false}
-                                        onChange={(e) => setNewSubtask({...newSubtask, showToClient: e.target.checked})}
-                                      />
-                                      Show to Client
-                                    </label>
                                     <button
                                       onClick={() => handleAddSubtask(task.id)}
                                       className="px-3 py-2 bg-green-600 text-white rounded-md text-sm hover:bg-green-700"
