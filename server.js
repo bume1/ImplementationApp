@@ -3186,8 +3186,8 @@ app.post('/api/templates', authenticateToken, requireAdmin, async (req, res) => 
     const templates = await db.get('templates') || [];
     const { name, description, tasks } = req.body;
     
-    if (!name || !tasks) {
-      return res.status(400).json({ error: 'Name and tasks are required' });
+    if (!name || !tasks || !Array.isArray(tasks) || tasks.length === 0) {
+      return res.status(400).json({ error: 'Name and tasks are required (tasks must be a non-empty array)' });
     }
     
     const newTemplate = {
