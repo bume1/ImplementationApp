@@ -36,6 +36,7 @@ app.use((req, res, next) => {
 app.use('/thrive365labsLAUNCH', express.static('public'));
 app.use('/thrive365labslaunch', express.static('public'));
 app.use(express.static('public'));
+app.use('/uploads', express.static('uploads'));
 
 // Serve the main app at /thrive365labsLAUNCH and /thrive365labslaunch root only
 app.get('/thrive365labsLAUNCH', (req, res) => {
@@ -1388,6 +1389,7 @@ app.get('/api/client-portal/data', authenticateToken, async (req, res) => {
         clientName: project.clientName,
         status: project.status,
         hubspotRecordId: project.hubspotRecordId || null,
+        hubspotRecordType: project.hubspotRecordType || 'companies',
         tasks: clientTasks
       };
     }));
@@ -1555,6 +1557,57 @@ app.delete('/api/client-documents/:id', authenticateToken, requireAdmin, async (
     await db.set('client_documents', filtered);
     res.json({ success: true });
   } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Upload file as client document (admin only) - stores file and creates document entry
+app.post('/api/client-documents/:slug/upload', authenticateToken, requireAdmin, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file provided' });
+    }
+    
+    const { title, description, category } = req.body;
+    const slug = req.params.slug;
+    
+    // Create a unique filename
+    const ext = require('path').extname(req.file.originalname);
+    const uniqueName = `${uuidv4()}${ext}`;
+    const uploadsDir = require('path').join(__dirname, 'uploads', 'documents');
+    
+    // Ensure uploads directory exists
+    const fs = require('fs');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    
+    // Save the file
+    const filePath = require('path').join(uploadsDir, uniqueName);
+    fs.writeFileSync(filePath, req.file.buffer);
+    
+    // Create the document entry with a URL pointing to the file
+    const documents = (await db.get('client_documents')) || [];
+    const newDoc = {
+      id: uuidv4(),
+      slug: slug,
+      title: title || req.file.originalname,
+      description: description || '',
+      category: category || 'General',
+      url: `/uploads/documents/${uniqueName}`,
+      originalFilename: req.file.originalname,
+      isUploadedFile: true,
+      active: true,
+      createdAt: new Date().toISOString(),
+      createdBy: req.user.name
+    };
+    
+    documents.push(newDoc);
+    await db.set('client_documents', documents);
+    
+    res.json(newDoc);
+  } catch (error) {
+    console.error('Document upload error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
