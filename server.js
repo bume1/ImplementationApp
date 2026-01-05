@@ -3519,7 +3519,10 @@ app.post('/api/projects/:id/import-csv', authenticateToken, async (req, res) => 
           id: Date.now() + Math.random(),
           title: row.taskTitle || row.title || row.task || '',
           owner: row.owner || '',
-          status: row.subtaskStatus || 'Pending'
+          dueDate: normalizeDate(row.dueDate) || '',
+          status: row.subtaskStatus || 'Pending',
+          completed: ['true', 'yes', '1', 'complete', 'completed'].includes(String(row.subtaskStatus || row.completed || '').toLowerCase()),
+          notApplicable: ['n/a', 'na', 'not_applicable', 'not applicable'].includes(String(row.subtaskStatus || '').toLowerCase())
         });
         subtasksAdded++;
       }
