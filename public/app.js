@@ -4524,37 +4524,6 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                   </div>
                                 </div>
                               )}
-                              {viewMode === 'client' && task.showToClient && (task.subtasks || []).filter(s => s.showToClient !== false).length > 0 && (
-                                <div className="w-full mt-2 bg-purple-50 rounded-lg p-3">
-                                  <h4 className="text-sm font-medium text-gray-700 mb-2">Subtasks</h4>
-                                  <div className="space-y-2">
-                                    {(task.subtasks || []).filter(s => s.showToClient !== false).map(subtask => (
-                                      <div key={subtask.id} className="flex items-center gap-2 bg-white p-2 rounded border text-sm">
-                                        <span className={`px-2 py-1 rounded text-xs ${
-                                          getSubtaskStatus(subtask) === 'completed' ? 'bg-green-100 text-green-700' :
-                                          getSubtaskStatus(subtask) === 'not_applicable' ? 'bg-gray-100 text-gray-600' :
-                                          'bg-yellow-50 text-yellow-700'
-                                        }`}>
-                                          {getSubtaskStatus(subtask) === 'completed' ? 'Complete' : 
-                                           getSubtaskStatus(subtask) === 'not_applicable' ? 'N/A' : 'Pending'}
-                                        </span>
-                                        <span className={getSubtaskStatus(subtask) !== 'pending' ? 'line-through text-gray-400 flex-1' : 'flex-1'}>
-                                          {subtask.title}
-                                        </span>
-                                        {subtask.dueDate && (
-                                          <span className={`text-xs px-2 py-0.5 rounded ${
-                                            new Date(subtask.dueDate) < new Date() && getSubtaskStatus(subtask) === 'pending' 
-                                              ? 'bg-red-100 text-red-700' 
-                                              : 'bg-gray-100 text-gray-600'
-                                          }`}>
-                                            Due: {new Date(subtask.dueDate + 'T12:00:00').toLocaleDateString()}
-                                          </span>
-                                        )}
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
                               {viewMode === 'internal' && newSubtask.taskId === task.id && (
                                 <div className="w-full mt-2 bg-green-50 rounded-lg p-3">
                                   <h4 className="text-sm font-medium text-gray-700 mb-2">Add New Subtask</h4>
