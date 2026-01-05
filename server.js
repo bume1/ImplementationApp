@@ -1228,7 +1228,12 @@ app.put('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req,
     // Server-side validation: Check for incomplete subtasks before allowing completion
     if (updates.completed && !task.completed) {
       const subtasks = task.subtasks || [];
-      const incompleteSubtasks = subtasks.filter(s => !s.completed && !s.notApplicable);
+      // Check for both new format (completed boolean) and old format (status string)
+      const incompleteSubtasks = subtasks.filter(s => {
+        const isComplete = s.completed || s.status === 'Complete' || s.status === 'completed';
+        const isNotApplicable = s.notApplicable || s.status === 'N/A' || s.status === 'not_applicable';
+        return !isComplete && !isNotApplicable;
+      });
       if (incompleteSubtasks.length > 0) {
         return res.status(400).json({ 
           error: 'Cannot complete task with pending subtasks',
