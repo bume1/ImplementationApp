@@ -632,14 +632,28 @@
                   </div>
                 </div>
               </div>
-              {data.project.goLiveDate && (
-                <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100">
-                  <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  <span className="text-sm font-medium text-gray-700">Target Go-Live: {new Date(data.project.goLiveDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
-                </div>
-              )}
+              {data.project.goLiveDate && (() => {
+                const dateStr = data.project.goLiveDate;
+                let d;
+                if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+                  d = new Date(dateStr + 'T12:00:00');
+                } else if (dateStr.includes('T') && dateStr.endsWith('Z')) {
+                  const datePart = dateStr.split('T')[0];
+                  d = new Date(datePart + 'T12:00:00');
+                } else if (dateStr.includes('T')) {
+                  d = new Date(dateStr);
+                } else {
+                  d = new Date(dateStr);
+                }
+                return !isNaN(d.getTime()) ? (
+                  <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100">
+                    <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <span className="text-sm font-medium text-gray-700">Target Go-Live: {d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
+                  </div>
+                ) : null;
+              })()}
             </div>
           </div>
           

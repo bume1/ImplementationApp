@@ -879,6 +879,9 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
   const [showActivityLog, setShowActivityLog] = useState(false);
   const [activityLog, setActivityLog] = useState([]);
   const [activityLoading, setActivityLoading] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(true);
+  const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
+  const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
   const [newProject, setNewProject] = useState({
     name: '',
     clientName: '',
@@ -1347,6 +1350,169 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
           </div>
         )}
 
+        {/* Implementations Calendar */}
+        {!loading && projects.length > 0 && (
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <button
+                onClick={() => setShowCalendar(!showCalendar)}
+                className="flex items-center gap-2 text-lg font-bold text-gray-900 hover:text-primary transition-colors"
+              >
+                <svg className="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                Implementations Calendar
+                <svg className={`w-4 h-4 transition-transform ${showCalendar ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+            </div>
+            
+            {showCalendar && (
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div className="bg-gradient-to-r from-primary to-accent text-white px-6 py-4">
+                  <div className="flex items-center justify-between">
+                    <button
+                      onClick={() => {
+                        if (calendarMonth === 0) {
+                          setCalendarMonth(11);
+                          setCalendarYear(calendarYear - 1);
+                        } else {
+                          setCalendarMonth(calendarMonth - 1);
+                        }
+                      }}
+                      className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                      </svg>
+                    </button>
+                    <h3 className="text-xl font-bold">
+                      {new Date(calendarYear, calendarMonth).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                    </h3>
+                    <button
+                      onClick={() => {
+                        if (calendarMonth === 11) {
+                          setCalendarMonth(0);
+                          setCalendarYear(calendarYear + 1);
+                        } else {
+                          setCalendarMonth(calendarMonth + 1);
+                        }
+                      }}
+                      className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="p-4">
+                  <div className="grid grid-cols-7 gap-1 mb-2">
+                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                      <div key={day} className="text-center text-xs font-semibold text-gray-500 py-2">{day}</div>
+                    ))}
+                  </div>
+                  
+                  <div className="grid grid-cols-7 gap-1">
+                    {(() => {
+                      const firstDay = new Date(calendarYear, calendarMonth, 1).getDay();
+                      const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+                      const today = new Date();
+                      const isCurrentMonth = today.getMonth() === calendarMonth && today.getFullYear() === calendarYear;
+                      
+                      const parseGoLiveDate = (dateStr) => {
+                        if (!dateStr) return null;
+                        let d;
+                        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+                          d = new Date(dateStr + 'T12:00:00');
+                        } else if (dateStr.includes('T') && dateStr.endsWith('Z')) {
+                          const datePart = dateStr.split('T')[0];
+                          d = new Date(datePart + 'T12:00:00');
+                        } else if (dateStr.includes('T')) {
+                          d = new Date(dateStr);
+                        } else {
+                          d = new Date(dateStr);
+                        }
+                        return isNaN(d.getTime()) ? null : d;
+                      };
+                      
+                      const projectsByDate = {};
+                      projects.forEach(p => {
+                        if (p.goLiveDate) {
+                          const d = parseGoLiveDate(p.goLiveDate);
+                          if (d && d.getMonth() === calendarMonth && d.getFullYear() === calendarYear) {
+                            const day = d.getDate();
+                            if (!projectsByDate[day]) projectsByDate[day] = [];
+                            projectsByDate[day].push(p);
+                          }
+                        }
+                      });
+                      
+                      const cells = [];
+                      for (let i = 0; i < firstDay; i++) {
+                        cells.push(<div key={`empty-${i}`} className="min-h-[80px]"></div>);
+                      }
+                      
+                      for (let day = 1; day <= daysInMonth; day++) {
+                        const isToday = isCurrentMonth && today.getDate() === day;
+                        const dayProjects = projectsByDate[day] || [];
+                        
+                        cells.push(
+                          <div 
+                            key={day} 
+                            className={`min-h-[80px] border rounded-lg p-2 ${isToday ? 'border-primary bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}
+                          >
+                            <div className={`text-sm font-semibold mb-1 ${isToday ? 'text-primary' : 'text-gray-700'}`}>{day}</div>
+                            <div className="space-y-1">
+                              {dayProjects.slice(0, 2).map(p => (
+                                <div 
+                                  key={p.id} 
+                                  className={`text-xs px-2 py-1 rounded-md truncate cursor-pointer transition-colors ${
+                                    p.status === 'completed' ? 'bg-green-100 text-green-800 hover:bg-green-200' : 
+                                    p.status === 'paused' ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200' :
+                                    'bg-primary/10 text-primary hover:bg-primary/20'
+                                  }`}
+                                  title={`${p.name} - ${p.clientName}`}
+                                  onClick={() => onSelectProject(p)}
+                                >
+                                  {p.clientName.length > 12 ? p.clientName.substring(0, 12) + '...' : p.clientName}
+                                </div>
+                              ))}
+                              {dayProjects.length > 2 && (
+                                <div className="text-xs text-gray-500 font-medium">+{dayProjects.length - 2} more</div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      }
+                      
+                      return cells;
+                    })()}
+                  </div>
+                </div>
+                
+                {/* Legend */}
+                <div className="px-4 pb-4 flex flex-wrap gap-4 text-xs">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded bg-primary/20"></div>
+                    <span className="text-gray-600">In Progress</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded bg-green-100"></div>
+                    <span className="text-gray-600">Completed</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded bg-yellow-100"></div>
+                    <span className="text-gray-600">Paused</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {loading ? (
           <div className="text-center py-12">
             <div className="text-xl text-gray-600">Loading projects...</div>
@@ -1396,14 +1562,28 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                   <div className="text-xs text-gray-500 mt-1">
                     {project.completedTasks || 0} of {project.totalTasks || 0} tasks complete
                   </div>
-                  {project.goLiveDate && (
-                    <div className="flex items-center gap-2 mt-2 text-xs">
-                      <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      <span className="font-medium text-gray-700">Go-Live: {new Date(project.goLiveDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                    </div>
-                  )}
+                  {project.goLiveDate && (() => {
+                      const dateStr = project.goLiveDate;
+                      let d;
+                      if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+                        d = new Date(dateStr + 'T12:00:00');
+                      } else if (dateStr.includes('T') && dateStr.endsWith('Z')) {
+                        const datePart = dateStr.split('T')[0];
+                        d = new Date(datePart + 'T12:00:00');
+                      } else if (dateStr.includes('T')) {
+                        d = new Date(dateStr);
+                      } else {
+                        d = new Date(dateStr);
+                      }
+                      return !isNaN(d.getTime()) ? (
+                        <div className="flex items-center gap-2 mt-2 text-xs">
+                          <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          <span className="font-medium text-gray-700">Go-Live: {d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                        </div>
+                      ) : null;
+                    })()}
                 </div>
 
                 <div className="space-y-2 text-sm text-gray-500 mb-4">

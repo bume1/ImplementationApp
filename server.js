@@ -970,7 +970,16 @@ app.put('/api/projects/:id', authenticateToken, async (req, res) => {
     const allowedFields = ['name', 'clientName', 'projectManager', 'hubspotRecordId', 'status', 'clientPortalDomain', 'goLiveDate'];
     allowedFields.forEach(field => {
       if (req.body[field] !== undefined) {
-        projects[idx][field] = req.body[field];
+        let value = req.body[field];
+        if (field === 'goLiveDate' && value) {
+          const d = new Date(value);
+          if (!isNaN(d.getTime())) {
+            value = d.toISOString().split('T')[0];
+          } else {
+            value = '';
+          }
+        }
+        projects[idx][field] = value;
       }
     });
     
