@@ -2541,8 +2541,10 @@
       const [loading, setLoading] = useState(true);
       const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
       
-      const slug = getSlugFromUrl();
+      const urlSlug = getSlugFromUrl();
       const isAdmin = user?.role === 'admin';
+      // Use user's slug if available, fallback to URL slug
+      const slug = user?.slug || urlSlug;
       
       useEffect(() => {
         const loadData = async () => {
