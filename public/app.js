@@ -2830,7 +2830,9 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
         subtasks: (task.subtasks || []).map((st, stIdx) => ({
           id: stIdx + 1,
           title: st.title,
-          description: st.description || ''
+          description: st.description || '',
+          owner: st.owner || '',
+          dueDate: st.dueDate || ''
         }))
       }));
       
