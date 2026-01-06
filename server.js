@@ -983,7 +983,23 @@ app.post('/api/projects', authenticateToken, async (req, res) => {
       const templates = await db.get('templates') || [];
       const selectedTemplate = templates.find(t => t.id === template);
       if (selectedTemplate) {
-        templateTasks = selectedTemplate.tasks || [];
+        // Normalize template tasks for the new project
+        // Always reset all completion status to start fresh
+        templateTasks = (selectedTemplate.tasks || []).map(task => ({
+          ...task,
+          // Reset any project-specific fields
+          completed: false,
+          dateCompleted: null,
+          notes: [],
+          // Reset all subtasks to pending status
+          subtasks: (task.subtasks || []).map(st => ({
+            ...st,
+            completed: false,
+            notApplicable: false,
+            status: 'Pending',
+            completedAt: null
+          }))
+        }));
       }
     }
     await db.set(`tasks_${newProject.id}`, templateTasks);
@@ -1126,7 +1142,9 @@ app.post('/api/projects/:id/clone', authenticateToken, async (req, res) => {
       subtasks: (task.subtasks || []).map(st => ({
         ...st,
         completed: false,
-        notApplicable: false
+        notApplicable: false,
+        status: 'Pending',
+        completedAt: null
       }))
     }));
     await db.set(`tasks_${newProjectId}`, clonedTasks);
