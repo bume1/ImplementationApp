@@ -112,3 +112,11 @@ Preferred communication style: Simple, everyday language.
   - Sorts by existing stageOrder before normalization to maintain prior moves
   - Sequential normalization ensures clean 1, 2, 3... values after each operation
 - **Training Week Start**: Calendar training entries now start from "Complete necessary analyzer reboot" task (Phase 3)
+
+### Project Notes Log Panel (Jan 6)
+- **Aggregate Notes View**: New collapsible side panel showing all notes from all tasks in a project
+- **Chronological Order**: Notes displayed with newest first, showing full context (phase, stage, task, author, timestamp)
+- **Toggle Button**: "Notes Log" button in the task board header (Internal view only) shows count of total notes
+- **Slide-Out Panel**: Fixed-position panel slides in from the right when opened, can be closed with X button
+- **Note Details**: Each note shows phase, stage, task title, content, author, creation date, and edit history
+- **Empty State**: Friendly message when no notes exist yet

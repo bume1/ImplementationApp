@@ -3061,6 +3061,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
   const [clientPortalDomain, setClientPortalDomain] = useState('');
   const [showSoftPilotChecklist, setShowSoftPilotChecklist] = useState(false);
   const [creatingTemplate, setCreatingTemplate] = useState(false);
+  const [showNotesLog, setShowNotesLog] = useState(false);
 
   const isAdmin = user.role === 'admin';
   const userAccessLevel = isAdmin ? 'edit' : ((user.projectAccessLevels || {})[project.id] || 'edit');
@@ -3150,6 +3151,18 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
       }, 300);
     }
   }, [scrollToTaskId, loading, tasks]);
+
+  // Lock body scroll when notes log panel is open
+  useEffect(() => {
+    if (showNotesLog) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [showNotesLog]);
 
   const loadClientPortalDomain = async () => {
     try {
@@ -3821,6 +3834,28 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
   const getTaskName = (task) =>
     (viewMode === 'client' && task.clientName) ? task.clientName : task.taskTitle;
 
+  const aggregatedNotes = useMemo(() => {
+    const allNotes = [];
+    tasks.forEach(task => {
+      if (task.notes && task.notes.length > 0) {
+        task.notes.forEach(note => {
+          allNotes.push({
+            ...note,
+            taskId: task.id,
+            taskTitle: task.taskTitle,
+            phase: task.phase,
+            stage: task.stage
+          });
+        });
+      }
+    });
+    return allNotes.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  }, [tasks]);
+  
+  const tasksWithNotes = useMemo(() => {
+    return tasks.filter(t => t.notes && t.notes.length > 0).length;
+  }, [tasks]);
+
   const totalTasks = tasks.length;
   const completedTasks = tasks.filter(t => t.completed).length;
   const progressPercentage = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
@@ -3951,6 +3986,26 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                     title="Create a reusable template from this board's tasks"
                   >
                     {creatingTemplate ? 'Creating...' : 'Create Template'}
+                  </button>
+                </>
+              )}
+              
+              {viewMode === 'internal' && (
+                <>
+                  <div className="border-l border-gray-300 mx-2"></div>
+                  <button
+                    onClick={() => setShowNotesLog(!showNotesLog)}
+                    className={`px-3 py-1.5 rounded-md text-sm flex items-center gap-1.5 ${
+                      showNotesLog
+                        ? 'bg-amber-500 text-white'
+                        : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                    }`}
+                    title="View all notes log"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Notes Log ({aggregatedNotes.length})
                   </button>
                 </>
               )}
@@ -5172,6 +5227,78 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
               }
             }}
           />
+        )}
+
+        {/* Notes Log Side Panel */}
+        {showNotesLog && viewMode === 'internal' && (
+          <>
+            <div 
+              className="fixed inset-0 bg-black bg-opacity-30 z-40"
+              onClick={() => setShowNotesLog(false)}
+            />
+            <div className="fixed right-0 top-0 h-full w-96 bg-white shadow-2xl z-50 flex flex-col border-l border-gray-200">
+              <div className="bg-gradient-to-r from-amber-500 to-amber-600 text-white px-4 py-4 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <h3 className="font-bold text-lg">Project Notes Log</h3>
+                </div>
+                <button
+                  onClick={() => setShowNotesLog(false)}
+                  className="p-1 hover:bg-white/20 rounded transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              
+              <div className="px-4 py-3 bg-amber-50 border-b border-amber-100">
+                <p className="text-sm text-amber-800">
+                  Comprehensive log of all notes added to tasks in chronological order.
+                </p>
+                <p className="text-xs text-amber-600 mt-1">
+                  {aggregatedNotes.length} total notes across {tasksWithNotes} tasks
+                </p>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-4">
+                {aggregatedNotes.length === 0 ? (
+                  <div className="text-center py-12">
+                    <svg className="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <p className="text-gray-500 text-sm">No notes have been added yet</p>
+                    <p className="text-gray-400 text-xs mt-1">Notes will appear here as they are added to tasks</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {aggregatedNotes.map((note, idx) => (
+                      <div key={note.id || idx} className="bg-gray-50 rounded-lg p-4 border border-gray-200 hover:border-amber-300 transition-colors">
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-amber-700 truncate">{note.phase} • {note.stage}</p>
+                            <p className="text-sm font-semibold text-gray-800 truncate" title={note.taskTitle}>{note.taskTitle}</p>
+                          </div>
+                        </div>
+                        <div className="bg-white rounded p-3 border border-gray-100 mb-2">
+                          <p className="text-sm text-gray-700 whitespace-pre-wrap">{note.content}</p>
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-gray-500">
+                          <span className="font-medium">{note.author}</span>
+                          <span>{new Date(note.createdAt).toLocaleString()}</span>
+                        </div>
+                        {note.editedAt && (
+                          <p className="text-xs text-gray-400 italic mt-1">Edited {new Date(note.editedAt).toLocaleString()}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
         )}
       </div>
       </div>
