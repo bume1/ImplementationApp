@@ -1055,6 +1055,11 @@ app.put('/api/projects/:id', authenticateToken, async (req, res) => {
     }
     
     const allowedFields = ['name', 'clientName', 'projectManager', 'hubspotRecordId', 'hubspotRecordType', 'status', 'clientPortalDomain', 'goLiveDate'];
+    
+    // Check if client name is being changed - regenerate slug
+    const oldClientName = projects[idx].clientName;
+    const newClientName = req.body.clientName;
+    
     allowedFields.forEach(field => {
       if (req.body[field] !== undefined) {
         let value = req.body[field];
@@ -1069,6 +1074,15 @@ app.put('/api/projects/:id', authenticateToken, async (req, res) => {
         projects[idx][field] = value;
       }
     });
+    
+    // Regenerate clientLinkSlug when clientName changes
+    if (newClientName && newClientName !== oldClientName) {
+      const existingSlugs = projects
+        .filter(p => p.id !== projects[idx].id)
+        .map(p => p.clientLinkSlug)
+        .filter(Boolean);
+      projects[idx].clientLinkSlug = generateClientSlug(newClientName, existingSlugs);
+    }
     
     await db.set('projects', projects);
     res.json(projects[idx]);
@@ -1113,17 +1127,21 @@ app.post('/api/projects/:id/clone', authenticateToken, async (req, res) => {
     const originalProject = projects.find(p => p.id === req.params.id);
     if (!originalProject) return res.status(404).json({ error: 'Project not found' });
     
-    const { name } = req.body;
+    const { name, clientName } = req.body;
     const newProjectId = uuidv4();
     const existingSlugs = projects.map(p => p.clientLinkSlug).filter(Boolean);
+    
+    // Use provided clientName for slug, or derive from new project name, or fallback to original + '-copy'
+    const newClientName = clientName || name || `${originalProject.clientName} (Copy)`;
     
     const newProject = {
       ...originalProject,
       id: newProjectId,
       name: name || `${originalProject.name} (Copy)`,
+      clientName: newClientName,
       status: 'active',
       clientLinkId: uuidv4(),
-      clientLinkSlug: generateClientSlug(originalProject.clientName + '-copy', existingSlugs),
+      clientLinkSlug: generateClientSlug(newClientName, existingSlugs),
       hubspotRecordId: '',
       lastHubSpotSync: null,
       createdAt: new Date().toISOString()

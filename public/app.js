@@ -1,4 +1,4 @@
-const { useState, useEffect } = React;
+const { useState, useEffect, useMemo } = React;
 const API_URL = window.location.origin;
 
 // ============== STANDARD PHASES AND STAGES (Always visible) ==============

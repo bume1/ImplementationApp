@@ -128,3 +128,5 @@ Preferred communication style: Simple, everyday language.
   - Prevents "Cannot complete task with pending subtasks" errors on boards created from templates
 - **Improved Completion Detection**: `hasIncompleteSubtasks` function now accepts multiple completion indicators (boolean, status string, completedAt timestamp)
 - **Template Data Normalization**: Server-side template application normalizes all subtask fields on creation
+- **Client Link Slug Auto-Update**: When a project's client name is changed, the client portal link slug is automatically regenerated to match
+- **Clone Slug Fix**: Cloned projects now generate their slug from the new project/client name instead of just appending "-copy" to the original
