@@ -3080,7 +3080,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
       });
       
       // Create template tasks from current project tasks
-      // Preserve task structure including owners
+      // Preserve task structure including owners but exclude runtime data and client-specific fields
       const templateTasks = tasks.map((task, idx) => ({
         id: idx + 1,
         taskTitle: task.taskTitle,
@@ -3093,13 +3093,22 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
         // Remap dependencies to new sequential IDs
         dependencies: (task.dependencies || []).map(depId => idMap[depId]).filter(Boolean),
         order: task.order || idx + 1,
+        stageOrder: task.stageOrder || idx + 1,
+        // Subtasks: preserve structure but reset completion status
         subtasks: (task.subtasks || []).map((st, stIdx) => ({
           id: stIdx + 1,
           title: st.title,
           description: st.description || '',
           owner: st.owner || '',
-          dueDate: st.dueDate || ''
+          dueDate: st.dueDate || '',
+          // Explicitly set completion status to false for templates
+          completed: false,
+          notApplicable: false,
+          status: 'Pending',
+          completedAt: null
         }))
+        // NOTE: Intentionally omitting clientLinkId, clientLinkSlug, notes, completed, dateCompleted
+        // These are runtime/project-specific fields that should not be part of templates
       }));
       
       // Count subtasks for the success message
@@ -3389,8 +3398,15 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
   const hasIncompleteSubtasks = (task) => {
     if (!task.subtasks || task.subtasks.length === 0) return false;
     return task.subtasks.some(s => {
-      const isComplete = s.completed || s.status === 'Complete' || s.status === 'completed';
-      const isNotApplicable = s.notApplicable || s.status === 'N/A' || s.status === 'not_applicable';
+      // Check for completed status - accept boolean true, truthy values, or status strings
+      const isComplete = s.completed === true || 
+                         s.status === 'Complete' || 
+                         s.status === 'completed' ||
+                         (s.completedAt && s.completedAt !== null);
+      // Check for N/A status
+      const isNotApplicable = s.notApplicable === true || 
+                              s.status === 'N/A' || 
+                              s.status === 'not_applicable';
       return !isComplete && !isNotApplicable;
     });
   };
@@ -3476,7 +3492,16 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
 
     // Check if this task has incomplete subtasks
     if (newCompleted && hasIncompleteSubtasks(task)) {
-      const incompleteSubtasks = task.subtasks.filter(s => !s.completed && !s.notApplicable);
+      const incompleteSubtasks = task.subtasks.filter(s => {
+        const isComplete = s.completed === true || 
+                           s.status === 'Complete' || 
+                           s.status === 'completed' ||
+                           (s.completedAt && s.completedAt !== null);
+        const isNotApplicable = s.notApplicable === true || 
+                                s.status === 'N/A' || 
+                                s.status === 'not_applicable';
+        return !isComplete && !isNotApplicable;
+      });
       alert(`Cannot complete this task. The following subtasks must be completed or marked N/A first:\n\n${incompleteSubtasks.map(s => s.title).join('\n')}`);
       return;
     }
@@ -3990,25 +4015,21 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                 </>
               )}
               
-              {viewMode === 'internal' && (
-                <>
-                  <div className="border-l border-gray-300 mx-2"></div>
-                  <button
-                    onClick={() => setShowNotesLog(!showNotesLog)}
-                    className={`px-3 py-1.5 rounded-md text-sm flex items-center gap-1.5 ${
-                      showNotesLog
-                        ? 'bg-amber-500 text-white'
-                        : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                    }`}
-                    title="View all notes log"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    Notes Log ({aggregatedNotes.length})
-                  </button>
-                </>
-              )}
+              <div className="border-l border-gray-300 mx-2"></div>
+              <button
+                onClick={() => setShowNotesLog(!showNotesLog)}
+                className={`px-3 py-1.5 rounded-md text-sm flex items-center gap-1.5 ${
+                  showNotesLog
+                    ? 'bg-amber-500 text-white'
+                    : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                }`}
+                title="View all notes log"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Notes Log ({aggregatedNotes.length})
+              </button>
             </div>
           </div>
 
@@ -5230,7 +5251,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
         )}
 
         {/* Notes Log Side Panel */}
-        {showNotesLog && viewMode === 'internal' && (
+        {showNotesLog && (
           <>
             <div 
               className="fixed inset-0 bg-black bg-opacity-30 z-40"

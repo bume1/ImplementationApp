@@ -116,7 +116,15 @@ Preferred communication style: Simple, everyday language.
 ### Project Notes Log Panel (Jan 6)
 - **Aggregate Notes View**: New collapsible side panel showing all notes from all tasks in a project
 - **Chronological Order**: Notes displayed with newest first, showing full context (phase, stage, task, author, timestamp)
-- **Toggle Button**: "Notes Log" button in the task board header (Internal view only) shows count of total notes
-- **Slide-Out Panel**: Fixed-position panel slides in from the right when opened, can be closed with X button
+- **Toggle Button**: "Notes Log" button in the task board header shows count of total notes (accessible to all users)
+- **Slide-Out Panel**: Fixed-position panel slides in from the right when opened, can be closed with X button or by clicking backdrop
 - **Note Details**: Each note shows phase, stage, task title, content, author, creation date, and edit history
 - **Empty State**: Friendly message when no notes exist yet
+- **Performance**: Memoized notes aggregation and scroll locking for smooth UX
+
+### Template & Clone Bug Fixes (Jan 6)
+- **Subtask Completion Fix**: Templates and cloned projects now properly initialize subtask completion status
+  - Subtasks explicitly set `completed: false`, `notApplicable: false`, `status: 'Pending'`
+  - Prevents "Cannot complete task with pending subtasks" errors on boards created from templates
+- **Improved Completion Detection**: `hasIncompleteSubtasks` function now accepts multiple completion indicators (boolean, status string, completedAt timestamp)
+- **Template Data Normalization**: Server-side template application normalizes all subtask fields on creation
