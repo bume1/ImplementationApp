@@ -1211,7 +1211,7 @@ app.post('/api/projects/:id/tasks', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Access denied to this project' });
     }
     
-    const { taskTitle, owner, dueDate, phase, stage, showToClient, clientName, notes, dependencies } = req.body;
+    const { taskTitle, owner, dueDate, phase, stage, showToClient, clientName, description, notes, dependencies } = req.body;
     const projectId = req.params.id;
     const tasks = await getTasks(projectId);
     const newTask = {
@@ -1227,6 +1227,7 @@ app.post('/api/projects/:id/tasks', authenticateToken, async (req, res) => {
       completed: false,
       showToClient: showToClient || false,
       clientName: clientName || '',
+      description: description || '',
       notes: notes || [],
       dependencies: dependencies || [],
       createdBy: req.user.id,

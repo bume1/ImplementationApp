@@ -138,3 +138,5 @@ Preferred communication style: Simple, everyday language.
 - **Regenerate Slug Endpoint**: New admin endpoint `/api/projects/:id/regenerate-slug` allows regenerating client portal slugs for individual projects
 - **Admin UI for Data Fix**: Portal Settings page now includes "Database Utilities" section with "Normalize All Project Data" button
 - **Project Edit Slug Display**: Edit Project modal now shows current client link slug with a "Regenerate" button to update based on client name
+- **Completion Date Formatting**: Client and portal views now display task completion dates in friendly format (e.g., "Jan 8, 2026")
+- **Task Descriptions**: Added description field to tasks - admins can add descriptions visible to both internal users and clients in all views
