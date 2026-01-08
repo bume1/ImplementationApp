@@ -2403,6 +2403,9 @@ const TimelineView = ({ tasks, getPhaseColor, viewMode }) => {
                                 task.completed ? 'text-gray-500 line-through' : 'text-gray-900'
                               }`}>
                                 {getTaskName(task)}
+                                {(task.files || []).length > 0 && (
+                                  <span className="ml-2 text-gray-400" title={`${task.files.length} file${task.files.length > 1 ? 's' : ''} attached`}>📎</span>
+                                )}
                               </h5>
                               {viewMode === 'internal' && (
                                 <div className="mt-1 flex flex-wrap gap-3 text-xs text-gray-500">
@@ -2641,9 +2644,9 @@ const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
                         className={`text-xs px-1 py-0.5 rounded truncate ${
                           task.completed ? 'bg-green-200 text-green-800' : 'bg-blue-100 text-blue-800'
                         } ${viewMode === 'internal' ? 'cursor-pointer hover:opacity-80' : ''}`}
-                        title={getTaskName(task)}
+                        title={`${getTaskName(task)}${(task.files || []).length > 0 ? ' 📎' : ''}`}
                       >
-                        {getTaskName(task).substring(0, 12)}{getTaskName(task).length > 12 ? '...' : ''}
+                        {getTaskName(task).substring(0, 10)}{getTaskName(task).length > 10 ? '...' : ''}{(task.files || []).length > 0 && '📎'}
                       </div>
                     ))}
                     {dayTasks.length > 2 && (
@@ -2694,9 +2697,9 @@ const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
                         className={`text-xs px-1 py-0.5 rounded truncate ${
                           task.completed ? 'bg-green-200 text-green-800' : 'bg-blue-100 text-blue-800'
                         } ${viewMode === 'internal' ? 'cursor-pointer hover:opacity-80' : ''}`}
-                        title={getTaskName(task)}
+                        title={`${getTaskName(task)}${(task.files || []).length > 0 ? ' 📎' : ''}`}
                       >
-                        {getTaskName(task).substring(0, 15)}{getTaskName(task).length > 15 ? '...' : ''}
+                        {getTaskName(task).substring(0, 13)}{getTaskName(task).length > 13 ? '...' : ''}{(task.files || []).length > 0 && '📎'}
                       </div>
                     ))}
                     {dayTasks.length > 4 && (
@@ -2733,6 +2736,9 @@ const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
                   <div className="flex-1">
                     <h4 className={`font-medium ${task.completed ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
                       {getTaskName(task)}
+                      {(task.files || []).length > 0 && (
+                        <span className="ml-2 text-gray-400" title={`${task.files.length} file${task.files.length > 1 ? 's' : ''} attached`}>📎</span>
+                      )}
                     </h4>
                     <div className="mt-1 text-sm text-gray-500 flex flex-wrap gap-3">
                       {task.owner && <span>Owner: {task.owner}</span>}
@@ -5013,6 +5019,9 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                   }`}
                                 >
                                   {getTaskName(task)}
+                                  {(task.files || []).length > 0 && (
+                                    <span className="ml-2 text-gray-400" title={`${task.files.length} file${task.files.length > 1 ? 's' : ''} attached`}>📎</span>
+                                  )}
                                 </h3>
                                 <div className="flex gap-2 flex-shrink-0">
                                   {viewMode === 'internal' && canEdit && (isAdmin || task.createdBy === user.id || !task.createdBy) && (
