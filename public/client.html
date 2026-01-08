@@ -198,11 +198,6 @@
                                     {task.dateCompleted && <span className="text-green-600">Completed: {formatDateForDisplay(task.dateCompleted)}</span>}
                                   </p>
                                 )}
-                                {task.description && (
-                                  <div className="mt-2 p-2 bg-gray-50 rounded-md border-l-2 border-primary">
-                                    <p className="text-sm text-gray-700">{task.description}</p>
-                                  </div>
-                                )}
                               </div>
                             </div>
                           ))}
@@ -301,11 +296,6 @@
                                   {task.dueDate && !task.completed && task.dateCompleted && <span className="mx-2">•</span>}
                                   {task.dateCompleted && <span className="text-green-600">Completed: {formatDateForDisplay(task.dateCompleted)}</span>}
                                 </p>
-                              )}
-                              {task.description && (
-                                <div className="mt-2 p-2 bg-gray-50 rounded-md border-l-2 border-primary">
-                                  <p className="text-sm text-gray-700">{task.description}</p>
-                                </div>
                               )}
                             </div>
                           </div>
