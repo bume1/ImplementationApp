@@ -99,8 +99,14 @@ const getProjects = async () => {
   }
   return projects;
 };
+// Get raw tasks for mutation - use this when you need to modify and save back
+const getRawTasks = async (projectId) => {
+  return (await db.get(`tasks_${projectId}`)) || [];
+};
+
+// Get normalized tasks for display - use this for read-only operations
 const getTasks = async (projectId) => {
-  const tasks = (await db.get(`tasks_${projectId}`)) || [];
+  const tasks = await getRawTasks(projectId);
   
   // Return tasks with normalized defaults for display (read-only normalization, no save)
   return tasks.map(task => ({
@@ -618,8 +624,9 @@ app.post('/api/projects/:projectId/tasks/:taskId/subtasks', authenticateToken, a
     const { title, owner, dueDate, showToClient } = req.body;
     if (!title) return res.status(400).json({ error: 'Subtask title is required' });
     
-    const tasks = await getTasks(projectId);
-    const idx = tasks.findIndex(t => t.id === parseInt(taskId));
+    // Use raw tasks for mutation to prevent normalization drift
+    const tasks = await getRawTasks(projectId);
+    const idx = tasks.findIndex(t => t.id === parseInt(taskId) || String(t.id) === String(taskId));
     if (idx === -1) return res.status(404).json({ error: 'Task not found' });
     
     const subtask = {
@@ -654,8 +661,9 @@ app.put('/api/projects/:projectId/tasks/:taskId/subtasks/:subtaskId', authentica
     
     const { title, owner, dueDate, completed, notApplicable, showToClient } = req.body;
     
-    const tasks = await getTasks(projectId);
-    const taskIdx = tasks.findIndex(t => t.id === parseInt(taskId));
+    // Use raw tasks for mutation to prevent normalization drift
+    const tasks = await getRawTasks(projectId);
+    const taskIdx = tasks.findIndex(t => t.id === parseInt(taskId) || String(t.id) === String(taskId));
     if (taskIdx === -1) return res.status(404).json({ error: 'Task not found' });
     
     if (!tasks[taskIdx].subtasks) return res.status(404).json({ error: 'Subtask not found' });
@@ -699,8 +707,9 @@ app.delete('/api/projects/:projectId/tasks/:taskId/subtasks/:subtaskId', authent
       return res.status(403).json({ error: 'Access denied to this project' });
     }
     
-    const tasks = await getTasks(projectId);
-    const taskIdx = tasks.findIndex(t => t.id === parseInt(taskId));
+    // Use raw tasks for mutation to prevent normalization drift
+    const tasks = await getRawTasks(projectId);
+    const taskIdx = tasks.findIndex(t => t.id === parseInt(taskId) || String(t.id) === String(taskId));
     if (taskIdx === -1) return res.status(404).json({ error: 'Task not found' });
     
     if (!tasks[taskIdx].subtasks) return res.status(404).json({ error: 'Subtask not found' });
@@ -733,11 +742,12 @@ app.put('/api/projects/:projectId/tasks/bulk-update', authenticateToken, async (
       return res.status(400).json({ error: 'completed boolean is required' });
     }
     
-    const tasks = await getTasks(projectId);
+    // Use raw tasks for mutation to prevent normalization drift
+    const tasks = await getRawTasks(projectId);
     const updatedTasks = [];
     
     for (const taskId of taskIds) {
-      const idx = tasks.findIndex(t => t.id === parseInt(taskId));
+      const idx = tasks.findIndex(t => t.id === parseInt(taskId) || String(t.id) === String(taskId));
       if (idx !== -1) {
         tasks[idx].completed = completed;
         if (completed) {
@@ -772,22 +782,23 @@ app.post('/api/projects/:projectId/tasks/bulk-delete', authenticateToken, async 
       return res.status(400).json({ error: 'taskIds array is required' });
     }
     
-    const tasks = await getTasks(projectId);
-    const taskIdsSet = new Set(taskIds.map(id => parseInt(id)));
+    // Use raw tasks for mutation to prevent normalization drift
+    const tasks = await getRawTasks(projectId);
+    const taskIdsSet = new Set(taskIds.map(id => String(id)));
     
     // Check permissions - user can only delete tasks they created (unless admin)
     const users = await db.get('users') || [];
     const user = users.find(u => u.id === req.user.id);
     const isAdmin = user && user.role === 'admin';
     
-    const tasksToDelete = tasks.filter(t => taskIdsSet.has(t.id));
+    const tasksToDelete = tasks.filter(t => taskIdsSet.has(String(t.id)));
     for (const task of tasksToDelete) {
       if (!isAdmin && task.createdBy !== req.user.id) {
         return res.status(403).json({ error: `You can only delete tasks you created. Task "${task.taskTitle}" was created by someone else.` });
       }
     }
     
-    const remainingTasks = tasks.filter(t => !taskIdsSet.has(t.id));
+    const remainingTasks = tasks.filter(t => !taskIdsSet.has(String(t.id)));
     const deletedCount = tasks.length - remainingTasks.length;
     
     await db.set(`tasks_${projectId}`, remainingTasks);
@@ -811,8 +822,9 @@ app.post('/api/projects/:projectId/tasks/:taskId/notes', authenticateToken, asyn
     const { content } = req.body;
     if (!content) return res.status(400).json({ error: 'Note content is required' });
     
-    const tasks = await getTasks(projectId);
-    const idx = tasks.findIndex(t => t.id === parseInt(taskId));
+    // Use raw tasks for mutation to prevent normalization drift
+    const tasks = await getRawTasks(projectId);
+    const idx = tasks.findIndex(t => t.id === parseInt(taskId) || String(t.id) === String(taskId));
     if (idx === -1) return res.status(404).json({ error: 'Task not found' });
     
     const note = {
@@ -845,7 +857,7 @@ app.post('/api/projects/:projectId/tasks/:taskId/notes', authenticateToken, asyn
         // Store HubSpot note ID for future updates
         if (result && result.id) {
           try {
-            const updatedTasks = await getTasks(projectId);
+            const updatedTasks = await getRawTasks(projectId);
             if (updatedTasks[idx] && updatedTasks[idx].notes && updatedTasks[idx].notes[noteIndex]) {
               updatedTasks[idx].notes[noteIndex].hubspotNoteId = result.id;
               updatedTasks[idx].notes[noteIndex].hubspotSyncedAt = new Date().toISOString();
@@ -876,8 +888,9 @@ app.put('/api/projects/:projectId/tasks/:taskId/notes/:noteId', authenticateToke
     const { content } = req.body;
     if (!content) return res.status(400).json({ error: 'Note content is required' });
     
-    const tasks = await getTasks(projectId);
-    const taskIdx = tasks.findIndex(t => t.id === parseInt(taskId));
+    // Use raw tasks for mutation to prevent normalization drift
+    const tasks = await getRawTasks(projectId);
+    const taskIdx = tasks.findIndex(t => t.id === parseInt(taskId) || String(t.id) === String(taskId));
     if (taskIdx === -1) return res.status(404).json({ error: 'Task not found' });
     
     const noteIdx = (tasks[taskIdx].notes || []).findIndex(n => n.id === noteId);
@@ -928,8 +941,9 @@ app.delete('/api/projects/:projectId/tasks/:taskId/notes/:noteId', authenticateT
       return res.status(403).json({ error: 'Access denied to this project' });
     }
     
-    const tasks = await getTasks(projectId);
-    const taskIdx = tasks.findIndex(t => t.id === parseInt(taskId));
+    // Use raw tasks for mutation to prevent normalization drift
+    const tasks = await getRawTasks(projectId);
+    const taskIdx = tasks.findIndex(t => t.id === parseInt(taskId) || String(t.id) === String(taskId));
     if (taskIdx === -1) return res.status(404).json({ error: 'Task not found' });
     
     const noteIdx = (tasks[taskIdx].notes || []).findIndex(n => n.id === noteId);
@@ -1291,7 +1305,8 @@ app.post('/api/projects/:id/tasks', authenticateToken, async (req, res) => {
     
     const { taskTitle, owner, dueDate, phase, stage, showToClient, clientName, description, notes, dependencies } = req.body;
     const projectId = req.params.id;
-    const tasks = await getTasks(projectId);
+    // Use raw tasks for mutation to prevent normalization drift
+    const tasks = await getRawTasks(projectId);
     const newTask = {
       id: tasks.length > 0 ? Math.max(...tasks.map(t => t.id)) + 1 : 1,
       phase: phase || 'Phase 1',
@@ -1329,8 +1344,9 @@ app.put('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req,
     }
     
     const updates = req.body;
-    const tasks = await getTasks(projectId);
-    const idx = tasks.findIndex(t => t.id === parseInt(taskId));
+    // Use raw tasks for mutation to prevent normalization drift
+    const tasks = await getRawTasks(projectId);
+    const idx = tasks.findIndex(t => t.id === parseInt(taskId) || String(t.id) === String(taskId));
     if (idx === -1) return res.status(404).json({ error: 'Task not found' });
     
     const task = tasks[idx];
@@ -1424,8 +1440,9 @@ app.delete('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (r
       return res.status(403).json({ error: 'Access denied to this project' });
     }
     
-    const tasks = await getTasks(projectId);
-    const task = tasks.find(t => t.id === parseInt(taskId));
+    // Use raw tasks for mutation to prevent normalization drift
+    const tasks = await getRawTasks(projectId);
+    const task = tasks.find(t => t.id === parseInt(taskId) || String(t.id) === String(taskId));
     
     if (!task) {
       return res.status(404).json({ error: 'Task not found' });
@@ -1439,7 +1456,7 @@ app.delete('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (r
       return res.status(403).json({ error: 'You can only delete tasks you created' });
     }
     
-    const filtered = tasks.filter(t => t.id !== parseInt(taskId));
+    const filtered = tasks.filter(t => String(t.id) !== String(taskId));
     await db.set(`tasks_${projectId}`, filtered);
     res.json({ message: 'Task deleted' });
   } catch (error) {
@@ -1457,7 +1474,8 @@ app.post('/api/projects/:projectId/tasks/:taskId/reorder', authenticateToken, re
       return res.status(400).json({ error: 'Direction must be "up" or "down"' });
     }
     
-    const tasks = await getTasks(projectId);
+    // Use raw tasks for mutation to prevent normalization drift
+    const tasks = await getRawTasks(projectId);
     
     // Normalize task ID comparison
     const normalizeId = (id) => typeof id === 'string' ? id : String(id);
@@ -2893,7 +2911,8 @@ app.post('/api/projects/:id/hubspot-sync', authenticateToken, async (req, res) =
       return res.status(400).json({ error: 'Project does not have a valid HubSpot Record ID configured. The ID should be a numeric value.' });
     }
     
-    let tasks = await getTasks(project.id);
+    // Use raw tasks for mutation to prevent normalization drift
+    let tasks = await getRawTasks(project.id);
     const completedTasks = tasks.filter(t => t.completed);
     
     // Collect all notes from all tasks with their task reference
@@ -3107,7 +3126,8 @@ const normalizeDate = (dateStr) => {
 // ============== FIX CLIENT NAMES (Admin utility) ==============
 app.post('/api/projects/:id/fix-client-names', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const tasks = await getTasks(req.params.id);
+    // Use raw tasks for mutation to prevent normalization drift
+    const tasks = await getRawTasks(req.params.id);
     let fixedCount = 0;
     
     tasks.forEach(task => {
@@ -3155,8 +3175,8 @@ app.post('/api/admin/normalize-all-data', authenticateToken, requireAdmin, async
         existingSlugs.add(project.clientLinkSlug);
       }
       
-      // Normalize tasks and subtasks
-      const tasks = await getTasks(project.id);
+      // Normalize tasks and subtasks - use raw tasks for mutation
+      const tasks = await getRawTasks(project.id);
       let tasksChanged = false;
       
       for (const task of tasks) {
@@ -3386,8 +3406,9 @@ async function createHubSpotTask(projectId, task, completedByName) {
     // Store HubSpot task ID if newly created
     if (result && result.id && !existingTaskId) {
       try {
-        const tasks = await getTasks(projectId);
-        const taskIdx = tasks.findIndex(t => t.id === task.id);
+        // Use raw tasks for mutation to prevent normalization drift
+        const tasks = await getRawTasks(projectId);
+        const taskIdx = tasks.findIndex(t => t.id === task.id || String(t.id) === String(task.id));
         if (taskIdx !== -1) {
           tasks[taskIdx].hubspotTaskId = result.id;
           tasks[taskIdx].hubspotSyncedAt = new Date().toISOString();
@@ -3832,7 +3853,8 @@ app.post('/api/projects/:id/import-csv', authenticateToken, async (req, res) => 
       return res.status(400).json({ error: 'CSV data is required' });
     }
     
-    const tasks = await getTasks(req.params.id);
+    // Use raw tasks for mutation to prevent normalization drift
+    const tasks = await getRawTasks(req.params.id);
     const maxId = tasks.length > 0 ? Math.max(...tasks.map(t => t.id)) : 0;
     
     // Separate parent tasks and subtasks
