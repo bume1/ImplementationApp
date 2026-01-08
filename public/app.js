@@ -4859,9 +4859,9 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                 <div className="mt-3 flex flex-wrap gap-4">
                                   <button
                                     onClick={() => setExpandedTaskId(expandedTaskId === task.id ? null : task.id)}
-                                    className="text-sm text-primary hover:underline"
+                                    className={`text-sm px-3 py-1 rounded ${expandedTaskId === task.id ? 'bg-primary text-white' : 'bg-blue-100 text-primary hover:bg-blue-200'}`}
                                   >
-                                    {expandedTaskId === task.id ? 'Hide Notes' : `Notes (${(task.notes || []).length})`}
+                                    {expandedTaskId === task.id ? '▼ Hide Notes' : `+ Notes (${(task.notes || []).length})`}
                                   </button>
                                   <span className="text-sm text-purple-600">
                                     Subtasks ({(task.subtasks || []).filter(s => s.completed || s.notApplicable || s.status === 'Complete' || s.status === 'N/A').length}/{(task.subtasks || []).length})
