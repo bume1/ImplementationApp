@@ -3080,10 +3080,12 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
   const [loading, setLoading] = useState(true);
   const [selectedPhases, setSelectedPhases] = useState([]);
   const [selectedOwners, setSelectedOwners] = useState([]);
+  const [selectedTags, setSelectedTags] = useState([]);
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [showPhaseDropdown, setShowPhaseDropdown] = useState(false);
   const [showOwnerDropdown, setShowOwnerDropdown] = useState(false);
+  const [showTagDropdown, setShowTagDropdown] = useState(false);
   const [expandedTaskId, setExpandedTaskId] = useState(null);
   const [newNote, setNewNote] = useState('');
   const [editingNote, setEditingNote] = useState(null);
@@ -3616,6 +3618,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
         updates.showToClient = editingTask.showToClient;
         updates.clientName = editingTask.clientName;
         updates.description = editingTask.description || '';
+        updates.tags = editingTask.tags || [];
       } else {
         if (!task.owner || task.owner.trim() === '') {
           updates.owner = editingTask.owner;
@@ -3623,6 +3626,8 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
         if (!task.dueDate || task.dueDate.trim() === '') {
           updates.dueDate = editingTask.dueDate;
         }
+        updates.tags = editingTask.tags || [];
+        updates.description = editingTask.description || '';
       }
 
       await api.updateTask(token, project.id, editingTask.id, updates);
@@ -3826,6 +3831,13 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
     return [...new Set(owners)].sort();
   };
 
+  const getUniqueTags = () => {
+    const allTags = tasks
+      .flatMap(t => t.tags || [])
+      .filter(tag => tag && tag.trim() !== '');
+    return [...new Set(allTags)].sort();
+  };
+
   const getFilteredTasks = () => {
     let filtered = viewMode === 'client'
       ? tasks.filter(t => t.showToClient)
@@ -3854,6 +3866,14 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
       });
     }
 
+    // Tag filter
+    if (selectedTags.length > 0) {
+      filtered = filtered.filter(t => {
+        const taskTags = t.tags || [];
+        return selectedTags.some(tag => taskTags.includes(tag));
+      });
+    }
+
     // Status filter
     if (selectedStatus !== 'all') {
       if (selectedStatus === 'completed') {
@@ -3873,11 +3893,12 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
         const ownerName = getOwnerName(t.owner).toLowerCase();
         const phase = (t.phase || '').toLowerCase();
         const stage = (t.stage || '').toLowerCase();
+        const tags = (t.tags || []).join(' ').toLowerCase();
         
         // Check main task fields
         if (taskTitle.includes(query) || clientName.includes(query) || 
             owner.includes(query) || ownerName.includes(query) ||
-            phase.includes(query) || stage.includes(query)) {
+            phase.includes(query) || stage.includes(query) || tags.includes(query)) {
           return true;
         }
         
@@ -4136,12 +4157,13 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                   className="w-full px-3 py-2 border rounded-md text-sm"
                 />
               </div>
-              {(searchQuery || selectedPhases.length > 0 || selectedOwners.length > 0 || selectedStatus !== 'all') && (
+              {(searchQuery || selectedPhases.length > 0 || selectedOwners.length > 0 || selectedTags.length > 0 || selectedStatus !== 'all') && (
                 <button
                   onClick={() => {
                     setSearchQuery('');
                     setSelectedPhases([]);
                     setSelectedOwners([]);
+                    setSelectedTags([]);
                     setSelectedStatus('all');
                   }}
                   className="px-3 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 text-sm"
@@ -4252,6 +4274,53 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                               className="mr-2"
                             />
                             <span className="text-sm">{getOwnerName(owner)}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              
+              {/* Tag multi-select */}
+              {viewMode === 'internal' && getUniqueTags().length > 0 && (
+                <div className="relative">
+                  <label className="block text-xs text-gray-500 mb-1">Tags</label>
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowTagDropdown(!showTagDropdown)}
+                      className="px-3 py-2 border rounded-md text-sm bg-white min-w-[140px] text-left flex justify-between items-center"
+                    >
+                      <span>{selectedTags.length === 0 ? 'All Tags' : `${selectedTags.length} selected`}</span>
+                      <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {showTagDropdown && (
+                      <div className="absolute z-50 mt-1 w-56 bg-white border rounded-md shadow-lg max-h-60 overflow-y-auto">
+                        <div className="p-2 border-b">
+                          <button
+                            onClick={() => setSelectedTags([])}
+                            className="text-xs text-primary hover:underline"
+                          >
+                            Clear All
+                          </button>
+                        </div>
+                        {getUniqueTags().map(tag => (
+                          <label key={tag} className="flex items-center px-3 py-2 hover:bg-gray-100 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={selectedTags.includes(tag)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedTags([...selectedTags, tag]);
+                                } else {
+                                  setSelectedTags(selectedTags.filter(t => t !== tag));
+                                }
+                              }}
+                              className="mr-2"
+                            />
+                            <span className="text-sm bg-blue-100 text-blue-800 px-2 py-0.5 rounded">{tag}</span>
                           </label>
                         ))}
                       </div>
@@ -4732,6 +4801,20 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                   placeholder="Add additional details about this task..."
                                 />
                               </div>
+                              <div>
+                                <label className="block text-xs text-gray-500 mb-1">Tags (comma-separated, for grouping and filtering)</label>
+                                <input
+                                  type="text"
+                                  value={(editingTask.tags || []).join(', ')}
+                                  onChange={(e) => {
+                                    const tagString = e.target.value;
+                                    const tagsArray = tagString.split(',').map(t => t.trim()).filter(t => t);
+                                    setEditingTask({...editingTask, tags: tagsArray});
+                                  }}
+                                  className="w-full px-3 py-2 border rounded-md text-sm"
+                                  placeholder="e.g., priority, training, equipment"
+                                />
+                              </div>
                               <div className="flex gap-2 items-center justify-between">
                                 <div className="flex gap-2">
                                   <button
@@ -4853,6 +4936,24 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                               {task.description && (
                                 <div className="mt-2 p-2 bg-gray-50 rounded-md border-l-2 border-primary">
                                   <p className="text-sm text-gray-700">{task.description}</p>
+                                </div>
+                              )}
+                              {viewMode === 'internal' && task.tags && task.tags.length > 0 && (
+                                <div className="mt-2 flex flex-wrap gap-1">
+                                  {task.tags.map(tag => (
+                                    <span 
+                                      key={tag} 
+                                      className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded cursor-pointer hover:bg-blue-200"
+                                      onClick={() => {
+                                        if (!selectedTags.includes(tag)) {
+                                          setSelectedTags([...selectedTags, tag]);
+                                        }
+                                      }}
+                                      title="Click to filter by this tag"
+                                    >
+                                      {tag}
+                                    </span>
+                                  ))}
                                 </div>
                               )}
                               {viewMode === 'internal' && (
