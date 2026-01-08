@@ -24,19 +24,32 @@ const JWT_SECRET = process.env.JWT_SECRET || 'thrive365-secret-change-in-product
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
 
+// Static file options with no-cache headers for development
+const staticOptions = {
+  etag: false,
+  lastModified: false,
+  setHeaders: (res, path) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+    res.set('Surrogate-Control', 'no-store');
+  }
+};
+
 // Disable caching to prevent stale content issues
 app.use((req, res, next) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.set('Pragma', 'no-cache');
   res.set('Expires', '0');
+  res.set('Surrogate-Control', 'no-store');
   next();
 });
 
 // Serve static files for the main app path (both cases)
-app.use('/thrive365labsLAUNCH', express.static('public'));
-app.use('/thrive365labslaunch', express.static('public'));
-app.use(express.static('public'));
-app.use('/uploads', express.static('uploads'));
+app.use('/thrive365labsLAUNCH', express.static('public', staticOptions));
+app.use('/thrive365labslaunch', express.static('public', staticOptions));
+app.use(express.static('public', staticOptions));
+app.use('/uploads', express.static('uploads', staticOptions));
 
 // Serve the main app at /thrive365labsLAUNCH and /thrive365labslaunch root only
 app.get('/thrive365labsLAUNCH', (req, res) => {
@@ -86,7 +99,22 @@ const getProjects = async () => {
   }
   return projects;
 };
-const getTasks = async (projectId) => (await db.get(`tasks_${projectId}`)) || [];
+const getTasks = async (projectId) => {
+  const tasks = (await db.get(`tasks_${projectId}`)) || [];
+  
+  // Return tasks with normalized defaults for display (read-only normalization, no save)
+  return tasks.map(task => ({
+    ...task,
+    tags: task.tags || [],
+    description: task.description || '',
+    subtasks: (task.subtasks || []).map(st => ({
+      ...st,
+      completed: st.completed !== undefined ? st.completed : false,
+      notApplicable: st.notApplicable !== undefined ? st.notApplicable : false,
+      status: st.status || (st.completed ? 'Completed' : (st.notApplicable ? 'N/A' : 'Pending'))
+    }))
+  }));
+};
 
 // Activity logging helper
 const logActivity = async (userId, userName, action, entityType, entityId, details, projectId = null) => {
