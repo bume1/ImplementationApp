@@ -64,6 +64,29 @@
 
     const PHASE_ORDER = ['Phase 0', 'Phase 1', 'Phase 2', 'Phase 3', 'Phase 4'];
 
+    // Helper to format dates for display
+    const formatDateForDisplay = (dateStr) => {
+      if (!dateStr) return '';
+      try {
+        // Handle ISO format dates
+        if (dateStr.includes('T')) {
+          const date = new Date(dateStr);
+          if (!isNaN(date.getTime())) {
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          }
+        }
+        // Handle YYYY-MM-DD format
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+          const [year, month, day] = dateStr.split('-');
+          const date = new Date(year, month - 1, day);
+          return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+        return dateStr;
+      } catch (e) {
+        return dateStr;
+      }
+    };
+
     // Helper to ensure all phases/stages are always represented
     const ensureAllPhasesAndStages = (groupedByPhase) => {
       const result = {};
@@ -172,7 +195,7 @@
                                   <p className="mt-1 text-xs text-gray-600">
                                     {task.ownerDisplayName && <span className="text-gray-500">Owner: {task.ownerDisplayName}</span>}
                                     {task.ownerDisplayName && task.dateCompleted && <span className="mx-1">•</span>}
-                                    {task.dateCompleted && <span className="text-green-600">Completed: {task.dateCompleted}</span>}
+                                    {task.dateCompleted && <span className="text-green-600">Completed: {formatDateForDisplay(task.dateCompleted)}</span>}
                                   </p>
                                 )}
                               </div>
@@ -271,7 +294,7 @@
                                     </span>
                                   )}
                                   {task.dueDate && !task.completed && task.dateCompleted && <span className="mx-2">•</span>}
-                                  {task.dateCompleted && <span className="text-green-600">Completed: {task.dateCompleted}</span>}
+                                  {task.dateCompleted && <span className="text-green-600">Completed: {formatDateForDisplay(task.dateCompleted)}</span>}
                                 </p>
                               )}
                             </div>
@@ -535,7 +558,7 @@
                         </h4>
                         <div className="mt-1 text-sm text-gray-500 flex flex-wrap gap-3">
                           {task.ownerDisplayName && <span>Owner: {task.ownerDisplayName}</span>}
-                          {task.dateCompleted && <span className="text-green-600">Completed: {task.dateCompleted}</span>}
+                          {task.dateCompleted && <span className="text-green-600">Completed: {formatDateForDisplay(task.dateCompleted)}</span>}
                         </div>
                       </div>
                     </div>
