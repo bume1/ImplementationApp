@@ -556,6 +556,22 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(data)
+    }).then(r => r.json()),
+
+  uploadTaskFile: (token, projectId, taskId, file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return fetch(`${API_URL}/api/projects/${projectId}/tasks/${taskId}/files`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    }).then(r => r.json());
+  },
+
+  deleteTaskFile: (token, projectId, taskId, fileId) =>
+    fetch(`${API_URL}/api/projects/${projectId}/tasks/${taskId}/files/${fileId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
     }).then(r => r.json())
 };
 
@@ -2348,14 +2364,26 @@ const TimelineView = ({ tasks, getPhaseColor, viewMode }) => {
               </div>
               
               <div className="space-y-4">
-                {Object.entries(phaseData).map(([stage, stageTasks]) => (
+                {Object.entries(phaseData).map(([stage, stageTasks]) => {
+                  // Sort tasks by due date (earliest first), tasks without due dates go last
+                  const sortedStageTasks = [...stageTasks].sort((a, b) => {
+                    if (!a.dueDate && !b.dueDate) return (a.sortOrder || 0) - (b.sortOrder || 0);
+                    if (!a.dueDate) return 1;
+                    if (!b.dueDate) return -1;
+                    // Use Date objects for proper comparison
+                    const dateA = new Date(a.dueDate + 'T12:00:00');
+                    const dateB = new Date(b.dueDate + 'T12:00:00');
+                    return dateA - dateB;
+                  });
+                  
+                  return (
                   <div key={stage} className="bg-gray-50 rounded-lg p-4">
                     <h4 className="font-semibold text-gray-800 mb-3">{stage}</h4>
                     <div className="space-y-2">
-                      {stageTasks.length === 0 ? (
+                      {sortedStageTasks.length === 0 ? (
                         <p className="text-gray-400 text-sm italic">No tasks in this stage</p>
                       ) : (
-                        stageTasks.map(task => (
+                        sortedStageTasks.map(task => (
                           <div 
                             key={task.id} 
                             className={`flex items-start gap-3 p-3 rounded-lg ${
@@ -2396,7 +2424,8 @@ const TimelineView = ({ tasks, getPhaseColor, viewMode }) => {
                       )}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           );
@@ -3080,6 +3109,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
   const [newNote, setNewNote] = useState('');
   const [editingNote, setEditingNote] = useState(null);
   const [editingNoteContent, setEditingNoteContent] = useState('');
+  const [uploadingFile, setUploadingFile] = useState(null);
   const [syncingToHubSpot, setSyncingToHubSpot] = useState(false);
   const [showAddTask, setShowAddTask] = useState(false);
   const [newTask, setNewTask] = useState({ taskTitle: '', owner: '', secondaryOwner: '', dueDate: '', phase: 'Phase 1', stage: '', showToClient: false, clientName: '', dependencies: [] });
@@ -3727,6 +3757,50 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
       }));
     } catch (err) {
       console.error('Failed to delete note:', err);
+    }
+  };
+
+  const handleUploadFile = async (taskId, file) => {
+    setUploadingFile(taskId);
+    try {
+      const result = await api.uploadTaskFile(token, project.id, taskId, file);
+      if (result.error) {
+        alert(result.error);
+        return;
+      }
+      setTasks(tasks.map(t => {
+        if (t.id === taskId) {
+          return { ...t, files: [...(t.files || []), result.file] };
+        }
+        return t;
+      }));
+    } catch (err) {
+      console.error('Failed to upload file:', err);
+      alert('Failed to upload file');
+    } finally {
+      setUploadingFile(null);
+    }
+  };
+
+  const handleDeleteFile = async (taskId, fileId) => {
+    if (!confirm('Are you sure you want to delete this file?')) return;
+    try {
+      const result = await api.deleteTaskFile(token, project.id, taskId, fileId);
+      if (result.error) {
+        alert(result.error);
+        return;
+      }
+      setTasks(tasks.map(t => {
+        if (t.id === taskId) {
+          return { 
+            ...t, 
+            files: (t.files || []).filter(f => f.id !== fileId) 
+          };
+        }
+        return t;
+      }));
+    } catch (err) {
+      console.error('Failed to delete file:', err);
     }
   };
 
@@ -5109,6 +5183,67 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                       >
                                         Add
                                       </button>
+                                    </div>
+                                  )}
+                                  {/* Files Section */}
+                                  {isAdmin && (
+                                    <div className="mt-3 pt-3 border-t border-gray-200">
+                                      <h4 className="text-sm font-medium text-gray-700 mb-2">Files</h4>
+                                      <div className="space-y-2 mb-3">
+                                        {(task.files || []).length === 0 ? (
+                                          <p className="text-sm text-gray-400 italic">No files attached</p>
+                                        ) : (
+                                          (task.files || []).map(file => (
+                                            <div key={file.id} className="flex items-center justify-between bg-white p-2 rounded border text-sm">
+                                              <div className="flex items-center gap-2">
+                                                <span className="text-lg">
+                                                  {file.mimeType?.includes('pdf') ? '📄' : 
+                                                   file.mimeType?.includes('image') ? '🖼️' : 
+                                                   file.mimeType?.includes('word') ? '📝' : 
+                                                   file.mimeType?.includes('excel') || file.mimeType?.includes('spreadsheet') ? '📊' : '📎'}
+                                                </span>
+                                                <div>
+                                                  <a 
+                                                    href={file.url} 
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer"
+                                                    className="text-primary hover:underline font-medium"
+                                                  >
+                                                    {file.name}
+                                                  </a>
+                                                  <p className="text-xs text-gray-400">
+                                                    {file.uploadedBy} - {new Date(file.uploadedAt).toLocaleDateString()}
+                                                    {file.size && ` - ${(file.size / 1024).toFixed(1)} KB`}
+                                                  </p>
+                                                </div>
+                                              </div>
+                                              <button
+                                                onClick={() => handleDeleteFile(task.id, file.id)}
+                                                className="text-xs text-red-600 hover:underline"
+                                              >
+                                                Delete
+                                              </button>
+                                            </div>
+                                          ))
+                                        )}
+                                      </div>
+                                      <div className="flex gap-2">
+                                        <label className="flex-1 px-3 py-2 bg-blue-50 text-primary text-center border border-dashed border-blue-300 rounded-md text-sm cursor-pointer hover:bg-blue-100">
+                                          {uploadingFile === task.id ? 'Uploading...' : '+ Upload File'}
+                                          <input
+                                            type="file"
+                                            className="hidden"
+                                            disabled={uploadingFile === task.id}
+                                            accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.doc,.docx,.xls,.xlsx,.txt,.csv"
+                                            onChange={(e) => {
+                                              if (e.target.files[0]) {
+                                                handleUploadFile(task.id, e.target.files[0]);
+                                                e.target.value = '';
+                                              }
+                                            }}
+                                          />
+                                        </label>
+                                      </div>
                                     </div>
                                   )}
                                 </div>

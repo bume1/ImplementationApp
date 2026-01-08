@@ -39,7 +39,10 @@ Preferred communication style: Simple, everyday language.
 - **HubSpot Webhook Integration**: Endpoint for receiving HubSpot form submission notifications.
 - **Task Tagging System**: Admins and team members can add tags to tasks for grouping and filtering, with a predefined global tag library.
 - **Task Reordering**: Admins can reorder tasks within stages. Tasks are automatically sorted by due date first, then by manual order.
+- **Task File Attachments**: Admins can upload files (PDF, images, Word, Excel, text) to tasks, stored in Google Drive. Files are visible to clients when the parent task is client-visible.
+- **Timeline Sorting**: Tasks in timeline views are sorted by due date (earliest first), with tasks without due dates appearing last.
 - **Data Normalization**: Admin utilities for normalizing subtask data inconsistencies and regenerating slugs.
+- **Idempotent HubSpot Sync**: Tasks and notes store HubSpot IDs to prevent duplicates on subsequent syncs.
 
 ### System Design Choices
 - **Modularity**: Clear separation of frontend and backend.

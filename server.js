@@ -965,6 +965,135 @@ app.delete('/api/projects/:projectId/tasks/:taskId/notes/:noteId', authenticateT
   }
 });
 
+// ============== TASK FILE ATTACHMENTS ==============
+const ALLOWED_FILE_TYPES = [
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/plain',
+  'text/csv'
+];
+
+// Upload file to task (admin only)
+app.post('/api/projects/:projectId/tasks/:taskId/files', authenticateToken, requireAdmin, upload.single('file'), async (req, res) => {
+  try {
+    
+    const { projectId, taskId } = req.params;
+    
+    if (!canAccessProject(req.user, projectId)) {
+      return res.status(403).json({ error: 'Access denied to this project' });
+    }
+    
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file provided' });
+    }
+    
+    // Validate file type
+    if (!ALLOWED_FILE_TYPES.includes(req.file.mimetype)) {
+      return res.status(400).json({ error: 'File type not allowed. Allowed: PDF, images, Word, Excel, text files.' });
+    }
+    
+    // Get project info for folder naming
+    const projects = await getProjects();
+    const project = projects.find(p => p.id === projectId);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    
+    // Get task
+    const tasks = await getRawTasks(projectId);
+    const taskIdx = tasks.findIndex(t => t.id === parseInt(taskId) || String(t.id) === String(taskId));
+    if (taskIdx === -1) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+    
+    // Upload to Google Drive
+    const driveResult = await googledrive.uploadTaskFile(
+      project.name || project.clientName,
+      project.clientName || project.name,
+      req.file.originalname,
+      req.file.buffer,
+      req.file.mimetype
+    );
+    
+    // Create file entry
+    const fileEntry = {
+      id: uuidv4(),
+      name: req.file.originalname,
+      driveFileId: driveResult.fileId,
+      url: driveResult.webViewLink,
+      downloadUrl: driveResult.webContentLink,
+      thumbnailUrl: driveResult.thumbnailLink,
+      mimeType: req.file.mimetype,
+      size: req.file.size,
+      uploadedBy: req.user.name,
+      uploadedById: req.user.id,
+      uploadedAt: new Date().toISOString()
+    };
+    
+    // Initialize files array if needed
+    if (!tasks[taskIdx].files) {
+      tasks[taskIdx].files = [];
+    }
+    
+    tasks[taskIdx].files.push(fileEntry);
+    await db.set(`tasks_${projectId}`, tasks);
+    
+    res.json({ message: 'File uploaded successfully', file: fileEntry });
+  } catch (error) {
+    console.error('Task file upload error:', error);
+    res.status(500).json({ error: error.message || 'Failed to upload file' });
+  }
+});
+
+// Delete file from task (admin only)
+app.delete('/api/projects/:projectId/tasks/:taskId/files/:fileId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    
+    const { projectId, taskId, fileId } = req.params;
+    
+    if (!canAccessProject(req.user, projectId)) {
+      return res.status(403).json({ error: 'Access denied to this project' });
+    }
+    
+    const tasks = await getRawTasks(projectId);
+    const taskIdx = tasks.findIndex(t => t.id === parseInt(taskId) || String(t.id) === String(taskId));
+    if (taskIdx === -1) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+    
+    const files = tasks[taskIdx].files || [];
+    const fileIdx = files.findIndex(f => f.id === fileId);
+    if (fileIdx === -1) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    
+    const file = files[fileIdx];
+    
+    // Delete from Google Drive
+    try {
+      await googledrive.deleteFile(file.driveFileId);
+    } catch (driveError) {
+      console.error('Failed to delete from Drive:', driveError.message);
+      // Continue with removal from task even if Drive delete fails
+    }
+    
+    tasks[taskIdx].files.splice(fileIdx, 1);
+    await db.set(`tasks_${projectId}`, tasks);
+    
+    res.json({ message: 'File deleted successfully' });
+  } catch (error) {
+    console.error('Task file delete error:', error);
+    res.status(500).json({ error: 'Failed to delete file' });
+  }
+});
+
 // ============== PROJECT ROUTES ==============
 app.get('/api/projects', authenticateToken, async (req, res) => {
   try {
