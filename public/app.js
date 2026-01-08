@@ -1049,7 +1049,6 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
         projectManager: editingProject.projectManager,
         hubspotRecordId: editingProject.hubspotRecordId,
         status: editingProject.status,
-        clientPortalDomain: editingProject.clientPortalDomain || '',
         goLiveDate: editingProject.goLiveDate || ''
       });
       setEditingProject(null);
@@ -2170,16 +2169,6 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">Client Portal Domain (Optional)</label>
-                  <input
-                    value={editingProject.clientPortalDomain || ''}
-                    onChange={(e) => setEditingProject({...editingProject, clientPortalDomain: e.target.value})}
-                    className="w-full px-3 py-2 border rounded-md"
-                    placeholder="e.g., https://deapps.pro"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Custom domain for this project's client portal link. Leave empty to use default.</p>
-                </div>
-                <div>
                   <label className="block text-sm font-medium mb-1">Target Go-Live Date</label>
                   <input
                     type="date"
@@ -3072,7 +3061,8 @@ const SoftPilotChecklist = ({ token, project, tasks, teamMembers, onClose, onSub
 };
 
 // ============== PROJECT TRACKER COMPONENT ==============
-const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout }) => {
+const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, onBack, onLogout }) => {
+  const [project, setProject] = useState(initialProject);
   const [tasks, setTasks] = useState([]);
   const [viewMode, setViewMode] = useState('internal');
   const [viewType, setViewType] = useState('list');
@@ -3103,10 +3093,24 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
   const [showSoftPilotChecklist, setShowSoftPilotChecklist] = useState(false);
   const [creatingTemplate, setCreatingTemplate] = useState(false);
   const [showNotesLog, setShowNotesLog] = useState(false);
+  const [showEditProject, setShowEditProject] = useState(false);
 
   const isAdmin = user.role === 'admin';
   const userAccessLevel = isAdmin ? 'edit' : ((user.projectAccessLevels || {})[project.id] || 'edit');
   const canEdit = isAdmin || userAccessLevel === 'edit';
+  
+  // Refresh project data from server
+  const refreshProject = async () => {
+    try {
+      const projects = await api.getProjects(token);
+      const updated = projects.find(p => p.id === project.id);
+      if (updated) {
+        setProject(updated);
+      }
+    } catch (err) {
+      console.error('Failed to refresh project:', err);
+    }
+  };
   
   const handleCreateTemplate = async () => {
     const templateName = prompt('Enter a name for this template:', `${project.name} Template`);
@@ -3956,12 +3960,17 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
     return acc;
   }, {});
 
-  // Sort tasks within each stage by stageOrder (or original index as fallback)
+  // Sort tasks within each stage by due date first, then stageOrder
   Object.keys(rawGroupedByPhase).forEach(phase => {
     Object.keys(rawGroupedByPhase[phase]).forEach(stage => {
-      rawGroupedByPhase[phase][stage].sort((a, b) => 
-        (a.stageOrder || a._originalIdx + 1) - (b.stageOrder || b._originalIdx + 1)
-      );
+      rawGroupedByPhase[phase][stage].sort((a, b) => {
+        // First sort by due date (tasks with due dates come first, sorted by date)
+        const aDate = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+        const bDate = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+        if (aDate !== bDate) return aDate - bDate;
+        // Then by stageOrder as secondary sort
+        return (a.stageOrder || a._originalIdx + 1) - (b.stageOrder || b._originalIdx + 1);
+      });
     });
   });
 
@@ -4106,41 +4115,54 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                   {getClientLinkDisplay()}
                 </button>
               </div>
-              {project.hubspotRecordId && (
-                <div className="flex items-center gap-3 text-sm text-gray-600 flex-wrap">
-                  <p>HubSpot Record ID: <span className="font-medium">{project.hubspotRecordId}</span></p>
-                  {project.lastHubSpotSync && (
-                    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
-                      Last synced: {new Date(project.lastHubSpotSync).toLocaleString()}
-                    </span>
-                  )}
-                  {isAdmin && (
-                    <button
-                      onClick={async () => {
-                        if (!confirm('This will sync all completed tasks to HubSpot. Continue?')) return;
-                        setSyncingToHubSpot(true);
-                        try {
-                          const result = await api.syncToHubSpot(token, project.id);
-                          if (result.error) {
-                            alert(result.error);
-                          } else {
-                            alert(result.message);
-                            loadTasks();
+              <div className="flex items-center gap-3 text-sm text-gray-600 flex-wrap">
+                {project.hubspotRecordId ? (
+                  <>
+                    <p>HubSpot Record ID: <span className="font-medium">{project.hubspotRecordId}</span></p>
+                    {project.lastHubSpotSync && (
+                      <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
+                        Last synced: {new Date(project.lastHubSpotSync).toLocaleString()}
+                      </span>
+                    )}
+                    {isAdmin && (
+                      <button
+                        onClick={async () => {
+                          if (!confirm('This will sync all completed tasks to HubSpot. Continue?')) return;
+                          setSyncingToHubSpot(true);
+                          try {
+                            const result = await api.syncToHubSpot(token, project.id);
+                            if (result.error) {
+                              alert(result.error);
+                            } else {
+                              alert(result.message);
+                              loadTasks();
+                              refreshProject();
+                            }
+                          } catch (err) {
+                            alert('Failed to sync to HubSpot');
+                          } finally {
+                            setSyncingToHubSpot(false);
                           }
-                        } catch (err) {
-                          alert('Failed to sync to HubSpot');
-                        } finally {
-                          setSyncingToHubSpot(false);
-                        }
-                      }}
-                      disabled={syncingToHubSpot}
-                      className="px-2 py-1 bg-orange-100 text-orange-700 text-xs rounded hover:bg-orange-200 disabled:opacity-50"
-                    >
-                      {syncingToHubSpot ? 'Syncing...' : 'Sync All to HubSpot'}
-                    </button>
-                  )}
-                </div>
-              )}
+                        }}
+                        disabled={syncingToHubSpot}
+                        className="px-2 py-1 bg-orange-100 text-orange-700 text-xs rounded hover:bg-orange-200 disabled:opacity-50"
+                      >
+                        {syncingToHubSpot ? 'Syncing...' : 'Sync All to HubSpot'}
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-amber-600">No HubSpot Record ID configured</span>
+                )}
+                {isAdmin && (
+                  <button
+                    onClick={() => setShowEditProject(true)}
+                    className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded hover:bg-gray-200"
+                  >
+                    Edit Project Settings
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -4802,7 +4824,33 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                 />
                               </div>
                               <div>
-                                <label className="block text-xs text-gray-500 mb-1">Tags (comma-separated, for grouping and filtering)</label>
+                                <label className="block text-xs text-gray-500 mb-1">Tags (click to add, or type comma-separated)</label>
+                                <div className="flex flex-wrap gap-1 mb-2">
+                                  {['Analyzer', 'Billing', 'CLIA', 'Documentation', 'EHR-LIS-Instrument Integration', 'ImplementationCalls', 'SoftPilot', 'InstallationValidation&Training', 'Inventory', 'KPIs', 'Live'].map(tag => {
+                                    const currentTags = editingTask.tags || [];
+                                    const isSelected = currentTags.includes(tag);
+                                    return (
+                                      <button
+                                        key={tag}
+                                        type="button"
+                                        onClick={() => {
+                                          if (isSelected) {
+                                            setEditingTask({...editingTask, tags: currentTags.filter(t => t !== tag)});
+                                          } else {
+                                            setEditingTask({...editingTask, tags: [...currentTags, tag]});
+                                          }
+                                        }}
+                                        className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${
+                                          isSelected 
+                                            ? 'bg-primary text-white border-primary' 
+                                            : 'bg-gray-50 text-gray-600 border-gray-300 hover:bg-gray-100'
+                                        }`}
+                                      >
+                                        {isSelected ? '✓ ' : '+ '}{tag}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
                                 <input
                                   type="text"
                                   value={(editingTask.tags || []).join(', ')}
@@ -4812,10 +4860,10 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                     setEditingTask({...editingTask, tags: tagsArray});
                                   }}
                                   className="w-full px-3 py-2 border rounded-md text-sm"
-                                  placeholder="e.g., priority, training, equipment"
+                                  placeholder="Or type custom tags separated by commas"
                                 />
                               </div>
-                              <div className="flex gap-2 items-center justify-between">
+                              <div className="flex gap-2 items-center justify-between flex-wrap">
                                 <div className="flex gap-2">
                                   <button
                                     onClick={handleSaveEdit}
@@ -4834,14 +4882,18 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                   <div className="flex gap-1 items-center">
                                     <span className="text-xs text-gray-500 mr-2">Reorder:</span>
                                     <button
-                                      onClick={() => { handleReorderTask(editingTask.id, 'up'); setEditingTask(null); }}
+                                      onClick={async () => { 
+                                        await handleReorderTask(editingTask.id, 'up'); 
+                                      }}
                                       className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-sm"
                                       title="Move task up within stage"
                                     >
                                       ↑ Up
                                     </button>
                                     <button
-                                      onClick={() => { handleReorderTask(editingTask.id, 'down'); setEditingTask(null); }}
+                                      onClick={async () => { 
+                                        await handleReorderTask(editingTask.id, 'down'); 
+                                      }}
                                       className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-sm"
                                       title="Move task down within stage"
                                     >
@@ -5477,6 +5529,108 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
               </div>
             </div>
           </>
+        )}
+
+        {/* Edit Project Modal */}
+        {showEditProject && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-lg w-full p-6">
+              <h2 className="text-xl font-bold mb-4">Edit Project Settings</h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Project Name</label>
+                  <input
+                    value={project.name}
+                    onChange={(e) => setProject({...project, name: e.target.value})}
+                    className="w-full px-3 py-2 border rounded-md"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Client Name</label>
+                  <input
+                    value={project.clientName}
+                    onChange={(e) => setProject({...project, clientName: e.target.value})}
+                    className="w-full px-3 py-2 border rounded-md"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">On-Site Project Manager</label>
+                  <input
+                    value={project.projectManager || ''}
+                    onChange={(e) => setProject({...project, projectManager: e.target.value})}
+                    className="w-full px-3 py-2 border rounded-md"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">HubSpot Record ID</label>
+                  <input
+                    value={project.hubspotRecordId || ''}
+                    onChange={(e) => setProject({...project, hubspotRecordId: e.target.value})}
+                    className="w-full px-3 py-2 border rounded-md"
+                    placeholder="Enter HubSpot Record ID to enable sync"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Go-Live Date</label>
+                  <input
+                    type="date"
+                    value={project.goLiveDate || ''}
+                    onChange={(e) => setProject({...project, goLiveDate: e.target.value})}
+                    className="w-full px-3 py-2 border rounded-md"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Project Status</label>
+                  <select
+                    value={project.status || 'active'}
+                    onChange={(e) => setProject({...project, status: e.target.value})}
+                    className="w-full px-3 py-2 border rounded-md"
+                  >
+                    <option value="active">In Progress</option>
+                    <option value="paused">Paused</option>
+                    <option value="completed">Completed</option>
+                  </select>
+                </div>
+                <div className="text-sm text-gray-500">
+                  <p>Client Link Slug: <span className="font-mono">{project.clientLinkSlug}</span></p>
+                </div>
+              </div>
+              <div className="flex gap-3 justify-end mt-6">
+                <button
+                  onClick={() => {
+                    refreshProject();
+                    setShowEditProject(false);
+                  }}
+                  className="px-4 py-2 bg-gray-200 rounded-md hover:bg-gray-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      await api.updateProject(token, project.id, {
+                        name: project.name,
+                        clientName: project.clientName,
+                        projectManager: project.projectManager,
+                        hubspotRecordId: project.hubspotRecordId,
+                        status: project.status,
+                        goLiveDate: project.goLiveDate || ''
+                      });
+                      await refreshProject();
+                      setShowEditProject(false);
+                      alert('Project updated successfully!');
+                    } catch (err) {
+                      console.error('Failed to update project:', err);
+                      alert('Failed to update project');
+                    }
+                  }}
+                  className="px-4 py-2 bg-primary text-white rounded-md hover:bg-accent"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
       </div>

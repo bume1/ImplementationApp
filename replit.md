@@ -146,3 +146,12 @@ Preferred communication style: Simple, everyday language.
   - Tags dropdown filter in task board header (appears when tags exist)
   - Tags searchable via main search bar
   - Tags included in CSV export (semicolon-separated)
+
+### System Improvements (Jan 8)
+- **Global Tag Library**: 11 predefined tags available as clickable buttons when editing tasks (Analyzer, Billing, CLIA, Documentation, EHR-LIS-Instrument Integration, ImplementationCalls, SoftPilot, InstallationValidation&Training, Inventory, KPIs, Live)
+- **Improved Caching**: Static files now served with no-cache headers to prevent stale content issues
+- **Auto-Sort by Due Date**: Tasks within each stage are now automatically sorted by due date first, then by manual order
+- **Task Reordering UX**: Reorder buttons no longer close the edit panel, allowing multiple moves before saving
+- **HubSpot Sync Visibility**: Sync button and status now always visible on boards (with message when no ID is configured), plus "Edit Project Settings" button for admins to add HubSpot ID directly from the board
+- **Automatic Data Normalization**: Task data is normalized on read for display (without modifying stored data) to ensure retroactive compatibility with new features (tags, descriptions, subtask fields)
+- **Removed Client Portal Domain Field**: Simplified project settings by removing the optional domain field (slug generator handles client links)
