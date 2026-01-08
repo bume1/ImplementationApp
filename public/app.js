@@ -3125,7 +3125,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
       });
       
       // Create template tasks from current project tasks
-      // Preserve task structure including owners but exclude runtime data and client-specific fields
+      // Preserve task structure but exclude runtime data, due dates, and owners (these change per project)
       const templateTasks = tasks.map((task, idx) => ({
         id: idx + 1,
         taskTitle: task.taskTitle,
@@ -3134,25 +3134,23 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
         showToClient: task.showToClient !== undefined ? task.showToClient : true,
         clientName: task.clientName || '',
         description: task.description || '',
-        owner: task.owner || '',
+        tags: task.tags || [],
         // Remap dependencies to new sequential IDs
         dependencies: (task.dependencies || []).map(depId => idMap[depId]).filter(Boolean),
         order: task.order || idx + 1,
         stageOrder: task.stageOrder || idx + 1,
-        // Subtasks: preserve structure but reset completion status
+        // Subtasks: preserve structure but reset completion status and exclude due dates
         subtasks: (task.subtasks || []).map((st, stIdx) => ({
           id: stIdx + 1,
           title: st.title,
           description: st.description || '',
-          owner: st.owner || '',
-          dueDate: st.dueDate || '',
           // Explicitly set completion status to false for templates
           completed: false,
           notApplicable: false,
           status: 'Pending',
           completedAt: null
         }))
-        // NOTE: Intentionally omitting clientLinkId, clientLinkSlug, notes, completed, dateCompleted
+        // NOTE: Intentionally omitting owner, dueDate, clientLinkId, clientLinkSlug, notes, completed, dateCompleted
         // These are runtime/project-specific fields that should not be part of templates
       }));
       
