@@ -367,7 +367,7 @@ function isValidRecordId(recordId) {
   return /^\d+$/.test(cleanId) && cleanId.length > 0;
 }
 
-async function syncTaskNoteToRecord(recordId, noteData) {
+async function syncTaskNoteToRecord(recordId, noteData, existingNoteId = null) {
   if (!isValidRecordId(recordId)) {
     console.log(`📋 Note sync skipped: Invalid Record ID "${recordId}"`);
     return null;
@@ -397,11 +397,30 @@ Task: ${taskTitle || 'N/A'}
 Note by ${author} on ${formattedDate}:
 ${noteContent}`;
     
+    const properties = {
+      hs_timestamp: Date.now().toString(),
+      hs_note_body: noteBody
+    };
+    
+    // If we have an existing note ID, update it instead of creating
+    if (existingNoteId) {
+      try {
+        const response = await client.crm.objects.notes.basicApi.update(existingNoteId, { properties });
+        console.log(`✅ HubSpot note updated for task "${taskTitle}" (ID: ${existingNoteId})`);
+        return { ...response, updated: true };
+      } catch (updateError) {
+        // If update fails (note deleted in HubSpot), fall through to create
+        if (updateError.code === 404 || updateError.statusCode === 404) {
+          console.log(`⚠️ HubSpot note ${existingNoteId} not found, creating new one`);
+        } else {
+          throw updateError;
+        }
+      }
+    }
+    
+    // Create new note with association
     const noteObj = {
-      properties: {
-        hs_timestamp: Date.now().toString(),
-        hs_note_body: noteBody
-      },
+      properties,
       associations: [
         {
           to: { id: recordId.toString() },
@@ -416,8 +435,8 @@ ${noteContent}`;
     };
 
     const noteResponse = await client.crm.objects.notes.basicApi.create(noteObj);
-    console.log(`✅ HubSpot note synced for task "${taskTitle}" on record ${recordId}`);
-    return noteResponse;
+    console.log(`✅ HubSpot note created for task "${taskTitle}" (ID: ${noteResponse.id})`);
+    return { ...noteResponse, created: true };
   } catch (error) {
     console.error('Error syncing note to HubSpot:', error.message);
     if (error.body) {
@@ -427,19 +446,42 @@ ${noteContent}`;
   }
 }
 
-async function createTask(dealId, taskSubject, taskBody, ownerId = null) {
+async function createOrUpdateTask(dealId, taskSubject, taskBody, ownerId = null, existingTaskId = null) {
   try {
     const client = await getHubSpotClient();
     
+    const properties = {
+      hs_timestamp: new Date().toISOString(),
+      hs_task_subject: taskSubject,
+      hs_task_body: taskBody,
+      hs_task_status: 'COMPLETED',
+      hs_task_priority: 'MEDIUM',
+      hs_task_type: 'TODO'
+    };
+    
+    if (ownerId) {
+      properties.hubspot_owner_id = ownerId;
+    }
+    
+    // If we have an existing task ID, update it instead of creating
+    if (existingTaskId) {
+      try {
+        const response = await client.crm.objects.basicApi.update('tasks', existingTaskId, { properties });
+        console.log(`✅ HubSpot task updated: ${taskSubject} (ID: ${existingTaskId})`);
+        return { ...response, updated: true };
+      } catch (updateError) {
+        // If update fails (task deleted in HubSpot), fall through to create
+        if (updateError.code === 404 || updateError.statusCode === 404) {
+          console.log(`⚠️ HubSpot task ${existingTaskId} not found, creating new one`);
+        } else {
+          throw updateError;
+        }
+      }
+    }
+    
+    // Create new task with association
     const taskInput = {
-      properties: {
-        hs_timestamp: new Date().toISOString(),
-        hs_task_subject: taskSubject,
-        hs_task_body: taskBody,
-        hs_task_status: 'COMPLETED',
-        hs_task_priority: 'MEDIUM',
-        hs_task_type: 'TODO'
-      },
+      properties,
       associations: [
         {
           to: { id: dealId },
@@ -453,20 +495,20 @@ async function createTask(dealId, taskSubject, taskBody, ownerId = null) {
       ]
     };
     
-    if (ownerId) {
-      taskInput.properties.hubspot_owner_id = ownerId;
-    }
-    
     const response = await client.crm.objects.basicApi.create('tasks', taskInput);
-    console.log(`✅ HubSpot task created and completed: ${taskSubject}`);
-    return response;
+    console.log(`✅ HubSpot task created: ${taskSubject} (ID: ${response.id})`);
+    return { ...response, created: true };
   } catch (error) {
-    console.error('Error creating HubSpot task:', error.message);
+    console.error('Error creating/updating HubSpot task:', error.message);
     if (error.body) {
       console.error('HubSpot API error details:', JSON.stringify(error.body));
     }
     throw error;
   }
+}
+
+async function createTask(dealId, taskSubject, taskBody, ownerId = null) {
+  return createOrUpdateTask(dealId, taskSubject, taskBody, ownerId, null);
 }
 
 module.exports = {
@@ -480,6 +522,7 @@ module.exports = {
   getOwners,
   findOwnerByName,
   createTask,
+  createOrUpdateTask,
   uploadFileAndAttachToRecord,
   syncTaskNoteToRecord,
   isValidRecordId

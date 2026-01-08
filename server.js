@@ -824,10 +824,11 @@ app.post('/api/projects/:projectId/tasks/:taskId/notes', authenticateToken, asyn
     };
     
     if (!tasks[idx].notes) tasks[idx].notes = [];
+    const noteIndex = tasks[idx].notes.length;
     tasks[idx].notes.push(note);
     await db.set(`tasks_${projectId}`, tasks);
     
-    // Sync note to HubSpot (async, non-blocking)
+    // Sync note to HubSpot (async, non-blocking) and store HubSpot ID
     const projects = await db.get('projects') || [];
     const project = projects.find(p => p.id === projectId);
     if (project && project.hubspotRecordId && hubspot.isValidRecordId(project.hubspotRecordId)) {
@@ -840,6 +841,20 @@ app.post('/api/projects/:projectId/tasks/:taskId/notes', authenticateToken, asyn
         author: req.user.name,
         timestamp: note.createdAt,
         projectName: project.clientName || project.name || 'Unknown Project'
+      }).then(async (result) => {
+        // Store HubSpot note ID for future updates
+        if (result && result.id) {
+          try {
+            const updatedTasks = await getTasks(projectId);
+            if (updatedTasks[idx] && updatedTasks[idx].notes && updatedTasks[idx].notes[noteIndex]) {
+              updatedTasks[idx].notes[noteIndex].hubspotNoteId = result.id;
+              updatedTasks[idx].notes[noteIndex].hubspotSyncedAt = new Date().toISOString();
+              await db.set(`tasks_${projectId}`, updatedTasks);
+            }
+          } catch (err) {
+            console.error('Failed to save HubSpot note ID:', err.message);
+          }
+        }
       }).catch(err => console.error('HubSpot note sync failed:', err.message));
     }
     
@@ -878,6 +893,25 @@ app.put('/api/projects/:projectId/tasks/:taskId/notes/:noteId', authenticateToke
     tasks[taskIdx].notes[noteIdx].content = content;
     tasks[taskIdx].notes[noteIdx].editedAt = new Date().toISOString();
     await db.set(`tasks_${projectId}`, tasks);
+    
+    // Sync updated note to HubSpot if it has a HubSpot ID
+    const existingNoteId = tasks[taskIdx].notes[noteIdx].hubspotNoteId;
+    if (existingNoteId) {
+      const projects = await db.get('projects') || [];
+      const project = projects.find(p => p.id === projectId);
+      if (project && project.hubspotRecordId && hubspot.isValidRecordId(project.hubspotRecordId)) {
+        const task = tasks[taskIdx];
+        hubspot.syncTaskNoteToRecord(project.hubspotRecordId, {
+          taskTitle: task.taskTitle || task.clientFacingName || 'Unknown Task',
+          phase: task.phase || 'N/A',
+          stage: task.stage || 'N/A',
+          noteContent: content,
+          author: note.author || req.user.name,
+          timestamp: note.createdAt,
+          projectName: project.clientName || project.name || 'Unknown Project'
+        }, existingNoteId).catch(err => console.error('HubSpot note update failed:', err.message));
+      }
+    }
     
     res.json(tasks[taskIdx].notes[noteIdx]);
   } catch (error) {
@@ -2859,16 +2893,19 @@ app.post('/api/projects/:id/hubspot-sync', authenticateToken, async (req, res) =
       return res.status(400).json({ error: 'Project does not have a valid HubSpot Record ID configured. The ID should be a numeric value.' });
     }
     
-    const tasks = await getTasks(project.id);
+    let tasks = await getTasks(project.id);
     const completedTasks = tasks.filter(t => t.completed);
     
-    // Collect all notes from all tasks
+    // Collect all notes from all tasks with their task reference
     const allNotes = [];
     for (const task of tasks) {
       if (task.notes && Array.isArray(task.notes)) {
-        for (const note of task.notes) {
+        for (let i = 0; i < task.notes.length; i++) {
+          const note = task.notes[i];
           allNotes.push({
             ...note,
+            taskId: task.id,
+            noteIndex: i,
             taskTitle: task.taskTitle,
             phase: task.phase,
             stage: task.stage
@@ -2885,31 +2922,77 @@ app.post('/api/projects/:id/hubspot-sync', authenticateToken, async (req, res) =
     }
     
     let syncedTaskCount = 0;
+    let updatedTaskCount = 0;
+    let skippedTaskCount = 0;
     let syncedNoteCount = 0;
-    
-    // Log an initial sync note
-    try {
-      await hubspot.logRecordActivity(
-        project.hubspotRecordId,
-        'Manual Sync Initiated',
-        `Syncing ${completedTasks.length} completed tasks and ${allNotes.length} notes from Project Tracker`
-      );
-    } catch (err) {
-      console.error('Failed to log initial sync note:', err.message);
-    }
+    let updatedNoteCount = 0;
+    let skippedNotes = 0;
+    let tasksModified = false;
     
     // Sync each completed task
     for (const task of completedTasks) {
       try {
-        await createHubSpotTask(project.id, task, 'Manual Sync');
-        syncedTaskCount++;
+        // Check if task already has a HubSpot ID
+        const existingTaskId = task.hubspotTaskId;
+        
+        // Build task subject and body
+        const taskSubject = `[Project Tracker] ${task.taskTitle}`;
+        let taskBody = `Phase: ${task.phase}`;
+        if (task.stage) {
+          taskBody += `\nStage: ${task.stage}`;
+        }
+        taskBody += `\nCompleted by: Manual Sync`;
+        taskBody += `\nCompleted: ${task.dateCompleted || new Date().toISOString()}`;
+        
+        if (task.notes && task.notes.length > 0) {
+          taskBody += `\n\n--- Task Notes ---`;
+          task.notes.forEach(note => {
+            const noteDate = new Date(note.createdAt || note.timestamp);
+            const noteText = note.text || note.content || note.body || '';
+            taskBody += `\n[${note.author || note.createdBy || 'Unknown'} - ${noteDate.toLocaleDateString()} ${noteDate.toLocaleTimeString()}]: ${noteText}`;
+          });
+        }
+        
+        // Get owner ID if available
+        let ownerId = null;
+        if (task.owner) {
+          const ownerValue = task.owner.trim();
+          if (ownerValue.includes('@')) {
+            ownerId = await hubspot.findOwnerByEmail(ownerValue);
+          } else {
+            const nameParts = ownerValue.split(/\s+/);
+            if (nameParts.length >= 2) {
+              ownerId = await hubspot.findOwnerByName(nameParts[0], nameParts.slice(1).join(' '));
+            }
+          }
+        }
+        
+        const result = await hubspot.createOrUpdateTask(
+          project.hubspotRecordId,
+          taskSubject,
+          taskBody,
+          ownerId,
+          existingTaskId
+        );
+        
+        // Store the HubSpot task ID if newly created
+        if (result && result.id && !existingTaskId) {
+          const taskIdx = tasks.findIndex(t => t.id === task.id);
+          if (taskIdx !== -1) {
+            tasks[taskIdx].hubspotTaskId = result.id;
+            tasks[taskIdx].hubspotSyncedAt = new Date().toISOString();
+            tasksModified = true;
+          }
+          syncedTaskCount++;
+        } else if (result && result.updated) {
+          updatedTaskCount++;
+        }
       } catch (err) {
         console.error(`Failed to sync task ${task.id}:`, err.message);
       }
     }
     
     // Sync all notes
-    let skippedNotes = 0;
     for (const note of allNotes) {
       try {
         const noteText = note.text || note.content || note.body || note.noteContent || '';
@@ -2918,19 +3001,44 @@ app.post('/api/projects/:id/hubspot-sync', authenticateToken, async (req, res) =
           skippedNotes++;
           continue;
         }
-        await hubspot.syncTaskNoteToRecord(project.hubspotRecordId, {
-          taskTitle: note.taskTitle,
-          phase: note.phase,
-          stage: note.stage,
-          noteContent: noteText,
-          author: note.author || note.createdBy || 'Unknown',
-          timestamp: note.createdAt || note.timestamp || new Date().toISOString(),
-          projectName: project.name
-        });
-        syncedNoteCount++;
+        
+        // Check if note already has a HubSpot ID
+        const existingNoteId = note.hubspotNoteId;
+        
+        const result = await hubspot.syncTaskNoteToRecord(
+          project.hubspotRecordId,
+          {
+            taskTitle: note.taskTitle,
+            phase: note.phase,
+            stage: note.stage,
+            noteContent: noteText,
+            author: note.author || note.createdBy || 'Unknown',
+            timestamp: note.createdAt || note.timestamp || new Date().toISOString(),
+            projectName: project.name
+          },
+          existingNoteId
+        );
+        
+        // Store the HubSpot note ID if newly created
+        if (result && result.id && !existingNoteId) {
+          const taskIdx = tasks.findIndex(t => t.id === note.taskId);
+          if (taskIdx !== -1 && tasks[taskIdx].notes && tasks[taskIdx].notes[note.noteIndex]) {
+            tasks[taskIdx].notes[note.noteIndex].hubspotNoteId = result.id;
+            tasks[taskIdx].notes[note.noteIndex].hubspotSyncedAt = new Date().toISOString();
+            tasksModified = true;
+          }
+          syncedNoteCount++;
+        } else if (result && result.updated) {
+          updatedNoteCount++;
+        }
       } catch (err) {
         console.error(`Failed to sync note:`, err.message);
       }
+    }
+    
+    // Save updated tasks with HubSpot IDs
+    if (tasksModified) {
+      await db.set(`tasks_${project.id}`, tasks);
     }
     
     // Update project with sync timestamp
@@ -2940,7 +3048,17 @@ app.post('/api/projects/:id/hubspot-sync', authenticateToken, async (req, res) =
       await db.set('projects', projects);
     }
     
-    let message = `Successfully synced ${syncedTaskCount} tasks and ${syncedNoteCount} notes to HubSpot`;
+    // Build summary message
+    let messageParts = [];
+    if (syncedTaskCount > 0) messageParts.push(`${syncedTaskCount} new tasks`);
+    if (updatedTaskCount > 0) messageParts.push(`${updatedTaskCount} updated tasks`);
+    if (syncedNoteCount > 0) messageParts.push(`${syncedNoteCount} new notes`);
+    if (updatedNoteCount > 0) messageParts.push(`${updatedNoteCount} updated notes`);
+    
+    let message = messageParts.length > 0 
+      ? `Successfully synced to HubSpot: ${messageParts.join(', ')}`
+      : 'All items already synced to HubSpot';
+    
     if (skippedNotes > 0) {
       message += ` (${skippedNotes} notes skipped due to empty content)`;
     }
@@ -2948,8 +3066,10 @@ app.post('/api/projects/:id/hubspot-sync', authenticateToken, async (req, res) =
     res.json({ 
       message,
       syncedTasks: syncedTaskCount,
+      updatedTasks: updatedTaskCount,
       totalTasks: completedTasks.length,
       syncedNotes: syncedNoteCount,
+      updatedNotes: updatedNoteCount,
       totalNotes: allNotes.length,
       skippedNotes
     });
@@ -3232,7 +3352,8 @@ async function createHubSpotTask(projectId, task, completedByName) {
       taskBody += `\n\n--- Task Notes ---`;
       task.notes.forEach(note => {
         const noteDate = new Date(note.createdAt);
-        taskBody += `\n[${note.author} - ${noteDate.toLocaleDateString()} ${noteDate.toLocaleTimeString()}]: ${note.content}`;
+        const noteText = note.text || note.content || note.body || '';
+        taskBody += `\n[${note.author || note.createdBy || 'Unknown'} - ${noteDate.toLocaleDateString()} ${noteDate.toLocaleTimeString()}]: ${noteText}`;
       });
     }
     
@@ -3258,7 +3379,27 @@ async function createHubSpotTask(projectId, task, completedByName) {
       }
     }
     
-    await hubspot.createTask(project.hubspotRecordId, taskSubject, taskBody, ownerId);
+    // Check if task already has a HubSpot ID (use update) or create new
+    const existingTaskId = task.hubspotTaskId;
+    const result = await hubspot.createOrUpdateTask(project.hubspotRecordId, taskSubject, taskBody, ownerId, existingTaskId);
+    
+    // Store HubSpot task ID if newly created
+    if (result && result.id && !existingTaskId) {
+      try {
+        const tasks = await getTasks(projectId);
+        const taskIdx = tasks.findIndex(t => t.id === task.id);
+        if (taskIdx !== -1) {
+          tasks[taskIdx].hubspotTaskId = result.id;
+          tasks[taskIdx].hubspotSyncedAt = new Date().toISOString();
+          await db.set(`tasks_${projectId}`, tasks);
+          console.log(`📋 Stored HubSpot task ID ${result.id} for task "${task.taskTitle}"`);
+        }
+      } catch (err) {
+        console.error('Failed to save HubSpot task ID:', err.message);
+      }
+    }
+    
+    return result;
   } catch (error) {
     console.error('Error creating HubSpot task:', error.message);
   }
