@@ -4722,18 +4722,16 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                   )}
                                 </div>
                               )}
-                              {isAdmin && (
-                                <div>
-                                  <label className="block text-xs text-gray-500 mb-1">Description (visible to internal users and clients)</label>
-                                  <textarea
-                                    value={editingTask.description || ''}
-                                    onChange={(e) => setEditingTask({...editingTask, description: e.target.value})}
-                                    className="w-full px-3 py-2 border rounded-md text-sm"
-                                    rows={3}
-                                    placeholder="Add additional details about this task..."
-                                  />
-                                </div>
-                              )}
+                              <div>
+                                <label className="block text-xs text-gray-500 mb-1">Description (visible to internal users and clients)</label>
+                                <textarea
+                                  value={editingTask.description || ''}
+                                  onChange={(e) => setEditingTask({...editingTask, description: e.target.value})}
+                                  className="w-full px-3 py-2 border rounded-md text-sm"
+                                  rows={3}
+                                  placeholder="Add additional details about this task..."
+                                />
+                              </div>
                               <div className="flex gap-2 items-center justify-between">
                                 <div className="flex gap-2">
                                   <button
