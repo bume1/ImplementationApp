@@ -941,28 +941,28 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
         }
       }
       
-      // Find training/validation week dates from Phase 3 tasks
+      // Find training/validation week dates from all tasks in Training/Validation stage
       let trainingStartDate = null;
       let trainingEndDate = null;
       let trainingStartTaskId = null;
       
-      const phase3Tasks = tasks.filter(t => t.phase === 'Phase 3' && t.stage && t.stage.toLowerCase().includes('training'));
-      
-      // Find "Complete necessary analyzer reboot or washes" task for start date
-      const trainingStartTask = phase3Tasks.find(t => 
-        t.taskTitle && t.taskTitle.toLowerCase().includes('complete necessary analyzer reboot')
+      // Get all tasks in the Training/Validation stage (case-insensitive match)
+      const trainingTasks = tasks.filter(t => 
+        t.stage && t.stage.toLowerCase().includes('training')
       );
-      if (trainingStartTask && trainingStartTask.dueDate) {
-        trainingStartDate = trainingStartTask.dueDate;
-        trainingStartTaskId = trainingStartTask.id;
-      }
       
-      // Find "Patient Correlation Studies" task for end date
-      const trainingEndTask = phase3Tasks.find(t => 
-        t.taskTitle && t.taskTitle.toLowerCase().includes('patient correlation')
-      );
-      if (trainingEndTask && trainingEndTask.dueDate) {
-        trainingEndDate = trainingEndTask.dueDate;
+      // Find tasks with due dates and sort them
+      const tasksWithDueDates = trainingTasks
+        .filter(t => t.dueDate)
+        .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+      
+      if (tasksWithDueDates.length > 0) {
+        // Earliest due date becomes training start
+        trainingStartDate = tasksWithDueDates[0].dueDate;
+        trainingStartTaskId = tasksWithDueDates[0].id;
+        
+        // Latest due date becomes training end
+        trainingEndDate = tasksWithDueDates[tasksWithDueDates.length - 1].dueDate;
       }
       
       // Find go-live task ID for calendar navigation
