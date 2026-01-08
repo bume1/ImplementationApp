@@ -602,6 +602,9 @@
                             <div className="flex-1">
                               <h3 className={`font-medium ${task.completed ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
                                 {task.clientName || task.taskTitle}
+                                {(task.files || []).length > 0 && (
+                                  <span className="ml-2 text-gray-400" title={`${task.files.length} file${task.files.length > 1 ? 's' : ''} attached`}>📎</span>
+                                )}
                               </h3>
                               {(task.ownerDisplayName || task.dateCompleted || task.dueDate) && (
                                 <p className="text-sm text-gray-600 mt-1">
@@ -689,7 +692,12 @@
                                   {task.completed && <span className="text-xs">✓</span>}
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <h5 className={`font-medium ${task.completed ? 'text-gray-500 line-through' : 'text-gray-900'}`}>{task.clientName || task.taskTitle}</h5>
+                                  <h5 className={`font-medium ${task.completed ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
+                                    {task.clientName || task.taskTitle}
+                                    {(task.files || []).length > 0 && (
+                                      <span className="ml-2 text-gray-400" title={`${task.files.length} file${task.files.length > 1 ? 's' : ''} attached`}>📎</span>
+                                    )}
+                                  </h5>
                                   {(task.dateCompleted || task.ownerDisplayName) && (
                                     <p className="mt-1 text-xs text-gray-600">
                                       {task.ownerDisplayName && <span className="text-gray-500">Owner: {task.ownerDisplayName}</span>}
