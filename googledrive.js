@@ -164,6 +164,72 @@ async function uploadHtmlFile(fileName, htmlContent, folderId = null) {
 }
 
 const SOFT_PILOT_FOLDER_ID = '16Tsa2IJypBBvvoVsLamy5j0DFgVUGLSN';
+const TASK_FILES_FOLDER_ID = '16Tsa2IJypBBvvoVsLamy5j0DFgVUGLSN'; // Same parent folder for now
+
+async function uploadTaskFile(projectName, clientName, fileName, fileBuffer, mimeType) {
+  try {
+    const drive = await getDriveClient();
+    const { Readable } = require('stream');
+    
+    // Create or find client folder
+    const clientFolderId = await findOrCreateFolder(clientName, TASK_FILES_FOLDER_ID);
+    // Create or find project subfolder
+    const projectFolderId = await findOrCreateFolder(projectName, clientFolderId);
+    // Create or find "Task Files" subfolder
+    const taskFilesFolderId = await findOrCreateFolder('Task Files', projectFolderId);
+    
+    const fileMetadata = {
+      name: fileName,
+      parents: [taskFilesFolderId]
+    };
+    
+    const media = {
+      mimeType: mimeType,
+      body: Readable.from([fileBuffer])
+    };
+    
+    const response = await drive.files.create({
+      resource: fileMetadata,
+      media: media,
+      fields: 'id, name, webViewLink, webContentLink, thumbnailLink, size'
+    });
+    
+    // Make file viewable by anyone with link
+    await drive.permissions.create({
+      fileId: response.data.id,
+      requestBody: {
+        role: 'reader',
+        type: 'anyone'
+      }
+    });
+    
+    console.log(`✅ Uploaded task file to Google Drive: ${response.data.name}`);
+    
+    return {
+      fileId: response.data.id,
+      fileName: response.data.name,
+      webViewLink: response.data.webViewLink,
+      webContentLink: response.data.webContentLink,
+      thumbnailLink: response.data.thumbnailLink,
+      size: response.data.size
+    };
+  } catch (error) {
+    console.error('Error uploading task file to Google Drive:', error.message);
+    throw error;
+  }
+}
+
+async function deleteFile(fileId) {
+  try {
+    const drive = await getDriveClient();
+    await drive.files.delete({ fileId: fileId });
+    console.log(`✅ Deleted file from Google Drive: ${fileId}`);
+    return true;
+  } catch (error) {
+    console.error('Error deleting file from Google Drive:', error.message);
+    throw error;
+  }
+}
 
 async function uploadSoftPilotChecklist(projectName, clientName, htmlContent) {
   try {
@@ -186,5 +252,7 @@ module.exports = {
   testConnection,
   findOrCreateFolder,
   uploadHtmlFile,
-  uploadSoftPilotChecklist
+  uploadSoftPilotChecklist,
+  uploadTaskFile,
+  deleteFile
 };
