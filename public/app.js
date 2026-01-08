@@ -309,6 +309,18 @@ const api = {
       body: JSON.stringify({ domain })
     }).then(r => r.json()),
 
+  normalizeAllData: (token) =>
+    fetch(`${API_URL}/api/admin/normalize-all-data`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.json()),
+
+  regenerateProjectSlug: (token, projectId) =>
+    fetch(`${API_URL}/api/projects/${projectId}/regenerate-slug`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.json()),
+
   getUsers: (token) =>
     fetch(`${API_URL}/api/users`, {
       headers: { 'Authorization': `Bearer ${token}` }
@@ -2177,6 +2189,33 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                   />
                   <p className="text-xs text-gray-500 mt-1">Expected go-live date for this implementation.</p>
                 </div>
+                <div className="col-span-2 border-t pt-4 mt-2">
+                  <label className="block text-sm font-medium mb-1">Client Portal Link Slug</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={editingProject.clientLinkSlug || editingProject.clientLinkId || ''}
+                      readOnly
+                      className="flex-1 px-3 py-2 border rounded-md bg-gray-50 text-gray-600"
+                    />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!confirm('Regenerate the client portal link based on the current client name? Any existing shared links will stop working.')) return;
+                        try {
+                          const result = await api.regenerateProjectSlug(token, editingProject.id);
+                          setEditingProject({...editingProject, clientLinkSlug: result.clientLinkSlug});
+                          alert('Slug regenerated: ' + result.clientLinkSlug);
+                        } catch (err) {
+                          alert('Failed to regenerate slug');
+                        }
+                      }}
+                      className="px-3 py-2 bg-orange-500 text-white text-sm rounded hover:bg-orange-600"
+                    >
+                      Regenerate
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">The URL path used for the client portal. Click Regenerate to update based on client name.</p>
+                </div>
               </div>
               <div className="flex gap-2 mt-6">
                 <button
@@ -3336,7 +3375,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
           return {
             ...t,
             subtasks: (t.subtasks || []).map(s =>
-              s.id === subtaskId ? { ...s, ...updates } : s
+              String(s.id) === String(subtaskId) ? { ...s, ...updates } : s
             )
           };
         }
@@ -3357,7 +3396,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
           return {
             ...t,
             subtasks: (t.subtasks || []).map(s =>
-              s.id === subtaskId ? { ...s, ...updates } : s
+              String(s.id) === String(subtaskId) ? { ...s, ...updates } : s
             )
           };
         }
@@ -3377,7 +3416,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
           return {
             ...t,
             subtasks: (t.subtasks || []).map(s =>
-              s.id === subtaskId ? { ...s, ...updates } : s
+              String(s.id) === String(subtaskId) ? { ...s, ...updates } : s
             )
           };
         }
@@ -3420,7 +3459,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
         if (t.id === taskId) {
           return {
             ...t,
-            subtasks: (t.subtasks || []).filter(s => s.id !== subtaskId)
+            subtasks: (t.subtasks || []).filter(s => String(s.id) !== String(subtaskId))
           };
         }
         return t;
@@ -3454,7 +3493,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
           return {
             ...t,
             subtasks: (t.subtasks || []).map(s =>
-              s.id === editingSubtask.subtaskId ? { ...s, ...updates } : s
+              String(s.id) === String(editingSubtask.subtaskId) ? { ...s, ...updates } : s
             )
           };
         }
@@ -7225,6 +7264,30 @@ const PortalSettings = ({ token, user, onBack, onLogout }) => {
               >
                 {saving ? 'Saving...' : 'Save Settings'}
               </button>
+            </div>
+            
+            <div className="border-t pt-6 mt-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Database Utilities</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Use these tools to fix data inconsistencies across all projects.
+              </p>
+              <button
+                onClick={async () => {
+                  if (!confirm('This will normalize all project data including subtask status fields and client link slugs. Continue?')) return;
+                  try {
+                    const result = await api.normalizeAllData(token);
+                    alert(`Data normalization complete!\n\nProjects processed: ${result.stats.projectsProcessed}\nSubtasks normalized: ${result.stats.subtasksNormalized}\nSlugs regenerated: ${result.stats.slugsRegenerated}\nTasks normalized: ${result.stats.tasksNormalized}`);
+                  } catch (err) {
+                    alert('Failed to normalize data: ' + err.message);
+                  }
+                }}
+                className="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700"
+              >
+                Normalize All Project Data
+              </button>
+              <p className="text-xs text-gray-500 mt-2">
+                Fixes subtask completion status, normalizes IDs, and regenerates missing client link slugs.
+              </p>
             </div>
           </div>
         )}

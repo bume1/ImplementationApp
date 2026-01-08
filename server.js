@@ -631,7 +631,8 @@ app.put('/api/projects/:projectId/tasks/:taskId/subtasks/:subtaskId', authentica
     if (taskIdx === -1) return res.status(404).json({ error: 'Task not found' });
     
     if (!tasks[taskIdx].subtasks) return res.status(404).json({ error: 'Subtask not found' });
-    const subtaskIdx = tasks[taskIdx].subtasks.findIndex(s => s.id === subtaskId);
+    // Support both numeric and string subtask IDs for backward compatibility
+    const subtaskIdx = tasks[taskIdx].subtasks.findIndex(s => String(s.id) === String(subtaskId));
     if (subtaskIdx === -1) return res.status(404).json({ error: 'Subtask not found' });
     
     if (title !== undefined) tasks[taskIdx].subtasks[subtaskIdx].title = title;
@@ -640,6 +641,19 @@ app.put('/api/projects/:projectId/tasks/:taskId/subtasks/:subtaskId', authentica
     if (completed !== undefined) tasks[taskIdx].subtasks[subtaskIdx].completed = completed;
     if (notApplicable !== undefined) tasks[taskIdx].subtasks[subtaskIdx].notApplicable = notApplicable;
     if (showToClient !== undefined) tasks[taskIdx].subtasks[subtaskIdx].showToClient = showToClient;
+    
+    // Also update status field for consistency
+    if (completed !== undefined || notApplicable !== undefined) {
+      if (notApplicable) {
+        tasks[taskIdx].subtasks[subtaskIdx].status = 'N/A';
+      } else if (completed) {
+        tasks[taskIdx].subtasks[subtaskIdx].status = 'Complete';
+        tasks[taskIdx].subtasks[subtaskIdx].completedAt = new Date().toISOString();
+      } else {
+        tasks[taskIdx].subtasks[subtaskIdx].status = 'Pending';
+        tasks[taskIdx].subtasks[subtaskIdx].completedAt = null;
+      }
+    }
     
     await db.set(`tasks_${projectId}`, tasks);
     res.json(tasks[taskIdx].subtasks[subtaskIdx]);
@@ -662,7 +676,8 @@ app.delete('/api/projects/:projectId/tasks/:taskId/subtasks/:subtaskId', authent
     if (taskIdx === -1) return res.status(404).json({ error: 'Task not found' });
     
     if (!tasks[taskIdx].subtasks) return res.status(404).json({ error: 'Subtask not found' });
-    tasks[taskIdx].subtasks = tasks[taskIdx].subtasks.filter(s => s.id !== subtaskId);
+    // Support both numeric and string subtask IDs for backward compatibility
+    tasks[taskIdx].subtasks = tasks[taskIdx].subtasks.filter(s => String(s.id) !== String(subtaskId));
     
     await db.set(`tasks_${projectId}`, tasks);
     res.json({ message: 'Subtask deleted' });
@@ -2890,6 +2905,122 @@ app.post('/api/projects/:id/fix-client-names', authenticateToken, requireAdmin, 
     }
     
     res.json({ message: `Fixed ${fixedCount} task client names`, fixedCount });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============== NORMALIZE ALL PROJECT DATA (Admin utility) ==============
+app.post('/api/admin/normalize-all-data', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const projects = await getProjects();
+    const stats = {
+      projectsProcessed: 0,
+      subtasksNormalized: 0,
+      slugsRegenerated: 0,
+      tasksNormalized: 0
+    };
+    
+    // Collect existing slugs for uniqueness check
+    const existingSlugs = new Set();
+    
+    for (const project of projects) {
+      stats.projectsProcessed++;
+      
+      // Regenerate clientLinkSlug if needed
+      if (project.clientName && (!project.clientLinkSlug || project.clientLinkSlug === '')) {
+        const newSlug = generateClientSlug(project.clientName, [...existingSlugs]);
+        project.clientLinkSlug = newSlug;
+        stats.slugsRegenerated++;
+      }
+      
+      if (project.clientLinkSlug) {
+        existingSlugs.add(project.clientLinkSlug);
+      }
+      
+      // Normalize tasks and subtasks
+      const tasks = await getTasks(project.id);
+      let tasksChanged = false;
+      
+      for (const task of tasks) {
+        // Ensure task has proper ID type (always convert to number for consistency)
+        if (typeof task.id === 'string' && !isNaN(parseInt(task.id))) {
+          task.id = parseInt(task.id);
+          tasksChanged = true;
+          stats.tasksNormalized++;
+        }
+        
+        // Normalize subtasks
+        if (task.subtasks && task.subtasks.length > 0) {
+          for (const subtask of task.subtasks) {
+            // Ensure subtask has all required fields
+            if (subtask.completed === undefined) {
+              subtask.completed = false;
+              tasksChanged = true;
+              stats.subtasksNormalized++;
+            }
+            if (subtask.notApplicable === undefined) {
+              subtask.notApplicable = false;
+              tasksChanged = true;
+              stats.subtasksNormalized++;
+            }
+            if (!subtask.status) {
+              if (subtask.notApplicable) {
+                subtask.status = 'N/A';
+              } else if (subtask.completed) {
+                subtask.status = 'Complete';
+              } else {
+                subtask.status = 'Pending';
+              }
+              tasksChanged = true;
+              stats.subtasksNormalized++;
+            }
+          }
+        }
+      }
+      
+      if (tasksChanged) {
+        await db.set(`tasks_${project.id}`, tasks);
+      }
+    }
+    
+    // Save updated projects
+    await db.set('projects', projects);
+    
+    res.json({ 
+      message: 'Data normalization complete', 
+      stats 
+    });
+  } catch (error) {
+    console.error('Data normalization error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============== REGENERATE PROJECT SLUG (Admin utility) ==============
+app.post('/api/projects/:id/regenerate-slug', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const projects = await getProjects();
+    const idx = projects.findIndex(p => p.id === req.params.id);
+    
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    
+    const existingSlugs = projects
+      .filter(p => p.id !== req.params.id)
+      .map(p => p.clientLinkSlug)
+      .filter(Boolean);
+    
+    const newSlug = generateClientSlug(projects[idx].clientName, existingSlugs);
+    projects[idx].clientLinkSlug = newSlug;
+    
+    await db.set('projects', projects);
+    
+    res.json({ 
+      message: 'Slug regenerated successfully', 
+      clientLinkSlug: newSlug 
+    });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }

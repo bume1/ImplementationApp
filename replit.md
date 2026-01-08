@@ -130,3 +130,11 @@ Preferred communication style: Simple, everyday language.
 - **Template Data Normalization**: Server-side template application normalizes all subtask fields on creation
 - **Client Link Slug Auto-Update**: When a project's client name is changed, the client portal link slug is automatically regenerated to match
 - **Clone Slug Fix**: Cloned projects now generate their slug from the new project/client name instead of just appending "-copy" to the original
+
+### Subtask & Data Consistency Fixes (Jan 8)
+- **Subtask ID Type Compatibility**: Server now uses string comparison for subtask IDs to handle both numeric (from templates) and UUID (from new subtasks) formats
+- **Subtask Status Sync**: When updating subtask completion status, server now also updates `status` and `completedAt` fields for consistency
+- **Data Normalization Endpoint**: New admin endpoint `/api/admin/normalize-all-data` fixes subtask data inconsistencies across all projects
+- **Regenerate Slug Endpoint**: New admin endpoint `/api/projects/:id/regenerate-slug` allows regenerating client portal slugs for individual projects
+- **Admin UI for Data Fix**: Portal Settings page now includes "Database Utilities" section with "Normalize All Project Data" button
+- **Project Edit Slug Display**: Edit Project modal now shows current client link slug with a "Regenerate" button to update based on client name
