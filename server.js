@@ -827,6 +827,22 @@ app.post('/api/projects/:projectId/tasks/:taskId/notes', authenticateToken, asyn
     tasks[idx].notes.push(note);
     await db.set(`tasks_${projectId}`, tasks);
     
+    // Sync note to HubSpot (async, non-blocking)
+    const projects = await db.get('projects') || [];
+    const project = projects.find(p => p.id === projectId);
+    if (project && project.hubspotRecordId && hubspot.isValidRecordId(project.hubspotRecordId)) {
+      const task = tasks[idx];
+      hubspot.syncTaskNoteToRecord(project.hubspotRecordId, {
+        taskTitle: task.taskTitle || task.clientFacingName || 'Unknown Task',
+        phase: task.phase || 'N/A',
+        stage: task.stage || 'N/A',
+        noteContent: content,
+        author: req.user.name,
+        timestamp: note.createdAt,
+        projectName: project.clientName || project.name || 'Unknown Project'
+      }).catch(err => console.error('HubSpot note sync failed:', err.message));
+    }
+    
     res.json(note);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
@@ -2839,8 +2855,8 @@ app.post('/api/projects/:id/hubspot-sync', authenticateToken, async (req, res) =
       return res.status(404).json({ error: 'Project not found' });
     }
     
-    if (!project.hubspotRecordId) {
-      return res.status(400).json({ error: 'Project does not have a HubSpot Record ID configured' });
+    if (!project.hubspotRecordId || !hubspot.isValidRecordId(project.hubspotRecordId)) {
+      return res.status(400).json({ error: 'Project does not have a valid HubSpot Record ID configured. The ID should be a numeric value.' });
     }
     
     const tasks = await getTasks(project.id);
@@ -3081,8 +3097,8 @@ async function checkAndUpdateHubSpotDealStage(projectId) {
   try {
     const projects = await getProjects();
     const project = projects.find(p => p.id === projectId);
-    if (!project || !project.hubspotRecordId) {
-      console.log('📋 HubSpot sync skipped: No project or Record ID');
+    if (!project || !project.hubspotRecordId || !hubspot.isValidRecordId(project.hubspotRecordId)) {
+      console.log('📋 HubSpot sync skipped: No project or invalid Record ID');
       return;
     }
 
@@ -3134,7 +3150,7 @@ async function logHubSpotActivity(projectId, activityType, details) {
   try {
     const projects = await getProjects();
     const project = projects.find(p => p.id === projectId);
-    if (!project || !project.hubspotRecordId) return;
+    if (!project || !project.hubspotRecordId || !hubspot.isValidRecordId(project.hubspotRecordId)) return;
     
     await hubspot.logRecordActivity(project.hubspotRecordId, activityType, details);
   } catch (error) {
@@ -3146,7 +3162,7 @@ async function createHubSpotTask(projectId, task, completedByName) {
   try {
     const projects = await getProjects();
     const project = projects.find(p => p.id === projectId);
-    if (!project || !project.hubspotRecordId) return;
+    if (!project || !project.hubspotRecordId || !hubspot.isValidRecordId(project.hubspotRecordId)) return;
     
     // Build task subject
     const taskSubject = `[Project Tracker] ${task.taskTitle}`;
@@ -3200,8 +3216,8 @@ async function checkStageAndPhaseCompletion(projectId, tasks, completedTask) {
   try {
     const projects = await getProjects();
     const project = projects.find(p => p.id === projectId);
-    if (!project || !project.hubspotRecordId) {
-      console.log('📋 HubSpot sync skipped: No project or Record ID');
+    if (!project || !project.hubspotRecordId || !hubspot.isValidRecordId(project.hubspotRecordId)) {
+      console.log('📋 HubSpot sync skipped: No project or invalid Record ID');
       return;
     }
 

@@ -361,6 +361,72 @@ async function uploadFileAndAttachToRecord(recordId, fileContent, fileName, cust
   }
 }
 
+function isValidRecordId(recordId) {
+  if (!recordId) return false;
+  const cleanId = String(recordId).trim();
+  return /^\d+$/.test(cleanId) && cleanId.length > 0;
+}
+
+async function syncTaskNoteToRecord(recordId, noteData) {
+  if (!isValidRecordId(recordId)) {
+    console.log(`📋 Note sync skipped: Invalid Record ID "${recordId}"`);
+    return null;
+  }
+  
+  try {
+    const client = await getHubSpotClient();
+    
+    const { taskTitle, phase, stage, noteContent, author, timestamp, projectName } = noteData;
+    
+    const formattedDate = new Date(timestamp).toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+    
+    const noteBody = `[Project Tracker] Task Note Added
+
+Project: ${projectName || 'N/A'}
+Phase: ${phase || 'N/A'}
+Stage: ${stage || 'N/A'}
+Task: ${taskTitle || 'N/A'}
+
+Note by ${author} on ${formattedDate}:
+${noteContent}`;
+    
+    const noteObj = {
+      properties: {
+        hs_timestamp: Date.now().toString(),
+        hs_note_body: noteBody
+      },
+      associations: [
+        {
+          to: { id: recordId.toString() },
+          types: [
+            {
+              associationCategory: 'HUBSPOT_DEFINED',
+              associationTypeId: 214
+            }
+          ]
+        }
+      ]
+    };
+
+    const noteResponse = await client.crm.objects.notes.basicApi.create(noteObj);
+    console.log(`✅ HubSpot note synced for task "${taskTitle}" on record ${recordId}`);
+    return noteResponse;
+  } catch (error) {
+    console.error('Error syncing note to HubSpot:', error.message);
+    if (error.body) {
+      console.error('HubSpot API error details:', JSON.stringify(error.body));
+    }
+    return null;
+  }
+}
+
 async function createTask(dealId, taskSubject, taskBody, ownerId = null) {
   try {
     const client = await getHubSpotClient();
@@ -414,5 +480,7 @@ module.exports = {
   getOwners,
   findOwnerByName,
   createTask,
-  uploadFileAndAttachToRecord
+  uploadFileAndAttachToRecord,
+  syncTaskNoteToRecord,
+  isValidRecordId
 };

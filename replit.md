@@ -155,3 +155,15 @@ Preferred communication style: Simple, everyday language.
 - **HubSpot Sync Visibility**: Sync button and status now always visible on boards (with message when no ID is configured), plus "Edit Project Settings" button for admins to add HubSpot ID directly from the board
 - **Automatic Data Normalization**: Task data is normalized on read for display (without modifying stored data) to ensure retroactive compatibility with new features (tags, descriptions, subtask fields)
 - **Removed Client Portal Domain Field**: Simplified project settings by removing the optional domain field (slug generator handles client links)
+
+### HubSpot Note Sync (Jan 8)
+- **Automatic Note Syncing**: When a note is added to any task, it automatically creates a corresponding Note in HubSpot with:
+  - Project name
+  - Phase and stage context
+  - Task title
+  - Note content
+  - Author name and timestamp
+- **Record ID Validation**: New `isValidRecordId()` helper prevents sync attempts with malformed HubSpot IDs (must be numeric)
+- **Non-Blocking Sync**: Note sync happens asynchronously - note is saved immediately, HubSpot sync happens in background
+- **Error Handling**: Sync failures don't prevent note creation; errors are logged server-side
+- **Client Portal Footer**: Simplified to show only "Powered by Thrive365Labs" on client-facing pages
