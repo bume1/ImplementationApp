@@ -616,6 +616,11 @@
                                   {task.dateCompleted && <span className="text-green-600">Completed: {formatDateForDisplay(task.dateCompleted)}</span>}
                                 </p>
                               )}
+                              {task.description && (
+                                <div className="mt-2 p-2 bg-gray-50 rounded-md border-l-2 border-primary">
+                                  <p className="text-sm text-gray-700">{task.description}</p>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -667,6 +672,11 @@
                                       {task.ownerDisplayName && task.dateCompleted && <span className="mx-1">•</span>}
                                       {task.dateCompleted && <span className="text-green-600">Completed: {formatDateForDisplay(task.dateCompleted)}</span>}
                                     </p>
+                                  )}
+                                  {task.description && (
+                                    <div className="mt-2 p-2 bg-gray-50 rounded-md border-l-2 border-primary">
+                                      <p className="text-sm text-gray-700">{task.description}</p>
+                                    </div>
                                   )}
                                 </div>
                               </div>

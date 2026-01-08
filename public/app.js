@@ -3593,6 +3593,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
       secondaryOwner: task.secondaryOwner || '',
       showToClient: task.showToClient || false,
       clientName: task.clientName || '',
+      description: task.description || '',
       dependencies: task.dependencies || []
     });
   };
@@ -3614,6 +3615,7 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
         updates.dueDate = editingTask.dueDate || null;
         updates.showToClient = editingTask.showToClient;
         updates.clientName = editingTask.clientName;
+        updates.description = editingTask.description || '';
       } else {
         if (!task.owner || task.owner.trim() === '') {
           updates.owner = editingTask.owner;
@@ -4720,6 +4722,18 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                   )}
                                 </div>
                               )}
+                              {isAdmin && (
+                                <div>
+                                  <label className="block text-xs text-gray-500 mb-1">Description (visible to internal users and clients)</label>
+                                  <textarea
+                                    value={editingTask.description || ''}
+                                    onChange={(e) => setEditingTask({...editingTask, description: e.target.value})}
+                                    className="w-full px-3 py-2 border rounded-md text-sm"
+                                    rows={3}
+                                    placeholder="Add additional details about this task..."
+                                  />
+                                </div>
+                              )}
                               <div className="flex gap-2 items-center justify-between">
                                 <div className="flex gap-2">
                                   <button
@@ -4836,6 +4850,11 @@ const ProjectTracker = ({ token, user, project, scrollToTaskId, onBack, onLogout
                                       </span>
                                     );
                                   })}
+                                </div>
+                              )}
+                              {task.description && (
+                                <div className="mt-2 p-2 bg-gray-50 rounded-md border-l-2 border-primary">
+                                  <p className="text-sm text-gray-700">{task.description}</p>
                                 </div>
                               )}
                               {viewMode === 'internal' && (
