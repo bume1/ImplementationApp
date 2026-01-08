@@ -111,7 +111,7 @@ Preferred communication style: Simple, everyday language.
   - Preserves user-defined ordering across reloads
   - Sorts by existing stageOrder before normalization to maintain prior moves
   - Sequential normalization ensures clean 1, 2, 3... values after each operation
-- **Training Week Start**: Calendar training entries now start from "Complete necessary analyzer reboot" task (Phase 3)
+- **Training Week Display**: Calendar now shows Training/Validation period based on the earliest and latest due dates of all tasks in the Training/Validation stage (works across all boards regardless of task naming)
 
 ### Project Notes Log Panel (Jan 6)
 - **Aggregate Notes View**: New collapsible side panel showing all notes from all tasks in a project
