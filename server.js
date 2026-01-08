@@ -2862,18 +2862,37 @@ app.post('/api/projects/:id/hubspot-sync', authenticateToken, async (req, res) =
     const tasks = await getTasks(project.id);
     const completedTasks = tasks.filter(t => t.completed);
     
-    if (completedTasks.length === 0) {
-      return res.json({ message: 'No completed tasks to sync', synced: 0 });
+    // Collect all notes from all tasks
+    const allNotes = [];
+    for (const task of tasks) {
+      if (task.notes && Array.isArray(task.notes)) {
+        for (const note of task.notes) {
+          allNotes.push({
+            ...note,
+            taskTitle: task.taskTitle,
+            phase: task.phase,
+            stage: task.stage
+          });
+        }
+      }
     }
     
-    let syncedCount = 0;
+    const hasTasksToSync = completedTasks.length > 0;
+    const hasNotesToSync = allNotes.length > 0;
+    
+    if (!hasTasksToSync && !hasNotesToSync) {
+      return res.json({ message: 'No completed tasks or notes to sync', syncedTasks: 0, syncedNotes: 0 });
+    }
+    
+    let syncedTaskCount = 0;
+    let syncedNoteCount = 0;
     
     // Log an initial sync note
     try {
       await hubspot.logRecordActivity(
         project.hubspotRecordId,
         'Manual Sync Initiated',
-        `Syncing ${completedTasks.length} completed tasks from Project Tracker`
+        `Syncing ${completedTasks.length} completed tasks and ${allNotes.length} notes from Project Tracker`
       );
     } catch (err) {
       console.error('Failed to log initial sync note:', err.message);
@@ -2883,9 +2902,27 @@ app.post('/api/projects/:id/hubspot-sync', authenticateToken, async (req, res) =
     for (const task of completedTasks) {
       try {
         await createHubSpotTask(project.id, task, 'Manual Sync');
-        syncedCount++;
+        syncedTaskCount++;
       } catch (err) {
         console.error(`Failed to sync task ${task.id}:`, err.message);
+      }
+    }
+    
+    // Sync all notes
+    for (const note of allNotes) {
+      try {
+        await hubspot.syncTaskNoteToRecord(project.hubspotRecordId, {
+          taskTitle: note.taskTitle,
+          phase: note.phase,
+          stage: note.stage,
+          noteContent: note.content,
+          author: note.createdBy || 'Unknown',
+          timestamp: note.createdAt || new Date().toISOString(),
+          projectName: project.name
+        });
+        syncedNoteCount++;
+      } catch (err) {
+        console.error(`Failed to sync note:`, err.message);
       }
     }
     
@@ -2897,9 +2934,11 @@ app.post('/api/projects/:id/hubspot-sync', authenticateToken, async (req, res) =
     }
     
     res.json({ 
-      message: `Successfully synced ${syncedCount} of ${completedTasks.length} completed tasks to HubSpot`,
-      synced: syncedCount,
-      total: completedTasks.length
+      message: `Successfully synced ${syncedTaskCount} tasks and ${syncedNoteCount} notes to HubSpot`,
+      syncedTasks: syncedTaskCount,
+      totalTasks: completedTasks.length,
+      syncedNotes: syncedNoteCount,
+      totalNotes: allNotes.length
     });
   } catch (error) {
     console.error('Manual HubSpot sync error:', error);
