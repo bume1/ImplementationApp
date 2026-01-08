@@ -6234,7 +6234,7 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
                 <div className="mb-4 p-4 bg-blue-50 rounded-md">
                   <p className="text-sm font-medium text-blue-800">Client Portal URL:</p>
                   <p className="text-blue-600 font-mono text-sm break-all mt-1">
-                    {window.location.origin}/portal/{editingUser.slug}
+                    https://deapps.pro/portal/{editingUser.slug}
                   </p>
                 </div>
               )}
