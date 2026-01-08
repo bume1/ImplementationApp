@@ -3336,7 +3336,7 @@ app.get('/api/projects/:id/export', authenticateToken, async (req, res) => {
     if (!project) return res.status(404).json({ error: 'Project not found' });
     const tasks = await getTasks(req.params.id);
     
-    const headers = ['id', 'phase', 'stage', 'taskTitle', 'owner', 'startDate', 'dueDate', 'showToClient', 'clientName', 'completed', 'dateCompleted', 'dependencies', 'notes'];
+    const headers = ['id', 'phase', 'stage', 'taskTitle', 'owner', 'startDate', 'dueDate', 'showToClient', 'clientName', 'completed', 'dateCompleted', 'tags', 'dependencies', 'notes'];
     
     const rows = tasks.map(t => [
       t.id,
@@ -3350,6 +3350,7 @@ app.get('/api/projects/:id/export', authenticateToken, async (req, res) => {
       t.clientName || '',
       t.completed ? 'true' : 'false',
       t.dateCompleted || '',
+      Array.isArray(t.tags) ? t.tags.join(';') : '',
       Array.isArray(t.dependencies) ? t.dependencies.join(';') : '',
       Array.isArray(t.notes) ? t.notes.map(n => n.text || n).join(' | ') : ''
     ].map(escapeCSV));

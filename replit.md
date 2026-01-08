@@ -140,3 +140,9 @@ Preferred communication style: Simple, everyday language.
 - **Project Edit Slug Display**: Edit Project modal now shows current client link slug with a "Regenerate" button to update based on client name
 - **Completion Date Formatting**: Client and portal views now display task completion dates in friendly format (e.g., "Jan 8, 2026")
 - **Task Descriptions**: Added description field to tasks - admins can add descriptions visible to both internal users and clients in all views
+- **Task Tagging System**: Added tags field for grouping and filtering tasks
+  - Admins and team members can add comma-separated tags when editing tasks
+  - Tags display as clickable blue badges on tasks (clicking filters by that tag)
+  - Tags dropdown filter in task board header (appears when tags exist)
+  - Tags searchable via main search bar
+  - Tags included in CSV export (semicolon-separated)
