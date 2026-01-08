@@ -4125,7 +4125,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                     {isAdmin && (
                       <button
                         onClick={async () => {
-                          if (!confirm('This will sync all completed tasks to HubSpot. Continue?')) return;
+                          if (!confirm('This will sync all completed tasks and notes to HubSpot. Continue?')) return;
                           setSyncingToHubSpot(true);
                           try {
                             const result = await api.syncToHubSpot(token, project.id);
