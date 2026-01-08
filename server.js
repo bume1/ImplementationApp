@@ -1689,7 +1689,11 @@ app.get('/api/client/:linkId', async (req, res) => {
     }));
     
     res.json({
-      project: { name: project.name, clientName: project.clientName },
+      project: { 
+        name: project.name, 
+        clientName: project.clientName,
+        goLiveDate: project.goLiveDate
+      },
       tasks: tasksWithOwnerNames
     });
   } catch (error) {
@@ -1802,6 +1806,7 @@ app.get('/api/client-portal/data', authenticateToken, async (req, res) => {
         name: project.name,
         clientName: project.clientName,
         status: project.status,
+        goLiveDate: project.goLiveDate,
         hubspotRecordId: project.hubspotRecordId || null,
         hubspotRecordType: project.hubspotRecordType || 'companies',
         tasks: clientTasks
