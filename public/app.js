@@ -2464,6 +2464,9 @@ const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [calendarMode, setCalendarMode] = useState('month');
 
+  const getTaskName = (task) =>
+    (viewMode === 'client' && task.clientName) ? task.clientName : task.taskTitle;
+
   const getDaysInMonth = (date) => {
     const year = date.getFullYear();
     const month = date.getMonth();
@@ -2638,9 +2641,9 @@ const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
                         className={`text-xs px-1 py-0.5 rounded truncate ${
                           task.completed ? 'bg-green-200 text-green-800' : 'bg-blue-100 text-blue-800'
                         } ${viewMode === 'internal' ? 'cursor-pointer hover:opacity-80' : ''}`}
-                        title={task.taskTitle}
+                        title={getTaskName(task)}
                       >
-                        {task.taskTitle.substring(0, 12)}{task.taskTitle.length > 12 ? '...' : ''}
+                        {getTaskName(task).substring(0, 12)}{getTaskName(task).length > 12 ? '...' : ''}
                       </div>
                     ))}
                     {dayTasks.length > 2 && (
@@ -2691,9 +2694,9 @@ const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
                         className={`text-xs px-1 py-0.5 rounded truncate ${
                           task.completed ? 'bg-green-200 text-green-800' : 'bg-blue-100 text-blue-800'
                         } ${viewMode === 'internal' ? 'cursor-pointer hover:opacity-80' : ''}`}
-                        title={task.taskTitle}
+                        title={getTaskName(task)}
                       >
-                        {task.taskTitle.substring(0, 15)}{task.taskTitle.length > 15 ? '...' : ''}
+                        {getTaskName(task).substring(0, 15)}{getTaskName(task).length > 15 ? '...' : ''}
                       </div>
                     ))}
                     {dayTasks.length > 4 && (
@@ -2729,7 +2732,7 @@ const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
                   </div>
                   <div className="flex-1">
                     <h4 className={`font-medium ${task.completed ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
-                      {task.taskTitle}
+                      {getTaskName(task)}
                     </h4>
                     <div className="mt-1 text-sm text-gray-500 flex flex-wrap gap-3">
                       {task.owner && <span>Owner: {task.owner}</span>}
