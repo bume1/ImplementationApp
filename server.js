@@ -2909,15 +2909,22 @@ app.post('/api/projects/:id/hubspot-sync', authenticateToken, async (req, res) =
     }
     
     // Sync all notes
+    let skippedNotes = 0;
     for (const note of allNotes) {
       try {
+        const noteText = note.text || note.content || note.body || note.noteContent || '';
+        if (!noteText) {
+          console.log(`Skipping note with empty content for task "${note.taskTitle}" (note id: ${note.id || 'unknown'})`);
+          skippedNotes++;
+          continue;
+        }
         await hubspot.syncTaskNoteToRecord(project.hubspotRecordId, {
           taskTitle: note.taskTitle,
           phase: note.phase,
           stage: note.stage,
-          noteContent: note.content,
-          author: note.createdBy || 'Unknown',
-          timestamp: note.createdAt || new Date().toISOString(),
+          noteContent: noteText,
+          author: note.author || note.createdBy || 'Unknown',
+          timestamp: note.createdAt || note.timestamp || new Date().toISOString(),
           projectName: project.name
         });
         syncedNoteCount++;
@@ -2933,12 +2940,18 @@ app.post('/api/projects/:id/hubspot-sync', authenticateToken, async (req, res) =
       await db.set('projects', projects);
     }
     
+    let message = `Successfully synced ${syncedTaskCount} tasks and ${syncedNoteCount} notes to HubSpot`;
+    if (skippedNotes > 0) {
+      message += ` (${skippedNotes} notes skipped due to empty content)`;
+    }
+    
     res.json({ 
-      message: `Successfully synced ${syncedTaskCount} tasks and ${syncedNoteCount} notes to HubSpot`,
+      message,
       syncedTasks: syncedTaskCount,
       totalTasks: completedTasks.length,
       syncedNotes: syncedNoteCount,
-      totalNotes: allNotes.length
+      totalNotes: allNotes.length,
+      skippedNotes
     });
   } catch (error) {
     console.error('Manual HubSpot sync error:', error);
