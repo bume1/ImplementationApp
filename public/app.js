@@ -993,9 +993,18 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
     setLoading(true);
     try {
       const data = await api.getProjects(token);
-      setProjects(data);
+      if (Array.isArray(data)) {
+        setProjects(data);
+      } else if (data && data.error) {
+        console.error('Failed to load projects:', data.error);
+        setProjects([]);
+      } else {
+        console.error('Unexpected projects response:', data);
+        setProjects([]);
+      }
     } catch (err) {
       console.error('Failed to load projects:', err);
+      setProjects([]);
     } finally {
       setLoading(false);
     }
@@ -5864,9 +5873,10 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
   const loadProjects = async () => {
     try {
       const data = await api.getProjects(token);
-      setProjects(data);
+      setProjects(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Failed to load projects:', err);
+      setProjects([]);
     }
   };
 
