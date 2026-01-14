@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script>
     tailwind.config = {
@@ -46,28 +46,43 @@
       const match = path.match(/\/portal\/([^\/]+)/);
       return match ? match[1] : null;
     };
-    
+
+    // Helper function to handle fetch responses properly
+    const handleResponse = async (response) => {
+      if (!response.ok) {
+        // Try to parse error message from response
+        try {
+          const errorData = await response.json();
+          throw new Error(errorData.error || `HTTP error ${response.status}`);
+        } catch (e) {
+          // If parsing fails, throw generic error
+          throw new Error(`HTTP error ${response.status}`);
+        }
+      }
+      return response.json();
+    };
+
     const api = {
       clientLogin: (email, password, slug) =>
         fetch(`${API_URL}/api/auth/client-login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, password, slug })
-        }).then(r => r.json()),
-      
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
       getPortalData: (token) =>
         fetch(`${API_URL}/api/client-portal/data`, {
           headers: { 'Authorization': `Bearer ${token}` }
-        }).then(r => r.json()),
-      
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
       getPortalSettings: () =>
-        fetch(`${API_URL}/api/portal-settings`).then(r => r.json()),
-      
+        fetch(`${API_URL}/api/portal-settings`).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
       getAnnouncements: () =>
-        fetch(`${API_URL}/api/announcements`).then(r => r.json()),
-      
+        fetch(`${API_URL}/api/announcements`).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
       getClientDocuments: (slug) =>
-        fetch(`${API_URL}/api/client-documents/${slug}`).then(r => r.json())
+        fetch(`${API_URL}/api/client-documents/${slug}`).then(handleResponse).catch(err => ({ error: err.message || 'Network error' }))
     };
     
     const LoginPage = ({ slug, onLogin }) => {
