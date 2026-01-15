@@ -203,7 +203,9 @@ const authenticateToken = async (req, res, next) => {
       // Client-specific fields
       isNewClient: freshUser.isNewClient || false,
       slug: freshUser.slug || null,
-      practiceName: freshUser.practiceName || null
+      practiceName: freshUser.practiceName || null,
+      // Team member designation
+      designation: freshUser.designation || null
     };
     next();
   });
@@ -266,7 +268,7 @@ app.post('/api/users', authenticateToken, async (req, res) => {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Admin access required' });
     }
-    const { email, password, name, role, practiceName, isNewClient, assignedProjects, logo } = req.body;
+    const { email, password, name, role, practiceName, isNewClient, assignedProjects, logo, designation } = req.body;
     if (!email || !password || !name) {
       return res.status(400).json({ error: 'Email, password, and name are required' });
     }
@@ -283,6 +285,11 @@ app.post('/api/users', authenticateToken, async (req, res) => {
       role: role || 'user',
       createdAt: new Date().toISOString()
     };
+    
+    // Team member designation (sales, customer_success, technical)
+    if (role === 'user' && designation) {
+      newUser.designation = designation;
+    }
     
     // Client-specific fields
     if (role === 'client') {
@@ -327,11 +334,11 @@ app.post('/api/auth/login', async (req, res) => {
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
-    const token = jwt.sign(
-      { id: user.id, email: user.email, name: user.name, role: user.role },
-      JWT_SECRET,
-      { expiresIn: '24h' }
-    );
+    const tokenPayload = { id: user.id, email: user.email, name: user.name, role: user.role };
+    if (user.role === 'user' && user.designation) {
+      tokenPayload.designation = user.designation;
+    }
+    const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '24h' });
     const userResponse = { 
       id: user.id, 
       email: user.email, 
@@ -345,10 +352,11 @@ app.post('/api/auth/login', async (req, res) => {
       userResponse.slug = user.slug;
       userResponse.assignedProjects = user.assignedProjects || [];
     }
-    // Include project access levels for team members
+    // Include project access levels and designation for team members
     if (user.role === 'user') {
       userResponse.assignedProjects = user.assignedProjects || [];
       userResponse.projectAccessLevels = user.projectAccessLevels || {};
+      userResponse.designation = user.designation || null;
     }
     res.json({ token, user: userResponse });
   } catch (error) {
@@ -520,7 +528,7 @@ app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
 app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
-    const { name, email, role, password, assignedProjects, projectAccessLevels, practiceName, isNewClient, logo, hubspotCompanyId, hubspotDealId, hubspotContactId } = req.body;
+    const { name, email, role, password, assignedProjects, projectAccessLevels, practiceName, isNewClient, logo, hubspotCompanyId, hubspotDealId, hubspotContactId, designation } = req.body;
     const users = await getUsers();
     const idx = users.findIndex(u => u.id === userId);
     if (idx === -1) return res.status(404).json({ error: 'User not found' });
@@ -531,6 +539,9 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
     if (password) users[idx].password = await bcrypt.hash(password, 10);
     if (assignedProjects !== undefined) users[idx].assignedProjects = assignedProjects;
     if (projectAccessLevels !== undefined) users[idx].projectAccessLevels = projectAccessLevels;
+    
+    // Team member designation
+    if (designation !== undefined) users[idx].designation = designation;
     
     // Client-specific fields
     if (practiceName !== undefined) {
@@ -555,6 +566,7 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
       email: users[idx].email, 
       name: users[idx].name, 
       role: users[idx].role,
+      designation: users[idx].designation || null,
       assignedProjects: users[idx].assignedProjects || [],
       projectAccessLevels: users[idx].projectAccessLevels || {},
       practiceName: users[idx].practiceName || null,
@@ -4229,6 +4241,187 @@ app.get('/thrive365labslaunch/:slug', async (req, res) => {
     res.sendFile(__dirname + '/public/client.html');
   } else {
     res.status(404).send('Project not found');
+  }
+});
+
+// ============== VALIDATION & TRAINING SERVICE REPORTS ==============
+// Get validation/training tasks for a project (Phase 3 with validation tags)
+app.get('/api/projects/:projectId/validation-tasks', authenticateToken, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const project = await getProjectById(projectId);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    
+    const tasks = getTasks(project);
+    const validationTasks = tasks.filter(t => 
+      t.phase === 'Phase 3' && 
+      t.tags && 
+      t.tags.some(tag => tag.toLowerCase().includes('validation') || tag.toLowerCase().includes('training') || tag.toLowerCase().includes('installation'))
+    );
+    
+    res.json(validationTasks);
+  } catch (error) {
+    console.error('Error getting validation tasks:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get all validation reports for a project
+app.get('/api/projects/:projectId/validation-reports', authenticateToken, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const reports = await db.get(`validation_reports_${projectId}`) || [];
+    res.json(reports);
+  } catch (error) {
+    console.error('Error getting validation reports:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Create a new validation report
+app.post('/api/projects/:projectId/validation-reports', authenticateToken, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { sections, hardwareFeedback, casSignature, labTechSignature, casName, labTechName } = req.body;
+    
+    // Check if user has technical designation
+    if (req.user.role !== 'admin') {
+      const users = await getUsers();
+      const currentUser = users.find(u => u.id === req.user.id);
+      if (!currentUser || currentUser.designation !== 'technical') {
+        return res.status(403).json({ error: 'Only Technical team members can create validation reports' });
+      }
+    }
+    
+    const project = await getProjectById(projectId);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    
+    const report = {
+      id: uuidv4(),
+      projectId,
+      createdBy: req.user.id,
+      createdByName: req.user.name,
+      createdAt: new Date().toISOString(),
+      sections: sections || [],
+      hardwareFeedback: hardwareFeedback || '',
+      casSignature: casSignature || null,
+      casName: casName || '',
+      casSignedAt: casSignature ? new Date().toISOString() : null,
+      labTechSignature: labTechSignature || null,
+      labTechName: labTechName || '',
+      labTechSignedAt: labTechSignature ? new Date().toISOString() : null,
+      status: (casSignature && labTechSignature) ? 'completed' : 'pending_signatures'
+    };
+    
+    const reports = await db.get(`validation_reports_${projectId}`) || [];
+    reports.push(report);
+    await db.set(`validation_reports_${projectId}`, reports);
+    
+    // If report is completed with both signatures, update the corresponding tasks
+    if (report.status === 'completed') {
+      const rawTasks = getRawTasks(project);
+      let updated = false;
+      
+      for (const section of sections) {
+        if (section.taskId && section.notes) {
+          const taskIndex = rawTasks.findIndex(t => t.id === section.taskId);
+          if (taskIndex !== -1) {
+            const existingNotes = rawTasks[taskIndex].notes || '';
+            const reportNote = `[Validation Report ${new Date().toLocaleDateString()}] ${section.notes}`;
+            rawTasks[taskIndex].notes = existingNotes ? `${existingNotes}\n\n${reportNote}` : reportNote;
+            updated = true;
+          }
+        }
+      }
+      
+      if (updated) {
+        project.tasks = rawTasks;
+        await saveProject(project);
+      }
+    }
+    
+    res.json(report);
+  } catch (error) {
+    console.error('Error creating validation report:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update validation report (add signatures)
+app.put('/api/projects/:projectId/validation-reports/:reportId', authenticateToken, async (req, res) => {
+  try {
+    const { projectId, reportId } = req.params;
+    const { casSignature, labTechSignature, casName, labTechName } = req.body;
+    
+    const reports = await db.get(`validation_reports_${projectId}`) || [];
+    const reportIndex = reports.findIndex(r => r.id === reportId);
+    if (reportIndex === -1) return res.status(404).json({ error: 'Report not found' });
+    
+    const report = reports[reportIndex];
+    
+    if (casSignature && !report.casSignature) {
+      report.casSignature = casSignature;
+      report.casName = casName || req.user.name;
+      report.casSignedAt = new Date().toISOString();
+    }
+    
+    if (labTechSignature && !report.labTechSignature) {
+      report.labTechSignature = labTechSignature;
+      report.labTechName = labTechName || req.user.name;
+      report.labTechSignedAt = new Date().toISOString();
+    }
+    
+    if (report.casSignature && report.labTechSignature) {
+      report.status = 'completed';
+      
+      // Update tasks with notes from the report sections
+      const project = await getProjectById(projectId);
+      if (project) {
+        const rawTasks = getRawTasks(project);
+        let updated = false;
+        
+        for (const section of report.sections) {
+          if (section.taskId && section.notes) {
+            const taskIndex = rawTasks.findIndex(t => t.id === section.taskId);
+            if (taskIndex !== -1) {
+              const existingNotes = rawTasks[taskIndex].notes || '';
+              const reportNote = `[Validation Report ${new Date().toLocaleDateString()}] ${section.notes}`;
+              if (!existingNotes.includes(reportNote)) {
+                rawTasks[taskIndex].notes = existingNotes ? `${existingNotes}\n\n${reportNote}` : reportNote;
+                updated = true;
+              }
+            }
+          }
+        }
+        
+        if (updated) {
+          project.tasks = rawTasks;
+          await saveProject(project);
+        }
+      }
+    }
+    
+    reports[reportIndex] = report;
+    await db.set(`validation_reports_${projectId}`, reports);
+    
+    res.json(report);
+  } catch (error) {
+    console.error('Error updating validation report:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get single validation report
+app.get('/api/projects/:projectId/validation-reports/:reportId', authenticateToken, async (req, res) => {
+  try {
+    const { projectId, reportId } = req.params;
+    const reports = await db.get(`validation_reports_${projectId}`) || [];
+    const report = reports.find(r => r.id === reportId);
+    if (!report) return res.status(404).json({ error: 'Report not found' });
+    res.json(report);
+  } catch (error) {
+    console.error('Error getting validation report:', error);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 

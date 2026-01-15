@@ -43,6 +43,8 @@ Preferred communication style: Simple, everyday language.
 - **Timeline Sorting**: Tasks in timeline views are sorted by due date (earliest first), with tasks without due dates appearing last.
 - **Data Normalization**: Admin utilities for normalizing subtask data inconsistencies and regenerating slugs.
 - **Idempotent HubSpot Sync**: Tasks and notes store HubSpot IDs to prevent duplicates on subsequent syncs.
+- **User Designations**: Team members (role: user) can have extended designations: Sales, Customer Success, or Technical. Designations control access to specialized features.
+- **Validation & Training Service Report**: Technical team members can submit formal validation reports for Phase 3 tasks tagged with validation/training/installation tags. Reports include notes per validation segment, hardware feedback section, and dual signature capture (Clinical Application Specialist + Lab Tech). Submitted reports automatically update corresponding task notes.
 
 ### System Design Choices
 - **Modularity**: Clear separation of frontend and backend.
