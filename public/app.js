@@ -1,4 +1,4 @@
-const { useState, useEffect, useMemo, useRef } = React;
+const { useState, useEffect, useMemo } = React;
 const API_URL = window.location.origin;
 
 // ============== STANDARD PHASES AND STAGES (Always visible) ==============
@@ -587,41 +587,6 @@ const api = {
     fetch(`${API_URL}/api/projects/${projectId}/tasks/${taskId}/files/${fileId}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
-
-  getValidationTasks: (token, projectId) =>
-    fetch(`${API_URL}/api/projects/${projectId}/validation-tasks`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
-
-  getValidationReports: (token, projectId) =>
-    fetch(`${API_URL}/api/projects/${projectId}/validation-reports`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
-
-  getValidationReport: (token, projectId, reportId) =>
-    fetch(`${API_URL}/api/projects/${projectId}/validation-reports/${reportId}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
-
-  createValidationReport: (token, projectId, reportData) =>
-    fetch(`${API_URL}/api/projects/${projectId}/validation-reports`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(reportData)
-    }).then(r => r.json()),
-
-  updateValidationReport: (token, projectId, reportId, updates) =>
-    fetch(`${API_URL}/api/projects/${projectId}/validation-reports/${reportId}`, {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(updates)
     }).then(r => r.json())
 };
 
@@ -1033,10 +998,9 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
   const loadTemplates = async () => {
     try {
       const data = await api.getTemplates(token);
-      setTemplates(Array.isArray(data) ? data : []);
+      setTemplates(data);
     } catch (err) {
       console.error('Failed to load templates:', err);
-      setTemplates([]);
     }
   };
 
@@ -3182,348 +3146,6 @@ const SoftPilotChecklist = ({ token, project, tasks, teamMembers, onClose, onSub
   );
 };
 
-// ============== VALIDATION & TRAINING SERVICE REPORT ==============
-const ValidationReportForm = ({ token, user, project, onClose, onSubmit }) => {
-  const [validationTasks, setValidationTasks] = useState([]);
-  const [sections, setSections] = useState([]);
-  const [hardwareFeedback, setHardwareFeedback] = useState('');
-  const [casSignature, setCasSignature] = useState('');
-  const [casName, setCasName] = useState(user.name || '');
-  const [labTechSignature, setLabTechSignature] = useState('');
-  const [labTechName, setLabTechName] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
-  const casCanvasRef = useRef(null);
-  const labTechCanvasRef = useRef(null);
-  const [casDrawing, setCasDrawing] = useState(false);
-  const [labTechDrawing, setLabTechDrawing] = useState(false);
-  const [casSigned, setCasSigned] = useState(false);
-  const [labTechSigned, setLabTechSigned] = useState(false);
-
-  useEffect(() => {
-    loadValidationTasks();
-  }, []);
-
-  const loadValidationTasks = async () => {
-    try {
-      const tasks = await api.getValidationTasks(token, project.id);
-      setValidationTasks(Array.isArray(tasks) ? tasks : []);
-      const initialSections = (Array.isArray(tasks) ? tasks : []).map(t => ({
-        taskId: t.id,
-        taskTitle: t.taskTitle,
-        clientName: t.clientName || t.taskTitle,
-        notes: ''
-      }));
-      setSections(initialSections);
-    } catch (err) {
-      console.error('Failed to load validation tasks:', err);
-      setError('Failed to load validation tasks');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const initCanvas = (canvasRef) => {
-    const canvas = canvasRef.current;
-    if (canvas) {
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = 'white';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.strokeStyle = '#000';
-      ctx.lineWidth = 2;
-      ctx.lineCap = 'round';
-    }
-  };
-
-  useEffect(() => {
-    initCanvas(casCanvasRef);
-    initCanvas(labTechCanvasRef);
-  }, []);
-
-  const getMousePos = (canvas, e) => {
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    return {
-      x: (e.clientX - rect.left) * scaleX,
-      y: (e.clientY - rect.top) * scaleY
-    };
-  };
-
-  const startDrawing = (canvasRef, setDrawing) => (e) => {
-    setDrawing(true);
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    const pos = getMousePos(canvas, e);
-    ctx.beginPath();
-    ctx.moveTo(pos.x, pos.y);
-  };
-
-  const draw = (canvasRef, drawing) => (e) => {
-    if (!drawing) return;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    const pos = getMousePos(canvas, e);
-    ctx.lineTo(pos.x, pos.y);
-    ctx.stroke();
-  };
-
-  const stopDrawing = (setDrawing, setSigned, canvasRef) => () => {
-    setDrawing(false);
-    if (canvasRef.current) {
-      setSigned(isCanvasSigned(canvasRef.current));
-    }
-  };
-
-  const isCanvasSigned = (canvas) => {
-    const ctx = canvas.getContext('2d');
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imageData.data;
-    for (let i = 0; i < data.length; i += 4) {
-      if (data[i] < 250 || data[i+1] < 250 || data[i+2] < 250) {
-        return true;
-      }
-    }
-    return false;
-  };
-
-  const clearCasCanvas = () => {
-    initCanvas(casCanvasRef);
-    setCasSigned(false);
-    initCanvas(labTechCanvasRef);
-    setLabTechSigned(false);
-  };
-
-  const clearLabTechCanvas = () => {
-    initCanvas(labTechCanvasRef);
-    setLabTechSigned(false);
-  };
-
-  const getSignatureData = (canvasRef) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return null;
-    return canvas.toDataURL('image/png');
-  };
-
-  const updateSectionNotes = (taskId, notes) => {
-    setSections(prev => prev.map(s => 
-      s.taskId === taskId ? { ...s, notes } : s
-    ));
-  };
-
-  const handleSubmit = async () => {
-    if (!casName.trim()) {
-      setError('Clinical Application Specialist name is required');
-      return;
-    }
-    if (!casSigned) {
-      setError('Clinical Application Specialist signature is required');
-      return;
-    }
-    if (!labTechName.trim()) {
-      setError('Lab Tech name is required');
-      return;
-    }
-    if (!labTechSigned) {
-      setError('Lab Tech signature is required');
-      return;
-    }
-
-    const casData = getSignatureData(casCanvasRef);
-    const labTechData = getSignatureData(labTechCanvasRef);
-
-    setSubmitting(true);
-    setError('');
-
-    try {
-      const reportData = {
-        sections,
-        hardwareFeedback,
-        casSignature: casData,
-        casName,
-        labTechSignature: labTechData,
-        labTechName
-      };
-
-      const result = await api.createValidationReport(token, project.id, reportData);
-      if (result.error) {
-        setError(result.error);
-        return;
-      }
-
-      onSubmit && onSubmit(result);
-      onClose();
-    } catch (err) {
-      console.error('Failed to submit validation report:', err);
-      setError('Failed to submit report');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg p-8">
-          <div className="text-xl">Loading validation tasks...</div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white border-b px-6 py-4 z-10">
-          <div className="flex justify-between items-center">
-            <h2 className="text-xl font-bold text-primary">Validation & Training Service Report</h2>
-            <button onClick={onClose} className="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
-          </div>
-          <p className="text-sm text-gray-600 mt-1">Project: {project.name} - {project.clientName}</p>
-        </div>
-
-        {error && (
-          <div className="mx-6 mt-4 p-3 bg-red-100 border border-red-300 text-red-700 rounded">
-            {error}
-          </div>
-        )}
-
-        <div className="p-6 space-y-6">
-          {sections.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <p>No validation/training tasks found in Phase 3.</p>
-              <p className="text-sm mt-2">Tasks must be tagged with 'validation', 'training', or 'installation' to appear here.</p>
-            </div>
-          ) : (
-            <>
-              <div className="space-y-4">
-                <h3 className="font-semibold text-lg border-b pb-2">Validation & Training Segments</h3>
-                {sections.map((section, idx) => (
-                  <div key={section.taskId} className="border rounded-lg p-4 bg-gray-50">
-                    <label className="block font-medium text-gray-800 mb-2">
-                      {idx + 1}. {section.clientName || section.taskTitle}
-                    </label>
-                    <textarea
-                      value={section.notes}
-                      onChange={(e) => updateSectionNotes(section.taskId, e.target.value)}
-                      placeholder="Enter notes, updates, and agreed upon next steps for this segment..."
-                      className="w-full px-3 py-2 border rounded-md min-h-[80px]"
-                    />
-                  </div>
-                ))}
-              </div>
-
-              <div className="border rounded-lg p-4 bg-amber-50">
-                <h3 className="font-semibold text-lg mb-2">Hardware Feedback</h3>
-                <textarea
-                  value={hardwareFeedback}
-                  onChange={(e) => setHardwareFeedback(e.target.value)}
-                  placeholder="Enter any hardware-related feedback, issues, or notes..."
-                  className="w-full px-3 py-2 border rounded-md min-h-[100px]"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-t pt-6">
-                <div className="border rounded-lg p-4">
-                  <h3 className="font-semibold text-lg mb-3">
-                    Clinical Application Specialist Signature
-                    {casSigned && <span className="ml-2 text-green-600 text-sm">(Signed)</span>}
-                  </h3>
-                  <div className="mb-3">
-                    <label className="block text-sm font-medium mb-1">Name *</label>
-                    <input
-                      type="text"
-                      value={casName}
-                      onChange={(e) => setCasName(e.target.value)}
-                      className="w-full px-3 py-2 border rounded-md"
-                      placeholder="Enter your name"
-                    />
-                  </div>
-                  <div className="border rounded bg-white">
-                    <canvas
-                      ref={casCanvasRef}
-                      width={300}
-                      height={100}
-                      className="w-full cursor-crosshair"
-                      onMouseDown={startDrawing(casCanvasRef, setCasDrawing)}
-                      onMouseMove={draw(casCanvasRef, casDrawing)}
-                      onMouseUp={stopDrawing(setCasDrawing, setCasSigned, casCanvasRef)}
-                      onMouseLeave={stopDrawing(setCasDrawing, setCasSigned, casCanvasRef)}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={clearCasCanvas}
-                    className="mt-2 text-sm text-blue-600 hover:underline"
-                  >
-                    Clear Signature
-                  </button>
-                </div>
-
-                <div className={`border rounded-lg p-4 ${!casSigned ? 'opacity-50' : ''}`}>
-                  <h3 className="font-semibold text-lg mb-3">
-                    Lab Tech Signature
-                    {!casSigned && <span className="ml-2 text-amber-600 text-sm">(CAS must sign first)</span>}
-                    {labTechSigned && <span className="ml-2 text-green-600 text-sm">(Signed)</span>}
-                  </h3>
-                  <div className="mb-3">
-                    <label className="block text-sm font-medium mb-1">Name *</label>
-                    <input
-                      type="text"
-                      value={labTechName}
-                      onChange={(e) => setLabTechName(e.target.value)}
-                      className="w-full px-3 py-2 border rounded-md"
-                      placeholder="Enter lab tech name"
-                      disabled={!casSigned}
-                    />
-                  </div>
-                  <div className={`border rounded bg-white ${!casSigned ? 'pointer-events-none' : ''}`}>
-                    <canvas
-                      ref={labTechCanvasRef}
-                      width={300}
-                      height={100}
-                      className={`w-full ${casSigned ? 'cursor-crosshair' : 'cursor-not-allowed'}`}
-                      onMouseDown={casSigned ? startDrawing(labTechCanvasRef, setLabTechDrawing) : undefined}
-                      onMouseMove={casSigned ? draw(labTechCanvasRef, labTechDrawing) : undefined}
-                      onMouseUp={casSigned ? stopDrawing(setLabTechDrawing, setLabTechSigned, labTechCanvasRef) : undefined}
-                      onMouseLeave={casSigned ? stopDrawing(setLabTechDrawing, setLabTechSigned, labTechCanvasRef) : undefined}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={clearLabTechCanvas}
-                    className="mt-2 text-sm text-blue-600 hover:underline disabled:text-gray-400"
-                    disabled={!casSigned}
-                  >
-                    Clear Signature
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className="sticky bottom-0 bg-gray-50 border-t px-6 py-4 flex justify-end gap-3">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={submitting || sections.length === 0}
-            className="px-6 py-2 bg-primary text-white rounded-md hover:bg-accent disabled:bg-gray-400"
-          >
-            {submitting ? 'Submitting...' : 'Submit Report'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 // ============== PROJECT TRACKER COMPONENT ==============
 const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, onBack, onLogout }) => {
   const [project, setProject] = useState(initialProject);
@@ -3559,10 +3181,8 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
   const [creatingTemplate, setCreatingTemplate] = useState(false);
   const [showNotesLog, setShowNotesLog] = useState(false);
   const [showEditProject, setShowEditProject] = useState(false);
-  const [showValidationReport, setShowValidationReport] = useState(false);
 
   const isAdmin = user.role === 'admin';
-  const isTechnical = user.designation === 'technical';
   const userAccessLevel = isAdmin ? 'edit' : ((user.projectAccessLevels || {})[project.id] || 'edit');
   const canEdit = isAdmin || userAccessLevel === 'edit';
   
@@ -5083,14 +4703,6 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                             View & Complete Checklist
                           </button>
                         )}
-                        {viewMode === 'internal' && phase === 'Phase 3' && (isAdmin || isTechnical) && (
-                          <button
-                            onClick={() => setShowValidationReport(true)}
-                            className="px-3 py-1 bg-cyan-600 text-white text-sm rounded-md hover:bg-cyan-700"
-                          >
-                            Validation Report
-                          </button>
-                        )}
                         {viewMode === 'internal' && canEdit && (
                           <button
                             onClick={() => {
@@ -6064,19 +5676,6 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
           />
         )}
 
-        {showValidationReport && (
-          <ValidationReportForm
-            token={token}
-            user={user}
-            project={project}
-            onClose={() => setShowValidationReport(false)}
-            onSubmit={() => {
-              loadTasks();
-              alert('Validation & Training Report submitted successfully! Task notes have been updated.');
-            }}
-          />
-        )}
-
         {/* Notes Log Side Panel */}
         {showNotesLog && (
           <>
@@ -6264,7 +5863,7 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
   const [editingUser, setEditingUser] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAddUser, setShowAddUser] = useState(false);
-  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'user', designation: '', practiceName: '', isNewClient: false, assignedProjects: [], logo: '', hubspotCompanyId: '', hubspotDealId: '', hubspotContactId: '' });
+  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'user', practiceName: '', isNewClient: false, assignedProjects: [], logo: '', hubspotCompanyId: '', hubspotDealId: '', hubspotContactId: '' });
   const [addError, setAddError] = useState('');
   const [passwordResetRequests, setPasswordResetRequests] = useState([]);
 
@@ -6376,7 +5975,7 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
         return;
       }
       await loadUsers();
-      setNewUser({ name: '', email: '', password: '', role: 'user', designation: '', practiceName: '', isNewClient: false, assignedProjects: [], logo: '', hubspotCompanyId: '', hubspotDealId: '', hubspotContactId: '' });
+      setNewUser({ name: '', email: '', password: '', role: 'user', practiceName: '', isNewClient: false, assignedProjects: [], logo: '', hubspotCompanyId: '', hubspotDealId: '', hubspotContactId: '' });
       setShowAddUser(false);
       setAddError('');
     } catch (err) {
@@ -6391,7 +5990,6 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
         name: editingUser.name,
         email: editingUser.email,
         role: editingUser.role,
-        designation: editingUser.designation || '',
         assignedProjects: editingUser.assignedProjects || [],
         projectAccessLevels: editingUser.projectAccessLevels || {},
         practiceName: editingUser.practiceName || '',
@@ -6540,7 +6138,7 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
                 <label className="block text-sm font-medium mb-1">Role</label>
                 <select
                   value={newUser.role}
-                  onChange={(e) => setNewUser({...newUser, role: e.target.value, designation: e.target.value === 'user' ? newUser.designation : ''})}
+                  onChange={(e) => setNewUser({...newUser, role: e.target.value})}
                   className="w-full px-3 py-2 border rounded-md"
                 >
                   <option value="user">Team Member</option>
@@ -6548,21 +6146,6 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
                   <option value="client">Client</option>
                 </select>
               </div>
-              {newUser.role === 'user' && (
-                <div>
-                  <label className="block text-sm font-medium mb-1">Designation</label>
-                  <select
-                    value={newUser.designation || ''}
-                    onChange={(e) => setNewUser({...newUser, designation: e.target.value})}
-                    className="w-full px-3 py-2 border rounded-md"
-                  >
-                    <option value="">Select Designation</option>
-                    <option value="sales">Sales</option>
-                    <option value="customer_success">Customer Success</option>
-                    <option value="technical">Technical</option>
-                  </select>
-                </div>
-              )}
               {newUser.role === 'client' && (
                 <>
                   <div>
@@ -6670,7 +6253,7 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
                 Create User
               </button>
               <button
-                onClick={() => { setShowAddUser(false); setAddError(''); setNewUser({ name: '', email: '', password: '', role: 'user', designation: '', practiceName: '', isNewClient: false, assignedProjects: [], logo: '', hubspotCompanyId: '', hubspotDealId: '', hubspotContactId: '' }); }}
+                onClick={() => { setShowAddUser(false); setAddError(''); setNewUser({ name: '', email: '', password: '', role: 'user', practiceName: '', isNewClient: false, assignedProjects: [], logo: '', hubspotCompanyId: '', hubspotDealId: '', hubspotContactId: '' }); }}
                 className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400"
               >
                 Cancel
@@ -6703,15 +6286,6 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
                     }`}>
                       {u.role === 'client' ? 'Client' : u.role === 'admin' ? 'Admin' : 'Team'}
                     </span>
-                    {u.role === 'user' && u.designation && (
-                      <span className={`ml-1 px-1.5 py-0.5 text-xs rounded font-medium ${
-                        u.designation === 'sales' ? 'bg-green-100 text-green-700' :
-                        u.designation === 'customer_success' ? 'bg-orange-100 text-orange-700' :
-                        u.designation === 'technical' ? 'bg-cyan-100 text-cyan-700' : 'bg-gray-100 text-gray-600'
-                      }`}>
-                        {u.designation === 'sales' ? 'Sales' : u.designation === 'customer_success' ? 'Customer Success' : u.designation === 'technical' ? 'Technical' : u.designation}
-                      </span>
-                    )}
                     {u.role === 'client' && u.practiceName && (
                       <div className="text-xs text-gray-500 mt-1">{u.practiceName}</div>
                     )}
@@ -6781,7 +6355,7 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
                   <label className="block text-sm font-medium mb-1">Role</label>
                   <select
                     value={editingUser.role}
-                    onChange={(e) => setEditingUser({...editingUser, role: e.target.value, designation: e.target.value === 'user' ? editingUser.designation : ''})}
+                    onChange={(e) => setEditingUser({...editingUser, role: e.target.value})}
                     className="w-full px-3 py-2 border rounded-md"
                   >
                     <option value="user">Team Member</option>
@@ -6789,21 +6363,6 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
                     <option value="client">Client</option>
                   </select>
                 </div>
-                {editingUser.role === 'user' && (
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Designation</label>
-                    <select
-                      value={editingUser.designation || ''}
-                      onChange={(e) => setEditingUser({...editingUser, designation: e.target.value})}
-                      className="w-full px-3 py-2 border rounded-md"
-                    >
-                      <option value="">Select Designation</option>
-                      <option value="sales">Sales</option>
-                      <option value="customer_success">Customer Success</option>
-                      <option value="technical">Technical</option>
-                    </select>
-                  </div>
-                )}
                 <div>
                   <label className="block text-sm font-medium mb-1">New Password (optional)</label>
                   <input
@@ -7035,10 +6594,9 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
     setLoading(true);
     try {
       const data = await api.getTemplates(token);
-      setTemplates(Array.isArray(data) ? data : []);
+      setTemplates(data);
     } catch (err) {
       console.error('Failed to load templates:', err);
-      setTemplates([]);
     } finally {
       setLoading(false);
     }
@@ -7834,10 +7392,9 @@ const Reporting = ({ token, user, onBack, onLogout }) => {
   const loadReportData = async () => {
     try {
       const data = await api.getReportingData(token);
-      setReportData(Array.isArray(data) ? data : []);
+      setReportData(data);
     } catch (error) {
       console.error('Failed to load reporting data:', error);
-      setReportData([]);
     } finally {
       setLoading(false);
     }
