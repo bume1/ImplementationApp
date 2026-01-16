@@ -4983,6 +4983,12 @@ app.get('/api/admin-hub/dashboard', authenticateToken, requireAdmin, async (req,
   }
 });
 
+// ============== UNIFIED LOGIN ==============
+// Unified login portal for all user types
+app.get('/login', (req, res) => {
+  res.sendFile(__dirname + '/public/login.html');
+});
+
 // ============== AUTHENTICATED CLIENT PORTAL ROUTES ==============
 // Central client portal login: /portal
 app.get('/portal', (req, res) => {
