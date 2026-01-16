@@ -193,13 +193,15 @@ const authenticateToken = async (req, res, next) => {
     const freshUser = users.find(u => u.id === tokenUser.id);
     if (!freshUser) return res.status(403).json({ error: 'User not found' });
     // Use fresh data for all user properties to ensure permission changes take effect immediately
-    req.user = { 
+    req.user = {
       id: freshUser.id,
       email: freshUser.email,
       name: freshUser.name,
       role: freshUser.role,
       assignedProjects: freshUser.assignedProjects || [],
       projectAccessLevels: freshUser.projectAccessLevels || {},
+      // Service portal access
+      hasServicePortalAccess: freshUser.hasServicePortalAccess || false,
       // Client-specific fields
       isNewClient: freshUser.isNewClient || false,
       slug: freshUser.slug || null,
@@ -266,7 +268,7 @@ app.post('/api/users', authenticateToken, async (req, res) => {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Admin access required' });
     }
-    const { email, password, name, role, practiceName, isNewClient, assignedProjects, logo } = req.body;
+    const { email, password, name, role, practiceName, isNewClient, assignedProjects, logo, hasServicePortalAccess } = req.body;
     if (!email || !password || !name) {
       return res.status(400).json({ error: 'Email, password, and name are required' });
     }
@@ -281,9 +283,10 @@ app.post('/api/users', authenticateToken, async (req, res) => {
       name,
       password: hashedPassword,
       role: role || 'user',
+      hasServicePortalAccess: hasServicePortalAccess || false,
       createdAt: new Date().toISOString()
     };
-    
+
     // Client-specific fields
     if (role === 'client') {
       if (!practiceName) {
@@ -295,20 +298,21 @@ app.post('/api/users', authenticateToken, async (req, res) => {
       newUser.assignedProjects = assignedProjects || [];
       if (logo) newUser.logo = logo;
     }
-    
+
     users.push(newUser);
     await db.set('users', users);
-    res.json({ 
-      id: newUser.id, 
-      email: newUser.email, 
-      name: newUser.name, 
+    res.json({
+      id: newUser.id,
+      email: newUser.email,
+      name: newUser.name,
       role: newUser.role,
+      hasServicePortalAccess: newUser.hasServicePortalAccess,
       practiceName: newUser.practiceName,
       isNewClient: newUser.isNewClient,
       slug: newUser.slug,
       assignedProjects: newUser.assignedProjects,
       logo: newUser.logo || '',
-      createdAt: newUser.createdAt 
+      createdAt: newUser.createdAt
     });
   } catch (error) {
     console.error('Admin create user error:', error);
@@ -499,6 +503,7 @@ app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
       name: u.name,
       role: u.role,
       createdAt: u.createdAt,
+      hasServicePortalAccess: u.hasServicePortalAccess || false,
       assignedProjects: u.assignedProjects || [],
       projectAccessLevels: u.projectAccessLevels || {},
       // Client-specific fields
@@ -520,18 +525,21 @@ app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
 app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
-    const { name, email, role, password, assignedProjects, projectAccessLevels, practiceName, isNewClient, logo, hubspotCompanyId, hubspotDealId, hubspotContactId } = req.body;
+    const { name, email, role, password, assignedProjects, projectAccessLevels, practiceName, isNewClient, logo, hubspotCompanyId, hubspotDealId, hubspotContactId, hasServicePortalAccess } = req.body;
     const users = await getUsers();
     const idx = users.findIndex(u => u.id === userId);
     if (idx === -1) return res.status(404).json({ error: 'User not found' });
-    
+
     if (name) users[idx].name = name;
     if (email) users[idx].email = email;
     if (role) users[idx].role = role;
     if (password) users[idx].password = await bcrypt.hash(password, 10);
     if (assignedProjects !== undefined) users[idx].assignedProjects = assignedProjects;
     if (projectAccessLevels !== undefined) users[idx].projectAccessLevels = projectAccessLevels;
-    
+
+    // Service portal access toggle
+    if (hasServicePortalAccess !== undefined) users[idx].hasServicePortalAccess = hasServicePortalAccess;
+
     // Client-specific fields
     if (practiceName !== undefined) {
       users[idx].practiceName = practiceName;
@@ -543,18 +551,19 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
     }
     if (isNewClient !== undefined) users[idx].isNewClient = isNewClient;
     if (logo !== undefined) users[idx].logo = logo;
-    
+
     // HubSpot record IDs for client-level uploads
     if (hubspotCompanyId !== undefined) users[idx].hubspotCompanyId = hubspotCompanyId;
     if (hubspotDealId !== undefined) users[idx].hubspotDealId = hubspotDealId;
     if (hubspotContactId !== undefined) users[idx].hubspotContactId = hubspotContactId;
-    
+
     await db.set('users', users);
-    res.json({ 
-      id: users[idx].id, 
-      email: users[idx].email, 
-      name: users[idx].name, 
+    res.json({
+      id: users[idx].id,
+      email: users[idx].email,
+      name: users[idx].name,
       role: users[idx].role,
+      hasServicePortalAccess: users[idx].hasServicePortalAccess || false,
       assignedProjects: users[idx].assignedProjects || [],
       projectAccessLevels: users[idx].projectAccessLevels || {},
       practiceName: users[idx].practiceName || null,
@@ -4229,6 +4238,342 @@ app.get('/thrive365labslaunch/:slug', async (req, res) => {
     res.sendFile(__dirname + '/public/client.html');
   } else {
     res.status(404).send('Project not found');
+  }
+});
+
+// ============== SERVICE PORTAL ROUTES ==============
+
+// Service portal login - restricted to users with hasServicePortalAccess or admins
+app.post('/api/auth/service-login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Missing credentials' });
+    }
+    const users = await getUsers();
+    const user = users.find(u => u.email === email);
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      return res.status(400).json({ error: 'Invalid credentials' });
+    }
+
+    // Check if user has service portal access
+    if (user.role !== 'admin' && !user.hasServicePortalAccess) {
+      return res.status(403).json({ error: 'Access denied. You do not have Service Portal access. Please contact an administrator.' });
+    }
+
+    const token = jwt.sign(
+      { id: user.id, email: user.email, name: user.name, role: user.role, hasServicePortalAccess: user.hasServicePortalAccess },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        hasServicePortalAccess: user.hasServicePortalAccess || user.role === 'admin'
+      }
+    });
+  } catch (error) {
+    console.error('Service login error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Middleware to check service portal access
+const requireServiceAccess = (req, res, next) => {
+  if (req.user.role !== 'admin' && !req.user.hasServicePortalAccess) {
+    return res.status(403).json({ error: 'Service portal access required' });
+  }
+  next();
+};
+
+// Get service portal data
+app.get('/api/service-portal/data', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    const userReports = req.user.role === 'admin'
+      ? serviceReports
+      : serviceReports.filter(r => r.technicianId === req.user.id);
+
+    // Sort by date descending
+    userReports.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    res.json({
+      recentReports: userReports.slice(0, 10),
+      totalReports: userReports.length
+    });
+  } catch (error) {
+    console.error('Service portal data error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get clients list for service portal
+app.get('/api/service-portal/clients', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const projects = await getProjects();
+    const users = await getUsers();
+
+    // Get unique clients from projects
+    const clientMap = new Map();
+
+    projects.forEach(project => {
+      if (project.clientName && !clientMap.has(project.clientName)) {
+        clientMap.set(project.clientName, {
+          name: project.clientName,
+          clientName: project.clientName,
+          address: project.clientAddress || '',
+          projectId: project.id
+        });
+      }
+    });
+
+    // Also add client users
+    users.filter(u => u.role === 'client').forEach(user => {
+      if (user.practiceName && !clientMap.has(user.practiceName)) {
+        clientMap.set(user.practiceName, {
+          name: user.practiceName,
+          clientName: user.practiceName,
+          address: '',
+          userId: user.id
+        });
+      }
+    });
+
+    res.json(Array.from(clientMap.values()));
+  } catch (error) {
+    console.error('Get clients error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Create service report
+app.post('/api/service-reports', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const reportData = req.body;
+    const serviceReports = (await db.get('service_reports')) || [];
+
+    const newReport = {
+      id: uuidv4(),
+      ...reportData,
+      technicianId: req.user.id,
+      technicianName: req.user.name,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    serviceReports.push(newReport);
+    await db.set('service_reports', serviceReports);
+
+    // Log activity
+    await logActivity(
+      req.user.id,
+      req.user.name,
+      'service_report_created',
+      'service_report',
+      newReport.id,
+      { clientName: reportData.clientFacilityName, serviceType: reportData.serviceType }
+    );
+
+    res.json(newReport);
+  } catch (error) {
+    console.error('Create service report error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get service reports with filtering
+app.get('/api/service-reports', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    let serviceReports = (await db.get('service_reports')) || [];
+
+    // Apply filters
+    const { client, dateFrom, dateTo, search, technicianId } = req.query;
+
+    if (client) {
+      serviceReports = serviceReports.filter(r =>
+        r.clientFacilityName?.toLowerCase().includes(client.toLowerCase())
+      );
+    }
+
+    if (dateFrom) {
+      serviceReports = serviceReports.filter(r =>
+        new Date(r.serviceCompletionDate || r.createdAt) >= new Date(dateFrom)
+      );
+    }
+
+    if (dateTo) {
+      serviceReports = serviceReports.filter(r =>
+        new Date(r.serviceCompletionDate || r.createdAt) <= new Date(dateTo)
+      );
+    }
+
+    if (search) {
+      const searchLower = search.toLowerCase();
+      serviceReports = serviceReports.filter(r =>
+        r.clientFacilityName?.toLowerCase().includes(searchLower) ||
+        r.serviceType?.toLowerCase().includes(searchLower) ||
+        r.hubspotTicketNumber?.toLowerCase().includes(searchLower) ||
+        r.analyzerModel?.toLowerCase().includes(searchLower)
+      );
+    }
+
+    if (technicianId) {
+      serviceReports = serviceReports.filter(r => r.technicianId === technicianId);
+    }
+
+    // Sort by date descending
+    serviceReports.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    res.json(serviceReports);
+  } catch (error) {
+    console.error('Get service reports error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get single service report
+app.get('/api/service-reports/:id', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    const report = serviceReports.find(r => r.id === req.params.id);
+
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    res.json(report);
+  } catch (error) {
+    console.error('Get service report error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update service report
+app.put('/api/service-reports/:id', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const existingReport = serviceReports[reportIndex];
+
+    // Only allow editing own reports unless admin
+    if (req.user.role !== 'admin' && existingReport.technicianId !== req.user.id) {
+      return res.status(403).json({ error: 'Not authorized to edit this report' });
+    }
+
+    serviceReports[reportIndex] = {
+      ...existingReport,
+      ...req.body,
+      id: existingReport.id,
+      technicianId: existingReport.technicianId,
+      createdAt: existingReport.createdAt,
+      updatedAt: new Date().toISOString()
+    };
+
+    await db.set('service_reports', serviceReports);
+    res.json(serviceReports[reportIndex]);
+  } catch (error) {
+    console.error('Update service report error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete service report (admin only)
+app.delete('/api/service-reports/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    let serviceReports = (await db.get('service_reports')) || [];
+    const report = serviceReports.find(r => r.id === req.params.id);
+
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    serviceReports = serviceReports.filter(r => r.id !== req.params.id);
+    await db.set('service_reports', serviceReports);
+
+    res.json({ message: 'Report deleted successfully' });
+  } catch (error) {
+    console.error('Delete service report error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Service portal HTML route
+app.get('/service-portal', (req, res) => {
+  res.sendFile(__dirname + '/public/service-portal.html');
+});
+
+// ============== ADMIN HUB ROUTES ==============
+
+// Admin hub HTML route
+app.get('/admin', (req, res) => {
+  res.sendFile(__dirname + '/public/admin-hub.html');
+});
+
+// Admin hub login endpoint (same as regular admin login)
+app.post('/api/auth/admin-login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Missing credentials' });
+    }
+    const users = await getUsers();
+    const user = users.find(u => u.email === email && u.role === 'admin');
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      return res.status(400).json({ error: 'Invalid credentials or not an admin' });
+    }
+
+    const token = jwt.sign(
+      { id: user.id, email: user.email, name: user.name, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role
+      }
+    });
+  } catch (error) {
+    console.error('Admin login error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Admin hub dashboard data
+app.get('/api/admin-hub/dashboard', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const users = await getUsers();
+    const projects = await getProjects();
+    const serviceReports = (await db.get('service_reports')) || [];
+
+    // Calculate statistics
+    const stats = {
+      totalUsers: users.length,
+      adminUsers: users.filter(u => u.role === 'admin').length,
+      clientUsers: users.filter(u => u.role === 'client').length,
+      servicePortalUsers: users.filter(u => u.hasServicePortalAccess).length,
+      totalProjects: projects.length,
+      activeProjects: projects.filter(p => p.status !== 'completed').length,
+      totalServiceReports: serviceReports.length,
+      recentServiceReports: serviceReports.slice(0, 5)
+    };
+
+    res.json(stats);
+  } catch (error) {
+    console.error('Admin hub dashboard error:', error);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
