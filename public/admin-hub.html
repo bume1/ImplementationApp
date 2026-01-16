@@ -117,6 +117,51 @@
       getServiceReports: (token) =>
         fetch(`${API_URL}/api/service-reports`, {
           headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      // Service Portal APIs
+      getServiceClients: (token) =>
+        fetch(`${API_URL}/api/service-portal/clients`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      submitServiceReport: (token, reportData) =>
+        fetch(`${API_URL}/api/service-reports`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(reportData)
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      // Client Portal APIs
+      getPortalSettings: () =>
+        fetch(`${API_URL}/api/portal-settings`).then(handleResponse).catch(err => ({ error: err.message })),
+
+      updatePortalSettings: (token, settings) =>
+        fetch(`${API_URL}/api/portal-settings`, {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(settings)
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      getAnnouncements: () =>
+        fetch(`${API_URL}/api/announcements`).then(handleResponse).catch(err => ({ error: err.message })),
+
+      createAnnouncement: (token, data) =>
+        fetch(`${API_URL}/api/announcements`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      deleteAnnouncement: (token, id) =>
+        fetch(`${API_URL}/api/announcements/${id}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      getInventoryReports: (token) =>
+        fetch(`${API_URL}/api/inventory/all-reports`, {
+          headers: { 'Authorization': `Bearer ${token}` }
         }).then(handleResponse).catch(err => ({ error: err.message }))
     };
 
@@ -190,22 +235,20 @@
       );
     };
 
-    // Sidebar with direct portal access
+    // Sidebar with embedded portal access
     const Sidebar = ({ activePage, onNavigate, user, token, isMobileOpen, onClose }) => {
       const menuItems = [
         { id: 'dashboard', label: 'Dashboard', icon: Icons.home },
         { id: 'users', label: 'User Management', icon: Icons.users },
-        { id: 'service_reports', label: 'Service Reports', icon: Icons.clipboard },
+        { id: 'service_portal', label: 'Service Portal', icon: Icons.clipboard, color: 'text-green-600' },
+        { id: 'client_portal', label: 'Client Portal', icon: Icons.folder, color: 'text-blue-600' },
       ];
 
-      // Direct portal navigation with token passing
-      const navigateToPortal = (portalPath) => {
-        // Store token for portal access
+      // External link to Implementations App
+      const openImplementations = () => {
         localStorage.setItem('portal_token', token);
         localStorage.setItem('portal_user', JSON.stringify(user));
-        localStorage.setItem('service_token', token);
-        localStorage.setItem('service_user', JSON.stringify(user));
-        window.location.href = portalPath;
+        window.open('/thrive365labslaunch', '_blank');
       };
 
       return (
@@ -225,22 +268,14 @@
               {menuItems.map(item => (
                 <button key={item.id} onClick={() => { onNavigate(item.id); onClose && onClose(); }}
                   className={`w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center gap-3 ${activePage === item.id ? 'active' : 'text-gray-700'}`}>
-                  <span className={activePage === item.id ? '' : 'text-primary'}>{item.icon}</span>
+                  <span className={activePage === item.id ? '' : (item.color || 'text-primary')}>{item.icon}</span>
                   <span className="font-medium">{item.label}</span>
                 </button>
               ))}
-              <p className="px-4 py-2 mt-4 text-xs font-semibold text-gray-500 uppercase">Direct Access</p>
-              <button onClick={() => navigateToPortal('/thrive365labslaunch')} className="w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center gap-3 text-gray-700">
-                <span className="text-purple-600">{Icons.folder}</span>
+              <p className="px-4 py-2 mt-4 text-xs font-semibold text-gray-500 uppercase">External</p>
+              <button onClick={openImplementations} className="w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center gap-3 text-gray-700">
+                <span className="text-purple-600">{Icons.externalLink}</span>
                 <span className="font-medium">Implementations App</span>
-              </button>
-              <button onClick={() => navigateToPortal('/service-portal')} className="w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center gap-3 text-gray-700">
-                <span className="text-green-600">{Icons.clipboard}</span>
-                <span className="font-medium">Service Portal</span>
-              </button>
-              <button onClick={() => navigateToPortal('/portal')} className="w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center gap-3 text-gray-700">
-                <span className="text-blue-600">{Icons.users}</span>
-                <span className="font-medium">Client Portal</span>
               </button>
             </nav>
             <div className="absolute bottom-0 left-0 right-0 p-4 border-t">
@@ -299,8 +334,11 @@
                 <button onClick={() => onNavigate('users')} className="w-full text-left p-3 bg-gray-50 rounded-lg hover:bg-gray-100 flex items-center gap-3">
                   {Icons.users}<span>Manage Users</span>
                 </button>
-                <button onClick={() => onNavigate('service_reports')} className="w-full text-left p-3 bg-gray-50 rounded-lg hover:bg-gray-100 flex items-center gap-3">
-                  {Icons.clipboard}<span>View Service Reports</span>
+                <button onClick={() => onNavigate('service_portal')} className="w-full text-left p-3 bg-gray-50 rounded-lg hover:bg-gray-100 flex items-center gap-3">
+                  {Icons.clipboard}<span>Service Portal</span>
+                </button>
+                <button onClick={() => onNavigate('client_portal')} className="w-full text-left p-3 bg-gray-50 rounded-lg hover:bg-gray-100 flex items-center gap-3">
+                  {Icons.folder}<span>Client Portal</span>
                 </button>
               </div>
             </div>
@@ -758,19 +796,74 @@
       );
     };
 
-    // Service Reports Page
-    const ServiceReportsPage = ({ token }) => {
+    // Full Service Portal Page (embedded admin view)
+    const ServicePortalPage = ({ token, user }) => {
+      const [activeTab, setActiveTab] = useState('reports');
       const [reports, setReports] = useState([]);
+      const [clients, setClients] = useState([]);
       const [loading, setLoading] = useState(true);
       const [searchTerm, setSearchTerm] = useState('');
       const [viewingReport, setViewingReport] = useState(null);
+      const [showNewReport, setShowNewReport] = useState(false);
+      const [submitting, setSubmitting] = useState(false);
+      const [formData, setFormData] = useState({
+        clientFacilityName: '', customerName: '', serviceProviderName: user?.name || '',
+        address: '', serviceCompletionDate: new Date().toISOString().split('T')[0],
+        analyzerModel: '', analyzerSerialNumber: '', hubspotTicketNumber: '', hubspotCompanyId: '',
+        serviceType: '', descriptionOfWork: '', materialsUsed: '', solution: '', outstandingIssues: ''
+      });
+
+      const serviceTypes = ['Analyzer Hardware', 'Inventory', 'LIS/EMR', 'Billing & Fees', 'Compliance', 'Training'];
 
       useEffect(() => {
-        api.getServiceReports(token).then(data => {
-          if (!data.error) setReports(data);
-          setLoading(false);
-        });
+        loadData();
       }, [token]);
+
+      const loadData = async () => {
+        setLoading(true);
+        const [reportsData, clientsData] = await Promise.all([
+          api.getServiceReports(token),
+          api.getServiceClients(token)
+        ]);
+        if (!reportsData.error) setReports(reportsData);
+        if (!clientsData.error) setClients(clientsData);
+        setLoading(false);
+      };
+
+      const handleClientSelect = (clientName) => {
+        const client = clients.find(c => c.name === clientName || c.clientName === clientName);
+        if (client) {
+          setFormData(prev => ({
+            ...prev,
+            clientFacilityName: client.name || client.clientName || '',
+            address: client.address || '',
+            hubspotCompanyId: client.hubspotCompanyId || ''
+          }));
+        }
+      };
+
+      const handleSubmitReport = async (e) => {
+        e.preventDefault();
+        if (!formData.clientFacilityName || !formData.serviceType || !formData.descriptionOfWork) {
+          alert('Please fill in all required fields');
+          return;
+        }
+        setSubmitting(true);
+        const result = await api.submitServiceReport(token, formData);
+        if (result.error) {
+          alert('Error: ' + result.error);
+        } else {
+          setShowNewReport(false);
+          setFormData({
+            clientFacilityName: '', customerName: '', serviceProviderName: user?.name || '',
+            address: '', serviceCompletionDate: new Date().toISOString().split('T')[0],
+            analyzerModel: '', analyzerSerialNumber: '', hubspotTicketNumber: '', hubspotCompanyId: '',
+            serviceType: '', descriptionOfWork: '', materialsUsed: '', solution: '', outstandingIssues: ''
+          });
+          loadData();
+        }
+        setSubmitting(false);
+      };
 
       const filteredReports = reports.filter(r =>
         r.clientFacilityName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -778,15 +871,16 @@
         r.technicianName?.toLowerCase().includes(searchTerm.toLowerCase())
       );
 
+      // View single report
       if (viewingReport) {
         return (
           <div className="space-y-6">
             <button onClick={() => setViewingReport(null)} className="flex items-center gap-2 text-primary hover:text-accent">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
-              Back to Reports
+              Back to Service Portal
             </button>
             <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-              <div className="bg-gradient-to-r from-primary to-accent text-white p-6">
+              <div className="bg-gradient-to-r from-green-600 to-green-800 text-white p-6">
                 <h1 className="text-2xl font-bold">Service Report Details</h1>
                 <p className="opacity-90">Report ID: {viewingReport.id}</p>
               </div>
@@ -805,7 +899,7 @@
                 <div>
                   <h3 className="font-bold text-accent mb-3">Service Details</h3>
                   <div className="space-y-2 text-sm">
-                    <p><span className="text-gray-500">Service Type:</span> {viewingReport.serviceType}</p>
+                    <p><span className="text-gray-500">Service Type:</span> <span className="px-2 py-1 bg-green-100 text-green-700 rounded">{viewingReport.serviceType}</span></p>
                     <p><span className="text-gray-500">Technician:</span> {viewingReport.serviceProviderName || viewingReport.technicianName}</p>
                   </div>
                 </div>
@@ -839,49 +933,400 @@
 
       return (
         <div className="space-y-6">
-          <div className="bg-white p-6 rounded-xl shadow-sm">
-            <h1 className="text-2xl font-bold text-accent">Service Reports</h1>
-            <p className="text-gray-600 mt-1">View all technician service reports</p>
-            <div className="mt-4">
-              <input type="text" placeholder="Search by client, service type, or technician..." value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" />
-            </div>
+          {/* Header */}
+          <div className="bg-gradient-to-r from-green-600 to-green-800 text-white p-6 rounded-xl">
+            <h1 className="text-2xl font-bold">Service Portal</h1>
+            <p className="mt-1 opacity-90">Manage service reports and technician activities</p>
           </div>
-          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-            {loading ? (
-              <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent"></div></div>
-            ) : filteredReports.length > 0 ? (
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Date</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Client</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Service Type</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Technician</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {filteredReports.map(report => (
-                    <tr key={report.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 text-sm">{new Date(report.serviceCompletionDate || report.createdAt).toLocaleDateString()}</td>
-                      <td className="px-6 py-4">
-                        <div className="font-medium text-gray-900">{report.clientFacilityName}</div>
-                        <div className="text-xs text-gray-500">{report.hubspotTicketNumber ? `Ticket: ${report.hubspotTicketNumber}` : ''}</div>
-                      </td>
-                      <td className="px-6 py-4 text-sm">{report.serviceType}</td>
-                      <td className="px-6 py-4 text-sm">{report.serviceProviderName || report.technicianName}</td>
-                      <td className="px-6 py-4">
-                        <button onClick={() => setViewingReport(report)} className="flex items-center gap-1 text-primary hover:text-accent">
-                          {Icons.eye} View
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <div className="text-center py-12 text-gray-500"><p>No service reports found</p></div>
+
+          {/* Tabs */}
+          <div className="bg-white rounded-xl shadow-sm">
+            <div className="flex border-b">
+              <button onClick={() => setActiveTab('reports')}
+                className={`px-6 py-4 font-medium ${activeTab === 'reports' ? 'text-green-600 border-b-2 border-green-600' : 'text-gray-500 hover:text-gray-700'}`}>
+                Service Reports ({reports.length})
+              </button>
+              <button onClick={() => { setActiveTab('new'); setShowNewReport(true); }}
+                className={`px-6 py-4 font-medium ${activeTab === 'new' ? 'text-green-600 border-b-2 border-green-600' : 'text-gray-500 hover:text-gray-700'}`}>
+                + New Report
+              </button>
+            </div>
+
+            {/* Reports Tab */}
+            {activeTab === 'reports' && (
+              <div className="p-6">
+                <div className="mb-4">
+                  <input type="text" placeholder="Search by client, service type, or technician..." value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
+                </div>
+                {loading ? (
+                  <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-4 border-green-600 border-t-transparent"></div></div>
+                ) : filteredReports.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 border-b">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Date</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Client</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Service Type</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Technician</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Ticket #</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {filteredReports.map(report => (
+                          <tr key={report.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 text-sm">{new Date(report.serviceCompletionDate || report.createdAt).toLocaleDateString()}</td>
+                            <td className="px-4 py-3">
+                              <div className="font-medium text-gray-900">{report.clientFacilityName}</div>
+                            </td>
+                            <td className="px-4 py-3"><span className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded">{report.serviceType}</span></td>
+                            <td className="px-4 py-3 text-sm">{report.serviceProviderName || report.technicianName}</td>
+                            <td className="px-4 py-3 text-sm text-gray-500">{report.hubspotTicketNumber || '-'}</td>
+                            <td className="px-4 py-3">
+                              <button onClick={() => setViewingReport(report)} className="flex items-center gap-1 text-green-600 hover:text-green-800">
+                                {Icons.eye} View
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-center py-12 text-gray-500"><p>No service reports found</p></div>
+                )}
+              </div>
+            )}
+
+            {/* New Report Tab */}
+            {activeTab === 'new' && (
+              <form onSubmit={handleSubmitReport} className="p-6 space-y-6">
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Client/Facility *</label>
+                    <select value={formData.clientFacilityName} onChange={(e) => { setFormData({...formData, clientFacilityName: e.target.value}); handleClientSelect(e.target.value); }}
+                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" required>
+                      <option value="">Select a client...</option>
+                      {clients.map((c, i) => <option key={i} value={c.name || c.clientName}>{c.name || c.clientName}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Customer Name</label>
+                    <input type="text" value={formData.customerName} onChange={(e) => setFormData({...formData, customerName: e.target.value})}
+                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Service Date *</label>
+                    <input type="date" value={formData.serviceCompletionDate} onChange={(e) => setFormData({...formData, serviceCompletionDate: e.target.value})}
+                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Service Type *</label>
+                    <select value={formData.serviceType} onChange={(e) => setFormData({...formData, serviceType: e.target.value})}
+                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" required>
+                      <option value="">Select type...</option>
+                      {serviceTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Analyzer Model</label>
+                    <input type="text" value={formData.analyzerModel} onChange={(e) => setFormData({...formData, analyzerModel: e.target.value})}
+                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Serial Number</label>
+                    <input type="text" value={formData.analyzerSerialNumber} onChange={(e) => setFormData({...formData, analyzerSerialNumber: e.target.value})}
+                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">HubSpot Ticket #</label>
+                    <input type="text" value={formData.hubspotTicketNumber} onChange={(e) => setFormData({...formData, hubspotTicketNumber: e.target.value})}
+                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Technician</label>
+                    <input type="text" value={formData.serviceProviderName} onChange={(e) => setFormData({...formData, serviceProviderName: e.target.value})}
+                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Description of Work *</label>
+                  <textarea value={formData.descriptionOfWork} onChange={(e) => setFormData({...formData, descriptionOfWork: e.target.value})}
+                    rows={4} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" required />
+                </div>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Materials Used</label>
+                    <textarea value={formData.materialsUsed} onChange={(e) => setFormData({...formData, materialsUsed: e.target.value})}
+                      rows={3} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Solution</label>
+                    <textarea value={formData.solution} onChange={(e) => setFormData({...formData, solution: e.target.value})}
+                      rows={3} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Outstanding Issues / Recommendations</label>
+                  <textarea value={formData.outstandingIssues} onChange={(e) => setFormData({...formData, outstandingIssues: e.target.value})}
+                    rows={3} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
+                </div>
+                <div className="flex justify-end gap-3">
+                  <button type="button" onClick={() => setActiveTab('reports')} className="px-6 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
+                  <button type="submit" disabled={submitting} className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
+                    {submitting ? 'Submitting...' : 'Submit Report'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      );
+    };
+
+    // Full Client Portal Page (embedded admin view)
+    const ClientPortalPage = ({ token }) => {
+      const [activeTab, setActiveTab] = useState('settings');
+      const [settings, setSettings] = useState({ portalName: '', welcomeMessage: '', primaryColor: '#045E9F' });
+      const [announcements, setAnnouncements] = useState([]);
+      const [clientUsers, setClientUsers] = useState([]);
+      const [inventoryReports, setInventoryReports] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [saving, setSaving] = useState(false);
+      const [newAnnouncement, setNewAnnouncement] = useState({ title: '', content: '', type: 'info' });
+
+      useEffect(() => {
+        loadData();
+      }, [token]);
+
+      const loadData = async () => {
+        setLoading(true);
+        const [settingsData, announcementsData, usersData, reportsData] = await Promise.all([
+          api.getPortalSettings(),
+          api.getAnnouncements(),
+          api.getUsers(token),
+          api.getInventoryReports(token)
+        ]);
+        if (!settingsData.error) setSettings(settingsData);
+        if (!announcementsData.error) setAnnouncements(announcementsData);
+        if (!usersData.error) setClientUsers(usersData.filter(u => u.role === 'client'));
+        if (!reportsData.error) setInventoryReports(Array.isArray(reportsData) ? reportsData : []);
+        setLoading(false);
+      };
+
+      const handleSaveSettings = async () => {
+        setSaving(true);
+        await api.updatePortalSettings(token, settings);
+        setSaving(false);
+      };
+
+      const handleCreateAnnouncement = async (e) => {
+        e.preventDefault();
+        if (!newAnnouncement.title || !newAnnouncement.content) return;
+        await api.createAnnouncement(token, newAnnouncement);
+        setNewAnnouncement({ title: '', content: '', type: 'info' });
+        loadData();
+      };
+
+      const handleDeleteAnnouncement = async (id) => {
+        if (!confirm('Delete this announcement?')) return;
+        await api.deleteAnnouncement(token, id);
+        loadData();
+      };
+
+      if (loading) {
+        return (
+          <div className="flex justify-center py-12">
+            <div className="animate-spin rounded-full h-8 w-8 border-4 border-blue-600 border-t-transparent"></div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="space-y-6">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white p-6 rounded-xl">
+            <h1 className="text-2xl font-bold">Client Portal Management</h1>
+            <p className="mt-1 opacity-90">Configure portal settings, announcements, and manage client access</p>
+          </div>
+
+          {/* Tabs */}
+          <div className="bg-white rounded-xl shadow-sm">
+            <div className="flex border-b overflow-x-auto">
+              <button onClick={() => setActiveTab('settings')}
+                className={`px-6 py-4 font-medium whitespace-nowrap ${activeTab === 'settings' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
+                Portal Settings
+              </button>
+              <button onClick={() => setActiveTab('announcements')}
+                className={`px-6 py-4 font-medium whitespace-nowrap ${activeTab === 'announcements' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
+                Announcements ({announcements.length})
+              </button>
+              <button onClick={() => setActiveTab('clients')}
+                className={`px-6 py-4 font-medium whitespace-nowrap ${activeTab === 'clients' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
+                Client Users ({clientUsers.length})
+              </button>
+              <button onClick={() => setActiveTab('inventory')}
+                className={`px-6 py-4 font-medium whitespace-nowrap ${activeTab === 'inventory' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
+                Inventory Reports
+              </button>
+            </div>
+
+            {/* Settings Tab */}
+            {activeTab === 'settings' && (
+              <div className="p-6 space-y-6">
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Portal Name</label>
+                    <input type="text" value={settings.portalName || ''} onChange={(e) => setSettings({...settings, portalName: e.target.value})}
+                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="Client Portal" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Primary Color</label>
+                    <div className="flex gap-2">
+                      <input type="color" value={settings.primaryColor || '#045E9F'} onChange={(e) => setSettings({...settings, primaryColor: e.target.value})}
+                        className="w-12 h-10 border rounded cursor-pointer" />
+                      <input type="text" value={settings.primaryColor || '#045E9F'} onChange={(e) => setSettings({...settings, primaryColor: e.target.value})}
+                        className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Welcome Message</label>
+                    <textarea value={settings.welcomeMessage || ''} onChange={(e) => setSettings({...settings, welcomeMessage: e.target.value})}
+                      rows={3} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="Welcome to your client portal..." />
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <button onClick={handleSaveSettings} disabled={saving}
+                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                    {saving ? 'Saving...' : 'Save Settings'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Announcements Tab */}
+            {activeTab === 'announcements' && (
+              <div className="p-6 space-y-6">
+                <form onSubmit={handleCreateAnnouncement} className="bg-gray-50 p-4 rounded-lg space-y-4">
+                  <h3 className="font-medium text-gray-800">Create New Announcement</h3>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <input type="text" value={newAnnouncement.title} onChange={(e) => setNewAnnouncement({...newAnnouncement, title: e.target.value})}
+                      className="px-4 py-2 border rounded-lg" placeholder="Title" required />
+                    <select value={newAnnouncement.type} onChange={(e) => setNewAnnouncement({...newAnnouncement, type: e.target.value})}
+                      className="px-4 py-2 border rounded-lg">
+                      <option value="info">Info (Blue)</option>
+                      <option value="success">Success (Green)</option>
+                      <option value="warning">Warning (Yellow)</option>
+                    </select>
+                  </div>
+                  <textarea value={newAnnouncement.content} onChange={(e) => setNewAnnouncement({...newAnnouncement, content: e.target.value})}
+                    className="w-full px-4 py-2 border rounded-lg" rows={2} placeholder="Announcement content..." required />
+                  <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                    Create Announcement
+                  </button>
+                </form>
+                <div className="space-y-3">
+                  {announcements.length > 0 ? announcements.map(ann => (
+                    <div key={ann.id} className={`p-4 rounded-lg border-l-4 flex justify-between items-start ${
+                      ann.type === 'warning' ? 'border-yellow-500 bg-yellow-50' :
+                      ann.type === 'success' ? 'border-green-500 bg-green-50' : 'border-blue-500 bg-blue-50'
+                    }`}>
+                      <div>
+                        <h4 className="font-semibold text-gray-800">{ann.title}</h4>
+                        <p className="text-sm text-gray-600 mt-1">{ann.content}</p>
+                        <p className="text-xs text-gray-400 mt-2">{new Date(ann.createdAt).toLocaleDateString()}</p>
+                      </div>
+                      <button onClick={() => handleDeleteAnnouncement(ann.id)} className="text-red-600 hover:text-red-800 p-1">
+                        {Icons.trash}
+                      </button>
+                    </div>
+                  )) : <p className="text-gray-500 text-center py-8">No announcements yet</p>}
+                </div>
+              </div>
+            )}
+
+            {/* Clients Tab */}
+            {activeTab === 'clients' && (
+              <div className="p-6">
+                {clientUsers.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 border-b">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Client</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Practice</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Email</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Portal URL</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Projects</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {clientUsers.map(client => (
+                          <tr key={client.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-3">
+                                {client.logo && <img src={client.logo} alt="" className="h-8 w-8 rounded object-contain bg-gray-100" />}
+                                <span className="font-medium text-gray-900">{client.name}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600">{client.practiceName || '-'}</td>
+                            <td className="px-4 py-3 text-sm text-gray-600">{client.email}</td>
+                            <td className="px-4 py-3 text-sm">
+                              {client.slug ? (
+                                <a href={`/portal/${client.slug}`} target="_blank" className="text-blue-600 hover:underline">/portal/{client.slug}</a>
+                              ) : '-'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600">{client.assignedProjects?.length || 0}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-center py-12 text-gray-500">
+                    <p>No client users found</p>
+                    <p className="text-sm mt-2">Create client users in User Management</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Inventory Reports Tab */}
+            {activeTab === 'inventory' && (
+              <div className="p-6">
+                {inventoryReports.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 border-b">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Date</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Client</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Items</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {inventoryReports.map((report, idx) => (
+                          <tr key={idx} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 text-sm">{new Date(report.submittedAt || report.createdAt).toLocaleDateString()}</td>
+                            <td className="px-4 py-3 font-medium text-gray-900">{report.clientName || report.practiceName || 'Unknown'}</td>
+                            <td className="px-4 py-3 text-sm">{report.items?.length || report.itemCount || 0} items</td>
+                            <td className="px-4 py-3">
+                              <span className="px-2 py-1 text-xs rounded bg-green-100 text-green-700">Submitted</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-center py-12 text-gray-500">
+                    <p>No inventory reports submitted yet</p>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -908,7 +1353,8 @@
         switch (activePage) {
           case 'dashboard': return <DashboardPage token={token} onNavigate={setActivePage} />;
           case 'users': return <UsersPage token={token} />;
-          case 'service_reports': return <ServiceReportsPage token={token} />;
+          case 'service_portal': return <ServicePortalPage token={token} user={user} />;
+          case 'client_portal': return <ClientPortalPage token={token} />;
           default: return <DashboardPage token={token} onNavigate={setActivePage} />;
         }
       };
