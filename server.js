@@ -60,13 +60,10 @@ app.get('/thrive365labslaunch', (req, res) => {
 });
 // Note: Specific sub-routes (login, home, :slug, :slug-internal) are defined at the end of the file
 
-// Initialize admin user and service technician on startup
+// Initialize admin user on startup
 (async () => {
   try {
-    let users = await db.get('users') || [];
-    let needsSave = false;
-
-    // Create admin user if not exists
+    const users = await db.get('users') || [];
     if (!users.find(u => u.email === 'bianca@thrive365labs.com')) {
       const hashedPassword = await bcrypt.hash('Thrive2025!', 10);
       users.push({
@@ -77,31 +74,11 @@ app.get('/thrive365labslaunch', (req, res) => {
         role: 'admin',
         createdAt: new Date().toISOString()
       });
-      needsSave = true;
+      await db.set('users', users);
       console.log('✅ Admin user created: bianca@thrive365labs.com / Thrive2025!');
     }
-
-    // Create default service technician for testing
-    if (!users.find(u => u.email === 'service@thrive365labs.com')) {
-      const hashedPassword = await bcrypt.hash('Service2025!', 10);
-      users.push({
-        id: uuidv4(),
-        email: 'service@thrive365labs.com',
-        name: 'Service Technician',
-        password: hashedPassword,
-        role: 'user',
-        hasServicePortalAccess: true,
-        createdAt: new Date().toISOString()
-      });
-      needsSave = true;
-      console.log('✅ Service technician created: service@thrive365labs.com / Service2025!');
-    }
-
-    if (needsSave) {
-      await db.set('users', users);
-    }
   } catch (err) {
-    console.error('Error creating default users:', err);
+    console.error('Error creating admin user:', err);
   }
 })();
 
