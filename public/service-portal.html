@@ -228,7 +228,7 @@
               <p className="text-sm text-gray-500">Welcome,</p>
               <p className="font-semibold text-accent">{user?.name || 'Technician'}</p>
               <p className="text-xs text-gray-500 mt-1">
-                {user?.serviceRole === 'field_service_engineer' ? 'Field Service Engineer' : 'Clinical Application Specialist'}
+                {user?.role === 'admin' ? 'Administrator' : 'Service Technician'}
               </p>
             </div>
 
