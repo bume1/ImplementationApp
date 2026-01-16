@@ -235,20 +235,19 @@
       );
     };
 
-    // Sidebar with embedded portal access
+    // Sidebar with portal access
     const Sidebar = ({ activePage, onNavigate, user, token, isMobileOpen, onClose }) => {
       const menuItems = [
         { id: 'dashboard', label: 'Dashboard', icon: Icons.home },
         { id: 'users', label: 'User Management', icon: Icons.users },
         { id: 'service_portal', label: 'Service Portal', icon: Icons.clipboard, color: 'text-green-600' },
-        { id: 'client_portal', label: 'Client Portal', icon: Icons.folder, color: 'text-blue-600' },
       ];
 
-      // External link to Implementations App
-      const openImplementations = () => {
+      // External links with token passing
+      const openExternalApp = (path) => {
         localStorage.setItem('portal_token', token);
         localStorage.setItem('portal_user', JSON.stringify(user));
-        window.open('/thrive365labslaunch', '_blank');
+        window.open(path, '_blank');
       };
 
       return (
@@ -272,10 +271,14 @@
                   <span className="font-medium">{item.label}</span>
                 </button>
               ))}
-              <p className="px-4 py-2 mt-4 text-xs font-semibold text-gray-500 uppercase">External</p>
-              <button onClick={openImplementations} className="w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center gap-3 text-gray-700">
+              <p className="px-4 py-2 mt-4 text-xs font-semibold text-gray-500 uppercase">External Apps</p>
+              <button onClick={() => openExternalApp('/thrive365labslaunch')} className="w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center gap-3 text-gray-700">
                 <span className="text-purple-600">{Icons.externalLink}</span>
                 <span className="font-medium">Implementations App</span>
+              </button>
+              <button onClick={() => openExternalApp('/portal')} className="w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center gap-3 text-gray-700">
+                <span className="text-blue-600">{Icons.externalLink}</span>
+                <span className="font-medium">Client Portal Admin</span>
               </button>
             </nav>
             <div className="absolute bottom-0 left-0 right-0 p-4 border-t">
@@ -337,9 +340,6 @@
                 <button onClick={() => onNavigate('service_portal')} className="w-full text-left p-3 bg-gray-50 rounded-lg hover:bg-gray-100 flex items-center gap-3">
                   {Icons.clipboard}<span>Service Portal</span>
                 </button>
-                <button onClick={() => onNavigate('client_portal')} className="w-full text-left p-3 bg-gray-50 rounded-lg hover:bg-gray-100 flex items-center gap-3">
-                  {Icons.folder}<span>Client Portal</span>
-                </button>
               </div>
             </div>
             <div className="bg-white p-6 rounded-xl shadow-sm">
@@ -368,6 +368,7 @@
     const UsersPage = ({ token }) => {
       const [users, setUsers] = useState([]);
       const [projects, setProjects] = useState([]);
+      const [clients, setClients] = useState([]);
       const [passwordResets, setPasswordResets] = useState([]);
       const [loading, setLoading] = useState(true);
       const [showForm, setShowForm] = useState(false);
@@ -380,9 +381,11 @@
 
       const defaultFormData = {
         name: '', email: '', password: '', role: 'user',
-        hasServicePortalAccess: false, practiceName: '', isNewClient: false,
+        hasServicePortalAccess: false, hasAdminHubAccess: false,
+        hasImplementationsAccess: false, hasClientPortalAdminAccess: false,
+        practiceName: '', isNewClient: false,
         logo: '', hubspotCompanyId: '', hubspotDealId: '', hubspotContactId: '',
-        assignedProjects: [], projectAccessLevels: {}
+        assignedProjects: [], projectAccessLevels: {}, assignedClients: []
       };
       const [formData, setFormData] = useState(defaultFormData);
 
@@ -390,14 +393,16 @@
 
       const loadData = async () => {
         setLoading(true);
-        const [usersRes, projectsRes, resetsRes] = await Promise.all([
+        const [usersRes, projectsRes, resetsRes, clientsRes] = await Promise.all([
           api.getUsers(token),
           api.getProjects(token),
-          api.getPasswordResetRequests(token)
+          api.getPasswordResetRequests(token),
+          fetch('/api/clients', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).catch(() => [])
         ]);
         if (!usersRes.error) setUsers(usersRes);
         if (!projectsRes.error) setProjects(projectsRes);
         if (!resetsRes.error) setPasswordResets(resetsRes);
+        if (Array.isArray(clientsRes)) setClients(clientsRes);
         setLoading(false);
       };
 
@@ -431,6 +436,9 @@
           password: '',
           role: user.role || 'user',
           hasServicePortalAccess: user.hasServicePortalAccess || false,
+          hasAdminHubAccess: user.hasAdminHubAccess || false,
+          hasImplementationsAccess: user.hasImplementationsAccess || false,
+          hasClientPortalAdminAccess: user.hasClientPortalAdminAccess || false,
           practiceName: user.practiceName || '',
           isNewClient: user.isNewClient || false,
           logo: user.logo || '',
@@ -438,7 +446,8 @@
           hubspotDealId: user.hubspotDealId || '',
           hubspotContactId: user.hubspotContactId || '',
           assignedProjects: user.assignedProjects || [],
-          projectAccessLevels: user.projectAccessLevels || {}
+          projectAccessLevels: user.projectAccessLevels || {},
+          assignedClients: user.assignedClients || []
         });
         setShowForm(true);
       };
@@ -542,7 +551,8 @@
                 <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary">
                   <option value="all">All Roles</option>
                   <option value="admin">Admins</option>
-                  <option value="user">Users</option>
+                  <option value="user">Team Members</option>
+                  <option value="vendor">Vendors</option>
                   <option value="client">Clients</option>
                   <option value="service">Service Portal Access</option>
                 </select>
@@ -611,20 +621,82 @@
                       <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
                       <select value={formData.role} onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                         className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary">
-                        <option value="user">User</option>
+                        <option value="user">Team Member</option>
                         <option value="admin">Admin</option>
                         <option value="client">Client</option>
+                        <option value="vendor">External Vendor</option>
                       </select>
                     </div>
                   </div>
 
-                  {/* Service Portal Access */}
-                  <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg">
-                    <input type="checkbox" id="serviceAccess" checked={formData.hasServicePortalAccess}
-                      onChange={(e) => setFormData({ ...formData, hasServicePortalAccess: e.target.checked })}
-                      className="w-5 h-5 rounded border-gray-300 text-green-600 focus:ring-green-500" />
-                    <label htmlFor="serviceAccess" className="text-sm font-medium text-gray-700">Grant Service Portal Access</label>
-                  </div>
+                  {/* Permission Flags (for team members) */}
+                  {(formData.role === 'user' || formData.role === 'admin') && (
+                    <div className="border-t pt-4">
+                      <h3 className="font-medium text-gray-800 mb-3">Access Permissions</h3>
+                      <div className="grid md:grid-cols-2 gap-3">
+                        <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg">
+                          <input type="checkbox" id="serviceAccess" checked={formData.hasServicePortalAccess}
+                            onChange={(e) => setFormData({ ...formData, hasServicePortalAccess: e.target.checked })}
+                            className="w-5 h-5 rounded border-gray-300 text-green-600 focus:ring-green-500" />
+                          <label htmlFor="serviceAccess" className="text-sm font-medium text-gray-700">Service Portal</label>
+                        </div>
+                        <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
+                          <input type="checkbox" id="adminHubAccess" checked={formData.hasAdminHubAccess}
+                            onChange={(e) => setFormData({ ...formData, hasAdminHubAccess: e.target.checked })}
+                            className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                          <label htmlFor="adminHubAccess" className="text-sm font-medium text-gray-700">Admin Hub</label>
+                        </div>
+                        <div className="flex items-center gap-3 p-3 bg-purple-50 rounded-lg">
+                          <input type="checkbox" id="implAccess" checked={formData.hasImplementationsAccess}
+                            onChange={(e) => setFormData({ ...formData, hasImplementationsAccess: e.target.checked })}
+                            className="w-5 h-5 rounded border-gray-300 text-purple-600 focus:ring-purple-500" />
+                          <label htmlFor="implAccess" className="text-sm font-medium text-gray-700">Implementations App</label>
+                        </div>
+                        <div className="flex items-center gap-3 p-3 bg-orange-50 rounded-lg">
+                          <input type="checkbox" id="clientPortalAdmin" checked={formData.hasClientPortalAdminAccess}
+                            onChange={(e) => setFormData({ ...formData, hasClientPortalAdminAccess: e.target.checked })}
+                            className="w-5 h-5 rounded border-gray-300 text-orange-600 focus:ring-orange-500" />
+                          <label htmlFor="clientPortalAdmin" className="text-sm font-medium text-gray-700">Client Portal Admin</label>
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-2">Admins automatically have all permissions</p>
+                    </div>
+                  )}
+
+                  {/* Vendor-specific fields */}
+                  {formData.role === 'vendor' && (
+                    <div className="border-t pt-4">
+                      <h3 className="font-medium text-gray-800 mb-3">Vendor Settings</h3>
+                      <p className="text-sm text-gray-500 mb-3">Vendors can submit service reports and view reports for their assigned clients</p>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Assigned Clients</label>
+                        <div className="max-h-48 overflow-y-auto border rounded-lg p-2 space-y-2">
+                          {clients.length > 0 ? clients.map((client, idx) => {
+                            const isAssigned = (formData.assignedClients || []).includes(client.name || client.clientName);
+                            return (
+                              <div key={idx} className={`flex items-center p-2 rounded ${isAssigned ? 'bg-green-50' : 'bg-gray-50'}`}>
+                                <label className="flex items-center gap-2 cursor-pointer flex-1">
+                                  <input type="checkbox" checked={isAssigned}
+                                    onChange={() => {
+                                      const clientName = client.name || client.clientName;
+                                      const current = formData.assignedClients || [];
+                                      setFormData({
+                                        ...formData,
+                                        assignedClients: isAssigned
+                                          ? current.filter(c => c !== clientName)
+                                          : [...current, clientName]
+                                      });
+                                    }}
+                                    className="w-4 h-4 rounded border-gray-300 text-green-600 focus:ring-green-500" />
+                                  <span className="text-sm">{client.name || client.clientName}</span>
+                                </label>
+                              </div>
+                            );
+                          }) : <p className="text-sm text-gray-500 text-center py-4">No clients available</p>}
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Client-specific fields */}
                   {formData.role === 'client' && (
@@ -800,10 +872,12 @@
     const ServicePortalPage = ({ token, user }) => {
       const [activeTab, setActiveTab] = useState('reports');
       const [reports, setReports] = useState([]);
+      const [validationReports, setValidationReports] = useState([]);
       const [clients, setClients] = useState([]);
       const [loading, setLoading] = useState(true);
       const [searchTerm, setSearchTerm] = useState('');
       const [viewingReport, setViewingReport] = useState(null);
+      const [viewingValidation, setViewingValidation] = useState(null);
       const [showNewReport, setShowNewReport] = useState(false);
       const [submitting, setSubmitting] = useState(false);
       const [formData, setFormData] = useState({
@@ -811,6 +885,15 @@
         address: '', serviceCompletionDate: new Date().toISOString().split('T')[0],
         analyzerModel: '', analyzerSerialNumber: '', hubspotTicketNumber: '', hubspotCompanyId: '',
         serviceType: '', descriptionOfWork: '', materialsUsed: '', solution: '', outstandingIssues: ''
+      });
+      const [validationFormData, setValidationFormData] = useState({
+        clientFacilityName: '', serviceProviderName: user?.name || '',
+        startDate: new Date().toISOString().split('T')[0],
+        endDate: new Date().toISOString().split('T')[0],
+        daysOnSite: 1,
+        hubspotCompanyId: '',
+        analyzersValidated: [{ model: '', serialNumber: '', validationStatus: 'Passed' }],
+        trainingProvided: '', validationResults: '', outstandingItems: '', nextSteps: ''
       });
 
       const serviceTypes = ['Analyzer Hardware', 'Inventory', 'LIS/EMR', 'Billing & Fees', 'Compliance', 'Training'];
@@ -821,25 +904,91 @@
 
       const loadData = async () => {
         setLoading(true);
-        const [reportsData, clientsData] = await Promise.all([
+        const [reportsData, validationData, clientsData] = await Promise.all([
           api.getServiceReports(token),
+          fetch('/api/validation-reports', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).catch(() => []),
           api.getServiceClients(token)
         ]);
         if (!reportsData.error) setReports(reportsData);
+        if (Array.isArray(validationData)) setValidationReports(validationData);
         if (!clientsData.error) setClients(clientsData);
         setLoading(false);
       };
 
-      const handleClientSelect = (clientName) => {
+      const handleClientSelect = (clientName, isValidation = false) => {
         const client = clients.find(c => c.name === clientName || c.clientName === clientName);
         if (client) {
-          setFormData(prev => ({
-            ...prev,
-            clientFacilityName: client.name || client.clientName || '',
-            address: client.address || '',
-            hubspotCompanyId: client.hubspotCompanyId || ''
-          }));
+          if (isValidation) {
+            setValidationFormData(prev => ({
+              ...prev,
+              clientFacilityName: client.name || client.clientName || '',
+              hubspotCompanyId: client.hubspotCompanyId || ''
+            }));
+          } else {
+            setFormData(prev => ({
+              ...prev,
+              clientFacilityName: client.name || client.clientName || '',
+              address: client.address || '',
+              hubspotCompanyId: client.hubspotCompanyId || ''
+            }));
+          }
         }
+      };
+
+      const handleAddAnalyzer = () => {
+        setValidationFormData(prev => ({
+          ...prev,
+          analyzersValidated: [...prev.analyzersValidated, { model: '', serialNumber: '', validationStatus: 'Passed' }]
+        }));
+      };
+
+      const handleRemoveAnalyzer = (idx) => {
+        setValidationFormData(prev => ({
+          ...prev,
+          analyzersValidated: prev.analyzersValidated.filter((_, i) => i !== idx)
+        }));
+      };
+
+      const handleAnalyzerChange = (idx, field, value) => {
+        setValidationFormData(prev => ({
+          ...prev,
+          analyzersValidated: prev.analyzersValidated.map((a, i) => i === idx ? { ...a, [field]: value } : a)
+        }));
+      };
+
+      const handleSubmitValidation = async (e) => {
+        e.preventDefault();
+        if (!validationFormData.clientFacilityName || !validationFormData.startDate || !validationFormData.endDate) {
+          alert('Please fill in all required fields');
+          return;
+        }
+        setSubmitting(true);
+        try {
+          const response = await fetch('/api/validation-reports', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify(validationFormData)
+          });
+          const result = await response.json();
+          if (result.error) {
+            alert('Error: ' + result.error);
+          } else {
+            setActiveTab('validation');
+            setValidationFormData({
+              clientFacilityName: '', serviceProviderName: user?.name || '',
+              startDate: new Date().toISOString().split('T')[0],
+              endDate: new Date().toISOString().split('T')[0],
+              daysOnSite: 1,
+              hubspotCompanyId: '',
+              analyzersValidated: [{ model: '', serialNumber: '', validationStatus: 'Passed' }],
+              trainingProvided: '', validationResults: '', outstandingItems: '', nextSteps: ''
+            });
+            loadData();
+          }
+        } catch (err) {
+          alert('Error submitting validation report');
+        }
+        setSubmitting(false);
       };
 
       const handleSubmitReport = async (e) => {
@@ -870,6 +1019,108 @@
         r.serviceType?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         r.technicianName?.toLowerCase().includes(searchTerm.toLowerCase())
       );
+
+      // View single validation report
+      if (viewingValidation) {
+        return (
+          <div className="space-y-6">
+            <button onClick={() => setViewingValidation(null)} className="flex items-center gap-2 text-primary hover:text-accent">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+              Back to Validation Reports
+            </button>
+            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+              <div className="bg-gradient-to-r from-purple-600 to-purple-800 text-white p-6">
+                <h1 className="text-2xl font-bold">Validation Report Details</h1>
+                <p className="opacity-90">Report ID: {viewingValidation.id}</p>
+              </div>
+              <div className="p-6">
+                <div className="grid md:grid-cols-3 gap-6 mb-6">
+                  <div className="bg-purple-50 p-4 rounded-lg">
+                    <p className="text-sm text-purple-600 font-medium">Client</p>
+                    <p className="text-lg font-bold text-gray-900">{viewingValidation.clientFacilityName}</p>
+                  </div>
+                  <div className="bg-purple-50 p-4 rounded-lg">
+                    <p className="text-sm text-purple-600 font-medium">Date Range</p>
+                    <p className="text-lg font-bold text-gray-900">
+                      {new Date(viewingValidation.startDate).toLocaleDateString()} - {new Date(viewingValidation.endDate).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div className="bg-purple-50 p-4 rounded-lg">
+                    <p className="text-sm text-purple-600 font-medium">Days On-Site</p>
+                    <p className="text-lg font-bold text-gray-900">{viewingValidation.daysOnSite} days</p>
+                  </div>
+                </div>
+
+                <div className="mb-6">
+                  <p className="text-sm text-gray-500">Service Provider</p>
+                  <p className="font-medium">{viewingValidation.serviceProviderName || viewingValidation.technicianName}</p>
+                </div>
+
+                {viewingValidation.analyzersValidated && viewingValidation.analyzersValidated.length > 0 && (
+                  <div className="mb-6">
+                    <h3 className="font-bold text-accent mb-3">Analyzers Validated</h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-4 py-2 text-left">Model</th>
+                            <th className="px-4 py-2 text-left">Serial Number</th>
+                            <th className="px-4 py-2 text-left">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {viewingValidation.analyzersValidated.map((a, idx) => (
+                            <tr key={idx}>
+                              <td className="px-4 py-2">{a.model || '-'}</td>
+                              <td className="px-4 py-2">{a.serialNumber || '-'}</td>
+                              <td className="px-4 py-2">
+                                <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                  a.validationStatus === 'Passed' ? 'bg-green-100 text-green-700' :
+                                  a.validationStatus === 'Failed' ? 'bg-red-100 text-red-700' :
+                                  a.validationStatus === 'Conditional' ? 'bg-yellow-100 text-yellow-700' :
+                                  'bg-gray-100 text-gray-700'
+                                }`}>
+                                  {a.validationStatus}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {viewingValidation.trainingProvided && (
+                  <div className="mb-6">
+                    <h3 className="font-bold text-accent mb-2">Training Provided</h3>
+                    <p className="text-sm bg-gray-50 p-3 rounded-lg whitespace-pre-wrap">{viewingValidation.trainingProvided}</p>
+                  </div>
+                )}
+
+                <div className="mb-6">
+                  <h3 className="font-bold text-accent mb-2">Validation Results</h3>
+                  <p className="text-sm bg-gray-50 p-3 rounded-lg whitespace-pre-wrap">{viewingValidation.validationResults}</p>
+                </div>
+
+                {viewingValidation.outstandingItems && (
+                  <div className="mb-6">
+                    <h3 className="font-bold text-accent mb-2">Outstanding Items</h3>
+                    <p className="text-sm bg-yellow-50 p-3 rounded-lg whitespace-pre-wrap">{viewingValidation.outstandingItems}</p>
+                  </div>
+                )}
+
+                {viewingValidation.nextSteps && (
+                  <div className="mb-6">
+                    <h3 className="font-bold text-accent mb-2">Next Steps</h3>
+                    <p className="text-sm bg-blue-50 p-3 rounded-lg whitespace-pre-wrap">{viewingValidation.nextSteps}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      }
 
       // View single report
       if (viewingReport) {
@@ -941,14 +1192,22 @@
 
           {/* Tabs */}
           <div className="bg-white rounded-xl shadow-sm">
-            <div className="flex border-b">
+            <div className="flex border-b flex-wrap">
               <button onClick={() => setActiveTab('reports')}
                 className={`px-6 py-4 font-medium ${activeTab === 'reports' ? 'text-green-600 border-b-2 border-green-600' : 'text-gray-500 hover:text-gray-700'}`}>
                 Service Reports ({reports.length})
               </button>
+              <button onClick={() => setActiveTab('validation')}
+                className={`px-6 py-4 font-medium ${activeTab === 'validation' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500 hover:text-gray-700'}`}>
+                Validation Reports ({validationReports.length})
+              </button>
               <button onClick={() => { setActiveTab('new'); setShowNewReport(true); }}
                 className={`px-6 py-4 font-medium ${activeTab === 'new' ? 'text-green-600 border-b-2 border-green-600' : 'text-gray-500 hover:text-gray-700'}`}>
-                + New Report
+                + Service Report
+              </button>
+              <button onClick={() => setActiveTab('newValidation')}
+                className={`px-6 py-4 font-medium ${activeTab === 'newValidation' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500 hover:text-gray-700'}`}>
+                + Validation Report
               </button>
             </div>
 
@@ -1077,6 +1336,187 @@
                   <button type="button" onClick={() => setActiveTab('reports')} className="px-6 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
                   <button type="submit" disabled={submitting} className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
                     {submitting ? 'Submitting...' : 'Submit Report'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* Validation Reports Tab */}
+            {activeTab === 'validation' && (
+              <div className="p-6">
+                <div className="mb-4">
+                  <input type="text" placeholder="Search validation reports..." value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500" />
+                </div>
+                {loading ? (
+                  <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-4 border-purple-600 border-t-transparent"></div></div>
+                ) : validationReports.filter(r => r.clientFacilityName?.toLowerCase().includes(searchTerm.toLowerCase())).length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 border-b">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Date Range</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Client</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Days On-Site</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Analyzers</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Technician</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {validationReports.filter(r => r.clientFacilityName?.toLowerCase().includes(searchTerm.toLowerCase())).map(report => (
+                          <tr key={report.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 text-sm">
+                              {new Date(report.startDate).toLocaleDateString()} - {new Date(report.endDate).toLocaleDateString()}
+                            </td>
+                            <td className="px-4 py-3 font-medium text-gray-900">{report.clientFacilityName}</td>
+                            <td className="px-4 py-3 text-sm">{report.daysOnSite} days</td>
+                            <td className="px-4 py-3 text-sm">{report.analyzersValidated?.length || 0} units</td>
+                            <td className="px-4 py-3 text-sm">{report.serviceProviderName || report.technicianName}</td>
+                            <td className="px-4 py-3">
+                              <button onClick={() => setViewingValidation(report)} className="flex items-center gap-1 text-purple-600 hover:text-purple-800">
+                                {Icons.eye} View
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-center py-12 text-gray-500">
+                    <p>No validation reports found</p>
+                    <button onClick={() => setActiveTab('newValidation')} className="mt-4 text-purple-600 hover:text-purple-800">
+                      + Create your first validation report
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* New Validation Report Tab */}
+            {activeTab === 'newValidation' && (
+              <form onSubmit={handleSubmitValidation} className="p-6 space-y-6">
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-4">
+                  <h3 className="font-bold text-purple-800">Multi-Day Validation Report</h3>
+                  <p className="text-sm text-purple-600 mt-1">Use this form for Phase 3 Training/Validation activities that span multiple days</p>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Client/Facility *</label>
+                    <select value={validationFormData.clientFacilityName}
+                      onChange={(e) => { setValidationFormData({...validationFormData, clientFacilityName: e.target.value}); handleClientSelect(e.target.value, true); }}
+                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500" required>
+                      <option value="">Select a client...</option>
+                      {clients.map((c, i) => <option key={i} value={c.name || c.clientName}>{c.name || c.clientName}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Service Provider</label>
+                    <input type="text" value={validationFormData.serviceProviderName}
+                      onChange={(e) => setValidationFormData({...validationFormData, serviceProviderName: e.target.value})}
+                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500" />
+                  </div>
+                </div>
+
+                <div className="grid md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Start Date *</label>
+                    <input type="date" value={validationFormData.startDate}
+                      onChange={(e) => setValidationFormData({...validationFormData, startDate: e.target.value})}
+                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">End Date *</label>
+                    <input type="date" value={validationFormData.endDate}
+                      onChange={(e) => setValidationFormData({...validationFormData, endDate: e.target.value})}
+                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Days On-Site</label>
+                    <input type="number" min="1" value={validationFormData.daysOnSite}
+                      onChange={(e) => setValidationFormData({...validationFormData, daysOnSite: parseInt(e.target.value) || 1})}
+                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500" />
+                  </div>
+                </div>
+
+                {/* Analyzers Section */}
+                <div className="border rounded-lg p-4">
+                  <div className="flex justify-between items-center mb-3">
+                    <h4 className="font-medium text-gray-800">Analyzers Validated</h4>
+                    <button type="button" onClick={handleAddAnalyzer} className="text-sm text-purple-600 hover:text-purple-800">+ Add Analyzer</button>
+                  </div>
+                  <div className="space-y-3">
+                    {validationFormData.analyzersValidated.map((analyzer, idx) => (
+                      <div key={idx} className="grid md:grid-cols-4 gap-3 items-end bg-gray-50 p-3 rounded-lg">
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Model</label>
+                          <input type="text" value={analyzer.model} onChange={(e) => handleAnalyzerChange(idx, 'model', e.target.value)}
+                            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 text-sm" placeholder="Analyzer model" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Serial Number</label>
+                          <input type="text" value={analyzer.serialNumber} onChange={(e) => handleAnalyzerChange(idx, 'serialNumber', e.target.value)}
+                            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 text-sm" placeholder="S/N" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Status</label>
+                          <select value={analyzer.validationStatus} onChange={(e) => handleAnalyzerChange(idx, 'validationStatus', e.target.value)}
+                            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 text-sm">
+                            <option value="Passed">Passed</option>
+                            <option value="Failed">Failed</option>
+                            <option value="Conditional">Conditional</option>
+                            <option value="Pending">Pending</option>
+                          </select>
+                        </div>
+                        <div>
+                          {validationFormData.analyzersValidated.length > 1 && (
+                            <button type="button" onClick={() => handleRemoveAnalyzer(idx)} className="text-red-500 hover:text-red-700 text-sm">Remove</button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Training Provided</label>
+                  <textarea value={validationFormData.trainingProvided}
+                    onChange={(e) => setValidationFormData({...validationFormData, trainingProvided: e.target.value})}
+                    rows={3} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
+                    placeholder="Describe training activities, topics covered, and personnel trained..." />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Validation Results *</label>
+                  <textarea value={validationFormData.validationResults}
+                    onChange={(e) => setValidationFormData({...validationFormData, validationResults: e.target.value})}
+                    rows={4} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500" required
+                    placeholder="Summary of validation tests performed and results..." />
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Outstanding Items</label>
+                    <textarea value={validationFormData.outstandingItems}
+                      onChange={(e) => setValidationFormData({...validationFormData, outstandingItems: e.target.value})}
+                      rows={3} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
+                      placeholder="Any pending items or follow-up required..." />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Next Steps</label>
+                    <textarea value={validationFormData.nextSteps}
+                      onChange={(e) => setValidationFormData({...validationFormData, nextSteps: e.target.value})}
+                      rows={3} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
+                      placeholder="Recommended next steps and timeline..." />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-3">
+                  <button type="button" onClick={() => setActiveTab('validation')} className="px-6 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
+                  <button type="submit" disabled={submitting} className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50">
+                    {submitting ? 'Submitting...' : 'Submit Validation Report'}
                   </button>
                 </div>
               </form>
@@ -1354,7 +1794,6 @@
           case 'dashboard': return <DashboardPage token={token} onNavigate={setActivePage} />;
           case 'users': return <UsersPage token={token} />;
           case 'service_portal': return <ServicePortalPage token={token} user={user} />;
-          case 'client_portal': return <ClientPortalPage token={token} />;
           default: return <DashboardPage token={token} onNavigate={setActivePage} />;
         }
       };
