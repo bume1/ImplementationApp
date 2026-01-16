@@ -1,0 +1,1190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thrive 365 Labs Service Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#045E9F',
+            accent: '#00205A'
+          },
+          fontFamily: {
+            sans: ['Open Sans', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Open Sans', sans-serif; }
+    .sidebar-link { transition: all 0.2s; }
+    .sidebar-link:hover { background-color: rgba(4, 94, 159, 0.1); }
+    .sidebar-link.active { background-color: #045E9F; color: white; }
+    .signature-pad { border: 2px dashed #ccc; background: #fafafa; min-height: 100px; cursor: crosshair; }
+    .signature-pad.signed { border-style: solid; border-color: #045E9F; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    const API_URL = window.location.origin;
+
+    // Helper function to handle fetch responses
+    const handleResponse = async (response) => {
+      if (!response.ok) {
+        try {
+          const errorData = await response.json();
+          throw new Error(errorData.error || `HTTP error ${response.status}`);
+        } catch (e) {
+          if (e.message.includes('HTTP error')) throw e;
+          throw new Error(`HTTP error ${response.status}`);
+        }
+      }
+      return response.json();
+    };
+
+    const api = {
+      serviceLogin: (email, password) =>
+        fetch(`${API_URL}/api/auth/service-login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+      getServicePortalData: (token) =>
+        fetch(`${API_URL}/api/service-portal/data`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+      getClients: (token) =>
+        fetch(`${API_URL}/api/service-portal/clients`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+      submitServiceReport: (token, reportData) =>
+        fetch(`${API_URL}/api/service-reports`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(reportData)
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+      getServiceReports: (token, filters = {}) => {
+        const params = new URLSearchParams(filters);
+        return fetch(`${API_URL}/api/service-reports?${params}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' }));
+      },
+
+      getServiceReport: (token, reportId) =>
+        fetch(`${API_URL}/api/service-reports/${reportId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' }))
+    };
+
+    // SVG Icons
+    const Icons = {
+      home: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>,
+      clipboard: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>,
+      search: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>,
+      folder: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>,
+      logout: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>,
+      menu: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"/></svg>,
+      close: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>,
+      plus: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"/></svg>,
+      document: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>,
+      eye: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>,
+      wrench: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>,
+      check: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>
+    };
+
+    // Login Page Component
+    const LoginPage = ({ onLogin }) => {
+      const [email, setEmail] = useState('');
+      const [password, setPassword] = useState('');
+      const [error, setError] = useState('');
+      const [loading, setLoading] = useState(false);
+
+      const handleLogin = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        setError('');
+        try {
+          const result = await api.serviceLogin(email, password);
+          if (result.error) {
+            setError(result.error);
+          } else {
+            localStorage.setItem('service_token', result.token);
+            localStorage.setItem('service_user', JSON.stringify(result.user));
+            onLogin(result.token, result.user);
+          }
+        } catch (err) {
+          setError('Login failed. Please try again.');
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-gray-100">
+          <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
+            <div className="text-center mb-6">
+              <img
+                src="/thrive365-logo.webp"
+                alt="Thrive 365 Labs"
+                className="h-16 mx-auto mb-4"
+              />
+              <h1 className="text-2xl font-bold text-accent">Service Portal</h1>
+              <p className="text-gray-600 mt-1">Field Service Engineers & Clinical Application Specialists</p>
+            </div>
+
+            <form onSubmit={handleLogin} className="space-y-4">
+              {error && (
+                <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm">
+                  {error}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-primary text-white py-3 rounded-lg font-medium hover:bg-accent transition-colors disabled:opacity-50"
+              >
+                {loading ? 'Signing in...' : 'Sign In'}
+              </button>
+            </form>
+
+            <div className="mt-6 text-center text-sm text-gray-500">
+              <p>Powered by Thrive365Labs</p>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // Sidebar Component
+    const Sidebar = ({ activePage, onNavigate, user, isMobileOpen, onClose }) => {
+      const menuItems = [
+        { id: 'home', label: 'Dashboard', icon: Icons.home },
+        { id: 'new_report', label: 'New Service Report', icon: Icons.plus },
+        { id: 'reports', label: 'Service Reports', icon: Icons.folder }
+      ];
+
+      const handleNavigate = (id) => {
+        onNavigate(id);
+        if (onClose) onClose();
+      };
+
+      return (
+        <>
+          {isMobileOpen && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden" onClick={onClose}></div>
+          )}
+
+          <aside className={`w-64 bg-white border-r min-h-screen fixed left-0 top-0 z-50 transform transition-transform duration-300 ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
+            <div className="p-4 border-b flex justify-between items-center">
+              <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-10" />
+              <button onClick={onClose} className="lg:hidden text-gray-500 hover:text-gray-700">
+                {Icons.close}
+              </button>
+            </div>
+
+            <div className="p-4 border-b bg-gray-50">
+              <p className="text-sm text-gray-500">Welcome,</p>
+              <p className="font-semibold text-accent">{user?.name || 'Technician'}</p>
+              <p className="text-xs text-gray-500 mt-1">
+                {user?.serviceRole === 'field_service_engineer' ? 'Field Service Engineer' : 'Clinical Application Specialist'}
+              </p>
+            </div>
+
+            <nav className="p-2">
+              {menuItems.map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => handleNavigate(item.id)}
+                  className={`w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center gap-3 ${
+                    activePage === item.id ? 'active' : 'text-gray-700'
+                  }`}
+                >
+                  <span className={activePage === item.id ? '' : 'text-primary'}>{item.icon}</span>
+                  <span className="font-medium">{item.label}</span>
+                </button>
+              ))}
+            </nav>
+
+            <div className="absolute bottom-0 left-0 right-0 p-4 border-t">
+              <button
+                onClick={() => {
+                  localStorage.removeItem('service_token');
+                  localStorage.removeItem('service_user');
+                  window.location.reload();
+                }}
+                className="w-full text-left px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2"
+              >
+                {Icons.logout}
+                <span>Sign Out</span>
+              </button>
+            </div>
+          </aside>
+        </>
+      );
+    };
+
+    // Dashboard Home Page
+    const HomePage = ({ user, onNavigate, recentReports }) => {
+      return (
+        <div className="space-y-6">
+          <div className="bg-gradient-to-r from-primary to-accent text-white p-6 rounded-xl">
+            <h1 className="text-2xl font-bold">Service Portal Dashboard</h1>
+            <p className="mt-2 opacity-90">Welcome back, {user?.name || 'Technician'}</p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-4">
+            <button
+              onClick={() => onNavigate('new_report')}
+              className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center cursor-pointer w-full"
+            >
+              <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.plus, { className: 'w-10 h-10' })}</div>
+              <h3 className="font-semibold text-gray-800">New Service Report</h3>
+              <p className="text-sm text-gray-500 mt-1">Submit a new service report</p>
+            </button>
+            <button
+              onClick={() => onNavigate('reports')}
+              className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center cursor-pointer w-full"
+            >
+              <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.folder, { className: 'w-10 h-10' })}</div>
+              <h3 className="font-semibold text-gray-800">Service Reports</h3>
+              <p className="text-sm text-gray-500 mt-1">View and search past reports</p>
+            </button>
+            <div className="bg-white p-6 rounded-xl shadow-sm text-center">
+              <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.document, { className: 'w-10 h-10' })}</div>
+              <h3 className="font-semibold text-gray-800">My Reports</h3>
+              <p className="text-2xl font-bold text-primary mt-2">{recentReports?.length || 0}</p>
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-xl shadow-sm">
+            <h2 className="text-lg font-bold text-accent mb-4 flex items-center gap-2">
+              <span className="text-primary">{Icons.clipboard}</span> Recent Service Reports
+            </h2>
+            {recentReports && recentReports.length > 0 ? (
+              <div className="space-y-3">
+                {recentReports.slice(0, 5).map((report, idx) => (
+                  <div key={report.id || idx} className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border-l-4 border-primary">
+                    <div>
+                      <p className="font-medium text-gray-800">{report.clientName}</p>
+                      <p className="text-sm text-gray-600">{report.serviceType}</p>
+                      <p className="text-xs text-gray-500">
+                        {new Date(report.serviceDate || report.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">
+                      Completed
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-gray-500 text-sm text-center py-4">No recent service reports</p>
+            )}
+          </div>
+        </div>
+      );
+    };
+
+    // Signature Pad Component
+    const SignaturePad = ({ onSave, label, initialValue }) => {
+      const canvasRef = useRef(null);
+      const [isDrawing, setIsDrawing] = useState(false);
+      const [hasSignature, setHasSignature] = useState(!!initialValue);
+
+      useEffect(() => {
+        if (initialValue && canvasRef.current) {
+          const ctx = canvasRef.current.getContext('2d');
+          const img = new Image();
+          img.onload = () => {
+            ctx.drawImage(img, 0, 0);
+          };
+          img.src = initialValue;
+        }
+      }, [initialValue]);
+
+      const startDrawing = (e) => {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        const rect = canvas.getBoundingClientRect();
+        const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
+        const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        setIsDrawing(true);
+      };
+
+      const draw = (e) => {
+        if (!isDrawing) return;
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        const rect = canvas.getBoundingClientRect();
+        const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
+        const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = '#000';
+        ctx.lineTo(x, y);
+        ctx.stroke();
+      };
+
+      const stopDrawing = () => {
+        if (isDrawing) {
+          setIsDrawing(false);
+          setHasSignature(true);
+          if (onSave) {
+            onSave(canvasRef.current.toDataURL());
+          }
+        }
+      };
+
+      const clearSignature = () => {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        setHasSignature(false);
+        if (onSave) {
+          onSave('');
+        }
+      };
+
+      return (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
+          <canvas
+            ref={canvasRef}
+            width={400}
+            height={100}
+            className={`signature-pad w-full rounded-lg ${hasSignature ? 'signed' : ''}`}
+            onMouseDown={startDrawing}
+            onMouseMove={draw}
+            onMouseUp={stopDrawing}
+            onMouseLeave={stopDrawing}
+            onTouchStart={startDrawing}
+            onTouchMove={draw}
+            onTouchEnd={stopDrawing}
+          />
+          <button
+            type="button"
+            onClick={clearSignature}
+            className="mt-2 text-sm text-red-600 hover:text-red-800"
+          >
+            Clear Signature
+          </button>
+        </div>
+      );
+    };
+
+    // New Service Report Form
+    const NewReportPage = ({ token, user, onSuccess, clients }) => {
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState('');
+      const [success, setSuccess] = useState(false);
+      const [formData, setFormData] = useState({
+        // Client Information
+        clientFacilityName: '',
+        customerName: '',
+        serviceProviderName: user?.name || '',
+        address: '',
+        serviceCompletionDate: new Date().toISOString().split('T')[0],
+        analyzerModel: '',
+        analyzerSerialNumber: '',
+        hubspotTicketNumber: '',
+
+        // Service Performed
+        serviceType: '',
+        descriptionOfWork: '',
+        materialsUsed: '',
+        solution: '',
+        outstandingIssues: '',
+
+        // Signatures
+        customerSignature: '',
+        customerSignatureDate: '',
+        technicianSignature: '',
+        technicianSignatureDate: new Date().toISOString().split('T')[0]
+      });
+
+      const updateField = (field, value) => {
+        setFormData(prev => ({ ...prev, [field]: value }));
+      };
+
+      const handleClientSelect = (clientName) => {
+        const client = clients?.find(c => c.name === clientName || c.clientName === clientName);
+        if (client) {
+          setFormData(prev => ({
+            ...prev,
+            clientFacilityName: client.name || client.clientName || '',
+            address: client.address || ''
+          }));
+        }
+      };
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        setError('');
+
+        // Validate required fields
+        if (!formData.clientFacilityName || !formData.serviceType || !formData.descriptionOfWork) {
+          setError('Please fill in all required fields');
+          setLoading(false);
+          return;
+        }
+
+        if (!formData.technicianSignature) {
+          setError('Technician signature is required');
+          setLoading(false);
+          return;
+        }
+
+        try {
+          const result = await api.submitServiceReport(token, {
+            ...formData,
+            technicianId: user?.id,
+            technicianName: user?.name
+          });
+
+          if (result.error) {
+            setError(result.error);
+          } else {
+            setSuccess(true);
+            setTimeout(() => {
+              if (onSuccess) onSuccess();
+            }, 2000);
+          }
+        } catch (err) {
+          setError('Failed to submit report. Please try again.');
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      if (success) {
+        return (
+          <div className="bg-white p-8 rounded-xl shadow-sm text-center">
+            <div className="flex justify-center mb-4 text-green-500">
+              {React.cloneElement(Icons.check, { className: 'w-16 h-16' })}
+            </div>
+            <h2 className="text-2xl font-bold text-accent mb-2">Report Submitted!</h2>
+            <p className="text-gray-600">Your service report has been submitted successfully.</p>
+          </div>
+        );
+      }
+
+      return (
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-xl shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h1 className="text-2xl font-bold text-accent">Service Report</h1>
+                <p className="text-gray-600 mt-1">THRIVE 365 LABS - SERVICE REPORT</p>
+              </div>
+              <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-12" />
+            </div>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {error && (
+              <div className="bg-red-50 text-red-600 p-4 rounded-lg">
+                {error}
+              </div>
+            )}
+
+            {/* Client Information Section */}
+            <div className="bg-white p-6 rounded-xl shadow-sm">
+              <h2 className="text-lg font-bold text-accent mb-4 pb-2 border-b">CLIENT INFORMATION</h2>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Client/Facility Name *</label>
+                  <input
+                    type="text"
+                    list="clients-list"
+                    value={formData.clientFacilityName}
+                    onChange={(e) => {
+                      updateField('clientFacilityName', e.target.value);
+                      handleClientSelect(e.target.value);
+                    }}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                    required
+                  />
+                  <datalist id="clients-list">
+                    {clients?.map((client, idx) => (
+                      <option key={idx} value={client.name || client.clientName} />
+                    ))}
+                  </datalist>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Customer Name</label>
+                  <input
+                    type="text"
+                    value={formData.customerName}
+                    onChange={(e) => updateField('customerName', e.target.value)}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Service Provider Name</label>
+                  <input
+                    type="text"
+                    value={formData.serviceProviderName}
+                    onChange={(e) => updateField('serviceProviderName', e.target.value)}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary bg-gray-50"
+                    readOnly
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                  <input
+                    type="text"
+                    value={formData.address}
+                    onChange={(e) => updateField('address', e.target.value)}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Service Completion Date *</label>
+                  <input
+                    type="date"
+                    value={formData.serviceCompletionDate}
+                    onChange={(e) => updateField('serviceCompletionDate', e.target.value)}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Analyzer Model</label>
+                  <input
+                    type="text"
+                    value={formData.analyzerModel}
+                    onChange={(e) => updateField('analyzerModel', e.target.value)}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                    placeholder="e.g., DZLite C270"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Analyzer Serial Number (S/N)</label>
+                  <input
+                    type="text"
+                    value={formData.analyzerSerialNumber}
+                    onChange={(e) => updateField('analyzerSerialNumber', e.target.value)}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                    placeholder="e.g., 601744124"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">HubSpot Ticket #</label>
+                  <input
+                    type="text"
+                    value={formData.hubspotTicketNumber}
+                    onChange={(e) => updateField('hubspotTicketNumber', e.target.value)}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                    placeholder="Enter HubSpot ticket number"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Service Performed Section */}
+            <div className="bg-white p-6 rounded-xl shadow-sm">
+              <h2 className="text-lg font-bold text-accent mb-4 pb-2 border-b">SERVICE PERFORMED</h2>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Service Type *</label>
+                  <input
+                    type="text"
+                    value={formData.serviceType}
+                    onChange={(e) => updateField('serviceType', e.target.value)}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                    placeholder="e.g., DZLite C270 Install w/ wall mount DI Install"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Description of Work Performed *</label>
+                  <textarea
+                    value={formData.descriptionOfWork}
+                    onChange={(e) => updateField('descriptionOfWork', e.target.value)}
+                    rows={5}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                    placeholder="Describe the work performed in detail..."
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Materials Used</label>
+                  <textarea
+                    value={formData.materialsUsed}
+                    onChange={(e) => updateField('materialsUsed', e.target.value)}
+                    rows={2}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                    placeholder="e.g., Hydra-DI, DZLite, plumbers tape/tubing"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Solution</label>
+                  <textarea
+                    value={formData.solution}
+                    onChange={(e) => updateField('solution', e.target.value)}
+                    rows={3}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                    placeholder="Describe the solution implemented..."
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Outstanding Issues / Recommendations</label>
+                  <textarea
+                    value={formData.outstandingIssues}
+                    onChange={(e) => updateField('outstandingIssues', e.target.value)}
+                    rows={3}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                    placeholder="List any outstanding issues or recommendations..."
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Signatures Section */}
+            <div className="bg-white p-6 rounded-xl shadow-sm">
+              <h2 className="text-lg font-bold text-accent mb-4 pb-2 border-b">SIGNATURES</h2>
+
+              <div className="grid md:grid-cols-2 gap-6">
+                <div>
+                  <SignaturePad
+                    label="Customer Signature"
+                    onSave={(data) => updateField('customerSignature', data)}
+                    initialValue={formData.customerSignature}
+                  />
+                  <div className="mt-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                    <input
+                      type="date"
+                      value={formData.customerSignatureDate}
+                      onChange={(e) => updateField('customerSignatureDate', e.target.value)}
+                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <SignaturePad
+                    label="Technician Signature *"
+                    onSave={(data) => updateField('technicianSignature', data)}
+                    initialValue={formData.technicianSignature}
+                  />
+                  <div className="mt-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                    <input
+                      type="date"
+                      value={formData.technicianSignatureDate}
+                      onChange={(e) => updateField('technicianSignatureDate', e.target.value)}
+                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Submit Button */}
+            <div className="flex justify-end gap-4">
+              <button
+                type="submit"
+                disabled={loading}
+                className="px-8 py-3 bg-primary text-white rounded-lg font-medium hover:bg-accent transition-colors disabled:opacity-50"
+              >
+                {loading ? 'Submitting...' : 'Submit Service Report'}
+              </button>
+            </div>
+          </form>
+        </div>
+      );
+    };
+
+    // Service Reports Repository Page
+    const ReportsPage = ({ token, onViewReport }) => {
+      const [reports, setReports] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [searchTerm, setSearchTerm] = useState('');
+      const [clientFilter, setClientFilter] = useState('');
+      const [dateFrom, setDateFrom] = useState('');
+      const [dateTo, setDateTo] = useState('');
+      const [clients, setClients] = useState([]);
+
+      useEffect(() => {
+        loadReports();
+        loadClients();
+      }, []);
+
+      const loadClients = async () => {
+        const result = await api.getClients(token);
+        if (!result.error) {
+          setClients(result);
+        }
+      };
+
+      const loadReports = async () => {
+        setLoading(true);
+        const filters = {};
+        if (clientFilter) filters.client = clientFilter;
+        if (dateFrom) filters.dateFrom = dateFrom;
+        if (dateTo) filters.dateTo = dateTo;
+        if (searchTerm) filters.search = searchTerm;
+
+        const result = await api.getServiceReports(token, filters);
+        if (!result.error) {
+          setReports(result);
+        }
+        setLoading(false);
+      };
+
+      const handleSearch = (e) => {
+        e.preventDefault();
+        loadReports();
+      };
+
+      const filteredReports = reports.filter(report => {
+        if (searchTerm && !report.clientFacilityName?.toLowerCase().includes(searchTerm.toLowerCase()) &&
+            !report.serviceType?.toLowerCase().includes(searchTerm.toLowerCase()) &&
+            !report.hubspotTicketNumber?.toLowerCase().includes(searchTerm.toLowerCase())) {
+          return false;
+        }
+        return true;
+      });
+
+      return (
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-xl shadow-sm">
+            <h1 className="text-2xl font-bold text-accent mb-4">Service Reports Repository</h1>
+
+            <form onSubmit={handleSearch} className="space-y-4">
+              <div className="grid md:grid-cols-4 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      placeholder="Search by client, service type, ticket..."
+                      className="w-full px-4 py-2 pl-10 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                    />
+                    <span className="absolute left-3 top-2.5 text-gray-400">{Icons.search}</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Client</label>
+                  <select
+                    value={clientFilter}
+                    onChange={(e) => setClientFilter(e.target.value)}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                  >
+                    <option value="">All Clients</option>
+                    {clients.map((client, idx) => (
+                      <option key={idx} value={client.name || client.clientName}>
+                        {client.name || client.clientName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">From Date</label>
+                  <input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">To Date</label>
+                  <input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  className="px-6 py-2 bg-primary text-white rounded-lg font-medium hover:bg-accent transition-colors"
+                >
+                  Search Reports
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent"></div>
+              </div>
+            ) : filteredReports.length > 0 ? (
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Date</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Client</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Service Type</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Technician</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Ticket #</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {filteredReports.map((report, idx) => (
+                    <tr key={report.id || idx} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 text-sm text-gray-900">
+                        {new Date(report.serviceCompletionDate || report.createdAt).toLocaleDateString()}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm font-medium text-gray-900">{report.clientFacilityName}</div>
+                        <div className="text-xs text-gray-500">{report.address}</div>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-900">{report.serviceType}</td>
+                      <td className="px-6 py-4 text-sm text-gray-900">{report.serviceProviderName || report.technicianName}</td>
+                      <td className="px-6 py-4 text-sm text-gray-900">
+                        {report.hubspotTicketNumber || '-'}
+                      </td>
+                      <td className="px-6 py-4">
+                        <button
+                          onClick={() => onViewReport(report)}
+                          className="text-primary hover:text-accent flex items-center gap-1"
+                        >
+                          {Icons.eye}
+                          <span className="text-sm">View</span>
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="text-center py-12 text-gray-500">
+                <div className="flex justify-center mb-4">{React.cloneElement(Icons.folder, { className: 'w-12 h-12 text-gray-300' })}</div>
+                <p>No service reports found</p>
+                <p className="text-sm">Try adjusting your search criteria</p>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    };
+
+    // View Report Page
+    const ViewReportPage = ({ report, onBack }) => {
+      return (
+        <div className="space-y-6">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={onBack}
+              className="flex items-center gap-2 text-primary hover:text-accent"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+              </svg>
+              Back to Reports
+            </button>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-primary to-accent text-white p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-2xl font-bold">THRIVE 365 LABS - SERVICE REPORT</h1>
+                  <p className="mt-1 opacity-90">Report ID: {report.id}</p>
+                </div>
+                <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-12 bg-white/20 rounded-lg p-2" />
+              </div>
+            </div>
+
+            {/* Client Information */}
+            <div className="p-6 border-b">
+              <h2 className="text-lg font-bold text-accent mb-4">CLIENT INFORMATION</h2>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-500">Client/Facility Name</p>
+                  <p className="font-medium">{report.clientFacilityName}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Customer Name</p>
+                  <p className="font-medium">{report.customerName || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Service Provider Name</p>
+                  <p className="font-medium">{report.serviceProviderName}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Address</p>
+                  <p className="font-medium">{report.address || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Service Completion Date</p>
+                  <p className="font-medium">{report.serviceCompletionDate}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Analyzer Model</p>
+                  <p className="font-medium">{report.analyzerModel || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Analyzer Serial Number (S/N)</p>
+                  <p className="font-medium">{report.analyzerSerialNumber || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">HubSpot Ticket #</p>
+                  <p className="font-medium">{report.hubspotTicketNumber || '-'}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Service Performed */}
+            <div className="p-6 border-b">
+              <h2 className="text-lg font-bold text-accent mb-4">SERVICE PERFORMED</h2>
+              <div className="space-y-4">
+                <div>
+                  <p className="text-sm text-gray-500">Service Type</p>
+                  <p className="font-medium">{report.serviceType}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Description of Work Performed</p>
+                  <p className="font-medium whitespace-pre-wrap bg-gray-50 p-3 rounded-lg">{report.descriptionOfWork}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Materials Used</p>
+                  <p className="font-medium">{report.materialsUsed || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Solution</p>
+                  <p className="font-medium whitespace-pre-wrap bg-gray-50 p-3 rounded-lg">{report.solution || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Outstanding Issues / Recommendations</p>
+                  <p className="font-medium whitespace-pre-wrap bg-gray-50 p-3 rounded-lg">{report.outstandingIssues || '-'}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Signatures */}
+            <div className="p-6">
+              <h2 className="text-lg font-bold text-accent mb-4">SIGNATURES</h2>
+              <div className="grid md:grid-cols-2 gap-6">
+                <div>
+                  <p className="text-sm text-gray-500 mb-2">Customer Signature</p>
+                  {report.customerSignature ? (
+                    <div className="border rounded-lg p-2 bg-gray-50">
+                      <img src={report.customerSignature} alt="Customer Signature" className="max-h-24" />
+                    </div>
+                  ) : (
+                    <p className="text-gray-400 italic">No signature</p>
+                  )}
+                  <p className="text-sm text-gray-500 mt-2">Date: {report.customerSignatureDate || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500 mb-2">Technician Signature</p>
+                  {report.technicianSignature ? (
+                    <div className="border rounded-lg p-2 bg-gray-50">
+                      <img src={report.technicianSignature} alt="Technician Signature" className="max-h-24" />
+                    </div>
+                  ) : (
+                    <p className="text-gray-400 italic">No signature</p>
+                  )}
+                  <p className="text-sm text-gray-500 mt-2">Date: {report.technicianSignatureDate || '-'}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // Main App Component
+    const App = () => {
+      const [token, setToken] = useState(localStorage.getItem('service_token'));
+      const [user, setUser] = useState(() => {
+        try {
+          return JSON.parse(localStorage.getItem('service_user'));
+        } catch {
+          return null;
+        }
+      });
+      const [activePage, setActivePage] = useState('home');
+      const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+      const [data, setData] = useState(null);
+      const [clients, setClients] = useState([]);
+      const [viewingReport, setViewingReport] = useState(null);
+
+      useEffect(() => {
+        if (token) {
+          loadData();
+        }
+      }, [token]);
+
+      const loadData = async () => {
+        const [portalData, clientsData] = await Promise.all([
+          api.getServicePortalData(token),
+          api.getClients(token)
+        ]);
+
+        if (portalData.error === 'Invalid token' || portalData.error?.includes('unauthorized')) {
+          handleLogout();
+          return;
+        }
+
+        if (!portalData.error) {
+          setData(portalData);
+        }
+
+        if (!clientsData.error) {
+          setClients(clientsData);
+        }
+      };
+
+      const handleLogin = (newToken, newUser) => {
+        setToken(newToken);
+        setUser(newUser);
+      };
+
+      const handleLogout = () => {
+        localStorage.removeItem('service_token');
+        localStorage.removeItem('service_user');
+        setToken(null);
+        setUser(null);
+      };
+
+      const handleViewReport = (report) => {
+        setViewingReport(report);
+        setActivePage('view_report');
+      };
+
+      if (!token || !user) {
+        return <LoginPage onLogin={handleLogin} />;
+      }
+
+      const renderPage = () => {
+        if (viewingReport && activePage === 'view_report') {
+          return (
+            <ViewReportPage
+              report={viewingReport}
+              onBack={() => {
+                setViewingReport(null);
+                setActivePage('reports');
+              }}
+            />
+          );
+        }
+
+        switch (activePage) {
+          case 'home':
+            return <HomePage user={user} onNavigate={setActivePage} recentReports={data?.recentReports || []} />;
+          case 'new_report':
+            return (
+              <NewReportPage
+                token={token}
+                user={user}
+                clients={clients}
+                onSuccess={() => {
+                  loadData();
+                  setActivePage('reports');
+                }}
+              />
+            );
+          case 'reports':
+            return <ReportsPage token={token} onViewReport={handleViewReport} />;
+          default:
+            return <HomePage user={user} onNavigate={setActivePage} recentReports={data?.recentReports || []} />;
+        }
+      };
+
+      return (
+        <div className="min-h-screen bg-gray-50">
+          <Sidebar
+            activePage={activePage}
+            onNavigate={setActivePage}
+            user={user}
+            isMobileOpen={isMobileMenuOpen}
+            onClose={() => setIsMobileMenuOpen(false)}
+          />
+
+          {/* Mobile header */}
+          <div className="lg:hidden bg-white border-b p-4 flex items-center justify-between sticky top-0 z-30">
+            <button onClick={() => setIsMobileMenuOpen(true)} className="text-gray-600">
+              {Icons.menu}
+            </button>
+            <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-8" />
+            <div className="w-6"></div>
+          </div>
+
+          <main className="lg:ml-64 p-4 lg:p-8">
+            {renderPage()}
+          </main>
+        </div>
+      );
+    };
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

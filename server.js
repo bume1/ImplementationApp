@@ -60,10 +60,13 @@ app.get('/thrive365labslaunch', (req, res) => {
 });
 // Note: Specific sub-routes (login, home, :slug, :slug-internal) are defined at the end of the file
 
-// Initialize admin user on startup
+// Initialize admin user and service technician on startup
 (async () => {
   try {
-    const users = await db.get('users') || [];
+    let users = await db.get('users') || [];
+    let needsSave = false;
+
+    // Create admin user if not exists
     if (!users.find(u => u.email === 'bianca@thrive365labs.com')) {
       const hashedPassword = await bcrypt.hash('Thrive2025!', 10);
       users.push({
@@ -74,11 +77,31 @@ app.get('/thrive365labslaunch', (req, res) => {
         role: 'admin',
         createdAt: new Date().toISOString()
       });
-      await db.set('users', users);
+      needsSave = true;
       console.log('✅ Admin user created: bianca@thrive365labs.com / Thrive2025!');
     }
+
+    // Create default field service engineer for testing
+    if (!users.find(u => u.email === 'service@thrive365labs.com')) {
+      const hashedPassword = await bcrypt.hash('Service2025!', 10);
+      users.push({
+        id: uuidv4(),
+        email: 'service@thrive365labs.com',
+        name: 'Service Technician',
+        password: hashedPassword,
+        role: 'user',
+        serviceRole: 'field_service_engineer',
+        createdAt: new Date().toISOString()
+      });
+      needsSave = true;
+      console.log('✅ Service technician created: service@thrive365labs.com / Service2025!');
+    }
+
+    if (needsSave) {
+      await db.set('users', users);
+    }
   } catch (err) {
-    console.error('Error creating admin user:', err);
+    console.error('Error creating default users:', err);
   }
 })();
 
@@ -266,7 +289,7 @@ app.post('/api/users', authenticateToken, async (req, res) => {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Admin access required' });
     }
-    const { email, password, name, role, practiceName, isNewClient, assignedProjects, logo } = req.body;
+    const { email, password, name, role, practiceName, isNewClient, assignedProjects, logo, serviceRole } = req.body;
     if (!email || !password || !name) {
       return res.status(400).json({ error: 'Email, password, and name are required' });
     }
@@ -283,7 +306,7 @@ app.post('/api/users', authenticateToken, async (req, res) => {
       role: role || 'user',
       createdAt: new Date().toISOString()
     };
-    
+
     // Client-specific fields
     if (role === 'client') {
       if (!practiceName) {
@@ -295,20 +318,29 @@ app.post('/api/users', authenticateToken, async (req, res) => {
       newUser.assignedProjects = assignedProjects || [];
       if (logo) newUser.logo = logo;
     }
-    
+
+    // Service technician fields (field_service_engineer or clinical_application_specialist)
+    if (serviceRole) {
+      const validServiceRoles = ['field_service_engineer', 'clinical_application_specialist'];
+      if (validServiceRoles.includes(serviceRole)) {
+        newUser.serviceRole = serviceRole;
+      }
+    }
+
     users.push(newUser);
     await db.set('users', users);
-    res.json({ 
-      id: newUser.id, 
-      email: newUser.email, 
-      name: newUser.name, 
+    res.json({
+      id: newUser.id,
+      email: newUser.email,
+      name: newUser.name,
       role: newUser.role,
+      serviceRole: newUser.serviceRole,
       practiceName: newUser.practiceName,
       isNewClient: newUser.isNewClient,
       slug: newUser.slug,
       assignedProjects: newUser.assignedProjects,
       logo: newUser.logo || '',
-      createdAt: newUser.createdAt 
+      createdAt: newUser.createdAt
     });
   } catch (error) {
     console.error('Admin create user error:', error);
@@ -4230,6 +4262,278 @@ app.get('/thrive365labslaunch/:slug', async (req, res) => {
   } else {
     res.status(404).send('Project not found');
   }
+});
+
+// ============== SERVICE PORTAL ROUTES ==============
+
+// Service portal login - restricted to field service engineers and clinical application specialists
+app.post('/api/auth/service-login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Missing credentials' });
+    }
+    const users = await getUsers();
+    const user = users.find(u => u.email === email);
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      return res.status(400).json({ error: 'Invalid credentials' });
+    }
+
+    // Check if user has service portal access (field_service_engineer or clinical_application_specialist)
+    const allowedRoles = ['field_service_engineer', 'clinical_application_specialist', 'admin'];
+    if (!allowedRoles.includes(user.serviceRole) && user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied. Only Field Service Engineers and Clinical Application Specialists can access the Service Portal.' });
+    }
+
+    const token = jwt.sign(
+      { id: user.id, email: user.email, name: user.name, role: user.role, serviceRole: user.serviceRole },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        serviceRole: user.serviceRole || (user.role === 'admin' ? 'admin' : null)
+      }
+    });
+  } catch (error) {
+    console.error('Service login error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Middleware to check service portal access
+const requireServiceAccess = (req, res, next) => {
+  const allowedRoles = ['field_service_engineer', 'clinical_application_specialist'];
+  if (req.user.role !== 'admin' && !allowedRoles.includes(req.user.serviceRole)) {
+    return res.status(403).json({ error: 'Service portal access required' });
+  }
+  next();
+};
+
+// Get service portal data
+app.get('/api/service-portal/data', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    const userReports = req.user.role === 'admin'
+      ? serviceReports
+      : serviceReports.filter(r => r.technicianId === req.user.id);
+
+    // Sort by date descending
+    userReports.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    res.json({
+      recentReports: userReports.slice(0, 10),
+      totalReports: userReports.length
+    });
+  } catch (error) {
+    console.error('Service portal data error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get clients list for service portal
+app.get('/api/service-portal/clients', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const projects = await getProjects();
+    const users = await getUsers();
+
+    // Get unique clients from projects
+    const clientMap = new Map();
+
+    projects.forEach(project => {
+      if (project.clientName && !clientMap.has(project.clientName)) {
+        clientMap.set(project.clientName, {
+          name: project.clientName,
+          clientName: project.clientName,
+          address: project.clientAddress || '',
+          projectId: project.id
+        });
+      }
+    });
+
+    // Also add client users
+    users.filter(u => u.role === 'client').forEach(user => {
+      if (user.practiceName && !clientMap.has(user.practiceName)) {
+        clientMap.set(user.practiceName, {
+          name: user.practiceName,
+          clientName: user.practiceName,
+          address: '',
+          userId: user.id
+        });
+      }
+    });
+
+    res.json(Array.from(clientMap.values()));
+  } catch (error) {
+    console.error('Get clients error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Create service report
+app.post('/api/service-reports', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const reportData = req.body;
+    const serviceReports = (await db.get('service_reports')) || [];
+
+    const newReport = {
+      id: uuidv4(),
+      ...reportData,
+      technicianId: req.user.id,
+      technicianName: req.user.name,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    serviceReports.push(newReport);
+    await db.set('service_reports', serviceReports);
+
+    // Log activity
+    await logActivity(
+      req.user.id,
+      req.user.name,
+      'service_report_created',
+      'service_report',
+      newReport.id,
+      { clientName: reportData.clientFacilityName, serviceType: reportData.serviceType }
+    );
+
+    res.json(newReport);
+  } catch (error) {
+    console.error('Create service report error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get service reports with filtering
+app.get('/api/service-reports', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    let serviceReports = (await db.get('service_reports')) || [];
+
+    // Apply filters
+    const { client, dateFrom, dateTo, search, technicianId } = req.query;
+
+    if (client) {
+      serviceReports = serviceReports.filter(r =>
+        r.clientFacilityName?.toLowerCase().includes(client.toLowerCase())
+      );
+    }
+
+    if (dateFrom) {
+      serviceReports = serviceReports.filter(r =>
+        new Date(r.serviceCompletionDate || r.createdAt) >= new Date(dateFrom)
+      );
+    }
+
+    if (dateTo) {
+      serviceReports = serviceReports.filter(r =>
+        new Date(r.serviceCompletionDate || r.createdAt) <= new Date(dateTo)
+      );
+    }
+
+    if (search) {
+      const searchLower = search.toLowerCase();
+      serviceReports = serviceReports.filter(r =>
+        r.clientFacilityName?.toLowerCase().includes(searchLower) ||
+        r.serviceType?.toLowerCase().includes(searchLower) ||
+        r.hubspotTicketNumber?.toLowerCase().includes(searchLower) ||
+        r.analyzerModel?.toLowerCase().includes(searchLower)
+      );
+    }
+
+    if (technicianId) {
+      serviceReports = serviceReports.filter(r => r.technicianId === technicianId);
+    }
+
+    // Sort by date descending
+    serviceReports.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    res.json(serviceReports);
+  } catch (error) {
+    console.error('Get service reports error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get single service report
+app.get('/api/service-reports/:id', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    const report = serviceReports.find(r => r.id === req.params.id);
+
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    res.json(report);
+  } catch (error) {
+    console.error('Get service report error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update service report
+app.put('/api/service-reports/:id', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const existingReport = serviceReports[reportIndex];
+
+    // Only allow editing own reports unless admin
+    if (req.user.role !== 'admin' && existingReport.technicianId !== req.user.id) {
+      return res.status(403).json({ error: 'Not authorized to edit this report' });
+    }
+
+    serviceReports[reportIndex] = {
+      ...existingReport,
+      ...req.body,
+      id: existingReport.id,
+      technicianId: existingReport.technicianId,
+      createdAt: existingReport.createdAt,
+      updatedAt: new Date().toISOString()
+    };
+
+    await db.set('service_reports', serviceReports);
+    res.json(serviceReports[reportIndex]);
+  } catch (error) {
+    console.error('Update service report error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete service report (admin only)
+app.delete('/api/service-reports/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    let serviceReports = (await db.get('service_reports')) || [];
+    const report = serviceReports.find(r => r.id === req.params.id);
+
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    serviceReports = serviceReports.filter(r => r.id !== req.params.id);
+    await db.set('service_reports', serviceReports);
+
+    res.json({ message: 'Report deleted successfully' });
+  } catch (error) {
+    console.error('Delete service report error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Service portal HTML route
+app.get('/service-portal', (req, res) => {
+  res.sendFile(__dirname + '/public/service-portal.html');
 });
 
 // ============== AUTHENTICATED CLIENT PORTAL ROUTES ==============
