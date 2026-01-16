@@ -433,6 +433,7 @@
         analyzerModel: '',
         analyzerSerialNumber: '',
         hubspotTicketNumber: '',
+        hubspotCompanyId: '',
 
         // Service Performed
         serviceType: '',
@@ -458,7 +459,8 @@
           setFormData(prev => ({
             ...prev,
             clientFacilityName: client.name || client.clientName || '',
-            address: client.address || ''
+            address: client.address || '',
+            hubspotCompanyId: client.hubspotCompanyId || ''
           }));
         }
       };
@@ -643,14 +645,20 @@
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Service Type *</label>
-                  <input
-                    type="text"
+                  <select
                     value={formData.serviceType}
                     onChange={(e) => updateField('serviceType', e.target.value)}
                     className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
-                    placeholder="e.g., DZLite C270 Install w/ wall mount DI Install"
                     required
-                  />
+                  >
+                    <option value="">Select service type...</option>
+                    <option value="Analyzer Hardware">Analyzer Hardware</option>
+                    <option value="Inventory">Inventory</option>
+                    <option value="LIS/EMR">LIS/EMR</option>
+                    <option value="Billing & Fees">Billing & Fees</option>
+                    <option value="Compliance">Compliance</option>
+                    <option value="Training">Training</option>
+                  </select>
                 </div>
 
                 <div>
