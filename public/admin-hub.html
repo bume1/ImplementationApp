@@ -541,144 +541,151 @@
             </div>
           )}
 
-          {/* User Form */}
+          {/* User Form Modal */}
           {showForm && (
-            <div className="bg-white p-6 rounded-xl shadow-sm border-2 border-primary">
-              <h2 className="text-lg font-bold text-accent mb-4">{editingUser ? 'Edit User' : 'Create New User'}</h2>
-              <form onSubmit={handleSubmit} className="space-y-6">
-                {/* Basic Info */}
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
-                    <input type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" required />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
-                    <input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" required />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Password {editingUser ? '(leave blank to keep)' : '*'}</label>
-                    <input type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" required={!editingUser} />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                    <select value={formData.role} onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary">
-                      <option value="user">User</option>
-                      <option value="admin">Admin</option>
-                      <option value="client">Client</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Service Portal Access */}
-                <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg">
-                  <input type="checkbox" id="serviceAccess" checked={formData.hasServicePortalAccess}
-                    onChange={(e) => setFormData({ ...formData, hasServicePortalAccess: e.target.checked })}
-                    className="w-5 h-5 rounded border-gray-300 text-green-600 focus:ring-green-500" />
-                  <label htmlFor="serviceAccess" className="text-sm font-medium text-gray-700">Grant Service Portal Access</label>
-                </div>
-
-                {/* Client-specific fields */}
-                {formData.role === 'client' && (
-                  <div className="border-t pt-4">
-                    <h3 className="font-medium text-gray-800 mb-3">Client Settings</h3>
-                    <div className="grid md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Practice Name *</label>
-                        <input type="text" value={formData.practiceName} onChange={(e) => setFormData({ ...formData, practiceName: e.target.value })}
-                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" required />
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <input type="checkbox" id="isNewClient" checked={formData.isNewClient}
-                          onChange={(e) => setFormData({ ...formData, isNewClient: e.target.checked })}
-                          className="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary" />
-                        <label htmlFor="isNewClient" className="text-sm font-medium text-gray-700">New Client</label>
-                      </div>
-                      <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Practice Logo</label>
-                        <div className="flex items-center gap-4">
-                          {formData.logo && <img src={formData.logo} alt="Logo" className="h-16 w-16 object-contain border rounded" />}
-                          <input type="file" ref={logoInputRef} accept="image/png,image/jpeg" onChange={handleLogoUpload} className="hidden" />
-                          <button type="button" onClick={() => logoInputRef.current?.click()}
-                            className="px-4 py-2 border border-primary text-primary rounded-lg hover:bg-primary hover:text-white flex items-center gap-2">
-                            {Icons.upload} Upload Logo
-                          </button>
-                          {formData.logo && <button type="button" onClick={() => setFormData({ ...formData, logo: '' })} className="text-red-600 text-sm">Remove</button>}
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1">Max 2MB, PNG or JPEG</p>
-                      </div>
-                      {editingUser?.slug && (
-                        <div className="md:col-span-2 p-3 bg-blue-50 rounded-lg">
-                          <p className="text-sm text-gray-700"><span className="font-medium">Client Portal URL:</span> {window.location.origin}/portal/{editingUser.slug}</p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* HubSpot Integration */}
-                    <h4 className="font-medium text-gray-800 mt-4 mb-2">HubSpot Integration</h4>
-                    <div className="grid md:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Company ID</label>
-                        <input type="text" value={formData.hubspotCompanyId} onChange={(e) => setFormData({ ...formData, hubspotCompanyId: e.target.value })}
-                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" placeholder="HubSpot Company ID" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Deal ID</label>
-                        <input type="text" value={formData.hubspotDealId} onChange={(e) => setFormData({ ...formData, hubspotDealId: e.target.value })}
-                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" placeholder="HubSpot Deal ID" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Contact ID</label>
-                        <input type="text" value={formData.hubspotContactId} onChange={(e) => setFormData({ ...formData, hubspotContactId: e.target.value })}
-                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" placeholder="HubSpot Contact ID" />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Project Assignment (for non-admin users) */}
-                {formData.role !== 'admin' && projects.length > 0 && (
-                  <div className="border-t pt-4">
-                    <h3 className="font-medium text-gray-800 mb-3">Project Access</h3>
-                    <p className="text-sm text-gray-500 mb-3">
-                      {formData.role === 'client' ? 'Select projects this client can view in their portal' : 'Select projects this user can access'}
-                    </p>
-                    <div className="max-h-64 overflow-y-auto border rounded-lg p-2 space-y-2">
-                      {projects.map(project => {
-                        const isAssigned = formData.assignedProjects.includes(project.id);
-                        const accessLevel = formData.projectAccessLevels[project.id] || 'edit';
-                        return (
-                          <div key={project.id} className={`flex items-center justify-between p-2 rounded ${isAssigned ? 'bg-blue-50' : 'bg-gray-50'}`}>
-                            <label className="flex items-center gap-2 cursor-pointer flex-1">
-                              <input type="checkbox" checked={isAssigned} onChange={() => toggleProjectAssignment(project.id)}
-                                className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary" />
-                              <span className="text-sm">{project.name || project.clientName}</span>
-                            </label>
-                            {isAssigned && formData.role !== 'client' && (
-                              <select value={accessLevel} onChange={(e) => setProjectAccessLevel(project.id, e.target.value)}
-                                className="ml-2 text-xs px-2 py-1 border rounded">
-                                <option value="edit">Edit</option>
-                                <option value="view">View Only</option>
-                              </select>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex justify-end gap-3 pt-4 border-t">
-                  <button type="button" onClick={() => { setShowForm(false); setEditingUser(null); }} className="px-4 py-2 border rounded-lg">Cancel</button>
-                  <button type="submit" className="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-accent">
-                    {editingUser ? 'Update User' : 'Create User'}
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
+                  <h2 className="text-lg font-bold text-accent">{editingUser ? 'Edit User' : 'Create New User'}</h2>
+                  <button onClick={() => { setShowForm(false); setEditingUser(null); }} className="text-gray-400 hover:text-gray-600">
+                    {Icons.close}
                   </button>
                 </div>
-              </form>
+                <form onSubmit={handleSubmit} className="p-6 space-y-6">
+                  {/* Basic Info */}
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                      <input type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" required />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                      <input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" required />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Password {editingUser ? '(leave blank to keep)' : '*'}</label>
+                      <input type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" required={!editingUser} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                      <select value={formData.role} onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary">
+                        <option value="user">User</option>
+                        <option value="admin">Admin</option>
+                        <option value="client">Client</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Service Portal Access */}
+                  <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg">
+                    <input type="checkbox" id="serviceAccess" checked={formData.hasServicePortalAccess}
+                      onChange={(e) => setFormData({ ...formData, hasServicePortalAccess: e.target.checked })}
+                      className="w-5 h-5 rounded border-gray-300 text-green-600 focus:ring-green-500" />
+                    <label htmlFor="serviceAccess" className="text-sm font-medium text-gray-700">Grant Service Portal Access</label>
+                  </div>
+
+                  {/* Client-specific fields */}
+                  {formData.role === 'client' && (
+                    <div className="border-t pt-4">
+                      <h3 className="font-medium text-gray-800 mb-3">Client Settings</h3>
+                      <div className="grid md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Practice Name *</label>
+                          <input type="text" value={formData.practiceName} onChange={(e) => setFormData({ ...formData, practiceName: e.target.value })}
+                            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" required />
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <input type="checkbox" id="isNewClient" checked={formData.isNewClient}
+                            onChange={(e) => setFormData({ ...formData, isNewClient: e.target.checked })}
+                            className="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary" />
+                          <label htmlFor="isNewClient" className="text-sm font-medium text-gray-700">New Client</label>
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Practice Logo</label>
+                          <div className="flex items-center gap-4">
+                            {formData.logo && <img src={formData.logo} alt="Logo" className="h-16 w-16 object-contain border rounded" />}
+                            <input type="file" ref={logoInputRef} accept="image/png,image/jpeg" onChange={handleLogoUpload} className="hidden" />
+                            <button type="button" onClick={() => logoInputRef.current?.click()}
+                              className="px-4 py-2 border border-primary text-primary rounded-lg hover:bg-primary hover:text-white flex items-center gap-2">
+                              {Icons.upload} Upload Logo
+                            </button>
+                            {formData.logo && <button type="button" onClick={() => setFormData({ ...formData, logo: '' })} className="text-red-600 text-sm">Remove</button>}
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">Max 2MB, PNG or JPEG</p>
+                        </div>
+                        {editingUser?.slug && (
+                          <div className="md:col-span-2 p-3 bg-blue-50 rounded-lg">
+                            <p className="text-sm text-gray-700"><span className="font-medium">Client Portal URL:</span> {window.location.origin}/portal/{editingUser.slug}</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* HubSpot Integration */}
+                      <h4 className="font-medium text-gray-800 mt-4 mb-2">HubSpot Integration</h4>
+                      <div className="grid md:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Company ID</label>
+                          <input type="text" value={formData.hubspotCompanyId} onChange={(e) => setFormData({ ...formData, hubspotCompanyId: e.target.value })}
+                            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" placeholder="HubSpot Company ID" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Deal ID</label>
+                          <input type="text" value={formData.hubspotDealId} onChange={(e) => setFormData({ ...formData, hubspotDealId: e.target.value })}
+                            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" placeholder="HubSpot Deal ID" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Contact ID</label>
+                          <input type="text" value={formData.hubspotContactId} onChange={(e) => setFormData({ ...formData, hubspotContactId: e.target.value })}
+                            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" placeholder="HubSpot Contact ID" />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Project Assignment (for non-admin users) */}
+                  {formData.role !== 'admin' && projects.length > 0 && (
+                    <div className="border-t pt-4">
+                      <h3 className="font-medium text-gray-800 mb-3">Project Access</h3>
+                      <p className="text-sm text-gray-500 mb-3">
+                        {formData.role === 'client' ? 'Select projects this client can view in their portal' : 'Select projects this user can access'}
+                      </p>
+                      <div className="max-h-48 overflow-y-auto border rounded-lg p-2 space-y-2">
+                        {projects.map(project => {
+                          const isAssigned = formData.assignedProjects.includes(project.id);
+                          const accessLevel = formData.projectAccessLevels[project.id] || 'edit';
+                          return (
+                            <div key={project.id} className={`flex items-center justify-between p-2 rounded ${isAssigned ? 'bg-blue-50' : 'bg-gray-50'}`}>
+                              <label className="flex items-center gap-2 cursor-pointer flex-1">
+                                <input type="checkbox" checked={isAssigned} onChange={() => toggleProjectAssignment(project.id)}
+                                  className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary" />
+                                <span className="text-sm">{project.name || project.clientName}</span>
+                              </label>
+                              {isAssigned && formData.role !== 'client' && (
+                                <select value={accessLevel} onChange={(e) => setProjectAccessLevel(project.id, e.target.value)}
+                                  className="ml-2 text-xs px-2 py-1 border rounded">
+                                  <option value="edit">Edit</option>
+                                  <option value="view">View Only</option>
+                                </select>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex justify-end gap-3 pt-4 border-t">
+                    <button type="button" onClick={() => { setShowForm(false); setEditingUser(null); }} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
+                    <button type="submit" className="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-accent">
+                      {editingUser ? 'Update User' : 'Create User'}
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
           )}
 
