@@ -37,7 +37,7 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect } = React;
+    const { useState, useEffect, useRef } = React;
 
     const API_URL = window.location.origin;
 
@@ -92,6 +92,28 @@
           headers: { 'Authorization': `Bearer ${token}` }
         }).then(handleResponse).catch(err => ({ error: err.message })),
 
+      getProjects: (token) =>
+        fetch(`${API_URL}/api/projects`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      getPasswordResetRequests: (token) =>
+        fetch(`${API_URL}/api/password-reset-requests`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      handlePasswordReset: (token, requestId) =>
+        fetch(`${API_URL}/api/password-reset-requests/${requestId}/handle`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      dismissPasswordReset: (token, requestId) =>
+        fetch(`${API_URL}/api/password-reset-requests/${requestId}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
       getServiceReports: (token) =>
         fetch(`${API_URL}/api/service-reports`, {
           headers: { 'Authorization': `Bearer ${token}` }
@@ -114,7 +136,9 @@
       trash: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>,
       check: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>,
       x: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>,
-      eye: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+      eye: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>,
+      key: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>,
+      upload: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
     };
 
     // Login Page
@@ -147,37 +171,17 @@
               <h1 className="text-2xl font-bold text-accent">Admin Hub</h1>
               <p className="text-gray-600 mt-1">Central Administration Portal</p>
             </div>
-
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm">{error}</div>}
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
-                  required
-                />
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary" required />
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
-                  required
-                />
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary" required />
               </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-primary text-white py-3 rounded-lg font-medium hover:bg-accent transition disabled:opacity-50"
-              >
+              <button type="submit" disabled={loading} className="w-full bg-primary text-white py-3 rounded-lg font-medium hover:bg-accent transition disabled:opacity-50">
                 {loading ? 'Signing in...' : 'Sign In'}
               </button>
             </form>
@@ -186,75 +190,63 @@
       );
     };
 
-    // Sidebar
-    const Sidebar = ({ activePage, onNavigate, user, isMobileOpen, onClose }) => {
+    // Sidebar with direct portal access
+    const Sidebar = ({ activePage, onNavigate, user, token, isMobileOpen, onClose }) => {
       const menuItems = [
         { id: 'dashboard', label: 'Dashboard', icon: Icons.home },
         { id: 'users', label: 'User Management', icon: Icons.users },
         { id: 'service_reports', label: 'Service Reports', icon: Icons.clipboard },
-        { id: 'client_portal', label: 'Client Portal', icon: Icons.folder },
       ];
 
-      const externalLinks = [
-        { label: 'Implementations App', url: '/thrive365labslaunch', icon: Icons.externalLink },
-        { label: 'Service Portal', url: '/service-portal', icon: Icons.externalLink },
-        { label: 'Client Portal', url: '/portal', icon: Icons.externalLink },
-      ];
+      // Direct portal navigation with token passing
+      const navigateToPortal = (portalPath) => {
+        // Store token for portal access
+        localStorage.setItem('portal_token', token);
+        localStorage.setItem('portal_user', JSON.stringify(user));
+        localStorage.setItem('service_token', token);
+        localStorage.setItem('service_user', JSON.stringify(user));
+        window.location.href = portalPath;
+      };
 
       return (
         <>
           {isMobileOpen && <div className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden" onClick={onClose}></div>}
-
           <aside className={`w-64 bg-white border-r min-h-screen fixed left-0 top-0 z-50 transform transition-transform duration-300 ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
             <div className="p-4 border-b flex justify-between items-center">
               <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-10" />
               <button onClick={onClose} className="lg:hidden text-gray-500">{Icons.close}</button>
             </div>
-
             <div className="p-4 border-b bg-gradient-to-r from-primary to-accent text-white">
               <p className="text-sm opacity-80">Administrator</p>
               <p className="font-semibold">{user?.name}</p>
             </div>
-
             <nav className="p-2">
               <p className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Management</p>
               {menuItems.map(item => (
-                <button
-                  key={item.id}
-                  onClick={() => { onNavigate(item.id); onClose && onClose(); }}
-                  className={`w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center gap-3 ${activePage === item.id ? 'active' : 'text-gray-700'}`}
-                >
+                <button key={item.id} onClick={() => { onNavigate(item.id); onClose && onClose(); }}
+                  className={`w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center gap-3 ${activePage === item.id ? 'active' : 'text-gray-700'}`}>
                   <span className={activePage === item.id ? '' : 'text-primary'}>{item.icon}</span>
                   <span className="font-medium">{item.label}</span>
                 </button>
               ))}
-
-              <p className="px-4 py-2 mt-4 text-xs font-semibold text-gray-500 uppercase">Quick Links</p>
-              {externalLinks.map(link => (
-                <a
-                  key={link.url}
-                  href={link.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center gap-3 text-gray-700"
-                >
-                  <span className="text-primary">{link.icon}</span>
-                  <span className="font-medium">{link.label}</span>
-                </a>
-              ))}
+              <p className="px-4 py-2 mt-4 text-xs font-semibold text-gray-500 uppercase">Direct Access</p>
+              <button onClick={() => navigateToPortal('/thrive365labslaunch')} className="w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center gap-3 text-gray-700">
+                <span className="text-purple-600">{Icons.folder}</span>
+                <span className="font-medium">Implementations App</span>
+              </button>
+              <button onClick={() => navigateToPortal('/service-portal')} className="w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center gap-3 text-gray-700">
+                <span className="text-green-600">{Icons.clipboard}</span>
+                <span className="font-medium">Service Portal</span>
+              </button>
+              <button onClick={() => navigateToPortal('/portal')} className="w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center gap-3 text-gray-700">
+                <span className="text-blue-600">{Icons.users}</span>
+                <span className="font-medium">Client Portal</span>
+              </button>
             </nav>
-
             <div className="absolute bottom-0 left-0 right-0 p-4 border-t">
-              <button
-                onClick={() => {
-                  localStorage.removeItem('admin_token');
-                  localStorage.removeItem('admin_user');
-                  window.location.reload();
-                }}
-                className="w-full text-left px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2"
-              >
-                {Icons.logout}
-                <span>Sign Out</span>
+              <button onClick={() => { localStorage.clear(); window.location.reload(); }}
+                className="w-full text-left px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2">
+                {Icons.logout}<span>Sign Out</span>
               </button>
             </div>
           </aside>
@@ -274,9 +266,7 @@
         });
       }, [token]);
 
-      if (loading) {
-        return <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent"></div></div>;
-      }
+      if (loading) return <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent"></div></div>;
 
       return (
         <div className="space-y-6">
@@ -284,7 +274,6 @@
             <h1 className="text-2xl font-bold">Admin Hub Dashboard</h1>
             <p className="mt-2 opacity-90">Central management for all Thrive 365 Labs portals</p>
           </div>
-
           <div className="grid md:grid-cols-4 gap-4">
             <div className="bg-white p-6 rounded-xl shadow-sm">
               <p className="text-sm text-gray-500">Total Users</p>
@@ -303,28 +292,20 @@
               <p className="text-3xl font-bold text-orange-600">{stats?.clientUsers || 0}</p>
             </div>
           </div>
-
           <div className="grid md:grid-cols-2 gap-6">
             <div className="bg-white p-6 rounded-xl shadow-sm">
               <h2 className="text-lg font-bold text-accent mb-4">Quick Actions</h2>
               <div className="space-y-2">
                 <button onClick={() => onNavigate('users')} className="w-full text-left p-3 bg-gray-50 rounded-lg hover:bg-gray-100 flex items-center gap-3">
-                  {Icons.users}
-                  <span>Manage Users</span>
+                  {Icons.users}<span>Manage Users</span>
                 </button>
                 <button onClick={() => onNavigate('service_reports')} className="w-full text-left p-3 bg-gray-50 rounded-lg hover:bg-gray-100 flex items-center gap-3">
-                  {Icons.clipboard}
-                  <span>View Service Reports</span>
+                  {Icons.clipboard}<span>View Service Reports</span>
                 </button>
-                <a href="/thrive365labslaunch" target="_blank" className="w-full text-left p-3 bg-gray-50 rounded-lg hover:bg-gray-100 flex items-center gap-3">
-                  {Icons.externalLink}
-                  <span>Open Implementations App</span>
-                </a>
               </div>
             </div>
-
             <div className="bg-white p-6 rounded-xl shadow-sm">
-              <h2 className="text-lg font-bold text-accent mb-4">Projects Overview</h2>
+              <h2 className="text-lg font-bold text-accent mb-4">Overview</h2>
               <div className="space-y-3">
                 <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
                   <span>Total Projects</span>
@@ -345,33 +326,46 @@
       );
     };
 
-    // User Management Page
+    // Full User Management Page with all features
     const UsersPage = ({ token }) => {
       const [users, setUsers] = useState([]);
+      const [projects, setProjects] = useState([]);
+      const [passwordResets, setPasswordResets] = useState([]);
       const [loading, setLoading] = useState(true);
       const [showForm, setShowForm] = useState(false);
       const [editingUser, setEditingUser] = useState(null);
       const [searchTerm, setSearchTerm] = useState('');
       const [roleFilter, setRoleFilter] = useState('all');
       const [message, setMessage] = useState('');
+      const [activeTab, setActiveTab] = useState('list');
+      const logoInputRef = useRef(null);
 
-      const [formData, setFormData] = useState({
-        name: '', email: '', password: '', role: 'user', hasServicePortalAccess: false, practiceName: ''
-      });
+      const defaultFormData = {
+        name: '', email: '', password: '', role: 'user',
+        hasServicePortalAccess: false, practiceName: '', isNewClient: false,
+        logo: '', hubspotCompanyId: '', hubspotDealId: '', hubspotContactId: '',
+        assignedProjects: [], projectAccessLevels: {}
+      };
+      const [formData, setFormData] = useState(defaultFormData);
 
-      useEffect(() => { loadUsers(); }, []);
+      useEffect(() => { loadData(); }, []);
 
-      const loadUsers = async () => {
+      const loadData = async () => {
         setLoading(true);
-        const result = await api.getUsers(token);
-        if (!result.error) setUsers(result);
+        const [usersRes, projectsRes, resetsRes] = await Promise.all([
+          api.getUsers(token),
+          api.getProjects(token),
+          api.getPasswordResetRequests(token)
+        ]);
+        if (!usersRes.error) setUsers(usersRes);
+        if (!projectsRes.error) setProjects(projectsRes);
+        if (!resetsRes.error) setPasswordResets(resetsRes);
         setLoading(false);
       };
 
       const handleSubmit = async (e) => {
         e.preventDefault();
         setMessage('');
-
         let result;
         if (editingUser) {
           const updateData = { ...formData };
@@ -380,27 +374,33 @@
         } else {
           result = await api.createUser(token, formData);
         }
-
         if (result.error) {
           setMessage(`Error: ${result.error}`);
         } else {
           setMessage(editingUser ? 'User updated successfully' : 'User created successfully');
           setShowForm(false);
           setEditingUser(null);
-          setFormData({ name: '', email: '', password: '', role: 'user', hasServicePortalAccess: false, practiceName: '' });
-          loadUsers();
+          setFormData(defaultFormData);
+          loadData();
         }
       };
 
       const handleEdit = (user) => {
         setEditingUser(user);
         setFormData({
-          name: user.name,
-          email: user.email,
+          name: user.name || '',
+          email: user.email || '',
           password: '',
-          role: user.role,
+          role: user.role || 'user',
           hasServicePortalAccess: user.hasServicePortalAccess || false,
-          practiceName: user.practiceName || ''
+          practiceName: user.practiceName || '',
+          isNewClient: user.isNewClient || false,
+          logo: user.logo || '',
+          hubspotCompanyId: user.hubspotCompanyId || '',
+          hubspotDealId: user.hubspotDealId || '',
+          hubspotContactId: user.hubspotContactId || '',
+          assignedProjects: user.assignedProjects || [],
+          projectAccessLevels: user.projectAccessLevels || {}
         });
         setShowForm(true);
       };
@@ -408,25 +408,66 @@
       const handleDelete = async (userId) => {
         if (!confirm('Are you sure you want to delete this user?')) return;
         const result = await api.deleteUser(token, userId);
-        if (result.error) {
-          setMessage(`Error: ${result.error}`);
-        } else {
-          loadUsers();
-        }
+        if (result.error) setMessage(`Error: ${result.error}`);
+        else loadData();
       };
 
       const toggleServiceAccess = async (user) => {
-        const result = await api.updateUser(token, user.id, {
-          hasServicePortalAccess: !user.hasServicePortalAccess
-        });
-        if (!result.error) loadUsers();
+        await api.updateUser(token, user.id, { hasServicePortalAccess: !user.hasServicePortalAccess });
+        loadData();
+      };
+
+      const toggleProjectAssignment = (projectId) => {
+        const assigned = formData.assignedProjects.includes(projectId);
+        let newAssigned, newLevels;
+        if (assigned) {
+          newAssigned = formData.assignedProjects.filter(id => id !== projectId);
+          newLevels = { ...formData.projectAccessLevels };
+          delete newLevels[projectId];
+        } else {
+          newAssigned = [...formData.assignedProjects, projectId];
+          newLevels = { ...formData.projectAccessLevels, [projectId]: 'edit' };
+        }
+        setFormData({ ...formData, assignedProjects: newAssigned, projectAccessLevels: newLevels });
+      };
+
+      const setProjectAccessLevel = (projectId, level) => {
+        setFormData({ ...formData, projectAccessLevels: { ...formData.projectAccessLevels, [projectId]: level } });
+      };
+
+      const handleLogoUpload = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        if (file.size > 2 * 1024 * 1024) {
+          setMessage('Error: Logo must be less than 2MB');
+          return;
+        }
+        const reader = new FileReader();
+        reader.onloadend = () => setFormData({ ...formData, logo: reader.result });
+        reader.readAsDataURL(file);
+      };
+
+      const handlePasswordReset = async (requestId, userId) => {
+        const newPassword = prompt('Enter new password for user:');
+        if (!newPassword) return;
+        const result = await api.updateUser(token, userId, { password: newPassword });
+        if (!result.error) {
+          await api.dismissPasswordReset(token, requestId);
+          setMessage('Password reset successfully');
+          loadData();
+        } else {
+          setMessage(`Error: ${result.error}`);
+        }
+      };
+
+      const dismissReset = async (requestId) => {
+        await api.dismissPasswordReset(token, requestId);
+        loadData();
       };
 
       const filteredUsers = users.filter(user => {
-        const matchesSearch = user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                             user.email.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesRole = roleFilter === 'all' || user.role === roleFilter ||
-                          (roleFilter === 'service' && user.hasServicePortalAccess);
+        const matchesSearch = user.name?.toLowerCase().includes(searchTerm.toLowerCase()) || user.email?.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesRole = roleFilter === 'all' || user.role === roleFilter || (roleFilter === 'service' && user.hasServicePortalAccess);
         return matchesSearch && matchesRole;
       });
 
@@ -436,119 +477,203 @@
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div>
                 <h1 className="text-2xl font-bold text-accent">User Management</h1>
-                <p className="text-gray-600 mt-1">Manage all users across Client Portal, Service Portal, and Admin</p>
+                <p className="text-gray-600 mt-1">Manage all users, roles, and portal access</p>
               </div>
-              <button
-                onClick={() => { setShowForm(true); setEditingUser(null); setFormData({ name: '', email: '', password: '', role: 'user', hasServicePortalAccess: false, practiceName: '' }); }}
-                className="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-accent flex items-center gap-2"
-              >
+              <button onClick={() => { setShowForm(true); setEditingUser(null); setFormData(defaultFormData); }}
+                className="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-accent flex items-center gap-2">
                 {Icons.plus} Add User
               </button>
             </div>
 
-            {message && (
-              <div className={`mt-4 p-3 rounded-lg ${message.includes('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
-                {message}
+            {/* Tabs */}
+            <div className="mt-4 flex gap-2 border-b">
+              <button onClick={() => setActiveTab('list')} className={`px-4 py-2 font-medium ${activeTab === 'list' ? 'border-b-2 border-primary text-primary' : 'text-gray-500'}`}>
+                Users ({users.length})
+              </button>
+              <button onClick={() => setActiveTab('resets')} className={`px-4 py-2 font-medium ${activeTab === 'resets' ? 'border-b-2 border-primary text-primary' : 'text-gray-500'}`}>
+                Password Resets {passwordResets.length > 0 && <span className="ml-1 bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">{passwordResets.length}</span>}
+              </button>
+            </div>
+
+            {message && <div className={`mt-4 p-3 rounded-lg ${message.includes('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{message}</div>}
+
+            {activeTab === 'list' && (
+              <div className="mt-4 flex flex-col md:flex-row gap-4">
+                <input type="text" placeholder="Search users..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+                  className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" />
+                <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary">
+                  <option value="all">All Roles</option>
+                  <option value="admin">Admins</option>
+                  <option value="user">Users</option>
+                  <option value="client">Clients</option>
+                  <option value="service">Service Portal Access</option>
+                </select>
               </div>
             )}
-
-            <div className="mt-4 flex flex-col md:flex-row gap-4">
-              <input
-                type="text"
-                placeholder="Search users..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
-              />
-              <select
-                value={roleFilter}
-                onChange={(e) => setRoleFilter(e.target.value)}
-                className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
-              >
-                <option value="all">All Roles</option>
-                <option value="admin">Admins</option>
-                <option value="user">Users</option>
-                <option value="client">Clients</option>
-                <option value="service">Service Portal Access</option>
-              </select>
-            </div>
           </div>
 
+          {/* Password Reset Requests Tab */}
+          {activeTab === 'resets' && (
+            <div className="bg-white rounded-xl shadow-sm p-6">
+              <h2 className="text-lg font-bold text-accent mb-4 flex items-center gap-2">{Icons.key} Password Reset Requests</h2>
+              {passwordResets.length > 0 ? (
+                <div className="space-y-3">
+                  {passwordResets.map(req => {
+                    const user = users.find(u => u.id === req.userId);
+                    return (
+                      <div key={req.id} className="flex justify-between items-center p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <div>
+                          <p className="font-medium">{user?.name || 'Unknown User'}</p>
+                          <p className="text-sm text-gray-500">{user?.email}</p>
+                          <p className="text-xs text-gray-400">Requested: {new Date(req.requestedAt).toLocaleString()}</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => handlePasswordReset(req.id, req.userId)} className="px-3 py-1 bg-primary text-white rounded text-sm">Reset Password</button>
+                          <button onClick={() => dismissReset(req.id)} className="px-3 py-1 bg-gray-200 rounded text-sm">Dismiss</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-gray-500 text-center py-8">No pending password reset requests</p>
+              )}
+            </div>
+          )}
+
+          {/* User Form */}
           {showForm && (
             <div className="bg-white p-6 rounded-xl shadow-sm border-2 border-primary">
               <h2 className="text-lg font-bold text-accent mb-4">{editingUser ? 'Edit User' : 'Create New User'}</h2>
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit} className="space-y-6">
+                {/* Basic Info */}
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
-                    <input
-                      type="text"
-                      value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
-                      required
-                    />
+                    <input type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" required />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
-                    <input
-                      type="email"
-                      value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
-                      required
-                    />
+                    <input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" required />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Password {editingUser ? '(leave blank to keep current)' : '*'}</label>
-                    <input
-                      type="password"
-                      value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
-                      required={!editingUser}
-                    />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Password {editingUser ? '(leave blank to keep)' : '*'}</label>
+                    <input type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" required={!editingUser} />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                    <select
-                      value={formData.role}
-                      onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
-                    >
+                    <select value={formData.role} onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary">
                       <option value="user">User</option>
                       <option value="admin">Admin</option>
                       <option value="client">Client</option>
                     </select>
                   </div>
-                  {formData.role === 'client' && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Practice Name</label>
-                      <input
-                        type="text"
-                        value={formData.practiceName}
-                        onChange={(e) => setFormData({ ...formData, practiceName: e.target.value })}
-                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
-                      />
-                    </div>
-                  )}
-                  <div className="flex items-center gap-3 md:col-span-2">
-                    <input
-                      type="checkbox"
-                      id="serviceAccess"
-                      checked={formData.hasServicePortalAccess}
-                      onChange={(e) => setFormData({ ...formData, hasServicePortalAccess: e.target.checked })}
-                      className="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary"
-                    />
-                    <label htmlFor="serviceAccess" className="text-sm font-medium text-gray-700">
-                      Grant Service Portal Access
-                    </label>
-                  </div>
                 </div>
-                <div className="flex justify-end gap-3">
-                  <button type="button" onClick={() => { setShowForm(false); setEditingUser(null); }} className="px-4 py-2 border rounded-lg">
-                    Cancel
-                  </button>
+
+                {/* Service Portal Access */}
+                <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg">
+                  <input type="checkbox" id="serviceAccess" checked={formData.hasServicePortalAccess}
+                    onChange={(e) => setFormData({ ...formData, hasServicePortalAccess: e.target.checked })}
+                    className="w-5 h-5 rounded border-gray-300 text-green-600 focus:ring-green-500" />
+                  <label htmlFor="serviceAccess" className="text-sm font-medium text-gray-700">Grant Service Portal Access</label>
+                </div>
+
+                {/* Client-specific fields */}
+                {formData.role === 'client' && (
+                  <div className="border-t pt-4">
+                    <h3 className="font-medium text-gray-800 mb-3">Client Settings</h3>
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Practice Name *</label>
+                        <input type="text" value={formData.practiceName} onChange={(e) => setFormData({ ...formData, practiceName: e.target.value })}
+                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" required />
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <input type="checkbox" id="isNewClient" checked={formData.isNewClient}
+                          onChange={(e) => setFormData({ ...formData, isNewClient: e.target.checked })}
+                          className="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary" />
+                        <label htmlFor="isNewClient" className="text-sm font-medium text-gray-700">New Client</label>
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Practice Logo</label>
+                        <div className="flex items-center gap-4">
+                          {formData.logo && <img src={formData.logo} alt="Logo" className="h-16 w-16 object-contain border rounded" />}
+                          <input type="file" ref={logoInputRef} accept="image/png,image/jpeg" onChange={handleLogoUpload} className="hidden" />
+                          <button type="button" onClick={() => logoInputRef.current?.click()}
+                            className="px-4 py-2 border border-primary text-primary rounded-lg hover:bg-primary hover:text-white flex items-center gap-2">
+                            {Icons.upload} Upload Logo
+                          </button>
+                          {formData.logo && <button type="button" onClick={() => setFormData({ ...formData, logo: '' })} className="text-red-600 text-sm">Remove</button>}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">Max 2MB, PNG or JPEG</p>
+                      </div>
+                      {editingUser?.slug && (
+                        <div className="md:col-span-2 p-3 bg-blue-50 rounded-lg">
+                          <p className="text-sm text-gray-700"><span className="font-medium">Client Portal URL:</span> {window.location.origin}/portal/{editingUser.slug}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* HubSpot Integration */}
+                    <h4 className="font-medium text-gray-800 mt-4 mb-2">HubSpot Integration</h4>
+                    <div className="grid md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Company ID</label>
+                        <input type="text" value={formData.hubspotCompanyId} onChange={(e) => setFormData({ ...formData, hubspotCompanyId: e.target.value })}
+                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" placeholder="HubSpot Company ID" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Deal ID</label>
+                        <input type="text" value={formData.hubspotDealId} onChange={(e) => setFormData({ ...formData, hubspotDealId: e.target.value })}
+                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" placeholder="HubSpot Deal ID" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Contact ID</label>
+                        <input type="text" value={formData.hubspotContactId} onChange={(e) => setFormData({ ...formData, hubspotContactId: e.target.value })}
+                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" placeholder="HubSpot Contact ID" />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Project Assignment (for non-admin users) */}
+                {formData.role !== 'admin' && projects.length > 0 && (
+                  <div className="border-t pt-4">
+                    <h3 className="font-medium text-gray-800 mb-3">Project Access</h3>
+                    <p className="text-sm text-gray-500 mb-3">
+                      {formData.role === 'client' ? 'Select projects this client can view in their portal' : 'Select projects this user can access'}
+                    </p>
+                    <div className="max-h-64 overflow-y-auto border rounded-lg p-2 space-y-2">
+                      {projects.map(project => {
+                        const isAssigned = formData.assignedProjects.includes(project.id);
+                        const accessLevel = formData.projectAccessLevels[project.id] || 'edit';
+                        return (
+                          <div key={project.id} className={`flex items-center justify-between p-2 rounded ${isAssigned ? 'bg-blue-50' : 'bg-gray-50'}`}>
+                            <label className="flex items-center gap-2 cursor-pointer flex-1">
+                              <input type="checkbox" checked={isAssigned} onChange={() => toggleProjectAssignment(project.id)}
+                                className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary" />
+                              <span className="text-sm">{project.name || project.clientName}</span>
+                            </label>
+                            {isAssigned && formData.role !== 'client' && (
+                              <select value={accessLevel} onChange={(e) => setProjectAccessLevel(project.id, e.target.value)}
+                                className="ml-2 text-xs px-2 py-1 border rounded">
+                                <option value="edit">Edit</option>
+                                <option value="view">View Only</option>
+                              </select>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-3 pt-4 border-t">
+                  <button type="button" onClick={() => { setShowForm(false); setEditingUser(null); }} className="px-4 py-2 border rounded-lg">Cancel</button>
                   <button type="submit" className="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-accent">
                     {editingUser ? 'Update User' : 'Create User'}
                   </button>
@@ -557,84 +682,71 @@
             </div>
           )}
 
-          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-            {loading ? (
-              <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent"></div></div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50 border-b">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">User</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Role</th>
-                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Portal Access</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Details</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Created</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {filteredUsers.map(user => (
-                      <tr key={user.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-4">
-                          <div className="font-medium text-gray-900">{user.name}</div>
-                          <div className="text-sm text-gray-500">{user.email}</div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <span className={`px-2 py-1 text-xs rounded-full font-medium ${
-                            user.role === 'admin' ? 'bg-purple-100 text-purple-700' :
-                            user.role === 'client' ? 'bg-blue-100 text-blue-700' :
-                            'bg-gray-100 text-gray-700'
-                          }`}>
-                            {user.role}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="flex flex-wrap gap-1 justify-center">
-                            {/* Implementations App - admins and users with admin role */}
-                            <span className={`px-2 py-0.5 text-xs rounded ${user.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-400'}`} title="Implementations App">
-                              Impl
-                            </span>
-                            {/* Client Portal - clients and admins */}
-                            <span className={`px-2 py-0.5 text-xs rounded ${user.role === 'client' || user.role === 'admin' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'}`} title="Client Portal">
-                              Client
-                            </span>
-                            {/* Service Portal - users with hasServicePortalAccess or admins */}
-                            <button
-                              onClick={() => toggleServiceAccess(user)}
-                              className={`px-2 py-0.5 text-xs rounded ${user.hasServicePortalAccess || user.role === 'admin' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}
-                              title={user.role === 'admin' ? 'Admins always have access' : 'Click to toggle Service Portal access'}
-                              disabled={user.role === 'admin'}
-                            >
-                              Service
-                            </button>
-                          </div>
-                        </td>
-                        <td className="px-4 py-4 text-xs text-gray-500">
-                          {user.practiceName && <div><span className="font-medium">Practice:</span> {user.practiceName}</div>}
-                          {user.slug && <div><span className="font-medium">Slug:</span> {user.slug}</div>}
-                          {user.assignedProjects?.length > 0 && <div><span className="font-medium">Projects:</span> {user.assignedProjects.length}</div>}
-                        </td>
-                        <td className="px-4 py-4 text-sm text-gray-500">
-                          {new Date(user.createdAt).toLocaleDateString()}
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="flex gap-2">
-                            <button onClick={() => handleEdit(user)} className="p-1 text-primary hover:bg-primary/10 rounded" title="Edit">
-                              {Icons.edit}
-                            </button>
-                            <button onClick={() => handleDelete(user.id)} className="p-1 text-red-600 hover:bg-red-50 rounded" title="Delete">
-                              {Icons.trash}
-                            </button>
-                          </div>
-                        </td>
+          {/* Users List */}
+          {activeTab === 'list' && (
+            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+              {loading ? (
+                <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent"></div></div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50 border-b">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">User</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Role</th>
+                        <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Portal Access</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Details</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Created</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {filteredUsers.map(user => (
+                        <tr key={user.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-4">
+                            <div className="flex items-center gap-3">
+                              {user.logo && <img src={user.logo} alt="" className="h-8 w-8 rounded object-contain bg-gray-100" />}
+                              <div>
+                                <div className="font-medium text-gray-900">{user.name}</div>
+                                <div className="text-sm text-gray-500">{user.email}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-4">
+                            <span className={`px-2 py-1 text-xs rounded-full font-medium ${
+                              user.role === 'admin' ? 'bg-purple-100 text-purple-700' :
+                              user.role === 'client' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'
+                            }`}>{user.role}</span>
+                          </td>
+                          <td className="px-4 py-4">
+                            <div className="flex flex-wrap gap-1 justify-center">
+                              <span className={`px-2 py-0.5 text-xs rounded ${user.role === 'admin' || user.assignedProjects?.length > 0 ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-400'}`} title="Implementations App">Impl</span>
+                              <span className={`px-2 py-0.5 text-xs rounded ${user.role === 'client' || user.role === 'admin' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'}`} title="Client Portal">Client</span>
+                              <button onClick={() => toggleServiceAccess(user)} disabled={user.role === 'admin'}
+                                className={`px-2 py-0.5 text-xs rounded ${user.hasServicePortalAccess || user.role === 'admin' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}
+                                title={user.role === 'admin' ? 'Admins always have access' : 'Click to toggle'}>Service</button>
+                            </div>
+                          </td>
+                          <td className="px-4 py-4 text-xs text-gray-500">
+                            {user.practiceName && <div><span className="font-medium">Practice:</span> {user.practiceName}</div>}
+                            {user.slug && <div><span className="font-medium">Slug:</span> {user.slug}</div>}
+                            {user.assignedProjects?.length > 0 && <div><span className="font-medium">Projects:</span> {user.assignedProjects.length}</div>}
+                          </td>
+                          <td className="px-4 py-4 text-sm text-gray-500">{new Date(user.createdAt).toLocaleDateString()}</td>
+                          <td className="px-4 py-4">
+                            <div className="flex gap-2">
+                              <button onClick={() => handleEdit(user)} className="p-1 text-primary hover:bg-primary/10 rounded" title="Edit">{Icons.edit}</button>
+                              <button onClick={() => handleDelete(user.id)} className="p-1 text-red-600 hover:bg-red-50 rounded" title="Delete">{Icons.trash}</button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       );
     };
@@ -666,13 +778,11 @@
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
               Back to Reports
             </button>
-
             <div className="bg-white rounded-xl shadow-sm overflow-hidden">
               <div className="bg-gradient-to-r from-primary to-accent text-white p-6">
                 <h1 className="text-2xl font-bold">Service Report Details</h1>
                 <p className="opacity-90">Report ID: {viewingReport.id}</p>
               </div>
-
               <div className="p-6 grid md:grid-cols-2 gap-6">
                 <div>
                   <h3 className="font-bold text-accent mb-3">Client Information</h3>
@@ -725,18 +835,11 @@
           <div className="bg-white p-6 rounded-xl shadow-sm">
             <h1 className="text-2xl font-bold text-accent">Service Reports</h1>
             <p className="text-gray-600 mt-1">View all technician service reports</p>
-
             <div className="mt-4">
-              <input
-                type="text"
-                placeholder="Search by client, service type, or technician..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
-              />
+              <input type="text" placeholder="Search by client, service type, or technician..." value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" />
             </div>
           </div>
-
           <div className="bg-white rounded-xl shadow-sm overflow-hidden">
             {loading ? (
               <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent"></div></div>
@@ -771,49 +874,8 @@
                 </tbody>
               </table>
             ) : (
-              <div className="text-center py-12 text-gray-500">
-                <p>No service reports found</p>
-              </div>
+              <div className="text-center py-12 text-gray-500"><p>No service reports found</p></div>
             )}
-          </div>
-        </div>
-      );
-    };
-
-    // Client Portal Page (placeholder with links)
-    const ClientPortalPage = () => {
-      return (
-        <div className="space-y-6">
-          <div className="bg-white p-6 rounded-xl shadow-sm">
-            <h1 className="text-2xl font-bold text-accent">Client Portal Management</h1>
-            <p className="text-gray-600 mt-1">Manage client portal settings and users</p>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-6">
-            <a href="/portal" target="_blank" className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition block">
-              <div className="flex items-center gap-3 mb-3">
-                {Icons.folder}
-                <h2 className="text-lg font-bold text-accent">Open Client Portal</h2>
-              </div>
-              <p className="text-gray-600 text-sm">Access the client portal login page</p>
-            </a>
-
-            <a href="/thrive365labslaunch" target="_blank" className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition block">
-              <div className="flex items-center gap-3 mb-3">
-                {Icons.externalLink}
-                <h2 className="text-lg font-bold text-accent">Implementations App</h2>
-              </div>
-              <p className="text-gray-600 text-sm">Manage projects, tasks, and client implementations</p>
-            </a>
-          </div>
-
-          <div className="bg-blue-50 border border-blue-200 p-6 rounded-xl">
-            <h3 className="font-bold text-blue-800 mb-2">Client Portal Administration</h3>
-            <p className="text-blue-700 text-sm">
-              To manage client portal settings, announcements, documents, and client-specific users,
-              use the <strong>User Management</strong> section in this Admin Hub or access the full
-              administrative features through the <strong>Implementations App</strong>.
-            </p>
           </div>
         </div>
       );
@@ -833,39 +895,26 @@
         setUser(newUser);
       };
 
-      if (!token || !user) {
-        return <LoginPage onLogin={handleLogin} />;
-      }
+      if (!token || !user) return <LoginPage onLogin={handleLogin} />;
 
       const renderPage = () => {
         switch (activePage) {
           case 'dashboard': return <DashboardPage token={token} onNavigate={setActivePage} />;
           case 'users': return <UsersPage token={token} />;
           case 'service_reports': return <ServiceReportsPage token={token} />;
-          case 'client_portal': return <ClientPortalPage />;
           default: return <DashboardPage token={token} onNavigate={setActivePage} />;
         }
       };
 
       return (
         <div className="min-h-screen bg-gray-50">
-          <Sidebar
-            activePage={activePage}
-            onNavigate={setActivePage}
-            user={user}
-            isMobileOpen={isMobileOpen}
-            onClose={() => setIsMobileOpen(false)}
-          />
-
+          <Sidebar activePage={activePage} onNavigate={setActivePage} user={user} token={token} isMobileOpen={isMobileOpen} onClose={() => setIsMobileOpen(false)} />
           <div className="lg:hidden bg-white border-b p-4 flex items-center justify-between sticky top-0 z-30">
             <button onClick={() => setIsMobileOpen(true)} className="text-gray-600">{Icons.menu}</button>
             <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-8" />
             <div className="w-6"></div>
           </div>
-
-          <main className="lg:ml-64 p-4 lg:p-8">
-            {renderPage()}
-          </main>
+          <main className="lg:ml-64 p-4 lg:p-8">{renderPage()}</main>
         </div>
       );
     };
