@@ -3045,12 +3045,16 @@
         setUser(newUser);
       };
       
-      // Handle central /portal login (no slug) - show login page
+      // Handle central /portal login (no slug) - show login page or admin view
       if (!slug) {
         if (!token || !user) {
           return <LoginPage slug={null} onLogin={handleLogin} />;
         }
-        // User logged in from central portal but has no slug in URL - redirect
+        // Admin users get the admin portal view directly at /portal
+        if (user.role === 'admin') {
+          return <Portal token={token} user={user} />;
+        }
+        // Client users logged in from central portal - redirect to their portal
         if (user.slug) {
           window.location.href = `/portal/${user.slug}`;
           return null;
