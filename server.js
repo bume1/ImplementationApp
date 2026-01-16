@@ -4326,20 +4326,31 @@ app.get('/api/service-portal/clients', authenticateToken, requireServiceAccess, 
           name: project.clientName,
           clientName: project.clientName,
           address: project.clientAddress || '',
-          projectId: project.id
+          projectId: project.id,
+          hubspotCompanyId: project.hubspotCompanyId || null,
+          hubspotRecordId: project.hubspotRecordId || null
         });
       }
     });
 
-    // Also add client users
+    // Also add client users (with HubSpot IDs)
     users.filter(u => u.role === 'client').forEach(user => {
-      if (user.practiceName && !clientMap.has(user.practiceName)) {
-        clientMap.set(user.practiceName, {
-          name: user.practiceName,
-          clientName: user.practiceName,
-          address: '',
-          userId: user.id
-        });
+      if (user.practiceName) {
+        // If client already exists from project, merge HubSpot IDs
+        if (clientMap.has(user.practiceName)) {
+          const existing = clientMap.get(user.practiceName);
+          if (!existing.hubspotCompanyId && user.hubspotCompanyId) {
+            existing.hubspotCompanyId = user.hubspotCompanyId;
+          }
+        } else {
+          clientMap.set(user.practiceName, {
+            name: user.practiceName,
+            clientName: user.practiceName,
+            address: '',
+            userId: user.id,
+            hubspotCompanyId: user.hubspotCompanyId || null
+          });
+        }
       }
     });
 
@@ -4377,6 +4388,112 @@ app.post('/api/service-reports', authenticateToken, requireServiceAccess, async 
       newReport.id,
       { clientName: reportData.clientFacilityName, serviceType: reportData.serviceType }
     );
+
+    // Upload to HubSpot if company ID is available
+    if (reportData.hubspotCompanyId && hubspot.isValidRecordId(reportData.hubspotCompanyId)) {
+      try {
+        const reportDate = new Date(reportData.serviceCompletionDate || newReport.createdAt).toLocaleDateString();
+
+        // Generate HTML service report
+        const htmlReport = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Service Report - ${reportData.clientFacilityName}</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+    .header { text-align: center; border-bottom: 2px solid #045E9F; padding-bottom: 15px; margin-bottom: 20px; }
+    .header h1 { color: #045E9F; margin: 0; }
+    .section { margin-bottom: 20px; }
+    .section h2 { color: #00205A; font-size: 14px; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 10px; }
+    .field { margin-bottom: 10px; }
+    .field label { font-weight: bold; color: #333; display: block; }
+    .field value { display: block; padding: 5px 0; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+    .signature-box { border: 1px solid #ddd; padding: 10px; margin-top: 10px; }
+    .signature-img { max-width: 200px; max-height: 80px; }
+    .footer { text-align: center; font-size: 12px; color: #666; margin-top: 30px; border-top: 1px solid #ddd; padding-top: 10px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>SERVICE REPORT</h1>
+    <p>Thrive 365 Labs</p>
+  </div>
+
+  <div class="section">
+    <h2>CLIENT INFORMATION</h2>
+    <div class="grid">
+      <div class="field"><label>Client/Facility:</label><value>${reportData.clientFacilityName || '-'}</value></div>
+      <div class="field"><label>Customer Name:</label><value>${reportData.customerName || '-'}</value></div>
+      <div class="field"><label>Address:</label><value>${reportData.address || '-'}</value></div>
+      <div class="field"><label>Service Date:</label><value>${reportDate}</value></div>
+      <div class="field"><label>Analyzer Model:</label><value>${reportData.analyzerModel || '-'}</value></div>
+      <div class="field"><label>Serial Number:</label><value>${reportData.analyzerSerialNumber || '-'}</value></div>
+      <div class="field"><label>HubSpot Ticket #:</label><value>${reportData.hubspotTicketNumber || '-'}</value></div>
+      <div class="field"><label>Service Provider:</label><value>${reportData.serviceProviderName || req.user.name}</value></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>SERVICE PERFORMED</h2>
+    <div class="field"><label>Service Type:</label><value>${reportData.serviceType || '-'}</value></div>
+    <div class="field"><label>Description of Work:</label><value>${reportData.descriptionOfWork || '-'}</value></div>
+    <div class="field"><label>Materials Used:</label><value>${reportData.materialsUsed || '-'}</value></div>
+    <div class="field"><label>Solution:</label><value>${reportData.solution || '-'}</value></div>
+    <div class="field"><label>Outstanding Issues:</label><value>${reportData.outstandingIssues || '-'}</value></div>
+  </div>
+
+  <div class="section">
+    <h2>SIGNATURES</h2>
+    <div class="grid">
+      <div class="signature-box">
+        <label>Customer Signature:</label>
+        ${reportData.customerSignature ? `<img src="${reportData.customerSignature}" class="signature-img" alt="Customer Signature"/>` : '<p>Not signed</p>'}
+        <p>Date: ${reportData.customerSignatureDate || '-'}</p>
+      </div>
+      <div class="signature-box">
+        <label>Technician Signature:</label>
+        ${reportData.technicianSignature ? `<img src="${reportData.technicianSignature}" class="signature-img" alt="Technician Signature"/>` : '<p>Not signed</p>'}
+        <p>Date: ${reportData.technicianSignatureDate || '-'}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <p>Report ID: ${newReport.id}</p>
+    <p>Generated on ${new Date().toLocaleString()}</p>
+  </div>
+</body>
+</html>`;
+
+        const fileName = `Service_Report_${reportData.clientFacilityName.replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate.replace(/\//g, '-')}.html`;
+        const noteText = `Service Report Submitted\n\nClient: ${reportData.clientFacilityName}\nService Type: ${reportData.serviceType}\nTechnician: ${reportData.serviceProviderName || req.user.name}\nTicket #: ${reportData.hubspotTicketNumber || 'N/A'}`;
+
+        const uploadResult = await hubspot.uploadFileAndAttachToRecord(
+          reportData.hubspotCompanyId,
+          htmlReport,
+          fileName,
+          noteText,
+          {
+            recordType: 'companies',
+            folderPath: '/service-reports',
+            notePrefix: '[Service Portal]',
+            isBase64: false
+          }
+        );
+
+        // Store HubSpot reference in the report
+        newReport.hubspotFileId = uploadResult.fileId;
+        newReport.hubspotNoteId = uploadResult.noteId;
+        await db.set('service_reports', serviceReports);
+
+        console.log(`✅ Service report uploaded to HubSpot for company ${reportData.hubspotCompanyId}`);
+      } catch (hubspotError) {
+        console.error('HubSpot upload error (non-blocking):', hubspotError.message);
+        // Don't fail the request if HubSpot upload fails
+      }
+    }
 
     res.json(newReport);
   } catch (error) {
