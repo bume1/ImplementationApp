@@ -683,7 +683,17 @@
 
       useEffect(() => {
         fetch(`/api/client/${linkId}`)
-          .then(r => r.json())
+          .then(async (r) => {
+            if (!r.ok) {
+              try {
+                const errorData = await r.json();
+                throw new Error(errorData.error || 'Failed to load project');
+              } catch (e) {
+                throw new Error('Failed to load project');
+              }
+            }
+            return r.json();
+          })
           .then(result => {
             if (result.error) {
               setError(result.error);
@@ -692,8 +702,8 @@
             }
             setLoading(false);
           })
-          .catch(() => {
-            setError('Failed to load project');
+          .catch((err) => {
+            setError(err.message || 'Failed to load project');
             setLoading(false);
           });
       }, [linkId]);

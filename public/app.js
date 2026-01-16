@@ -83,25 +83,40 @@ const ensureAllPhasesAndStages = (groupedByPhase) => {
 };
 
 // ============== API CLIENT ==============
+// Helper function to handle fetch responses properly
+const handleResponse = async (response) => {
+  if (!response.ok) {
+    // Try to parse error message from response
+    try {
+      const errorData = await response.json();
+      throw new Error(errorData.error || `HTTP error ${response.status}`);
+    } catch (e) {
+      // If parsing fails, throw generic error
+      throw new Error(`HTTP error ${response.status}`);
+    }
+  }
+  return response.json();
+};
+
 const api = {
   signup: (email, password, name) =>
     fetch(`${API_URL}/api/auth/signup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, name })
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   login: (email, password) =>
     fetch(`${API_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password })
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   getProjects: (token) =>
     fetch(`${API_URL}/api/projects`, {
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   createProject: (token, project) =>
     fetch(`${API_URL}/api/projects`, {
@@ -111,7 +126,7 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(project)
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   updateProject: (token, projectId, updates) =>
     fetch(`${API_URL}/api/projects/${projectId}`, {
@@ -121,18 +136,18 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(updates)
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   syncToHubSpot: (token, projectId) =>
     fetch(`${API_URL}/api/projects/${projectId}/hubspot-sync`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   getTasks: (token, projectId) =>
     fetch(`${API_URL}/api/projects/${projectId}/tasks`, {
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   createTask: (token, projectId, task) =>
     fetch(`${API_URL}/api/projects/${projectId}/tasks`, {
@@ -142,7 +157,7 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(task)
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   updateTask: (token, projectId, taskId, updates) =>
     fetch(`${API_URL}/api/projects/${projectId}/tasks/${taskId}`, {
@@ -152,19 +167,19 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(updates)
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   deleteTask: (token, projectId, taskId) =>
     fetch(`${API_URL}/api/projects/${projectId}/tasks/${taskId}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   deleteProject: (token, projectId) =>
     fetch(`${API_URL}/api/projects/${projectId}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   cloneProject: (token, projectId, name) =>
     fetch(`${API_URL}/api/projects/${projectId}/clone`, {
@@ -174,7 +189,7 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ name })
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   cloneTemplate: (token, templateId, name) =>
     fetch(`${API_URL}/api/templates/${templateId}/clone`, {
@@ -184,7 +199,7 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ name })
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   importCsvToTemplate: (token, templateId, csvData) =>
     fetch(`${API_URL}/api/templates/${templateId}/import-csv`, {
@@ -194,7 +209,7 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ csvData })
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   importCsvToProject: (token, projectId, csvData) =>
     fetch(`${API_URL}/api/projects/${projectId}/import-csv`, {
@@ -204,7 +219,7 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ csvData })
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   exportProject: async (token, projectId) => {
     try {
@@ -234,12 +249,12 @@ const api = {
   getReportingData: (token) =>
     fetch(`${API_URL}/api/reporting`, {
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   getTeamMembers: (token, projectId = null) =>
     fetch(`${API_URL}/api/team-members${projectId ? `?projectId=${projectId}` : ''}`, {
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   addSubtask: (token, projectId, taskId, subtask) =>
     fetch(`${API_URL}/api/projects/${projectId}/tasks/${taskId}/subtasks`, {
@@ -249,7 +264,7 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(subtask)
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   updateSubtask: (token, projectId, taskId, subtaskId, updates) =>
     fetch(`${API_URL}/api/projects/${projectId}/tasks/${taskId}/subtasks/${subtaskId}`, {
@@ -259,13 +274,13 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(updates)
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   deleteSubtask: (token, projectId, taskId, subtaskId) =>
     fetch(`${API_URL}/api/projects/${projectId}/tasks/${taskId}/subtasks/${subtaskId}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   bulkUpdateTasks: (token, projectId, taskIds, completed) =>
     fetch(`${API_URL}/api/projects/${projectId}/tasks/bulk-update`, {
@@ -275,7 +290,7 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ taskIds, completed })
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   bulkDeleteTasks: (token, projectId, taskIds) =>
     fetch(`${API_URL}/api/projects/${projectId}/tasks/bulk-delete`, {
@@ -285,19 +300,19 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ taskIds })
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   forgotPassword: (email) =>
     fetch(`${API_URL}/api/auth/forgot-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email })
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   getClientPortalDomain: (token) =>
     fetch(`${API_URL}/api/settings/client-portal-domain`, {
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   setClientPortalDomain: (token, domain) =>
     fetch(`${API_URL}/api/settings/client-portal-domain`, {
@@ -307,24 +322,24 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ domain })
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   normalizeAllData: (token) =>
     fetch(`${API_URL}/api/admin/normalize-all-data`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   regenerateProjectSlug: (token, projectId) =>
     fetch(`${API_URL}/api/projects/${projectId}/regenerate-slug`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   getUsers: (token) =>
     fetch(`${API_URL}/api/users`, {
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   updateUser: (token, userId, updates) =>
     fetch(`${API_URL}/api/users/${userId}`, {
@@ -334,13 +349,13 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(updates)
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   deleteUser: (token, userId) =>
     fetch(`${API_URL}/api/users/${userId}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   createUser: (token, userData) =>
     fetch(`${API_URL}/api/users`, {
@@ -350,12 +365,12 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(userData)
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   getPasswordResetRequests: (token) =>
     fetch(`${API_URL}/api/admin/password-reset-requests`, {
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   getPortalSettings: () =>
     fetch(`${API_URL}/api/portal-settings`).then(r => r.json()),
@@ -368,7 +383,7 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(settings)
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
   
   getAnnouncements: () =>
     fetch(`${API_URL}/api/announcements`).then(r => r.json()),
@@ -381,7 +396,7 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(announcement)
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
   
   updateAnnouncement: (token, id, announcement) =>
     fetch(`${API_URL}/api/announcements/${id}`, {
@@ -391,18 +406,18 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(announcement)
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
   
   deleteAnnouncement: (token, id) =>
     fetch(`${API_URL}/api/announcements/${id}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   getClientDocuments: (token) =>
     fetch(`${API_URL}/api/client-documents`, {
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
   
   createClientDocument: (token, doc) =>
     fetch(`${API_URL}/api/client-documents`, {
@@ -412,7 +427,7 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(doc)
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
   
   updateClientDocument: (token, id, doc) =>
     fetch(`${API_URL}/api/client-documents/${id}`, {
@@ -422,18 +437,18 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(doc)
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
   
   deleteClientDocument: (token, id) =>
     fetch(`${API_URL}/api/client-documents/${id}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
   
   getClientUsers: (token) =>
     fetch(`${API_URL}/api/users`, {
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()).then(users => users.filter(u => u.role === 'client')),
+    }).then(handleResponse).then(users => users.filter(u => u.role === 'client')).catch(err => ({ error: err.message || 'Network error' })),
 
   handlePasswordResetRequest: (token, requestId, status) =>
     fetch(`${API_URL}/api/admin/password-reset-requests/${requestId}`, {
@@ -443,7 +458,7 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ status })
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   addNote: (token, projectId, taskId, content) =>
     fetch(`${API_URL}/api/projects/${projectId}/tasks/${taskId}/notes`, {
@@ -453,7 +468,7 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ content })
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   updateNote: (token, projectId, taskId, noteId, content) =>
     fetch(`${API_URL}/api/projects/${projectId}/tasks/${taskId}/notes/${noteId}`, {
@@ -463,13 +478,13 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ content })
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   deleteNote: (token, projectId, taskId, noteId) =>
     fetch(`${API_URL}/api/projects/${projectId}/tasks/${taskId}/notes/${noteId}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   reorderTask: (token, projectId, taskId, direction) =>
     fetch(`${API_URL}/api/projects/${projectId}/tasks/${taskId}/reorder`, {
@@ -479,17 +494,17 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ direction })
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   getTemplates: (token) =>
     fetch(`${API_URL}/api/templates`, {
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   getTemplate: (token, templateId) =>
     fetch(`${API_URL}/api/templates/${templateId}`, {
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   updateTemplate: (token, templateId, updates) =>
     fetch(`${API_URL}/api/templates/${templateId}`, {
@@ -499,7 +514,7 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(updates)
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   createTemplate: (token, templateData) =>
     fetch(`${API_URL}/api/templates`, {
@@ -509,34 +524,34 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(templateData)
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   deleteTemplate: (token, templateId) =>
     fetch(`${API_URL}/api/templates/${templateId}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   setDefaultTemplate: (token, templateId) =>
     fetch(`${API_URL}/api/templates/${templateId}/set-default`, {
       method: 'PUT',
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   testHubSpotConnection: (token) =>
     fetch(`${API_URL}/api/hubspot/test`, {
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   getHubSpotPipelines: (token) =>
     fetch(`${API_URL}/api/hubspot/pipelines`, {
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   getHubSpotStageMapping: (token) =>
     fetch(`${API_URL}/api/hubspot/stage-mapping`, {
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   saveHubSpotStageMapping: (token, pipelineId, mapping) =>
     fetch(`${API_URL}/api/hubspot/stage-mapping`, {
@@ -546,7 +561,7 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ pipelineId, mapping })
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   submitSoftPilotChecklist: (token, projectId, data) =>
     fetch(`${API_URL}/api/projects/${projectId}/soft-pilot-checklist`, {
@@ -556,7 +571,7 @@ const api = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(data)
-    }).then(r => r.json()),
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
   uploadTaskFile: (token, projectId, taskId, file) => {
     const formData = new FormData();
@@ -993,9 +1008,18 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
     setLoading(true);
     try {
       const data = await api.getProjects(token);
-      setProjects(data);
+      if (Array.isArray(data)) {
+        setProjects(data);
+      } else if (data && data.error) {
+        console.error('Failed to load projects:', data.error);
+        setProjects([]);
+      } else {
+        console.error('Unexpected projects response:', data);
+        setProjects([]);
+      }
     } catch (err) {
       console.error('Failed to load projects:', err);
+      setProjects([]);
     } finally {
       setLoading(false);
     }
@@ -5864,9 +5888,10 @@ const UserManagement = ({ token, user, onBack, onLogout }) => {
   const loadProjects = async () => {
     try {
       const data = await api.getProjects(token);
-      setProjects(data);
+      setProjects(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Failed to load projects:', err);
+      setProjects([]);
     }
   };
 
