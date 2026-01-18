@@ -6,7 +6,7 @@
   <title>Thrive 365 Labs - Admin Hub</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -16,24 +16,46 @@
       theme: {
         extend: {
           colors: {
-            primary: '#045E9F',
-            accent: '#00205A'
+            primary: { 50: '#eff6ff', 100: '#dbeafe', 200: '#bfdbfe', 300: '#93c5fd', 400: '#60a5fa', 500: '#045E9F', 600: '#0353a4', 700: '#00205A', 800: '#001d51', 900: '#001233' },
+            accent: '#00205A',
+            surface: { 50: '#fafafa', 100: '#f4f4f5', 200: '#e4e4e7' },
+            success: { 50: '#ecfdf5', 500: '#10b981', 600: '#059669' },
+            warning: { 50: '#fffbeb', 500: '#f59e0b', 600: '#d97706' },
+            danger: { 50: '#fef2f2', 500: '#ef4444', 600: '#dc2626' }
           },
           fontFamily: {
-            sans: ['Open Sans', 'sans-serif']
+            sans: ['Inter', 'system-ui', 'sans-serif']
+          },
+          boxShadow: {
+            'soft': '0 2px 15px -3px rgba(0, 0, 0, 0.07), 0 10px 20px -2px rgba(0, 0, 0, 0.04)',
+            'card': '0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.1)',
+            'card-hover': '0 10px 40px -10px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05)'
           }
         }
       }
     }
   </script>
   <style>
-    body { font-family: 'Open Sans', sans-serif; }
-    .sidebar-link { transition: all 0.2s; }
-    .sidebar-link:hover { background-color: rgba(4, 94, 159, 0.1); }
-    .sidebar-link.active { background-color: #045E9F; color: white; }
+    * { font-family: 'Inter', system-ui, sans-serif; }
+    body { background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); }
+    .sidebar-link { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); border-radius: 0.75rem; }
+    .sidebar-link:hover { background: linear-gradient(90deg, rgba(4, 94, 159, 0.08) 0%, rgba(4, 94, 159, 0.02) 100%); }
+    .sidebar-link.active { background: linear-gradient(135deg, #045E9F 0%, #0353a4 100%); color: white; box-shadow: 0 4px 14px -3px rgba(4, 94, 159, 0.4); }
+    .card-modern { background: white; border-radius: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.1); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); border: 1px solid rgba(0,0,0,0.04); }
+    .card-modern:hover { box-shadow: 0 10px 40px -10px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05); transform: translateY(-2px); }
+    .btn-primary { background: linear-gradient(135deg, #045E9F 0%, #0353a4 100%); transition: all 0.2s; }
+    .btn-primary:hover { background: linear-gradient(135deg, #0353a4 0%, #00205A 100%); box-shadow: 0 4px 14px -3px rgba(4, 94, 159, 0.5); transform: translateY(-1px); }
+    .input-modern { border: 1.5px solid #e4e4e7; border-radius: 0.75rem; transition: all 0.2s; }
+    .input-modern:focus { border-color: #045E9F; box-shadow: 0 0 0 3px rgba(4, 94, 159, 0.1); outline: none; }
+    .gradient-header { background: linear-gradient(135deg, #045E9F 0%, #00205A 100%); }
+    .stat-card { position: relative; overflow: hidden; }
+    .stat-card::before { content: ''; position: absolute; top: 0; right: 0; width: 100px; height: 100px; background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 100%); border-radius: 0 1rem 0 100%; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
+    .glass-effect { backdrop-filter: blur(10px); background: rgba(255,255,255,0.9); }
   </style>
 </head>
-<body class="bg-gray-50 min-h-screen">
+<body class="min-h-screen">
   <div id="root"></div>
 
   <script type="text/babel">
@@ -166,27 +188,30 @@
     };
 
     // Icons
+    // Modern refined icons with consistent stroke weight
     const Icons = {
-      home: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>,
-      users: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>,
-      clipboard: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>,
-      folder: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>,
-      cog: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>,
-      logout: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>,
-      menu: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"/></svg>,
-      close: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>,
-      externalLink: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>,
-      plus: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"/></svg>,
-      edit: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>,
-      trash: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>,
-      check: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>,
-      x: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>,
-      eye: <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>,
-      key: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>,
-      upload: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+      home: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg>,
+      users: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/></svg>,
+      clipboard: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z"/></svg>,
+      folder: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"/></svg>,
+      cog: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"/><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>,
+      logout: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75"/></svg>,
+      menu: <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"/></svg>,
+      close: <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>,
+      externalLink: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"/></svg>,
+      plus: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>,
+      edit: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"/></svg>,
+      trash: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>,
+      check: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>,
+      x: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>,
+      eye: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>,
+      key: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z"/></svg>,
+      upload: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>,
+      chart: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>,
+      beaker: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5"/></svg>
     };
 
-    // Login Page
+    // Login Page - Modern sleek design
     const LoginPage = ({ onLogin }) => {
       const [email, setEmail] = useState('');
       const [password, setPassword] = useState('');
@@ -209,38 +234,91 @@
       };
 
       return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-gray-100">
-          <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
-            <div className="text-center mb-6">
-              <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-16 mx-auto mb-4" />
-              <h1 className="text-2xl font-bold text-accent">Admin Hub</h1>
-              <p className="text-gray-600 mt-1">Central Administration Portal</p>
+        <div className="min-h-screen flex items-center justify-center p-4" style={{background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #f1f5f9 100%)'}}>
+          {/* Decorative elements */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            <div className="absolute -top-40 -right-40 w-80 h-80 rounded-full opacity-20" style={{background: 'radial-gradient(circle, #045E9F 0%, transparent 70%)'}}></div>
+            <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full opacity-10" style={{background: 'radial-gradient(circle, #00205A 0%, transparent 70%)'}}></div>
+          </div>
+
+          <div className="relative w-full max-w-md">
+            {/* Main card */}
+            <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-soft p-8 border border-white/50">
+              {/* Logo and header */}
+              <div className="text-center mb-8">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4 gradient-header shadow-lg">
+                  {Icons.beaker}
+                </div>
+                <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-12 mx-auto mb-4" />
+                <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Admin Hub</h1>
+                <p className="text-gray-500 mt-1 text-sm">Precision Diagnostics Administration</p>
+              </div>
+
+              {/* Form */}
+              <form onSubmit={handleSubmit} className="space-y-5">
+                {error && (
+                  <div className="flex items-center gap-3 bg-danger-50 text-danger-600 p-4 rounded-xl text-sm border border-red-100 animate-fade-in">
+                    <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                    <span>{error}</span>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="input-modern w-full px-4 py-3 text-gray-900 placeholder-gray-400"
+                    placeholder="you@thrive365labs.com"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="input-modern w-full px-4 py-3 text-gray-900 placeholder-gray-400"
+                    placeholder="Enter your password"
+                    required
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="btn-primary w-full text-white py-3.5 rounded-xl font-semibold text-sm tracking-wide disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {loading ? (
+                    <>
+                      <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                      <span>Signing in...</span>
+                    </>
+                  ) : (
+                    <span>Sign In</span>
+                  )}
+                </button>
+              </form>
+
+              {/* Footer */}
+              <div className="mt-8 pt-6 border-t border-gray-100 text-center">
+                <p className="text-xs text-gray-400">Precision Diagnostics Platform</p>
+              </div>
             </div>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm">{error}</div>}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary" required />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary" required />
-              </div>
-              <button type="submit" disabled={loading} className="w-full bg-primary text-white py-3 rounded-lg font-medium hover:bg-accent transition disabled:opacity-50">
-                {loading ? 'Signing in...' : 'Sign In'}
-              </button>
-            </form>
           </div>
         </div>
       );
     };
 
-    // Sidebar with portal access
+    // Sidebar with portal access - Modern design
     const Sidebar = ({ activePage, onNavigate, user, token, isMobileOpen, onClose }) => {
       const menuItems = [
-        { id: 'dashboard', label: 'Dashboard', icon: Icons.home },
-        { id: 'users', label: 'User Management', icon: Icons.users },
-        { id: 'service_portal', label: 'Service Portal', icon: Icons.clipboard, color: 'text-green-600' },
+        { id: 'dashboard', label: 'Dashboard', icon: Icons.home, color: 'text-primary-500' },
+        { id: 'users', label: 'User Management', icon: Icons.users, color: 'text-primary-500' },
+        { id: 'service_portal', label: 'Service Portal', icon: Icons.clipboard, color: 'text-success-500' },
       ];
 
       // External links with token passing
@@ -252,39 +330,61 @@
 
       return (
         <>
-          {isMobileOpen && <div className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden" onClick={onClose}></div>}
-          <aside className={`w-64 bg-white border-r min-h-screen fixed left-0 top-0 z-50 transform transition-transform duration-300 ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
-            <div className="p-4 border-b flex justify-between items-center">
-              <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-10" />
-              <button onClick={onClose} className="lg:hidden text-gray-500">{Icons.close}</button>
+          {isMobileOpen && <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-40 lg:hidden" onClick={onClose}></div>}
+          <aside className={`w-72 bg-white min-h-screen fixed left-0 top-0 z-50 transform transition-all duration-300 ease-out shadow-soft ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
+            {/* Logo Header */}
+            <div className="p-5 border-b border-gray-100 flex justify-between items-center">
+              <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-9" />
+              <button onClick={onClose} className="lg:hidden text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition">{Icons.close}</button>
             </div>
-            <div className="p-4 border-b bg-gradient-to-r from-primary to-accent text-white">
-              <p className="text-sm opacity-80">Administrator</p>
-              <p className="font-semibold">{user?.name}</p>
+
+            {/* User Profile Card */}
+            <div className="p-4 mx-4 my-4 rounded-xl gradient-header text-white">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-sm font-semibold">
+                  {user?.name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0,2)}
+                </div>
+                <div>
+                  <p className="text-xs opacity-75">Administrator</p>
+                  <p className="font-semibold text-sm">{user?.name}</p>
+                </div>
+              </div>
             </div>
-            <nav className="p-2">
-              <p className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Management</p>
-              {menuItems.map(item => (
-                <button key={item.id} onClick={() => { onNavigate(item.id); onClose && onClose(); }}
-                  className={`w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center gap-3 ${activePage === item.id ? 'active' : 'text-gray-700'}`}>
-                  <span className={activePage === item.id ? '' : (item.color || 'text-primary')}>{item.icon}</span>
-                  <span className="font-medium">{item.label}</span>
+
+            {/* Navigation */}
+            <nav className="px-3 py-2 flex-1">
+              <p className="px-4 py-2 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Management</p>
+              <div className="space-y-1">
+                {menuItems.map(item => (
+                  <button key={item.id} onClick={() => { onNavigate(item.id); onClose && onClose(); }}
+                    className={`w-full text-left px-4 py-3 rounded-xl sidebar-link flex items-center gap-3 ${activePage === item.id ? 'active' : 'text-gray-600 hover:text-gray-900'}`}>
+                    <span className={activePage === item.id ? 'text-white' : item.color}>{item.icon}</span>
+                    <span className="font-medium text-sm">{item.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              <p className="px-4 py-2 mt-6 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">External Apps</p>
+              <div className="space-y-1">
+                <button onClick={() => openExternalApp('/thrive365labslaunch')} className="w-full text-left px-4 py-3 rounded-xl sidebar-link flex items-center gap-3 text-gray-600 hover:text-gray-900 group">
+                  <span className="text-purple-500 group-hover:text-purple-600">{Icons.folder}</span>
+                  <span className="font-medium text-sm">Implementations</span>
+                  <span className="ml-auto opacity-0 group-hover:opacity-100 transition">{Icons.externalLink}</span>
                 </button>
-              ))}
-              <p className="px-4 py-2 mt-4 text-xs font-semibold text-gray-500 uppercase">External Apps</p>
-              <button onClick={() => openExternalApp('/thrive365labslaunch')} className="w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center gap-3 text-gray-700">
-                <span className="text-purple-600">{Icons.externalLink}</span>
-                <span className="font-medium">Implementations App</span>
-              </button>
-              <button onClick={() => openExternalApp('/portal')} className="w-full text-left px-4 py-3 rounded-lg sidebar-link flex items-center gap-3 text-gray-700">
-                <span className="text-blue-600">{Icons.externalLink}</span>
-                <span className="font-medium">Client Portal Admin</span>
-              </button>
+                <button onClick={() => openExternalApp('/portal')} className="w-full text-left px-4 py-3 rounded-xl sidebar-link flex items-center gap-3 text-gray-600 hover:text-gray-900 group">
+                  <span className="text-blue-500 group-hover:text-blue-600">{Icons.users}</span>
+                  <span className="font-medium text-sm">Client Portal</span>
+                  <span className="ml-auto opacity-0 group-hover:opacity-100 transition">{Icons.externalLink}</span>
+                </button>
+              </div>
             </nav>
-            <div className="absolute bottom-0 left-0 right-0 p-4 border-t">
+
+            {/* Sign Out */}
+            <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-100 bg-gray-50/50">
               <button onClick={() => { localStorage.clear(); window.location.reload(); }}
-                className="w-full text-left px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2">
-                {Icons.logout}<span>Sign Out</span>
+                className="w-full text-left px-4 py-2.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl flex items-center gap-3 transition group">
+                <span className="group-hover:text-red-500">{Icons.logout}</span>
+                <span className="text-sm font-medium">Sign Out</span>
               </button>
             </div>
           </aside>
@@ -292,7 +392,7 @@
       );
     };
 
-    // Dashboard Page
+    // Dashboard Page - Modern design
     const DashboardPage = ({ token, onNavigate }) => {
       const [stats, setStats] = useState(null);
       const [loading, setLoading] = useState(true);
@@ -304,58 +404,103 @@
         });
       }, [token]);
 
-      if (loading) return <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent"></div></div>;
+      if (loading) return (
+        <div className="flex items-center justify-center py-20">
+          <div className="flex flex-col items-center gap-4">
+            <div className="animate-spin rounded-full h-10 w-10 border-[3px] border-primary-500 border-t-transparent"></div>
+            <p className="text-gray-500 text-sm">Loading dashboard...</p>
+          </div>
+        </div>
+      );
+
+      const statCards = [
+        { label: 'Total Users', value: stats?.totalUsers || 0, color: 'from-primary-500 to-primary-700', icon: Icons.users },
+        { label: 'Administrators', value: stats?.adminUsers || 0, color: 'from-accent to-primary-900', icon: Icons.cog },
+        { label: 'Service Portal', value: stats?.servicePortalUsers || 0, color: 'from-success-500 to-success-600', icon: Icons.clipboard },
+        { label: 'Client Accounts', value: stats?.clientUsers || 0, color: 'from-warning-500 to-warning-600', icon: Icons.folder },
+      ];
 
       return (
-        <div className="space-y-6">
-          <div className="bg-gradient-to-r from-primary to-accent text-white p-6 rounded-xl">
-            <h1 className="text-2xl font-bold">Admin Hub Dashboard</h1>
-            <p className="mt-2 opacity-90">Central management for all Thrive 365 Labs portals</p>
-          </div>
-          <div className="grid md:grid-cols-4 gap-4">
-            <div className="bg-white p-6 rounded-xl shadow-sm">
-              <p className="text-sm text-gray-500">Total Users</p>
-              <p className="text-3xl font-bold text-primary">{stats?.totalUsers || 0}</p>
-            </div>
-            <div className="bg-white p-6 rounded-xl shadow-sm">
-              <p className="text-sm text-gray-500">Admin Users</p>
-              <p className="text-3xl font-bold text-accent">{stats?.adminUsers || 0}</p>
-            </div>
-            <div className="bg-white p-6 rounded-xl shadow-sm">
-              <p className="text-sm text-gray-500">Service Portal Users</p>
-              <p className="text-3xl font-bold text-green-600">{stats?.servicePortalUsers || 0}</p>
-            </div>
-            <div className="bg-white p-6 rounded-xl shadow-sm">
-              <p className="text-sm text-gray-500">Client Users</p>
-              <p className="text-3xl font-bold text-orange-600">{stats?.clientUsers || 0}</p>
+        <div className="space-y-8 animate-fade-in">
+          {/* Dynamic Banner Header */}
+          <div className="relative rounded-2xl overflow-hidden shadow-lg" style={{minHeight: '200px'}}>
+            <div className="absolute inset-0 bg-cover bg-center" style={{backgroundImage: 'url(/banners/banner-admin.jpg)'}}></div>
+            <div className="absolute inset-0 bg-gradient-to-r from-primary-700/90 via-primary-600/70 to-transparent"></div>
+            <div className="relative p-8 flex items-center min-h-[200px]">
+              <div className="text-white">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center shadow-lg">{Icons.chart}</div>
+                  <h1 className="text-3xl font-bold tracking-tight drop-shadow-sm">Admin Hub Dashboard</h1>
+                </div>
+                <p className="text-white/90 text-sm max-w-xl mt-2">Central management console for Thrive 365 Labs diagnostic platforms and services.</p>
+              </div>
             </div>
           </div>
-          <div className="grid md:grid-cols-2 gap-6">
-            <div className="bg-white p-6 rounded-xl shadow-sm">
-              <h2 className="text-lg font-bold text-accent mb-4">Quick Actions</h2>
-              <div className="space-y-2">
-                <button onClick={() => onNavigate('users')} className="w-full text-left p-3 bg-gray-50 rounded-lg hover:bg-gray-100 flex items-center gap-3">
-                  {Icons.users}<span>Manage Users</span>
+
+          {/* Stats Grid */}
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            {statCards.map((stat, i) => (
+              <div key={i} className={`stat-card bg-gradient-to-br ${stat.color} text-white p-6 rounded-2xl shadow-lg`}>
+                <div className="flex items-start justify-between mb-4">
+                  <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">{stat.icon}</div>
+                </div>
+                <p className="text-3xl font-bold mb-1">{stat.value}</p>
+                <p className="text-sm text-white/80">{stat.label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Quick Actions & Projects */}
+          <div className="grid lg:grid-cols-2 gap-6">
+            <div className="card-modern p-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-5 flex items-center gap-2">
+                <span className="w-8 h-8 rounded-lg bg-primary-50 text-primary-500 flex items-center justify-center">{Icons.plus}</span>
+                Quick Actions
+              </h2>
+              <div className="space-y-3">
+                <button onClick={() => onNavigate('users')} className="w-full text-left p-4 bg-gray-50 hover:bg-primary-50 rounded-xl flex items-center gap-4 transition group">
+                  <span className="w-10 h-10 rounded-lg bg-primary-100 text-primary-600 flex items-center justify-center group-hover:bg-primary-500 group-hover:text-white transition">{Icons.users}</span>
+                  <div>
+                    <p className="font-medium text-gray-900">Manage Users</p>
+                    <p className="text-xs text-gray-500">Add, edit, and manage user accounts</p>
+                  </div>
                 </button>
-                <button onClick={() => onNavigate('service_portal')} className="w-full text-left p-3 bg-gray-50 rounded-lg hover:bg-gray-100 flex items-center gap-3">
-                  {Icons.clipboard}<span>Service Portal</span>
+                <button onClick={() => onNavigate('service_portal')} className="w-full text-left p-4 bg-gray-50 hover:bg-success-50 rounded-xl flex items-center gap-4 transition group">
+                  <span className="w-10 h-10 rounded-lg bg-success-50 text-success-600 flex items-center justify-center group-hover:bg-success-500 group-hover:text-white transition">{Icons.clipboard}</span>
+                  <div>
+                    <p className="font-medium text-gray-900">Service Portal</p>
+                    <p className="text-xs text-gray-500">View and manage service reports</p>
+                  </div>
                 </button>
               </div>
             </div>
-            <div className="bg-white p-6 rounded-xl shadow-sm">
-              <h2 className="text-lg font-bold text-accent mb-4">Overview</h2>
+
+            <div className="card-modern p-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-5 flex items-center gap-2">
+                <span className="w-8 h-8 rounded-lg bg-purple-50 text-purple-500 flex items-center justify-center">{Icons.chart}</span>
+                Platform Overview
+              </h2>
               <div className="space-y-3">
-                <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                  <span>Total Projects</span>
-                  <span className="font-bold text-primary">{stats?.totalProjects || 0}</span>
+                <div className="flex justify-between items-center p-4 bg-gray-50 rounded-xl">
+                  <div className="flex items-center gap-3">
+                    <span className="w-8 h-8 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center">{Icons.folder}</span>
+                    <span className="text-gray-700">Total Projects</span>
+                  </div>
+                  <span className="text-xl font-bold text-purple-600">{stats?.totalProjects || 0}</span>
                 </div>
-                <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                  <span>Active Projects</span>
-                  <span className="font-bold text-green-600">{stats?.activeProjects || 0}</span>
+                <div className="flex justify-between items-center p-4 bg-gray-50 rounded-xl">
+                  <div className="flex items-center gap-3">
+                    <span className="w-8 h-8 rounded-lg bg-success-50 text-success-600 flex items-center justify-center">{Icons.check}</span>
+                    <span className="text-gray-700">Active Projects</span>
+                  </div>
+                  <span className="text-xl font-bold text-success-600">{stats?.activeProjects || 0}</span>
                 </div>
-                <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                  <span>Service Reports</span>
-                  <span className="font-bold text-orange-600">{stats?.totalServiceReports || 0}</span>
+                <div className="flex justify-between items-center p-4 bg-gray-50 rounded-xl">
+                  <div className="flex items-center gap-3">
+                    <span className="w-8 h-8 rounded-lg bg-warning-50 text-warning-600 flex items-center justify-center">{Icons.clipboard}</span>
+                    <span className="text-gray-700">Service Reports</span>
+                  </div>
+                  <span className="text-xl font-bold text-warning-600">{stats?.totalServiceReports || 0}</span>
                 </div>
               </div>
             </div>
