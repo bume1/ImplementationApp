@@ -422,17 +422,18 @@
 
       return (
         <div className="space-y-8 animate-fade-in">
-          {/* Header */}
-          <div className="gradient-header text-white p-8 rounded-2xl relative overflow-hidden">
-            <div className="absolute inset-0 opacity-10">
-              <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none"><defs><pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 L 0 0 0 10" fill="none" stroke="white" strokeWidth="0.5"/></pattern></defs><rect width="100" height="100" fill="url(#grid)"/></svg>
-            </div>
-            <div className="relative">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">{Icons.chart}</div>
-                <h1 className="text-2xl font-bold tracking-tight">Admin Hub Dashboard</h1>
+          {/* Dynamic Banner Header */}
+          <div className="relative rounded-2xl overflow-hidden shadow-lg" style={{minHeight: '200px'}}>
+            <div className="absolute inset-0 bg-cover bg-center" style={{backgroundImage: 'url(/banners/banner-admin.jpg)'}}></div>
+            <div className="absolute inset-0 bg-gradient-to-r from-primary-700/90 via-primary-600/70 to-transparent"></div>
+            <div className="relative p-8 flex items-center min-h-[200px]">
+              <div className="text-white">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center shadow-lg">{Icons.chart}</div>
+                  <h1 className="text-3xl font-bold tracking-tight drop-shadow-sm">Admin Hub Dashboard</h1>
+                </div>
+                <p className="text-white/90 text-sm max-w-xl mt-2">Central management console for Thrive 365 Labs diagnostic platforms and services.</p>
               </div>
-              <p className="text-white/80 text-sm max-w-xl">Central management console for Thrive 365 Labs diagnostic platforms and services.</p>
             </div>
           </div>
 
