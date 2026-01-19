@@ -1939,9 +1939,17 @@
 
     // Main App
     const App = () => {
-      const [token, setToken] = useState(localStorage.getItem('admin_token'));
+      // Check multiple token sources - admin_token or unified_token from Portal Hub
+      const [token, setToken] = useState(() => {
+        return localStorage.getItem('admin_token') || localStorage.getItem('unified_token');
+      });
       const [user, setUser] = useState(() => {
-        try { return JSON.parse(localStorage.getItem('admin_user')); } catch { return null; }
+        try {
+          const userData = localStorage.getItem('admin_user') || localStorage.getItem('unified_user');
+          return userData ? JSON.parse(userData) : null;
+        } catch {
+          return null;
+        }
       });
       const [activePage, setActivePage] = useState('dashboard');
       const [isMobileOpen, setIsMobileOpen] = useState(false);

@@ -1155,10 +1155,14 @@
 
     // Main App Component
     const App = () => {
-      const [token, setToken] = useState(localStorage.getItem('service_token'));
+      // Check multiple token sources - service_token, unified_token, or admin_token
+      const [token, setToken] = useState(() => {
+        return localStorage.getItem('service_token') || localStorage.getItem('unified_token') || localStorage.getItem('admin_token');
+      });
       const [user, setUser] = useState(() => {
         try {
-          return JSON.parse(localStorage.getItem('service_user'));
+          const userData = localStorage.getItem('service_user') || localStorage.getItem('unified_user') || localStorage.getItem('admin_user');
+          return userData ? JSON.parse(userData) : null;
         } catch {
           return null;
         }
