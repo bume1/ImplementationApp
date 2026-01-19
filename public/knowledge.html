@@ -26,6 +26,8 @@
     body { font-family: system-ui, -apple-system, sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%); }
     .card-hover { transition: all 0.3s ease; }
     .card-hover:hover { transform: translateY(-4px); box-shadow: 0 12px 24px rgba(0,0,0,0.1); }
+    .guide-content { max-height: 0; overflow: hidden; transition: max-height 0.3s ease-out; }
+    .guide-content.open { max-height: 2000px; transition: max-height 0.5s ease-in; }
   </style>
 </head>
 <body>
@@ -42,52 +44,639 @@
       service: <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437l1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008z"/></svg>,
       client: <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/></svg>,
       hub: <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg>,
-      comingSoon: <svg className="w-12 h-12" fill="none" stroke="currentColor" strokeWidth="1" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      chevronDown: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/></svg>,
+      chevronRight: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>,
+      link: <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"/></svg>,
+      inventory: <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>,
+      support: <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>,
+      files: <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>,
+      users: <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/></svg>,
+      milestone: <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>,
+      external: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
     };
 
-    // Guide categories - placeholder structure for future content
-    const guideCategories = [
-      {
-        id: 'portal-hub',
+    // Comprehensive Guide Data
+    const guides = {
+      'portal-hub': {
         title: 'Portal Hub',
-        description: 'Getting started with the central hub and navigation',
+        description: 'Your central navigation point for all Thrive 365 Labs services',
         icon: Icons.hub,
         color: 'bg-primary-500',
-        articles: []
+        articles: [
+          {
+            title: 'Getting Started with Portal Hub',
+            content: `Portal Hub is your central dashboard after logging in. It displays all the portals and services you have access to based on your role and permissions.
+
+**What You'll See:**
+- Admin Hub (if you have admin access)
+- Launch App (for tracking implementations)
+- Service Portal (for field service engineers and CAS)
+- Client Portal Admin (for managing client portals)
+- Knowledge Hub (you're here!)
+
+**How to Navigate:**
+1. Click on any portal card to access that service
+2. Each card shows a brief description of what it does
+3. Your available portals depend on your assigned permissions
+
+**Sign Out:** Click the "Sign Out" button in the top right corner when you're done.`
+          },
+          {
+            title: 'Understanding Your Permissions',
+            content: `Your access to different portals is controlled by permission flags set by an administrator.
+
+**Permission Types:**
+- **Admin Hub Access**: View dashboard stats, manage users, handle inbox items
+- **Implementations Access**: Track and manage client launch projects
+- **Service Portal Access**: Submit service reports and validation reports
+- **Client Portal Admin**: Manage client portal settings, announcements, and documents
+
+**Need Different Access?**
+Contact your administrator to request additional permissions. They can update your access from the Admin Hub user management section.`
+          }
+        ]
       },
-      {
-        id: 'admin-hub',
+      'admin-hub': {
         title: 'Admin Hub',
         description: 'User management, permissions, and administration',
         icon: Icons.admin,
         color: 'bg-blue-600',
-        articles: []
+        articles: [
+          {
+            title: 'Admin Dashboard Overview',
+            content: `The Admin Hub dashboard provides a quick overview of your system status.
+
+**Quick Stats Section:**
+- **New Launches**: Shows count of active implementation projects
+- **Open Tickets**: Shows pending feedback, bug reports, and password reset requests
+
+**Inbox:**
+Access the inbox to view and manage:
+- Bug reports from users
+- Feature requests
+- Password reset requests
+
+**Quick Actions:**
+- Navigate to user management
+- View system statistics
+- Access the changelog`
+          },
+          {
+            title: 'Managing Users',
+            content: `User management allows you to create, edit, and manage all system users.
+
+**Creating a New User:**
+1. Click "Add User" button
+2. Fill in required fields: Name, Email, Password
+3. Select the user's Role (Admin, Team Member, Client, Vendor)
+4. Assign permissions using the toggle switches
+5. For client users, assign their client/practice
+6. Click "Save" to create the user
+
+**User Roles:**
+- **Admin**: Full system access
+- **Team Member**: Internal staff with configurable permissions
+- **Client**: Client portal users tied to a specific practice
+- **Vendor**: External service providers with limited, client-specific access
+
+**Permission Toggles:**
+- Has Admin Hub Access
+- Has Implementations Access
+- Has Service Portal Access
+- Has Client Portal Admin Access
+
+**Bulk Password Reset:**
+Select multiple users and click "Reset Passwords" to send password reset emails. Users will be prompted to change their password on first login.`
+          },
+          {
+            title: 'Handling Inbox Items',
+            content: `The Admin Inbox collects various requests that need administrator attention.
+
+**Types of Inbox Items:**
+1. **Bug Reports**: Issues reported by users through the feedback form
+2. **Feature Requests**: Suggestions for new functionality
+3. **Password Reset Requests**: Users who forgot their passwords
+
+**Processing Items:**
+- Click on an item to view details
+- Mark items as resolved once addressed
+- Delete items that are no longer needed
+
+**Best Practices:**
+- Check the inbox daily
+- Respond to password reset requests promptly
+- Track recurring bug reports for patterns`
+          }
+        ]
       },
-      {
-        id: 'launch',
+      'launch-app': {
         title: 'Launch App',
         description: 'Project tracking, client onboarding, and implementations',
         icon: Icons.launch,
         color: 'bg-purple-600',
-        articles: []
+        articles: [
+          {
+            title: 'Project Board Overview',
+            content: `The Launch App helps you track client implementation projects through their lifecycle.
+
+**Views Available:**
+- **Board View**: Kanban-style board with projects organized by status
+- **List View**: Traditional list format with all project details
+
+**Project Statuses:**
+- New/Pending
+- In Progress
+- On Hold
+- Complete
+
+**Project Cards Show:**
+- Client name
+- Current phase
+- Assigned team members
+- Project progress percentage`
+          },
+          {
+            title: 'Managing Projects',
+            content: `Each project follows a phase-based approach for structured implementations.
+
+**Creating a Project:**
+1. Click "New Project"
+2. Enter client details
+3. Select the implementation template (e.g., Biolis AU480 CLIA)
+4. Assign team members
+5. Set target dates
+
+**Project Phases:**
+Projects typically follow these phases:
+1. **Planning**: Initial setup, contracts, scheduling
+2. **Installation**: Equipment delivery and setup
+3. **Validation**: Testing and verification
+4. **Training**: Staff training and competency
+5. **Go-Live**: Final launch and handoff
+
+**Updating Progress:**
+- Click on a project to view/edit details
+- Check off completed tasks
+- Add notes and documentation
+- Upload relevant files`
+          },
+          {
+            title: 'Client Milestones View',
+            content: `Clients with active projects can view their Launch Milestones from their portal.
+
+**What Clients See:**
+- Current project phase
+- Completed milestones
+- Upcoming tasks
+- Overall progress percentage
+
+**Note:** The milestones view only appears for clients with active (non-complete) projects.`
+          }
+        ]
       },
-      {
-        id: 'service-portal',
+      'service-portal': {
         title: 'Service Portal',
         description: 'Service reports, field operations, and vendor management',
         icon: Icons.service,
         color: 'bg-emerald-600',
-        articles: []
+        articles: [
+          {
+            title: 'Service Portal Overview',
+            content: `The Service Portal is designed for Field Service Engineers (FSE) and Clinical Application Specialists (CAS) to document their service activities.
+
+**Main Features:**
+- Submit service reports
+- Submit validation reports
+- View report history
+- Track HubSpot ticket integration
+
+**Report Types:**
+1. **Service Reports**: Document on-site service calls, repairs, and maintenance
+2. **Validation Reports**: Document equipment validation and testing procedures
+3. **Training Reports**: Record training sessions and competency assessments`
+          },
+          {
+            title: 'Submitting Service Reports',
+            content: `Service reports document all service activities performed at client sites.
+
+**How to Submit a Service Report:**
+1. Navigate to Service Portal
+2. Click "New Service Report"
+3. Select the client from the dropdown
+4. Fill in required fields:
+   - Service date
+   - Service type (Installation, Repair, Maintenance, etc.)
+   - Description of work performed
+   - Parts used (if any)
+5. Add technician signature
+6. Get client signature
+7. Submit the report
+
+**After Submission:**
+- Report is saved to the system
+- PDF is generated automatically
+- Report syncs to HubSpot (creates ticket, attaches to company/deal)
+- Client can view the report in their support tickets
+
+**Saving Drafts:**
+Click "Save as Draft" to save your work and complete it later.`
+          },
+          {
+            title: 'Validation Reports',
+            content: `Validation reports document equipment validation procedures and results.
+
+**When to Use:**
+- Initial equipment validation
+- Annual revalidation
+- Post-repair validation
+- Method validation
+
+**Report Sections:**
+1. **General Information**: Client, equipment, validation type
+2. **Test Procedures**: Step-by-step validation protocol
+3. **Results**: Test outcomes and measurements
+4. **Custom Fields**: Configurable fields for specific validation types
+5. **Signatures**: Technician and client approval
+
+**Best Practices:**
+- Complete all required fields
+- Attach supporting documentation
+- Ensure both signatures are captured
+- Review before final submission`
+          },
+          {
+            title: 'HubSpot Integration',
+            content: `Service reports automatically integrate with HubSpot CRM.
+
+**What Gets Created:**
+- A new ticket in HubSpot
+- PDF attachment of the service report
+- Association to the client's company record
+- Association to the deal record (if applicable)
+
+**Benefits:**
+- Centralized ticket tracking
+- Automatic documentation
+- Client visibility through Customer Support Center
+- Audit trail for all service activities`
+          }
+        ]
       },
-      {
-        id: 'client-portal',
+      'client-portal': {
         title: 'Client Portal',
         description: 'Managing client portals, content, and communications',
         icon: Icons.client,
         color: 'bg-amber-500',
-        articles: []
+        articles: [
+          {
+            title: 'Client Portal Overview',
+            content: `Each client has their own dedicated portal accessible at /portal/{client-slug}.
+
+**Client Portal Features:**
+- Home Dashboard with announcements
+- Launch Milestones (if project is active)
+- Inventory Management
+- Customer Support Center
+- Files & Documents
+
+**Client Navigation:**
+Clients use the sidebar to navigate between sections. The sidebar shows only features relevant to their account.`
+          },
+          {
+            title: 'Managing Announcements',
+            content: `Announcements appear on the client's home dashboard.
+
+**Creating Announcements:**
+1. Go to Client Portal Admin > Announcements
+2. Click "New Announcement"
+3. Fill in:
+   - Title
+   - Content
+   - Type (Info, Warning, Success)
+4. Optional: Mark as Pinned (stays at top)
+5. Optional: Mark as Priority (highlighted)
+6. Optional: Attach a file
+
+**Announcement Types:**
+- **Info** (Blue): General information
+- **Warning** (Yellow): Important notices
+- **Success** (Green): Positive updates
+
+**Managing Announcements:**
+- Edit existing announcements
+- Delete outdated announcements
+- Pin important announcements to the top`
+          },
+          {
+            title: 'Managing Client Documents',
+            content: `Upload and organize documents for clients to access.
+
+**Uploading Documents:**
+1. Go to Client Portal Admin > Documents
+2. Click "Upload Document"
+3. Select the file
+4. Choose a category:
+   - Contracts
+   - Onboarding
+   - Inserts
+   - Certificates of Analysis
+   - Analyzer
+   - Other
+5. Add optional notes
+6. Upload
+
+**Document Organization:**
+Documents are grouped by category for easy navigation. Clients can download any document you've uploaded.
+
+**Client Uploads:**
+Clients can also upload documents from their Files page. These appear in a separate "Client Uploads" section for admin review.`
+          },
+          {
+            title: 'Portal Settings',
+            content: `Configure client-specific portal settings.
+
+**Available Settings:**
+- Practice name display
+- Logo customization
+- Banner image
+- Contact information
+
+**Customizing Appearance:**
+1. Go to Portal Settings
+2. Upload a client logo
+3. Set a custom banner image
+4. Save changes
+
+Customizations appear throughout the client's portal experience.`
+          }
+        ]
+      },
+      'inventory': {
+        title: 'Inventory Management',
+        description: 'Weekly inventory updates, reports, and alerts',
+        icon: Icons.inventory,
+        color: 'bg-teal-600',
+        articles: [
+          {
+            title: 'Weekly Inventory Updates',
+            content: `Clients submit weekly inventory counts to track stock levels.
+
+**How to Submit:**
+1. Navigate to Inventory > Weekly Update
+2. Review the item list
+3. Enter current quantities:
+   - Open Qty: Items currently opened/in use
+   - Closed Qty: Items still sealed
+4. Add expiration dates if applicable
+5. Click "Submit Inventory"
+
+**Submission Reminder:**
+A warning banner appears if you haven't submitted inventory in the past 7 days. Keep submissions current for accurate tracking.`
+          },
+          {
+            title: 'Understanding Inventory Reports',
+            content: `The Reports & Alerts page shows your current inventory status.
+
+**Low Stock Alerts (Red):**
+Items with a combined quantity (open + closed) of 2 or fewer units. These require immediate attention to prevent stockouts.
+- **Action**: Reorder these items as soon as possible
+
+**Expiring Soon (Orange):**
+Items with expiration dates within the next 30 days.
+- **Action**: Prioritize using expiring items; plan replacement orders
+
+**Current Stock Levels (Blue):**
+Shows all items currently in stock based on your most recent submission.
+- Filter by category to find specific item types
+- Search to quickly locate items
+- See breakdown of open vs closed quantities
+
+**Download CSV:**
+Export your inventory data for external analysis or records.`
+          },
+          {
+            title: 'Submission History',
+            content: `View all past inventory submissions.
+
+**What's Shown:**
+- Submission date and time
+- Item counts
+- Submitter name (if applicable)
+
+**Using History:**
+- Track inventory trends over time
+- Reference past counts
+- Identify submission patterns
+
+**Filtering:**
+Use the search and filter options to find specific submissions.`
+          }
+        ]
+      },
+      'customer-support': {
+        title: 'Customer Support Center',
+        description: 'Tickets, live chat, and support resources',
+        icon: Icons.support,
+        color: 'bg-sky-600',
+        articles: [
+          {
+            title: 'Support Center Overview',
+            content: `The Customer Support Center provides multiple ways to get help.
+
+**Three Support Options:**
+1. **Ticket History**: View your past and current support tickets
+2. **Submit a Ticket**: Create a new support request
+3. **Live Chat**: Chat with support agents in real time
+
+**Accessing Support:**
+Navigate to Customer Support from the sidebar menu.`
+          },
+          {
+            title: 'Viewing Ticket History',
+            content: `See all your support tickets in one place.
+
+**Ticket Information:**
+- Subject/title
+- Creation date
+- Current status
+- Resolution notes (when resolved)
+
+**Ticket Statuses:**
+- **New**: Just submitted
+- **In Progress**: Being worked on
+- **Assigned**: Assigned to a specific agent
+- **Vendor Escalation**: Escalated to vendor support
+- **Resolved**: Issue resolved
+- **Closed**: Ticket closed
+
+**Viewing Details:**
+Click on any ticket to expand and see:
+- Full description
+- Resolution notes
+- Attached files (including service reports)
+
+**Attachments:**
+Service reports submitted by technicians appear as downloadable attachments on related tickets.`
+          },
+          {
+            title: 'Submitting a Ticket',
+            content: `Create a new support request for any issues or questions.
+
+**How to Submit:**
+1. Click the "Submit a Ticket" tab
+2. Fill out the support form with:
+   - Subject
+   - Description of your issue
+   - Priority level
+   - Any relevant attachments
+3. Submit the form
+
+**Response Time:**
+Expect a response within 24-48 hours for standard requests.
+
+**Alternative Contact:**
+You can also email support directly at support@thrive365labs.com`
+          },
+          {
+            title: 'Using Live Chat',
+            content: `Get real-time help from support agents.
+
+**Starting a Chat:**
+1. Click the "Live Chat" tab
+2. Click "Start Chat Now" button
+3. Or use the chat icon in the bottom-right corner
+
+**Chat Availability:**
+Support agents are available during business hours. The green indicator shows when agents are online.
+
+**Best For:**
+- Quick questions
+- Urgent issues
+- Real-time troubleshooting`
+          }
+        ]
+      },
+      'files': {
+        title: 'Files & Documents',
+        description: 'Document management and file uploads',
+        icon: Icons.files,
+        color: 'bg-violet-600',
+        articles: [
+          {
+            title: 'Accessing Documents',
+            content: `The Files page shows all documents shared with you.
+
+**Document Categories:**
+- Contracts
+- Onboarding
+- Inserts
+- Certificates of Analysis
+- Analyzer
+- Other
+
+**Downloading Files:**
+Click on any document to download it to your device.`
+          },
+          {
+            title: 'Uploading Documents',
+            content: `Clients can upload documents for admin review.
+
+**How to Upload:**
+1. Navigate to Files
+2. Click "Upload File"
+3. Select your file
+4. Choose a category
+5. Add optional notes
+6. Upload
+
+**Supported Files:**
+Most common file types are supported including PDF, Word, Excel, and images.
+
+**Where Files Go:**
+Uploaded files appear in the "Your Uploads" section and are also visible to administrators.
+
+**HubSpot Integration:**
+If configured, uploaded files are automatically attached to your HubSpot company/deal record.`
+          }
+        ]
       }
-    ];
+    };
+
+    // Expandable Guide Section Component
+    const GuideSection = ({ guide }) => {
+      const [isOpen, setIsOpen] = useState(false);
+      const [openArticle, setOpenArticle] = useState(null);
+
+      return (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-4">
+          <button
+            onClick={() => setIsOpen(!isOpen)}
+            className="w-full p-5 flex items-center justify-between hover:bg-gray-50 transition"
+          >
+            <div className="flex items-center gap-4">
+              <div className={`inline-flex items-center justify-center w-12 h-12 ${guide.color} text-white rounded-xl`}>
+                {guide.icon}
+              </div>
+              <div className="text-left">
+                <h3 className="text-lg font-semibold text-accent">{guide.title}</h3>
+                <p className="text-gray-500 text-sm">{guide.description}</p>
+              </div>
+            </div>
+            <div className={`text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}>
+              {Icons.chevronDown}
+            </div>
+          </button>
+
+          <div className={`guide-content ${isOpen ? 'open' : ''}`}>
+            <div className="border-t border-gray-100 p-4 bg-gray-50">
+              <p className="text-sm text-gray-500 mb-3">{guide.articles.length} article{guide.articles.length !== 1 ? 's' : ''}</p>
+              <div className="space-y-2">
+                {guide.articles.map((article, idx) => (
+                  <div key={idx} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                    <button
+                      onClick={() => setOpenArticle(openArticle === idx ? null : idx)}
+                      className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition text-left"
+                    >
+                      <span className="font-medium text-gray-800">{article.title}</span>
+                      <span className={`text-gray-400 transition-transform ${openArticle === idx ? 'rotate-90' : ''}`}>
+                        {Icons.chevronRight}
+                      </span>
+                    </button>
+                    {openArticle === idx && (
+                      <div className="px-4 pb-4 border-t border-gray-100 bg-gray-50">
+                        <div className="prose prose-sm max-w-none mt-4 text-gray-600 whitespace-pre-wrap">
+                          {article.content.split('\n').map((paragraph, pIdx) => {
+                            if (paragraph.startsWith('**') && paragraph.endsWith('**')) {
+                              return <h4 key={pIdx} className="font-semibold text-gray-800 mt-4 mb-2">{paragraph.replace(/\*\*/g, '')}</h4>;
+                            }
+                            if (paragraph.startsWith('- ')) {
+                              return <li key={pIdx} className="ml-4">{paragraph.substring(2)}</li>;
+                            }
+                            if (paragraph.match(/^\d+\./)) {
+                              return <li key={pIdx} className="ml-4 list-decimal">{paragraph.substring(paragraph.indexOf('.') + 2)}</li>;
+                            }
+                            if (paragraph.trim() === '') {
+                              return <br key={pIdx} />;
+                            }
+                            return <p key={pIdx} className="mb-2">{paragraph.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').split('<strong>').map((part, i) => {
+                              if (part.includes('</strong>')) {
+                                const [bold, rest] = part.split('</strong>');
+                                return <span key={i}><strong>{bold}</strong>{rest}</span>;
+                              }
+                              return part;
+                            })}</p>;
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
 
     const App = () => {
       // Check multiple token sources for authentication
@@ -118,7 +707,7 @@
                 <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-10" />
                 <div>
                   <h1 className="text-xl font-bold text-accent">Knowledge Hub</h1>
-                  <p className="text-sm text-gray-500">Guides and documentation</p>
+                  <p className="text-sm text-gray-500">Comprehensive guides and documentation</p>
                 </div>
               </div>
               <a href="/login" className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition">
@@ -146,34 +735,62 @@
               </div>
             </div>
 
-            {/* Coming Soon Notice */}
-            <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 rounded-2xl p-8 mb-10 text-center">
-              <div className="inline-flex items-center justify-center w-20 h-20 bg-indigo-100 rounded-full mb-4 text-indigo-600">
-                {Icons.comingSoon}
+            {/* Quick Links Section */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-8">
+              <h3 className="text-lg font-bold text-accent mb-4 flex items-center gap-2">
+                {Icons.link}
+                Quick Links
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <a href="/directory" className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg hover:bg-primary-50 hover:border-primary-200 border border-gray-200 transition group">
+                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600 group-hover:bg-primary-100 group-hover:text-primary-600">
+                    {Icons.link}
+                  </div>
+                  <div>
+                    <p className="font-medium text-gray-800">Link Directory</p>
+                    <p className="text-xs text-gray-500">All portal URLs</p>
+                  </div>
+                  <span className="ml-auto text-gray-400">{Icons.external}</span>
+                </a>
+                <a href="/changelog" className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg hover:bg-primary-50 hover:border-primary-200 border border-gray-200 transition group">
+                  <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center text-green-600 group-hover:bg-primary-100 group-hover:text-primary-600">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
+                  </div>
+                  <div>
+                    <p className="font-medium text-gray-800">App Changelog</p>
+                    <p className="text-xs text-gray-500">Version history</p>
+                  </div>
+                  <span className="ml-auto text-gray-400">{Icons.external}</span>
+                </a>
+                <a href="/admin" className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg hover:bg-primary-50 hover:border-primary-200 border border-gray-200 transition group">
+                  <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center text-purple-600 group-hover:bg-primary-100 group-hover:text-primary-600">
+                    {Icons.admin}
+                  </div>
+                  <div>
+                    <p className="font-medium text-gray-800">Admin Hub</p>
+                    <p className="text-xs text-gray-500">User management</p>
+                  </div>
+                  <span className="ml-auto text-gray-400">{Icons.external}</span>
+                </a>
+                <a href="/service-portal" className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg hover:bg-primary-50 hover:border-primary-200 border border-gray-200 transition group">
+                  <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center text-emerald-600 group-hover:bg-primary-100 group-hover:text-primary-600">
+                    {Icons.service}
+                  </div>
+                  <div>
+                    <p className="font-medium text-gray-800">Service Portal</p>
+                    <p className="text-xs text-gray-500">Service reports</p>
+                  </div>
+                  <span className="ml-auto text-gray-400">{Icons.external}</span>
+                </a>
               </div>
-              <h3 className="text-2xl font-bold text-accent mb-2">Documentation Coming Soon</h3>
-              <p className="text-gray-600 max-w-xl mx-auto">
-                We're working on comprehensive guides and tutorials to help you get the most out of Thrive 365 Labs.
-                Check back soon for detailed documentation on each module.
-              </p>
             </div>
 
-            {/* Guide Categories Preview */}
-            <h3 className="text-xl font-bold text-accent mb-6">Guide Categories</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {guideCategories.map(category => (
-                <div key={category.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 card-hover opacity-75">
-                  <div className={`inline-flex items-center justify-center w-12 h-12 ${category.color} text-white rounded-xl mb-4`}>
-                    {category.icon}
-                  </div>
-                  <h4 className="text-lg font-semibold text-accent mb-2">{category.title}</h4>
-                  <p className="text-gray-500 text-sm mb-4">{category.description}</p>
-                  <div className="text-xs text-gray-400 font-medium uppercase tracking-wider">
-                    Coming Soon
-                  </div>
-                </div>
-              ))}
-            </div>
+            {/* Guide Categories */}
+            <h3 className="text-xl font-bold text-accent mb-6">How-To Guides</h3>
+
+            {Object.values(guides).map((guide, idx) => (
+              <GuideSection key={idx} guide={guide} />
+            ))}
 
             {/* Quick Tips Section */}
             <div className="mt-10">
@@ -190,9 +807,31 @@
                   </li>
                   <li className="flex items-start gap-3">
                     <span className="inline-flex items-center justify-center w-6 h-6 bg-primary-100 text-primary-600 rounded-full text-sm font-bold flex-shrink-0">3</span>
-                    <span>Need help? Contact your administrator or reach out to Thrive 365 Labs support.</span>
+                    <span>Submit <strong>weekly inventory updates</strong> to keep stock levels accurate and receive timely alerts.</span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <span className="inline-flex items-center justify-center w-6 h-6 bg-primary-100 text-primary-600 rounded-full text-sm font-bold flex-shrink-0">4</span>
+                    <span>Use the <strong>Live Chat</strong> feature for immediate assistance during business hours.</span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <span className="inline-flex items-center justify-center w-6 h-6 bg-primary-100 text-primary-600 rounded-full text-sm font-bold flex-shrink-0">5</span>
+                    <span>Check the <strong>Link Directory</strong> for a complete reference of all portal URLs.</span>
                   </li>
                 </ul>
+              </div>
+            </div>
+
+            {/* Need Help Section */}
+            <div className="mt-10 bg-gradient-to-r from-primary-500 to-primary-700 rounded-2xl p-8 text-white">
+              <h3 className="text-2xl font-bold mb-3">Need Additional Help?</h3>
+              <p className="text-white/80 mb-6">Can't find what you're looking for? Our support team is here to help.</p>
+              <div className="flex flex-wrap gap-4">
+                <a href="mailto:support@thrive365labs.com" className="bg-white text-primary-600 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition">
+                  Email Support
+                </a>
+                <a href="/login" className="bg-white/20 text-white px-6 py-3 rounded-lg font-semibold hover:bg-white/30 transition">
+                  Back to Portal Hub
+                </a>
               </div>
             </div>
           </main>
