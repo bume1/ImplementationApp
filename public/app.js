@@ -894,7 +894,8 @@ const AuthScreen = ({ onLogin }) => {
           </div>
         </div>
         <div className="mt-8 text-center text-sm text-gray-500">
-          <p>Powered by Thrive365Labs | Developed by Bianca G. C. Ume, MD, MBA, MS</p>
+          <p>&copy; 2026 Thrive 365 Labs. All rights reserved.</p>
+          <a href="/changelog" className="text-primary hover:underline text-xs mt-1 inline-block">View Changelog</a>
         </div>
       </div>
     </div>
@@ -1306,7 +1307,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
                 )}
               </div>
               <div className="p-4 border-t bg-gray-50 text-center">
-                <p className="text-sm text-gray-500">Powered by Thrive365Labs | Developed by Bianca G. C. Ume, MD, MBA, MS</p>
+                <p className="text-sm text-gray-500">&copy; 2026 Thrive 365 Labs. All rights reserved.</p>
               </div>
             </div>
           </div>
@@ -2258,15 +2259,18 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
       </div>
       </div>
       <footer className="mt-8 py-4 text-center text-sm text-gray-500 border-t max-w-6xl mx-auto">
-        <p>Powered by Thrive365Labs | Developed by Bianca G. C. Ume, MD, MBA, MS</p>
-        {user.role === 'admin' && (
-          <button 
-            onClick={() => { setShowActivityLog(true); loadActivityLog(); }}
-            className="mt-2 text-primary hover:text-accent text-xs underline"
-          >
-            View Activity Log
-          </button>
-        )}
+        <p>&copy; 2026 Thrive 365 Labs. All rights reserved.</p>
+        <div className="flex items-center justify-center gap-4 mt-2">
+          <a href="/changelog" className="text-primary hover:text-accent text-xs underline">View Changelog</a>
+          {user.role === 'admin' && (
+            <button
+              onClick={() => { setShowActivityLog(true); loadActivityLog(); }}
+              className="text-primary hover:text-accent text-xs underline"
+            >
+              View Activity Log
+            </button>
+          )}
+        </div>
       </footer>
 
       {showActivityLog && (
@@ -2934,7 +2938,7 @@ const SoftPilotChecklist = ({ token, project, tasks, teamMembers, onClose, onSub
   </div>
 
   <footer style="margin-top: 50px; text-align: center; color: #9ca3af; font-size: 12px;">
-    <p>Powered by Thrive365Labs | Developed by Bianca G. C. Ume, MD, MBA, MS</p>
+    <p>&copy; 2026 Thrive 365 Labs. All rights reserved.</p>
     <p>Thrive 365 Labs - Portal</p>
   </footer>
 </body>
@@ -6693,6 +6697,7 @@ const HubSpotSettings = ({ token, user, onBack, onLogout }) => {
 // ============== REPORTING COMPONENT ==============
 const Reporting = ({ token, user, onBack, onLogout }) => {
   const [reportData, setReportData] = useState([]);
+  const [validationData, setValidationData] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -6701,13 +6706,57 @@ const Reporting = ({ token, user, onBack, onLogout }) => {
 
   const loadReportData = async () => {
     try {
-      const data = await api.getReportingData(token);
-      setReportData(data);
+      const [projectData, serviceReportsRes] = await Promise.all([
+        api.getReportingData(token),
+        fetch(`${API_URL}/api/service-reports`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(r => r.json()).catch(() => [])
+      ]);
+      setReportData(projectData);
+      // Filter validation service reports
+      const validations = (serviceReportsRes || []).filter(r => r.serviceType === 'Validations');
+      setValidationData(validations);
     } catch (error) {
       console.error('Failed to load reporting data:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  // Validation metrics
+  const getValidationMetrics = () => {
+    const totalValidations = validationData.length;
+    let totalDaysOnSite = 0;
+    let totalAnalyzers = 0;
+    const statusCounts = { Passed: 0, Failed: 0, Pending: 0 };
+    const clientValidations = {};
+
+    validationData.forEach(v => {
+      // Calculate days on-site
+      if (v.validationStartDate && v.validationEndDate) {
+        const days = Math.ceil(Math.abs(new Date(v.validationEndDate) - new Date(v.validationStartDate)) / (1000 * 60 * 60 * 24)) + 1;
+        totalDaysOnSite += days;
+      }
+      // Count analyzers and statuses
+      if (v.analyzersValidated && Array.isArray(v.analyzersValidated)) {
+        totalAnalyzers += v.analyzersValidated.length;
+        v.analyzersValidated.forEach(a => {
+          const status = a.status || 'Pending';
+          statusCounts[status] = (statusCounts[status] || 0) + 1;
+        });
+      }
+      // Count by client
+      const clientName = v.clientFacilityName || 'Unknown';
+      clientValidations[clientName] = (clientValidations[clientName] || 0) + 1;
+    });
+
+    return {
+      total: totalValidations,
+      avgDaysOnSite: totalValidations > 0 ? Math.round(totalDaysOnSite / totalValidations) : 0,
+      totalAnalyzers,
+      statusCounts,
+      clientValidations
+    };
   };
 
   // Chart 1: Completed vs In Progress by client
@@ -6886,6 +6935,89 @@ const Reporting = ({ token, user, onBack, onLogout }) => {
               </div>
             </div>
           </div>
+
+          {/* Validation Metrics */}
+          {validationData.length > 0 && (() => {
+            const metrics = getValidationMetrics();
+            return (
+              <div className="mt-8">
+                <h2 className="text-xl font-bold mb-4">Validation Reports</h2>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                  <div className="bg-purple-50 p-4 rounded-lg text-center">
+                    <div className="text-3xl font-bold text-purple-600">{metrics.total}</div>
+                    <div className="text-sm text-purple-800">Total Validations</div>
+                  </div>
+                  <div className="bg-indigo-50 p-4 rounded-lg text-center">
+                    <div className="text-3xl font-bold text-indigo-600">{metrics.avgDaysOnSite}</div>
+                    <div className="text-sm text-indigo-800">Avg Days On-Site</div>
+                  </div>
+                  <div className="bg-cyan-50 p-4 rounded-lg text-center">
+                    <div className="text-3xl font-bold text-cyan-600">{metrics.totalAnalyzers}</div>
+                    <div className="text-sm text-cyan-800">Analyzers Validated</div>
+                  </div>
+                  <div className="bg-green-50 p-4 rounded-lg text-center">
+                    <div className="text-3xl font-bold text-green-600">{metrics.statusCounts.Passed || 0}</div>
+                    <div className="text-sm text-green-800">Passed</div>
+                  </div>
+                </div>
+
+                {/* Validations by Client */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h3 className="font-semibold text-gray-800 mb-3">Validations by Client</h3>
+                  <div className="space-y-2">
+                    {Object.entries(metrics.clientValidations)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([client, count]) => (
+                        <div key={client} className="flex items-center gap-3">
+                          <div className="w-40 text-sm font-medium truncate">{client}</div>
+                          <div className="flex-1 bg-gray-200 rounded h-6 overflow-hidden">
+                            <div
+                              className="bg-gradient-to-r from-purple-500 to-indigo-500 h-full flex items-center justify-end pr-2"
+                              style={{ width: `${(count / metrics.total) * 100}%`, minWidth: '30px' }}
+                            >
+                              <span className="text-white text-xs font-bold">{count}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+
+                {/* Analyzer Status Breakdown */}
+                {metrics.totalAnalyzers > 0 && (
+                  <div className="mt-4 bg-gray-50 rounded-lg p-4">
+                    <h3 className="font-semibold text-gray-800 mb-3">Analyzer Validation Status</h3>
+                    <div className="flex h-8 rounded overflow-hidden">
+                      {metrics.statusCounts.Passed > 0 && (
+                        <div
+                          className="bg-green-500 flex items-center justify-center text-white text-xs font-medium"
+                          style={{ width: `${(metrics.statusCounts.Passed / metrics.totalAnalyzers) * 100}%` }}
+                        >
+                          {metrics.statusCounts.Passed} Passed
+                        </div>
+                      )}
+                      {metrics.statusCounts.Failed > 0 && (
+                        <div
+                          className="bg-red-500 flex items-center justify-center text-white text-xs font-medium"
+                          style={{ width: `${(metrics.statusCounts.Failed / metrics.totalAnalyzers) * 100}%` }}
+                        >
+                          {metrics.statusCounts.Failed} Failed
+                        </div>
+                      )}
+                      {metrics.statusCounts.Pending > 0 && (
+                        <div
+                          className="bg-yellow-500 flex items-center justify-center text-white text-xs font-medium"
+                          style={{ width: `${(metrics.statusCounts.Pending / metrics.totalAnalyzers) * 100}%` }}
+                        >
+                          {metrics.statusCounts.Pending} Pending
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Detailed Table */}
           <div className="mt-8">

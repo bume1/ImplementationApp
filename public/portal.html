@@ -235,17 +235,18 @@
       back: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
     };
     
-    const Sidebar = ({ activePage, onNavigate, user, isMobileOpen, onClose }) => {
+    const Sidebar = ({ activePage, onNavigate, user, isMobileOpen, onClose, projects }) => {
       const [inventoryExpanded, setInventoryExpanded] = useState(activePage === 'inventory' || activePage === 'reports' || activePage === 'submission_history');
       const [adminExpanded, setAdminExpanded] = useState(activePage.startsWith('admin_'));
       const isAdmin = user?.role === 'admin';
-      
+
       const mainItems = [
         { id: 'home', label: isAdmin ? 'Admin Dashboard' : 'Home', icon: Icons.home }
       ];
-      
-      // Show Launch Milestones for clients with assigned projects
-      if (user?.assignedProjects?.length > 0 && !isAdmin) {
+
+      // Show Launch Milestones for clients with assigned projects that are NOT complete
+      const activeProjects = (projects || []).filter(p => p.status !== 'Complete' && p.status !== 'Completed');
+      if (activeProjects.length > 0 && !isAdmin) {
         mainItems.push({ id: 'milestones', label: 'Launch Milestones', icon: Icons.target });
       }
       
@@ -280,8 +281,8 @@
             
             <div className="p-4 border-b bg-gray-50">
               <p className="text-sm text-gray-500">Welcome,</p>
-              <p className="font-semibold text-accent">{user?.name || 'Client'}</p>
-              <p className="text-xs text-gray-500">{user?.practiceName}</p>
+              <p className="font-semibold text-accent">{user?.practiceName || user?.name || 'Client'}</p>
+              {user?.practiceName && user?.name && <p className="text-xs text-gray-500">{user?.name}</p>}
             </div>
             
             <nav className="p-2">
@@ -437,36 +438,70 @@
             </div>
           </div>
           
-          <div className="grid md:grid-cols-2 gap-6">
-            <div className="bg-white p-6 rounded-xl shadow-sm">
-              <h2 className="text-lg font-bold text-accent mb-4 flex items-center gap-2">
-                <span className="text-primary">{Icons.megaphone}</span> Announcements
-              </h2>
-              {announcements && announcements.length > 0 ? (
-                <div className="space-y-3 max-h-64 overflow-y-auto">
-                  {announcements.map(ann => (
-                    <div key={ann.id} className={`p-3 rounded-lg border-l-4 ${
-                      ann.type === 'warning' ? 'border-yellow-500 bg-yellow-50' :
-                      ann.type === 'success' ? 'border-green-500 bg-green-50' :
-                      'border-blue-500 bg-blue-50'
-                    }`}>
-                      <h3 className="font-semibold text-gray-800">{ann.title}</h3>
-                      <p className="text-sm text-gray-600 mt-1">{ann.content}</p>
-                      <p className="text-xs text-gray-400 mt-2">
-                        {new Date(ann.createdAt).toLocaleDateString()}
-                      </p>
+          {/* Full-width Announcements Section */}
+          <div className="bg-white p-6 rounded-xl shadow-sm">
+            <h2 className="text-lg font-bold text-accent mb-4 flex items-center gap-2">
+              <span className="text-primary">{Icons.megaphone}</span> Announcements
+            </h2>
+            {announcements && announcements.length > 0 ? (
+              <div className="space-y-4">
+                {/* Sort: pinned first, then priority, then by date */}
+                {[...announcements].sort((a, b) => {
+                  if (a.pinned && !b.pinned) return -1;
+                  if (!a.pinned && b.pinned) return 1;
+                  if (a.priority && !b.priority) return -1;
+                  if (!a.priority && b.priority) return 1;
+                  return new Date(b.createdAt) - new Date(a.createdAt);
+                }).map(ann => (
+                  <div key={ann.id} className={`p-4 rounded-lg border-l-4 ${
+                    ann.priority ? 'border-red-500 bg-red-50' :
+                    ann.pinned ? 'border-primary bg-primary/5' :
+                    ann.type === 'warning' ? 'border-yellow-500 bg-yellow-50' :
+                    ann.type === 'success' ? 'border-green-500 bg-green-50' :
+                    'border-blue-500 bg-blue-50'
+                  }`}>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 flex-wrap mb-2">
+                          {ann.pinned && (
+                            <span className="text-xs font-semibold text-blue-700 bg-blue-100 px-2 py-0.5 rounded">📌 PINNED</span>
+                          )}
+                          {ann.priority && (
+                            <span className="text-xs font-semibold text-red-700 bg-red-100 px-2 py-0.5 rounded">⚠️ PRIORITY</span>
+                          )}
+                        </div>
+                        <h3 className="font-semibold text-gray-800 text-lg">{ann.title}</h3>
+                        {ann.priority && (
+                          <p className="text-xs text-red-600 mt-1 italic">This is a priority announcement. Please review carefully.</p>
+                        )}
+                        <p className="text-gray-600 mt-2 whitespace-pre-wrap">{ann.content}</p>
+                        {ann.attachmentUrl && (
+                          <a
+                            href={ann.attachmentUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 mt-3 text-sm text-primary hover:text-accent font-medium"
+                          >
+                            📎 {ann.attachmentName || 'Download Attachment'}
+                          </a>
+                        )}
+                        <p className="text-xs text-gray-400 mt-3">
+                          Posted: {new Date(ann.createdAt).toLocaleDateString()}
+                        </p>
+                      </div>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-gray-500 text-sm">No announcements at this time.</p>
-              )}
-            </div>
-            
-            <div className="bg-white p-6 rounded-xl shadow-sm">
-              <h2 className="text-lg font-bold text-accent mb-4 flex items-center gap-2">
-                <span className="text-primary">{Icons.activity}</span> Recent Activity
-              </h2>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-gray-500 text-sm">No announcements at this time.</p>
+            )}
+          </div>
+
+          <div className="bg-white p-6 rounded-xl shadow-sm">
+            <h2 className="text-lg font-bold text-accent mb-4 flex items-center gap-2">
+              <span className="text-primary">{Icons.activity}</span> Recent Activity
+            </h2>
               {data?.activities && data.activities.length > 0 ? (
                 <div className="space-y-2">
                   {data.activities.slice(0, 5).map((act, idx) => {
@@ -504,12 +539,11 @@
                     );
                   })}
                 </div>
-              ) : (
-                <p className="text-gray-500 text-sm">No recent activity.</p>
-              )}
-            </div>
+            ) : (
+              <p className="text-gray-500 text-sm">No recent activity.</p>
+            )}
           </div>
-          
+
           <div className="grid md:grid-cols-3 gap-4">
             <button onClick={() => onNavigate('inventory')} className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center cursor-pointer w-full">
               <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.package, { className: 'w-10 h-10' })}</div>
@@ -531,7 +565,7 @@
       );
     };
     
-    const MilestonesPage = ({ data }) => {
+    const MilestonesPage = ({ data, onNavigate }) => {
       const project = data?.projects?.[0];
       const allTasks = project?.tasks || [];
       const tasks = allTasks.filter(t => t.showToClient !== false);
@@ -573,7 +607,7 @@
       };
       
       const getPhaseGradient = (phase) => {
-        const gradients = { 'Phase 0': 'bg-gradient-to-r from-purple-600 to-purple-700', 'Phase 1': 'bg-gradient-to-r from-primary to-accent', 'Phase 2': 'bg-gradient-to-r from-green-600 to-green-700', 'Phase 3': 'bg-gradient-to-r from-orange-600 to-orange-700', 'Phase 4': 'bg-gradient-to-r from-pink-600 to-pink-700' };
+        const gradients = { 'Phase 0': 'bg-gradient-to-r from-purple-600 to-purple-700', 'Phase 1': 'bg-gradient-to-r from-blue-600 to-blue-800', 'Phase 2': 'bg-gradient-to-r from-green-600 to-green-700', 'Phase 3': 'bg-gradient-to-r from-orange-600 to-orange-700', 'Phase 4': 'bg-gradient-to-r from-pink-600 to-pink-700' };
         return gradients[phase] || 'bg-gradient-to-r from-gray-600 to-gray-700';
       };
       
@@ -626,6 +660,11 @@
                       <div>
                         <h3 className="font-semibold text-gray-700">{stageName}</h3>
                         <p className="text-xs text-gray-500">{stageTasks.filter(t => t.completed).length} of {stageTasks.length} complete</p>
+                        {phase === 'Phase 3' && stageName === 'Training/Validation' && onNavigate && (
+                          <button onClick={() => onNavigate('files')} className="text-xs text-primary hover:underline mt-1 inline-block">
+                            View Validation Reports in Files →
+                          </button>
+                        )}
                       </div>
                       {targetDate && (
                         <span className="text-xs bg-blue-100 text-primary px-2 py-1 rounded">
@@ -729,7 +768,14 @@
                       return (
                         <div key={stage} className="bg-gray-50 rounded-lg p-4">
                           <div className="flex justify-between items-start mb-3">
-                            <h4 className="font-semibold text-gray-800">{stage}</h4>
+                            <div>
+                              <h4 className="font-semibold text-gray-800">{stage}</h4>
+                              {phase === 'Phase 3' && stage === 'Training/Validation' && onNavigate && (
+                                <button onClick={() => onNavigate('files')} className="text-xs text-primary hover:underline mt-1 inline-block">
+                                  View Validation Reports in Files →
+                                </button>
+                              )}
+                            </div>
                             {targetDate && <span className="text-xs bg-blue-100 text-primary px-2 py-1 rounded">Target Due Date: {targetDate}</span>}
                           </div>
                           <div className="space-y-2">
@@ -1184,11 +1230,8 @@
       const [report, setReport] = useState(null);
       const [loading, setLoading] = useState(true);
       const [showGuide, setShowGuide] = useState(false);
-      const [selectedItems, setSelectedItems] = useState([]);
       const [itemSearch, setItemSearch] = useState('');
       const [categoryFilter, setCategoryFilter] = useState('All');
-      
-      const CHART_COLORS = ['#045E9F', '#00205A', '#10B981', '#F59E0B', '#EF4444'];
 
       useEffect(() => {
         fetch(`${API_URL}/api/inventory/report/${slug}`, { headers: { 'Authorization': `Bearer ${token}` } })
@@ -1205,24 +1248,71 @@
       const lowStock = alerts?.lowStock || [];
       const expiring = alerts?.expiringSoon || [];
 
+      // Check if client hasn't submitted this week
+      const hasSubmittedThisWeek = () => {
+        if (!submissions || submissions.length === 0) return false;
+        const lastSubmission = new Date(submissions[0].submittedAt);
+        const today = new Date();
+        const daysSinceSubmission = Math.floor((today - lastSubmission) / (1000 * 60 * 60 * 24));
+        return daysSinceSubmission < 7;
+      };
+
+      // Get current stock items from most recent submission
+      const getCurrentStock = () => {
+        if (!submissions || submissions.length === 0) return [];
+        const latestSubmission = submissions[0];
+        const items = [];
+        if (latestSubmission.data) {
+          Object.entries(latestSubmission.data).forEach(([key, item]) => {
+            const totalQty = (item.openQty || 0) + (item.closedQty || 0);
+            if (totalQty > 0) {
+              items.push({
+                key,
+                itemName: item.itemName || key,
+                category: item.category || 'Other',
+                quantity: totalQty,
+                openQty: item.openQty || 0,
+                closedQty: item.closedQty || 0
+              });
+            }
+          });
+        }
+        return items.sort((a, b) => a.itemName.localeCompare(b.itemName));
+      };
+
+      const currentStock = getCurrentStock();
+      const categories = ['All', ...new Set(currentStock.map(i => i.category))];
+      const filteredStock = currentStock.filter(item =>
+        (categoryFilter === 'All' || item.category === categoryFilter) &&
+        item.itemName.toLowerCase().includes(itemSearch.toLowerCase())
+      );
+
       const handleDownload = () => {
         window.open(`${API_URL}/api/inventory/export/${slug}?token=${token}`, '_blank');
       };
 
       return (
         <div className="space-y-6">
+          {/* Submission Warning Flag */}
+          {!hasSubmittedThisWeek() && (
+            <div className="bg-yellow-50 border border-yellow-300 p-4 rounded-xl flex items-center gap-3">
+              <span className="text-2xl">⚠️</span>
+              <div>
+                <p className="font-semibold text-yellow-800">Inventory Update Needed</p>
+                <p className="text-sm text-yellow-700">You haven't submitted your inventory this week. Please update your inventory to keep records current.</p>
+              </div>
+            </div>
+          )}
+
           <div className="bg-white p-6 rounded-xl shadow-sm">
             <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
               <div>
                 <h1 className="text-2xl font-bold text-accent">Inventory Reports</h1>
-                <p className="text-gray-600 mt-1">View alerts and usage trends for your inventory</p>
+                <p className="text-gray-600 mt-1">View alerts and current stock levels</p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button onClick={handleDownload} className="bg-primary text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-accent transition-colors flex items-center gap-1">
                   {Icons.download} Download CSV
-                </button>
-                <button onClick={() => onNavigate('submission_history')} className="border border-primary text-primary px-3 py-2 rounded-lg text-sm font-medium hover:bg-primary/10 transition-colors flex items-center gap-1">
-                  {Icons.list} View History
                 </button>
                 <button onClick={() => setShowGuide(!showGuide)} className="text-primary hover:text-accent text-sm flex items-center gap-1">
                   <span>ℹ️</span> {showGuide ? 'Hide Guide' : 'How to Use'}
@@ -1246,25 +1336,19 @@
                   <p className="text-xs text-gray-500">Action: Prioritize using expiring items; plan replacement orders.</p>
                 </div>
                 <div>
-                  <h4 className="font-semibold text-purple-600 mb-2">Top Consumed Items (Rolling Average)</h4>
-                  <p className="mb-2">Shows your highest-consumption items with accurate usage rates calculated across up to 12 submissions:</p>
+                  <h4 className="font-semibold text-blue-600 mb-2">Current Stock Levels</h4>
+                  <p className="mb-2">Shows all items currently in stock based on your most recent inventory submission.</p>
                   <ul className="list-disc list-inside text-xs space-y-1 mt-1">
-                    <li><strong>Total Used:</strong> Sum of all consumption across analyzed periods</li>
-                    <li><strong>Avg Weekly:</strong> Average usage per week based on total consumed divided by total days, smoothed across multiple submissions</li>
-                    <li><strong>Weeks Left:</strong> Estimated time until depletion at the average rate</li>
-                    <li><strong>Periods:</strong> Number of submission intervals used in the calculation</li>
+                    <li>Filter by category to find specific item types</li>
+                    <li>Search to quickly locate items</li>
+                    <li>See breakdown of open vs closed quantities</li>
                   </ul>
-                  <p className="text-xs text-gray-500 mt-2">More submissions = more accurate predictions. Color codes: Red = 2 weeks or less | Orange = 2-4 weeks | Green = 4+ weeks</p>
+                  <p className="text-xs text-gray-500 mt-2">Submit weekly updates to keep this data accurate.</p>
                 </div>
                 <div>
-                  <h4 className="font-semibold text-blue-600 mb-2">Item Quantities Over Time</h4>
-                  <p className="mb-2">Select individual items to see their quantity trends across submissions. Compare up to 5 items at once to spot patterns.</p>
-                  <ul className="list-disc list-inside text-xs space-y-1 mt-1">
-                    <li>Use category chips to filter by item type</li>
-                    <li>Search to find specific items quickly</li>
-                    <li>Color-coded lines show each item's trend</li>
-                  </ul>
-                  <p className="text-xs text-gray-500 mt-2">Tip: Compare similar items to identify usage patterns.</p>
+                  <h4 className="font-semibold text-yellow-600 mb-2">Weekly Submission Reminder</h4>
+                  <p className="mb-2">A warning appears at the top if you haven't submitted inventory in the past 7 days.</p>
+                  <p className="text-xs text-gray-500">Action: Submit your inventory weekly to maintain accurate stock visibility.</p>
                 </div>
               </div>
             </div>
@@ -1323,147 +1407,59 @@
             </div>
           </div>
 
-          {usageTrends?.consumptionRate?.length > 0 && (
-            <div className="bg-white p-6 rounded-xl shadow-sm">
-              <h2 className="text-lg font-bold text-purple-600 mb-4 flex items-center gap-2">
-                <span className="text-purple-600">{Icons.chart}</span> Top Consumed Items (Rolling Average)
-              </h2>
-              <p className="text-xs text-gray-500 mb-3">Average weekly usage calculated across up to 12 submissions for accuracy</p>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left py-2 font-medium text-gray-600">Item</th>
-                      <th className="text-right py-2 font-medium text-gray-600">Current Stock</th>
-                      <th className="text-right py-2 font-medium text-gray-600">Total Used</th>
-                      <th className="text-right py-2 font-medium text-gray-600">Avg Weekly</th>
-                      <th className="text-right py-2 font-medium text-gray-600">Weeks Left</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {usageTrends.consumptionRate.map((item, idx) => (
-                      <tr key={idx} className="border-b hover:bg-gray-50">
-                        <td className="py-2">
-                          <p className="font-medium text-gray-800">{item.itemName}</p>
-                          <p className="text-xs text-gray-500">{item.category} {item.dataPoints && `(${item.dataPoints} periods)`}</p>
-                        </td>
-                        <td className="text-right text-gray-600">{item.currentQty}</td>
-                        <td className="text-right text-red-600 font-medium">{item.totalConsumed}</td>
-                        <td className="text-right text-gray-600">{item.weeklyRate}/wk</td>
-                        <td className="text-right">
-                          <span className={`font-medium ${item.weeksRemaining <= 2 ? 'text-red-600' : item.weeksRemaining <= 4 ? 'text-orange-600' : 'text-green-600'}`}>
-                            {item.weeksRemaining > 0 ? `${item.weeksRemaining} wks` : 'Empty'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
 
-          {usageTrends?.itemTimeSeries?.length > 0 && (
-            <div className="bg-white p-6 rounded-xl shadow-sm">
-              <h2 className="text-lg font-bold text-blue-600 mb-4 flex items-center gap-2">
-                <span>📈</span> Item Quantities Over Time
-              </h2>
-              <p className="text-xs text-gray-500 mb-3">Select up to 5 items to compare their quantity trends across submissions</p>
-              
-              {/* Category filter chips */}
-              <div className="flex flex-wrap gap-2 mb-3">
-                {['All', ...new Set(usageTrends.itemTimeSeries.map(i => i.category))].map(cat => (
-                  <button key={cat} onClick={() => setCategoryFilter(cat)} className={`px-3 py-1 rounded-full text-xs font-medium transition ${categoryFilter === cat ? 'bg-primary text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{cat}</button>
-                ))}
-              </div>
-              
-              {/* Item search and selector */}
-              <div className="mb-4">
-                <input type="text" placeholder="Search items..." value={itemSearch} onChange={e => setItemSearch(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm mb-2" />
-                <div className="max-h-32 overflow-y-auto border rounded-lg p-2 bg-gray-50">
-                  {usageTrends.itemTimeSeries
-                    .filter(item => (categoryFilter === 'All' || item.category === categoryFilter) && item.itemName.toLowerCase().includes(itemSearch.toLowerCase()))
-                    .map(item => {
-                      const isSelected = selectedItems.includes(item.key);
-                      return (
-                        <label key={item.key} className={`flex items-center gap-2 p-1 rounded cursor-pointer hover:bg-gray-100 ${isSelected ? 'bg-blue-50' : ''}`}>
-                          <input type="checkbox" checked={isSelected} disabled={!isSelected && selectedItems.length >= 5} onChange={() => {
-                            if (isSelected) setSelectedItems(selectedItems.filter(k => k !== item.key));
-                            else if (selectedItems.length < 5) setSelectedItems([...selectedItems, item.key]);
-                          }} className="rounded" />
-                          <span className="text-sm text-gray-700">{item.itemName}</span>
-                          <span className="text-xs text-gray-400">({item.category})</span>
-                        </label>
-                      );
-                    })}
-                </div>
-              </div>
-              
-              {/* Selected items legend */}
-              {selectedItems.length > 0 && (
+          {/* Current Stock Levels */}
+          <div className="bg-white p-6 rounded-xl shadow-sm">
+            <h2 className="text-lg font-bold text-blue-600 mb-4 flex items-center gap-2">
+              <span className="text-blue-600">{Icons.list}</span> Current Stock Levels
+            </h2>
+            <p className="text-xs text-gray-500 mb-3">Items currently in stock based on your most recent inventory submission</p>
+
+            {currentStock.length > 0 ? (
+              <>
+                {/* Category filter chips */}
                 <div className="flex flex-wrap gap-2 mb-3">
-                  {selectedItems.map((key, idx) => {
-                    const item = usageTrends.itemTimeSeries.find(i => i.key === key);
-                    return (
-                      <span key={key} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs text-white" style={{ backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] }}>
-                        {item?.itemName}
-                        <button onClick={() => setSelectedItems(selectedItems.filter(k => k !== key))} className="ml-1 hover:opacity-75">×</button>
-                      </span>
-                    );
-                  })}
+                  {categories.map(cat => (
+                    <button key={cat} onClick={() => setCategoryFilter(cat)} className={`px-3 py-1 rounded-full text-xs font-medium transition ${categoryFilter === cat ? 'bg-primary text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{cat}</button>
+                  ))}
                 </div>
-              )}
-              
-              {/* Line chart */}
-              {selectedItems.length > 0 ? (
-                <div className="relative h-80 border rounded-lg p-4 bg-gray-50">
-                  {(() => {
-                    const selectedData = selectedItems.map(key => usageTrends.itemTimeSeries.find(i => i.key === key)).filter(Boolean);
-                    const allDates = [...new Set(selectedData.flatMap(item => item.dataPoints.map(dp => dp.date)))].sort();
-                    const maxQty = Math.max(...selectedData.flatMap(item => item.dataPoints.map(dp => dp.quantity)), 1);
-                    const chartWidth = 300;
-                    const chartHeight = 200;
-                    
-                    return (
-                      <svg viewBox={`0 0 ${chartWidth + 50} ${chartHeight + 40}`} className="w-full h-full" preserveAspectRatio="xMidYMid meet">
-                        {/* Y-axis labels */}
-                        <text x="5" y="20" fontSize="10" fill="#6b7280">{maxQty}</text>
-                        <text x="5" y={chartHeight / 2 + 15} fontSize="10" fill="#6b7280">{Math.round(maxQty / 2)}</text>
-                        <text x="5" y={chartHeight + 5} fontSize="10" fill="#6b7280">0</text>
-                        
-                        {/* Grid lines */}
-                        {[0, 0.25, 0.5, 0.75, 1].map((pct, idx) => (
-                          <line key={idx} x1="35" y1={chartHeight * pct + 10} x2={chartWidth + 35} y2={chartHeight * pct + 10} stroke="#e5e7eb" strokeWidth="1" />
-                        ))}
-                        
-                        {/* Lines for each selected item */}
-                        {selectedData.map((item, itemIdx) => {
-                          const points = allDates.map((date, dateIdx) => {
-                            const dp = item.dataPoints.find(p => p.date === date);
-                            const x = 35 + (dateIdx / Math.max(allDates.length - 1, 1)) * chartWidth;
-                            const y = 10 + chartHeight - (dp ? (dp.quantity / maxQty) * chartHeight : 0);
-                            return `${x},${y}`;
-                          }).join(' ');
-                          return <polyline key={item.key} points={points} fill="none" stroke={CHART_COLORS[itemIdx % CHART_COLORS.length]} strokeWidth="2" />;
-                        })}
-                        
-                        {/* X-axis date labels */}
-                        {allDates.map((date, idx) => (
-                          <text key={idx} x={35 + (idx / Math.max(allDates.length - 1, 1)) * chartWidth} y={chartHeight + 25} textAnchor="middle" fontSize="9" fill="#6b7280">
-                            {new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                          </text>
-                        ))}
-                      </svg>
-                    );
-                  })()}
+
+                {/* Search */}
+                <input type="text" placeholder="Search items..." value={itemSearch} onChange={e => setItemSearch(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm mb-4" />
+
+                {/* Stock table */}
+                <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-white">
+                      <tr className="border-b">
+                        <th className="text-left py-2 font-medium text-gray-600">Item</th>
+                        <th className="text-left py-2 font-medium text-gray-600">Category</th>
+                        <th className="text-right py-2 font-medium text-gray-600">Open</th>
+                        <th className="text-right py-2 font-medium text-gray-600">Closed</th>
+                        <th className="text-right py-2 font-medium text-gray-600">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredStock.map((item, idx) => (
+                        <tr key={idx} className="border-b hover:bg-gray-50">
+                          <td className="py-2 font-medium text-gray-800">{item.itemName}</td>
+                          <td className="py-2 text-gray-500">{item.category}</td>
+                          <td className="text-right text-gray-600">{item.openQty}</td>
+                          <td className="text-right text-gray-600">{item.closedQty}</td>
+                          <td className="text-right font-semibold text-blue-600">{item.quantity}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              ) : (
-                <div className="text-center py-8 text-gray-400 border rounded-lg bg-gray-50">
-                  <p>Select items above to see their quantity trends</p>
-                </div>
-              )}
-            </div>
-          )}
+                <p className="text-xs text-gray-400 mt-3">Showing {filteredStock.length} of {currentStock.length} items</p>
+              </>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <p>No stock data available - submit your inventory to see current stock levels</p>
+              </div>
+            )}
+          </div>
 
           <div className="bg-white p-6 rounded-xl shadow-sm">
             <h2 className="text-lg font-bold text-accent mb-4 flex items-center gap-2">
@@ -1832,13 +1828,68 @@
         return (<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent"></div></div>);
       }
 
+      // Client view - show simplified summary (not item-level details)
+      if (!isAdmin) {
+        return (
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-xl shadow-sm">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                  <h1 className="text-2xl font-bold text-accent">Submission History</h1>
+                  <p className="text-gray-600 mt-1">Overview of your inventory submissions</p>
+                </div>
+                <button
+                  onClick={() => onNavigate('reports')}
+                  className="text-primary hover:text-accent text-sm flex items-center gap-1"
+                >
+                  {Icons.chart} View Reports & Alerts
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-xl shadow-sm">
+              {submissions.length > 0 ? (
+                <div className="space-y-3">
+                  {submissions.map((sub, idx) => {
+                    const itemCount = Object.keys(sub.data || {}).length;
+                    const totalQuantity = Object.values(sub.data || {}).reduce((sum, item) => {
+                      const batches = Array.isArray(item?.batches) ? item.batches : [item || {}];
+                      return sum + batches.reduce((batchSum, b) => batchSum + (parseInt(b.openQty) || 0) + (parseInt(b.closedQty) || 0), 0);
+                    }, 0);
+                    return (
+                      <div key={sub.id || idx} className="flex justify-between items-center p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition">
+                        <div>
+                          <p className="font-semibold text-gray-800">{new Date(sub.submittedAt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                          <p className="text-sm text-gray-500">Submitted by {sub.submittedBy}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-medium text-gray-700">{itemCount} items tracked</p>
+                          <p className="text-sm text-gray-500">{totalQuantity} total units</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <div className="flex justify-center mb-4 text-gray-400">{React.cloneElement(Icons.list, { className: 'w-16 h-16' })}</div>
+                  <p className="text-gray-500">No submissions yet</p>
+                  <p className="text-sm text-gray-400 mt-1">Submit your first inventory to see your history here</p>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      // Admin view - detailed spreadsheet
       return (
         <div className="space-y-6">
           <div className="bg-white p-6 rounded-xl shadow-sm">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
                 <h1 className="text-2xl font-bold text-accent">Submission History</h1>
-                <p className="text-gray-600 mt-1">{isAdmin ? 'Detailed inventory submission records from all clients' : 'Detailed view of your inventory submissions'}</p>
+                <p className="text-gray-600 mt-1">Detailed inventory submission records from all clients</p>
               </div>
             </div>
           </div>
@@ -2024,30 +2075,192 @@
       );
     };
 
-    const SupportPage = ({ settings }) => {
-      const supportUrl = settings?.supportUrl || 'https://thrive365labs-49020024.hs-sites.com/support';
-      
+    const SupportPage = ({ settings, token, userData }) => {
+      const [tickets, setTickets] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState(null);
+      const [activeTab, setActiveTab] = useState('tickets');
+      const [expandedTicket, setExpandedTicket] = useState(null);
+
+      const hasHubSpotConfig = userData?.hubspotCompanyId || userData?.hubspotContactId;
+
+      useEffect(() => {
+        if (hasHubSpotConfig && token) {
+          fetchTickets();
+        } else {
+          setLoading(false);
+        }
+      }, [token]);
+
+      const fetchTickets = async () => {
+        try {
+          const response = await fetch(`${API_URL}/api/client/hubspot/tickets`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await response.json();
+          if (data.tickets) {
+            setTickets(data.tickets);
+          }
+        } catch (err) {
+          console.error('Error fetching tickets:', err);
+          setError('Unable to load ticket history');
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const getStageColor = (stage) => {
+        const stageLower = (stage || '').toLowerCase();
+        if (stageLower.includes('closed') || stageLower.includes('resolved')) return 'bg-green-100 text-green-700';
+        if (stageLower.includes('waiting') || stageLower.includes('pending')) return 'bg-yellow-100 text-yellow-700';
+        if (stageLower.includes('new') || stageLower.includes('open')) return 'bg-blue-100 text-blue-700';
+        if (stageLower.includes('progress') || stageLower.includes('working')) return 'bg-purple-100 text-purple-700';
+        return 'bg-gray-100 text-gray-700';
+      };
+
+      const formatDate = (dateStr) => {
+        if (!dateStr) return '-';
+        return new Date(dateStr).toLocaleDateString('en-US', {
+          year: 'numeric', month: 'short', day: 'numeric'
+        });
+      };
+
       return (
         <div className="space-y-6">
           <div className="bg-white p-6 rounded-xl shadow-sm">
-            <h1 className="text-2xl font-bold text-accent">Customer Support</h1>
-            <p className="text-gray-600 mt-1">Get help from our support team</p>
+            <h1 className="text-2xl font-bold text-accent">Customer Support Center</h1>
+            <p className="text-gray-600 mt-1">Submit tickets, view history, and chat with our support team</p>
           </div>
-          
-          <div className="bg-white p-6 rounded-xl shadow-sm text-center">
-            <div className="flex justify-center mb-4 text-primary">{React.cloneElement(Icons.chat, { className: 'w-16 h-16' })}</div>
-            <h2 className="text-xl font-semibold text-gray-800 mb-2">Need Assistance?</h2>
-            <p className="text-gray-600 mb-6">
-              Our support team is ready to help you with any questions or issues.
-            </p>
-            <a
-              href={supportUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-block bg-primary text-white px-8 py-3 rounded-lg font-medium hover:bg-accent transition-colors"
-            >
-              Open Support Center
-            </a>
+
+          {/* Tab Navigation */}
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+            <div className="flex border-b">
+              <button
+                onClick={() => setActiveTab('tickets')}
+                className={`flex-1 py-4 px-6 text-center font-medium transition ${activeTab === 'tickets' ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+              >
+                {Icons.list} Ticket History
+              </button>
+              <button
+                onClick={() => setActiveTab('submit')}
+                className={`flex-1 py-4 px-6 text-center font-medium transition ${activeTab === 'submit' ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+              >
+                {Icons.plus} Submit a Ticket
+              </button>
+              <button
+                onClick={() => setActiveTab('chat')}
+                className={`flex-1 py-4 px-6 text-center font-medium transition ${activeTab === 'chat' ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+              >
+                {Icons.chat} Live Chat
+              </button>
+            </div>
+
+            <div className="p-6">
+              {/* Ticket History Tab */}
+              {activeTab === 'tickets' && (
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg font-semibold text-gray-800">Your Support Tickets</h2>
+                    <button onClick={fetchTickets} className="text-primary hover:text-accent text-sm flex items-center gap-1">
+                      {Icons.refresh || '↻'} Refresh
+                    </button>
+                  </div>
+
+                  {loading ? (
+                    <div className="flex justify-center py-12">
+                      <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent"></div>
+                    </div>
+                  ) : !hasHubSpotConfig ? (
+                    <div className="text-center py-12 text-gray-500">
+                      <div className="flex justify-center mb-4 text-gray-300">{React.cloneElement(Icons.folder, { className: 'w-16 h-16' })}</div>
+                      <p>Ticket history is not available for your account.</p>
+                      <p className="text-sm mt-2">Please contact support using the form or chat options.</p>
+                    </div>
+                  ) : error ? (
+                    <div className="text-center py-12 text-red-500">
+                      <p>{error}</p>
+                      <button onClick={fetchTickets} className="mt-4 text-primary hover:underline">Try again</button>
+                    </div>
+                  ) : tickets.length === 0 ? (
+                    <div className="text-center py-12 text-gray-500">
+                      <div className="flex justify-center mb-4 text-green-400">{React.cloneElement(Icons.check, { className: 'w-16 h-16' })}</div>
+                      <p className="font-medium">No support tickets</p>
+                      <p className="text-sm mt-2">You haven't submitted any support tickets yet.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {tickets.map(ticket => (
+                        <div key={ticket.id} className="border rounded-lg overflow-hidden">
+                          <button
+                            onClick={() => setExpandedTicket(expandedTicket === ticket.id ? null : ticket.id)}
+                            className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition text-left"
+                          >
+                            <div className="flex-1">
+                              <p className="font-medium text-gray-800">{ticket.subject}</p>
+                              <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
+                                <span>Created: {formatDate(ticket.createdAt)}</span>
+                                {ticket.updatedAt && ticket.updatedAt !== ticket.createdAt && (
+                                  <span>Updated: {formatDate(ticket.updatedAt)}</span>
+                                )}
+                              </div>
+                            </div>
+                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStageColor(ticket.stage)}`}>
+                              {ticket.stage}
+                            </span>
+                          </button>
+                          {expandedTicket === ticket.id && ticket.content && (
+                            <div className="px-4 pb-4 border-t bg-gray-50">
+                              <p className="text-sm text-gray-600 pt-3 whitespace-pre-wrap">{ticket.content}</p>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Submit Ticket Tab */}
+              {activeTab === 'submit' && (
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-800 mb-2">Submit a New Ticket</h2>
+                  <p className="text-gray-600 text-sm mb-6">Fill out the form below and our support team will respond within 24-48 hours.</p>
+
+                  <div className="bg-gray-50 rounded-lg p-4" style={{ minHeight: '500px' }}>
+                    <div id="hubspot-form-container">
+                      <script charSet="utf-8" type="text/javascript" src="//js.hsforms.net/forms/embed/v2.js"></script>
+                    </div>
+                    <iframe
+                      src="https://share.hsforms.com/1H4l-uiwVTi-1_K1LZ3P-VA4ge7x"
+                      style={{ width: '100%', minHeight: '500px', border: 'none' }}
+                      title="Support Request Form"
+                    ></iframe>
+                  </div>
+
+                  <p className="text-center text-gray-500 text-sm mt-4">
+                    Or simply email us at <a href="mailto:support@thrive365labs.com" className="text-primary hover:underline">support@thrive365labs.com</a>
+                  </p>
+                </div>
+              )}
+
+              {/* Live Chat Tab */}
+              {activeTab === 'chat' && (
+                <div className="text-center">
+                  <h2 className="text-lg font-semibold text-gray-800 mb-2">Talk to a Live Customer Support Agent</h2>
+                  <p className="text-gray-600 text-sm mb-6">
+                    Need immediate help? Our support team is available during business hours to assist you in real time.
+                  </p>
+
+                  <div className="bg-gray-50 rounded-lg p-6 flex flex-col items-center">
+                    <div className="flex justify-center mb-4 text-primary">
+                      {React.cloneElement(Icons.chat, { className: 'w-16 h-16' })}
+                    </div>
+                    <p className="text-gray-600 mb-4">Click the chat widget in the bottom-right corner to start a conversation.</p>
+                    <p className="text-sm text-gray-500">Typical response time: A few minutes</p>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       );
@@ -2087,7 +2300,7 @@
         return acc;
       }, {});
       
-      const categories = ['Contracts', 'Onboarding', 'Inserts', 'Certificates of Analysis', 'SOP Templates', 'Other'];
+      const categories = ['Contracts', 'Onboarding', 'Inserts', 'Certificates of Analysis', 'Analyzer', 'Other'];
       
       const handleFileUpload = async (e) => {
         e.preventDefault();
@@ -2365,9 +2578,17 @@
           <div className="bg-white p-6 rounded-xl shadow-sm">
             <h2 className="text-lg font-bold text-accent mb-4">Quick Actions</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <a href="/" className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg hover:bg-primary/10 transition group">
+              <a href="/admin" className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg hover:bg-primary/10 transition group">
+                <span className="text-primary">{AdminIcons.settings}</span>
+                <span className="font-medium text-gray-700 group-hover:text-primary">Admin Hub</span>
+              </a>
+              <a href="/launch" className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg hover:bg-primary/10 transition group">
                 <span className="text-primary">{AdminIcons.back}</span>
-                <span className="font-medium text-gray-700 group-hover:text-primary">Implementation App</span>
+                <span className="font-medium text-gray-700 group-hover:text-primary">Launch App</span>
+              </a>
+              <a href="/login" className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg hover:bg-primary/10 transition group">
+                <span className="text-primary">{Icons.home}</span>
+                <span className="font-medium text-gray-700 group-hover:text-primary">Portal Hub</span>
               </a>
             </div>
           </div>
@@ -2377,7 +2598,6 @@
     
     const AdminSettingsPage = ({ token, settings, onSettingsChange }) => {
       const [formData, setFormData] = useState({
-        inventoryFormEmbed: settings?.inventoryFormEmbed || '',
         filesFormEmbed: settings?.filesFormEmbed || '',
         supportUrl: settings?.supportUrl || ''
       });
@@ -2420,17 +2640,7 @@
                 {message}
               </div>
             )}
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Inventory Form Embed Code (HubSpot)</label>
-              <textarea
-                value={formData.inventoryFormEmbed}
-                onChange={(e) => setFormData({ ...formData, inventoryFormEmbed: e.target.value })}
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary h-32 font-mono text-sm"
-                placeholder="Paste HubSpot embed code here..."
-              />
-            </div>
-            
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Files Upload Form Embed Code (HubSpot)</label>
               <textarea
@@ -2466,11 +2676,22 @@
     
     const AdminAnnouncementsPage = ({ token }) => {
       const [announcements, setAnnouncements] = useState([]);
+      const [clients, setClients] = useState([]);
       const [loading, setLoading] = useState(true);
       const [showForm, setShowForm] = useState(false);
       const [editingId, setEditingId] = useState(null);
-      const [formData, setFormData] = useState({ title: '', content: '', type: 'info' });
-      
+      const [formData, setFormData] = useState({
+        title: '',
+        content: '',
+        type: 'info',
+        priority: false,
+        pinned: false,
+        targetAll: true,
+        targetClients: [],
+        attachmentUrl: '',
+        attachmentName: ''
+      });
+
       const loadAnnouncements = async () => {
         try {
           const res = await fetch(`${API_URL}/api/announcements`);
@@ -2482,9 +2703,22 @@
           setLoading(false);
         }
       };
-      
-      useEffect(() => { loadAnnouncements(); }, []);
-      
+
+      const loadClients = async () => {
+        try {
+          const res = await fetch(`${API_URL}/api/users`, { headers: { 'Authorization': `Bearer ${token}` } });
+          const data = await res.json();
+          setClients(Array.isArray(data) ? data.filter(u => u.role === 'client') : []);
+        } catch (err) {
+          console.error('Failed to load clients:', err);
+        }
+      };
+
+      useEffect(() => {
+        loadAnnouncements();
+        loadClients();
+      }, []);
+
       const handleSave = async () => {
         try {
           const method = editingId ? 'PUT' : 'POST';
@@ -2497,14 +2731,14 @@
           if (res.ok) {
             setShowForm(false);
             setEditingId(null);
-            setFormData({ title: '', content: '', type: 'info' });
+            setFormData({ title: '', content: '', type: 'info', priority: false, pinned: false, targetAll: true, targetClients: [], attachmentUrl: '', attachmentName: '' });
             loadAnnouncements();
           }
         } catch (err) {
           console.error('Failed to save:', err);
         }
       };
-      
+
       const handleDelete = async (id) => {
         if (!confirm('Delete this announcement?')) return;
         try {
@@ -2517,13 +2751,32 @@
           console.error('Failed to delete:', err);
         }
       };
-      
+
       const startEdit = (ann) => {
-        setFormData({ title: ann.title, content: ann.content, type: ann.type || 'info' });
+        setFormData({
+          title: ann.title,
+          content: ann.content,
+          type: ann.type || 'info',
+          priority: ann.priority || false,
+          pinned: ann.pinned || false,
+          targetAll: ann.targetAll !== false,
+          targetClients: ann.targetClients || [],
+          attachmentUrl: ann.attachmentUrl || '',
+          attachmentName: ann.attachmentName || ''
+        });
         setEditingId(ann.id);
         setShowForm(true);
       };
-      
+
+      const toggleClientSelection = (slug) => {
+        const current = formData.targetClients || [];
+        if (current.includes(slug)) {
+          setFormData({ ...formData, targetClients: current.filter(s => s !== slug) });
+        } else {
+          setFormData({ ...formData, targetClients: [...current, slug] });
+        }
+      };
+
       return (
         <div className="space-y-6">
           <div className="bg-white p-6 rounded-xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -2532,13 +2785,13 @@
               <p className="text-gray-600">Create and manage portal announcements</p>
             </div>
             <button
-              onClick={() => { setShowForm(true); setEditingId(null); setFormData({ title: '', content: '', type: 'info' }); }}
+              onClick={() => { setShowForm(true); setEditingId(null); setFormData({ title: '', content: '', type: 'info', priority: false, pinned: false, targetAll: true, targetClients: [], attachmentUrl: '', attachmentName: '' }); }}
               className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-accent transition flex items-center gap-2"
             >
               <span>+</span> New Announcement
             </button>
           </div>
-          
+
           {showForm && (
             <div className="bg-white p-6 rounded-xl shadow-sm border-2 border-primary/20">
               <h2 className="text-lg font-bold mb-4">{editingId ? 'Edit Announcement' : 'New Announcement'}</h2>
@@ -2557,22 +2810,127 @@
                   <textarea
                     value={formData.content}
                     onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary h-24"
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary h-32"
+                    placeholder="Write your full announcement content here..."
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                  <select
-                    value={formData.type}
-                    onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
-                  >
-                    <option value="info">Info (Blue)</option>
-                    <option value="success">Success (Green)</option>
-                    <option value="warning">Warning (Yellow)</option>
-                  </select>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                    <select
+                      value={formData.type}
+                      onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="info">Info (Blue)</option>
+                      <option value="success">Success (Green)</option>
+                      <option value="warning">Warning (Yellow)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">Options</label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.priority}
+                        onChange={(e) => setFormData({ ...formData, priority: e.target.checked })}
+                        className="rounded text-primary focus:ring-primary"
+                      />
+                      <span className="text-sm text-gray-700">Mark as Priority</span>
+                      <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded">Shows disclaimer</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.pinned}
+                        onChange={(e) => setFormData({ ...formData, pinned: e.target.checked })}
+                        className="rounded text-primary focus:ring-primary"
+                      />
+                      <span className="text-sm text-gray-700">Pin to Top</span>
+                      <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded">Always visible first</span>
+                    </label>
+                  </div>
                 </div>
-                <div className="flex gap-2">
+
+                <div className="border-t pt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Target Audience</label>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="targetAudience"
+                        checked={formData.targetAll}
+                        onChange={() => setFormData({ ...formData, targetAll: true, targetClients: [] })}
+                        className="text-primary focus:ring-primary"
+                      />
+                      <span className="text-sm text-gray-700">Send to All Clients</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="targetAudience"
+                        checked={!formData.targetAll}
+                        onChange={() => setFormData({ ...formData, targetAll: false })}
+                        className="text-primary focus:ring-primary"
+                      />
+                      <span className="text-sm text-gray-700">Send to Specific Clients</span>
+                    </label>
+
+                    {!formData.targetAll && (
+                      <div className="ml-6 mt-2 p-3 bg-gray-50 rounded-lg max-h-48 overflow-y-auto">
+                        {clients.length === 0 ? (
+                          <p className="text-sm text-gray-500">No clients found</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {clients.map(client => (
+                              <label key={client.id} className="flex items-center gap-2 cursor-pointer hover:bg-gray-100 p-1 rounded">
+                                <input
+                                  type="checkbox"
+                                  checked={(formData.targetClients || []).includes(client.slug)}
+                                  onChange={() => toggleClientSelection(client.slug)}
+                                  className="rounded text-primary focus:ring-primary"
+                                />
+                                <span className="text-sm text-gray-700">{client.practiceName || client.name}</span>
+                                <span className="text-xs text-gray-400">({client.email})</span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="border-t pt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Attachment (Optional)</label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">File Name</label>
+                      <input
+                        type="text"
+                        value={formData.attachmentName}
+                        onChange={(e) => setFormData({ ...formData, attachmentName: e.target.value })}
+                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary text-sm"
+                        placeholder="e.g., Product Update Guide.pdf"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">File URL</label>
+                      <input
+                        type="url"
+                        value={formData.attachmentUrl}
+                        onChange={(e) => setFormData({ ...formData, attachmentUrl: e.target.value })}
+                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary text-sm"
+                        placeholder="https://drive.google.com/..."
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">Add a link to a downloadable file (Google Drive, Dropbox, etc.)</p>
+                </div>
+
+                <div className="flex gap-2 pt-2">
                   <button onClick={handleSave} className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-accent">
                     {editingId ? 'Update' : 'Create'}
                   </button>
@@ -2591,10 +2949,17 @@
               <div className="p-8 text-center text-gray-500">No announcements yet</div>
             ) : (
               <div className="divide-y">
-                {announcements.map(ann => (
-                  <div key={ann.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                {/* Sort: pinned first, then by date */}
+                {[...announcements].sort((a, b) => {
+                  if (a.pinned && !b.pinned) return -1;
+                  if (!a.pinned && b.pinned) return 1;
+                  return new Date(b.createdAt) - new Date(a.createdAt);
+                }).map(ann => (
+                  <div key={ann.id} className={`p-4 flex flex-col sm:flex-row sm:items-start justify-between gap-4 ${ann.pinned ? 'bg-blue-50/50' : ''} ${ann.priority ? 'border-l-4 border-red-500' : ''}`}>
                     <div className="flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
+                        {ann.pinned && <span className="text-blue-600 text-xs font-medium">📌 PINNED</span>}
+                        {ann.priority && <span className="text-red-600 text-xs font-medium bg-red-100 px-2 py-0.5 rounded">PRIORITY</span>}
                         <h3 className="font-semibold text-gray-800">{ann.title}</h3>
                         <span className={`px-2 py-0.5 text-xs rounded ${
                           ann.type === 'warning' ? 'bg-yellow-100 text-yellow-700' :
@@ -2602,8 +2967,20 @@
                           'bg-blue-100 text-blue-700'
                         }`}>{ann.type || 'info'}</span>
                       </div>
-                      <p className="text-sm text-gray-600 mt-1">{ann.content}</p>
-                      <p className="text-xs text-gray-400 mt-1">{new Date(ann.createdAt).toLocaleDateString()}</p>
+                      <p className="text-sm text-gray-600 mt-1 line-clamp-2">{ann.content}</p>
+                      <div className="flex items-center gap-3 mt-2 flex-wrap">
+                        <span className="text-xs text-gray-400">{new Date(ann.createdAt).toLocaleDateString()}</span>
+                        {ann.targetAll === false && ann.targetClients?.length > 0 && (
+                          <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">
+                            {ann.targetClients.length} client{ann.targetClients.length !== 1 ? 's' : ''} targeted
+                          </span>
+                        )}
+                        {ann.attachmentUrl && (
+                          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded flex items-center gap-1">
+                            📎 {ann.attachmentName || 'Attachment'}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="flex gap-2">
                       <button onClick={() => startEdit(ann)} className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">Edit</button>
@@ -2824,6 +3201,8 @@
                         <option value="Inserts">Inserts</option>
                         <option value="Certificates of Analysis">Certificates of Analysis</option>
                         <option value="SOP Templates">SOP Templates</option>
+                        <option value="Analyzer">Analyzer</option>
+                        <option value="Service Reports">Service Reports</option>
                       </select>
                     </div>
                     <div>
@@ -2950,7 +3329,7 @@
           </div>
           
           <div className="bg-blue-50 p-4 rounded-lg text-sm text-blue-700">
-            <p><strong>Note:</strong> To add or edit client users, use the <a href="/" className="underline">Implementation App</a>.</p>
+            <p><strong>Note:</strong> To add or edit client users, use the <a href="/admin" className="underline font-medium hover:text-blue-900">Admin Hub</a> &rarr; User Management.</p>
           </div>
         </div>
       );
@@ -3031,11 +3410,11 @@
         
         // Client pages
         if (activePage === 'home') return <HomePage data={data} announcements={announcements} onNavigate={setActivePage} />;
-        if (activePage === 'milestones') return <MilestonesPage data={data} />;
+        if (activePage === 'milestones') return <MilestonesPage data={data} onNavigate={setActivePage} />;
         if (activePage === 'inventory') return <InventoryPage token={token} slug={slug} />;
         if (activePage === 'reports') return <ReportsPage token={token} slug={slug} onNavigate={setActivePage} />;
         if (activePage === 'submission_history') return <SubmissionHistoryPage token={token} slug={slug} isAdmin={false} onNavigate={setActivePage} />;
-        if (activePage === 'support') return <SupportPage settings={settings} />;
+        if (activePage === 'support') return <SupportPage settings={settings} token={token} userData={data?.user} />;
         if (activePage === 'files') return <FilesPage settings={settings} documents={documents} token={token} projects={data?.projects || []} userData={data?.user} />;
         
         return null;
@@ -3052,10 +3431,11 @@
             <div className="w-6"></div>
           </div>
           
-          <Sidebar 
-            activePage={activePage} 
-            onNavigate={setActivePage} 
+          <Sidebar
+            activePage={activePage}
+            onNavigate={setActivePage}
             user={data?.user || user}
+            projects={data?.projects || []}
             isMobileOpen={mobileMenuOpen}
             onClose={() => setMobileMenuOpen(false)}
           />
@@ -3064,7 +3444,10 @@
             {renderPage()}
             
             <footer className="mt-12 text-center text-sm text-gray-500">
-              <p>Powered by Thrive365Labs</p>
+              <p>&copy; 2026 Thrive 365 Labs. All rights reserved.</p>
+              {isAdmin && (
+                <a href="/changelog" className="text-primary hover:underline text-xs mt-1 inline-block">View Changelog</a>
+              )}
             </footer>
           </main>
         </div>

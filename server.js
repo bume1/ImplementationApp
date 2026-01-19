@@ -2170,11 +2170,23 @@ app.put('/api/client-documents/:id', authenticateToken, requireAdmin, async (req
   }
 });
 
-// Delete a document (admin only)
+// Delete a document (admin only) - by ID only
 app.delete('/api/client-documents/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const documents = (await db.get('client_documents')) || [];
     const filtered = documents.filter(d => d.id !== req.params.id);
+    await db.set('client_documents', filtered);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete a document (admin only) - by slug and docId (for admin portal)
+app.delete('/api/client-documents/:slug/:docId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const documents = (await db.get('client_documents')) || [];
+    const filtered = documents.filter(d => d.id !== req.params.docId);
     await db.set('client_documents', filtered);
     res.json({ success: true });
   } catch (error) {
@@ -2459,6 +2471,67 @@ app.post('/api/client/hubspot/upload', authenticateToken, upload.single('file'),
   } catch (error) {
     console.error('Client HubSpot file upload error:', error);
     res.status(500).json({ error: error.message || 'Failed to upload file' });
+  }
+});
+
+// ============== CLIENT HUBSPOT TICKETS ==============
+// Fetch support tickets from HubSpot for the logged-in client
+app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
+  try {
+    // Only clients can use this endpoint
+    if (req.user.role !== 'client') {
+      return res.status(403).json({ error: 'Client access required' });
+    }
+
+    // Get fresh user data with HubSpot IDs
+    const users = await getUsers();
+    const clientUser = users.find(u => u.id === req.user.id);
+
+    if (!clientUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const hubspotCompanyId = clientUser.hubspotCompanyId || '';
+    const hubspotContactId = clientUser.hubspotContactId || '';
+
+    // Check if we have a company or contact ID to fetch tickets for
+    if (!hubspotCompanyId && !hubspotContactId) {
+      return res.json({ tickets: [], message: 'No HubSpot account linked' });
+    }
+
+    let tickets = [];
+
+    // Fetch tickets by company first (primary), then merge with contact tickets
+    if (hubspotCompanyId) {
+      try {
+        const companyTickets = await hubspot.getTicketsForCompany(hubspotCompanyId);
+        tickets = [...companyTickets];
+        console.log(`📋 Fetched ${companyTickets.length} tickets for company ${hubspotCompanyId}`);
+      } catch (err) {
+        console.error('Error fetching company tickets:', err.message);
+      }
+    }
+
+    // If contact ID is also available, fetch those tickets and merge (deduping by ID)
+    if (hubspotContactId) {
+      try {
+        const contactTickets = await hubspot.getTicketsForContact(hubspotContactId);
+        const existingIds = new Set(tickets.map(t => t.id));
+        const newTickets = contactTickets.filter(t => !existingIds.has(t.id));
+        tickets = [...tickets, ...newTickets];
+        console.log(`📋 Added ${newTickets.length} additional tickets from contact ${hubspotContactId}`);
+      } catch (err) {
+        console.error('Error fetching contact tickets:', err.message);
+      }
+    }
+
+    // Sort by creation date, newest first
+    tickets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    res.json({ tickets, count: tickets.length });
+  } catch (error) {
+    console.error('Error fetching client tickets:', error);
+    res.status(500).json({ error: error.message || 'Failed to fetch tickets' });
   }
 });
 
@@ -2889,8 +2962,10 @@ app.get('/api/inventory/report/:slug', authenticateToken, async (req, res) => {
       .sort((a, b) => a.category.localeCompare(b.category) || a.itemName.localeCompare(b.itemName));
     
     const consumptionRate = [];
-    const submissionsToAnalyze = clientSubmissions.slice(0, 12);
-    
+    // Only analyze submissions from the last 30 days for rolling average
+    const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const submissionsToAnalyze = clientSubmissions.filter(s => new Date(s.submittedAt) >= thirtyDaysAgo);
+
     if (submissionsToAnalyze.length >= 2) {
       const itemConsumption = {};
       
@@ -4630,10 +4705,29 @@ app.post('/api/service-reports', authenticateToken, requireServiceAccess, async 
   <div class="section">
     <h2>SERVICE PERFORMED</h2>
     <div class="field"><label>Service Type:</label><value>${reportData.serviceType || '-'}</value></div>
+    ${reportData.serviceType === 'Validations' ? `
+    <div class="grid">
+      <div class="field"><label>Start Date:</label><value>${reportData.validationStartDate || '-'}</value></div>
+      <div class="field"><label>End Date:</label><value>${reportData.validationEndDate || '-'}</value></div>
+    </div>
+    ${reportData.analyzersValidated && reportData.analyzersValidated.length > 0 ? `
+    <div class="field">
+      <label>Analyzers Validated:</label>
+      <table style="width:100%; border-collapse:collapse; margin-top:5px;">
+        <tr style="background:#f5f5f5;"><th style="padding:5px; border:1px solid #ddd; text-align:left;">Model</th><th style="padding:5px; border:1px solid #ddd; text-align:left;">Serial Number</th><th style="padding:5px; border:1px solid #ddd; text-align:left;">Status</th></tr>
+        ${reportData.analyzersValidated.map(a => `<tr><td style="padding:5px; border:1px solid #ddd;">${a.model || '-'}</td><td style="padding:5px; border:1px solid #ddd;">${a.serialNumber || '-'}</td><td style="padding:5px; border:1px solid #ddd;">${a.status || '-'}</td></tr>`).join('')}
+      </table>
+    </div>
+    ` : ''}
+    <div class="field"><label>Training Provided:</label><value>${reportData.trainingProvided || '-'}</value></div>
+    <div class="field"><label>Validation Results:</label><value>${reportData.validationResults || '-'}</value></div>
+    <div class="field"><label>Recommendations:</label><value>${reportData.recommendations || '-'}</value></div>
+    ` : `
     <div class="field"><label>Description of Work:</label><value>${reportData.descriptionOfWork || '-'}</value></div>
     <div class="field"><label>Materials Used:</label><value>${reportData.materialsUsed || '-'}</value></div>
     <div class="field"><label>Solution:</label><value>${reportData.solution || '-'}</value></div>
-    <div class="field"><label>Outstanding Issues:</label><value>${reportData.outstandingIssues || '-'}</value></div>
+    <div class="field"><label>Final Recommendations:</label><value>${reportData.outstandingIssues || '-'}</value></div>
+    `}
   </div>
 
   <div class="section">
@@ -4681,9 +4775,72 @@ app.post('/api/service-reports', authenticateToken, requireServiceAccess, async 
         await db.set('service_reports', serviceReports);
 
         console.log(`✅ Service report uploaded to HubSpot for company ${reportData.hubspotCompanyId}`);
+
+        // Create HubSpot ticket with service report attached (except for Validations)
+        if (reportData.serviceType !== 'Validations') {
+          try {
+            const ticketResult = await hubspot.createTicketWithFile(
+              {
+                subject: `Service Report: ${reportData.clientFacilityName} - ${reportData.serviceType}`,
+                content: `Service Report Submitted\n\nClient: ${reportData.clientFacilityName}\nService Type: ${reportData.serviceType}\nTechnician: ${reportData.serviceProviderName || req.user.name}\nDate: ${reportDate}\n\nDescription: ${reportData.descriptionOfWork || 'See attached report'}`,
+                priority: 'LOW',
+                isBase64: false
+              },
+              htmlReport,
+              fileName,
+              reportData.hubspotCompanyId
+            );
+
+            newReport.hubspotTicketId = ticketResult.ticketId;
+            await db.set('service_reports', serviceReports);
+            console.log(`✅ HubSpot ticket created for service report: ${ticketResult.ticketId}`);
+          } catch (ticketError) {
+            console.error('HubSpot ticket creation error (non-blocking):', ticketError.message);
+          }
+        }
       } catch (hubspotError) {
         console.error('HubSpot upload error (non-blocking):', hubspotError.message);
         // Don't fail the request if HubSpot upload fails
+      }
+    }
+
+    // Auto-upload signed service reports to client's Files section
+    if (reportData.customerSignature) {
+      try {
+        // Find client by name to get their slug
+        const users = (await db.get('users')) || [];
+        const client = users.find(u =>
+          u.role === 'client' &&
+          (u.name?.toLowerCase() === reportData.clientFacilityName?.toLowerCase() ||
+           u.clientName?.toLowerCase() === reportData.clientFacilityName?.toLowerCase() ||
+           u.companyName?.toLowerCase() === reportData.clientFacilityName?.toLowerCase())
+        );
+
+        if (client && client.slug) {
+          const clientDocuments = (await db.get('client_documents')) || [];
+          const reportDate = new Date(reportData.serviceCompletionDate || newReport.createdAt).toLocaleDateString();
+          const reportTypeName = reportData.serviceType === 'Validations' ? 'Validation Report' : 'Service Report';
+
+          const newDocument = {
+            id: uuidv4(),
+            slug: client.slug,
+            title: `${reportTypeName} - ${reportDate}`,
+            description: `${reportData.serviceType} - ${reportData.serviceProviderName || req.user.name}`,
+            category: 'Service Reports',
+            serviceReportId: newReport.id,
+            serviceType: reportData.serviceType,
+            createdAt: new Date().toISOString(),
+            uploadedBy: 'system',
+            uploadedByName: 'Thrive 365 Labs'
+          };
+
+          clientDocuments.push(newDocument);
+          await db.set('client_documents', clientDocuments);
+
+          console.log(`✅ Service report auto-added to client files for ${client.slug}`);
+        }
+      } catch (clientDocError) {
+        console.error('Client document auto-upload error (non-blocking):', clientDocError.message);
       }
     }
 
