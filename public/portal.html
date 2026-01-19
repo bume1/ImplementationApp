@@ -3230,19 +3230,27 @@
         if (selectedClient) {
           const loadDocs = async () => {
             try {
-              const res = await fetch(`${API_URL}/api/client-documents/${selectedClient}`);
-              const data = await res.json();
-              setDocuments(Array.isArray(data) ? data : []);
+              if (selectedClient === 'all') {
+                // Load all documents and filter to only show shared ones
+                const res = await fetch(`${API_URL}/api/client-documents`, { headers: { 'Authorization': `Bearer ${token}` } });
+                const data = await res.json();
+                setDocuments(Array.isArray(data) ? data.filter(d => d.shareWithAll === true) : []);
+              } else {
+                const res = await fetch(`${API_URL}/api/client-documents/${selectedClient}`);
+                const data = await res.json();
+                setDocuments(Array.isArray(data) ? data : []);
+              }
             } catch (err) {
               console.error('Failed to load docs:', err);
             }
           };
           loadDocs();
         }
-      }, [selectedClient]);
+      }, [selectedClient, token]);
       
       const handleAdd = async () => {
         setUploading(true);
+        const isAllClients = selectedClient === 'all';
         try {
           if (uploadMode === 'file' && uploadFile) {
             const formDataObj = new FormData();
@@ -3250,7 +3258,7 @@
             formDataObj.append('title', formData.title);
             formDataObj.append('description', formData.description);
             formDataObj.append('category', formData.category);
-            
+
             const res = await fetch(`${API_URL}/api/client-documents/${selectedClient}/upload`, {
               method: 'POST',
               headers: { 'Authorization': `Bearer ${token}` },
@@ -3261,20 +3269,38 @@
               setFormData({ title: '', url: '', description: '', category: '' });
               setUploadFile(null);
               setUploadMode('link');
-              const data = await fetch(`${API_URL}/api/client-documents/${selectedClient}`).then(r => r.json());
-              setDocuments(Array.isArray(data) ? data : []);
+              // Reload documents
+              if (isAllClients) {
+                const data = await fetch(`${API_URL}/api/client-documents`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json());
+                setDocuments(Array.isArray(data) ? data.filter(d => d.shareWithAll === true) : []);
+              } else {
+                const data = await fetch(`${API_URL}/api/client-documents/${selectedClient}`).then(r => r.json());
+                setDocuments(Array.isArray(data) ? data : []);
+              }
             }
           } else {
-            const res = await fetch(`${API_URL}/api/client-documents/${selectedClient}`, {
+            // Link-based document - use the base endpoint with slug/shareWithAll in body
+            const docPayload = {
+              ...formData,
+              slug: isAllClients ? null : selectedClient,
+              shareWithAll: isAllClients
+            };
+            const res = await fetch(`${API_URL}/api/client-documents`, {
               method: 'POST',
               headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify(formData)
+              body: JSON.stringify(docPayload)
             });
             if (res.ok) {
               setShowForm(false);
               setFormData({ title: '', url: '', description: '', category: '' });
-              const data = await fetch(`${API_URL}/api/client-documents/${selectedClient}`).then(r => r.json());
-              setDocuments(Array.isArray(data) ? data : []);
+              // Reload documents
+              if (isAllClients) {
+                const data = await fetch(`${API_URL}/api/client-documents`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json());
+                setDocuments(Array.isArray(data) ? data.filter(d => d.shareWithAll === true) : []);
+              } else {
+                const data = await fetch(`${API_URL}/api/client-documents/${selectedClient}`).then(r => r.json());
+                setDocuments(Array.isArray(data) ? data : []);
+              }
             }
           }
         } catch (err) {
@@ -3286,13 +3312,24 @@
       
       const handleDelete = async (docId) => {
         if (!confirm('Delete this document?')) return;
+        const isAllClients = selectedClient === 'all';
         try {
-          await fetch(`${API_URL}/api/client-documents/${selectedClient}/${docId}`, {
+          // Use the ID-only delete endpoint for shared documents or slug-based for specific clients
+          const deleteUrl = isAllClients
+            ? `${API_URL}/api/client-documents/${docId}`
+            : `${API_URL}/api/client-documents/${selectedClient}/${docId}`;
+          await fetch(deleteUrl, {
             method: 'DELETE',
             headers: { 'Authorization': `Bearer ${token}` }
           });
-          const data = await fetch(`${API_URL}/api/client-documents/${selectedClient}`).then(r => r.json());
-          setDocuments(Array.isArray(data) ? data : []);
+          // Reload documents
+          if (isAllClients) {
+            const data = await fetch(`${API_URL}/api/client-documents`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json());
+            setDocuments(Array.isArray(data) ? data.filter(d => d.shareWithAll === true) : []);
+          } else {
+            const data = await fetch(`${API_URL}/api/client-documents/${selectedClient}`).then(r => r.json());
+            setDocuments(Array.isArray(data) ? data : []);
+          }
         } catch (err) {
           console.error('Failed to delete doc:', err);
         }
@@ -3313,16 +3350,27 @@
               className="w-full md:w-1/2 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
             >
               <option value="">-- Select a client --</option>
+              <option value="all" className="font-semibold text-primary">All Clients (Share with Everyone)</option>
               {clients.map(c => (
                 <option key={c.id} value={c.slug}>{c.practiceName || c.name} ({c.email})</option>
               ))}
             </select>
+            {selectedClient === 'all' && (
+              <p className="mt-2 text-sm text-blue-600 flex items-center gap-1">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                Documents uploaded here will be visible to all client portals
+              </p>
+            )}
           </div>
           
           {selectedClient && (
             <>
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <h2 className="text-lg font-semibold text-gray-800">Documents for {clients.find(c => c.slug === selectedClient)?.practiceName || selectedClient}</h2>
+                <h2 className="text-lg font-semibold text-gray-800">
+                  {selectedClient === 'all'
+                    ? 'Documents Shared with All Clients'
+                    : `Documents for ${clients.find(c => c.slug === selectedClient)?.practiceName || selectedClient}`}
+                </h2>
                 <button
                   onClick={() => setShowForm(true)}
                   className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-accent transition"
@@ -3435,7 +3483,9 @@
               
               <div className="bg-white rounded-xl shadow-sm overflow-hidden">
                 {documents.length === 0 ? (
-                  <div className="p-8 text-center text-gray-500">No documents for this client</div>
+                  <div className="p-8 text-center text-gray-500">
+                    {selectedClient === 'all' ? 'No documents shared with all clients yet' : 'No documents for this client'}
+                  </div>
                 ) : (
                   <div className="divide-y">
                     {documents.map(doc => (
@@ -3443,6 +3493,9 @@
                         <div className="flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <h3 className="font-semibold text-gray-800">{doc.title}</h3>
+                            {doc.shareWithAll && (
+                              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-medium">All Clients</span>
+                            )}
                             {doc.uploadedBy === 'client' && (
                               <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded font-medium">Client Upload</span>
                             )}

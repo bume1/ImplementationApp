@@ -2397,35 +2397,38 @@ app.delete('/api/client-documents/:slug/:docId', authenticateToken, requireAdmin
 });
 
 // Upload file as client document (admin only) - stores file and creates document entry
+// Use slug="all" to upload to all clients (shareWithAll)
 app.post('/api/client-documents/:slug/upload', authenticateToken, requireAdmin, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file provided' });
     }
-    
+
     const { title, description, category } = req.body;
-    const slug = req.params.slug;
-    
+    const slugParam = req.params.slug;
+    const isAllClients = slugParam === 'all';
+
     // Create a unique filename
     const ext = require('path').extname(req.file.originalname);
     const uniqueName = `${uuidv4()}${ext}`;
     const uploadsDir = require('path').join(__dirname, 'uploads', 'documents');
-    
+
     // Ensure uploads directory exists
     const fs = require('fs');
     if (!fs.existsSync(uploadsDir)) {
       fs.mkdirSync(uploadsDir, { recursive: true });
     }
-    
+
     // Save the file
     const filePath = require('path').join(uploadsDir, uniqueName);
     fs.writeFileSync(filePath, req.file.buffer);
-    
+
     // Create the document entry with a URL pointing to the file
     const documents = (await db.get('client_documents')) || [];
     const newDoc = {
       id: uuidv4(),
-      slug: slug,
+      slug: isAllClients ? null : slugParam,
+      shareWithAll: isAllClients,
       title: title || req.file.originalname,
       description: description || '',
       category: category || 'General',
@@ -2436,10 +2439,16 @@ app.post('/api/client-documents/:slug/upload', authenticateToken, requireAdmin, 
       createdAt: new Date().toISOString(),
       createdBy: req.user.name
     };
-    
+
     documents.push(newDoc);
     await db.set('client_documents', documents);
-    
+
+    // Log activity
+    await logActivity(null, 'document_added', req.user.name, {
+      documentTitle: newDoc.title,
+      clientSlug: isAllClients ? 'ALL CLIENTS' : slugParam
+    });
+
     res.json(newDoc);
   } catch (error) {
     console.error('Document upload error:', error);
@@ -5827,9 +5836,12 @@ app.get('/api/admin-hub/dashboard', authenticateToken, requireAdminHubAccess, as
     const projects = await getProjects();
     const serviceReports = (await db.get('service_reports')) || [];
 
-    // Get feedback/requests for admin inbox (only for super admins)
+    // Get all open tickets across the app (feedback requests + password reset requests)
     const feedbackRequests = (await db.get('feedback_requests')) || [];
     const openFeedback = feedbackRequests.filter(f => f.status !== 'resolved').length;
+    const passwordResetRequests = (await db.get('password_reset_requests')) || [];
+    const pendingPasswordResets = passwordResetRequests.filter(r => r.status === 'pending').length;
+    const totalOpenTickets = openFeedback + pendingPasswordResets;
 
     // Calculate statistics
     const stats = {
@@ -5844,7 +5856,7 @@ app.get('/api/admin-hub/dashboard', authenticateToken, requireAdminHubAccess, as
       activeProjects: projects.filter(p => p.status !== 'completed').length,
       totalServiceReports: serviceReports.length,
       recentServiceReports: serviceReports.slice(0, 5),
-      openTickets: openFeedback
+      openTickets: totalOpenTickets
     };
 
     res.json(stats);

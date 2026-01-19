@@ -349,8 +349,8 @@
         });
       }
 
-      // Service Portal - super admins, managers, users with hasServicePortalAccess, or vendors
-      if (isAdmin || isManager || user.hasServicePortalAccess || isVendor) {
+      // Service Portal - super admins, users with hasServicePortalAccess, or vendors (NOT managers)
+      if (isAdmin || user.hasServicePortalAccess || isVendor) {
         availablePortals.push({
           id: 'service',
           name: 'Service Portal',
