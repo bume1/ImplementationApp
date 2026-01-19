@@ -82,8 +82,8 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, password })
         }).then(handleResponse).then(result => {
-          // Verify user has service portal access (super admin, manager, vendor, or explicit access)
-          if (result.user && result.user.role !== 'admin' && !result.user.isManager && !result.user.hasServicePortalAccess && result.user.role !== 'vendor') {
+          // Verify user has service portal access (super admin, vendor, or explicit access - NOT managers)
+          if (result.user && result.user.role !== 'admin' && !result.user.hasServicePortalAccess && result.user.role !== 'vendor') {
             return { error: 'Access denied. You do not have Service Portal access.' };
           }
           return result;
@@ -115,11 +115,6 @@
 
       getServiceReport: (token, reportId) =>
         fetch(`${API_URL}/api/service-reports/${reportId}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
-
-      getUsers: (token) =>
-        fetch(`${API_URL}/api/users`, {
           headers: { 'Authorization': `Bearer ${token}` }
         }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' }))
     };
@@ -247,10 +242,8 @@
         { id: 'reports', label: 'Service Reports', icon: Icons.folder }
       ];
 
-      // Add Users menu item for admins and client portal admins
-      const menuItems = (user?.role === 'admin' || user?.hasClientPortalAdminAccess)
-        ? [...baseMenuItems, { id: 'users', label: 'Users', icon: Icons.users }]
-        : baseMenuItems;
+      // Service Portal does not have user management - handled in Admin Hub
+      const menuItems = baseMenuItems;
 
       const handleNavigate = (id) => {
         onNavigate(id);
@@ -1636,166 +1629,6 @@
       );
     };
 
-    // Users Page Component (for admins and client portal admins)
-    const UsersPage = ({ token }) => {
-      const [users, setUsers] = useState([]);
-      const [loading, setLoading] = useState(true);
-      const [searchTerm, setSearchTerm] = useState('');
-      const [roleFilter, setRoleFilter] = useState('all');
-
-      useEffect(() => {
-        loadUsers();
-      }, []);
-
-      const loadUsers = async () => {
-        setLoading(true);
-        const result = await api.getUsers(token);
-        if (!result.error) {
-          setUsers(result);
-        }
-        setLoading(false);
-      };
-
-      const filteredUsers = users.filter(user => {
-        const matchesSearch = (user.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                              (user.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                              (user.practiceName || '').toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesRole = roleFilter === 'all' || user.role === roleFilter;
-        return matchesSearch && matchesRole;
-      });
-
-      const getRoleBadge = (user) => {
-        const role = user?.role;
-        const isManager = user?.isManager && role !== 'admin';
-        const styles = {
-          admin: 'bg-purple-100 text-purple-700',
-          manager: 'bg-indigo-100 text-indigo-700',
-          user: 'bg-blue-100 text-blue-700',
-          client: 'bg-green-100 text-green-700',
-          vendor: 'bg-orange-100 text-orange-700'
-        };
-        const labels = {
-          admin: 'Super Admin',
-          manager: 'Manager',
-          user: 'Team Member',
-          client: 'Client',
-          vendor: 'Vendor'
-        };
-        const effectiveRole = isManager ? 'manager' : role;
-        return (
-          <span className={`px-2 py-1 rounded-full text-xs font-medium ${styles[effectiveRole] || 'bg-gray-100 text-gray-700'}`}>
-            {labels[effectiveRole] || effectiveRole}
-          </span>
-        );
-      };
-
-      return (
-        <div className="space-y-6 animate-fade-in">
-          {/* Header */}
-          <div className="card-modern p-6">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Users</h1>
-                <p className="text-gray-500 mt-1">View all users in the system</p>
-              </div>
-              <div className="flex flex-col sm:flex-row gap-3">
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Search users..."
-                    className="input-modern pl-10 pr-4 py-2 w-full sm:w-64"
-                  />
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-                    {Icons.search}
-                  </span>
-                </div>
-                <select
-                  value={roleFilter}
-                  onChange={(e) => setRoleFilter(e.target.value)}
-                  className="input-modern px-4 py-2"
-                >
-                  <option value="all">All Roles</option>
-                  <option value="admin">Admins</option>
-                  <option value="user">Team Members</option>
-                  <option value="client">Clients</option>
-                  <option value="vendor">Vendors</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Users List */}
-          {loading ? (
-            <div className="card-modern p-12 text-center">
-              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-500 mx-auto"></div>
-              <p className="mt-4 text-gray-500">Loading users...</p>
-            </div>
-          ) : filteredUsers.length === 0 ? (
-            <div className="card-modern p-12 text-center">
-              <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
-                {React.cloneElement(Icons.users, { className: 'w-8 h-8 text-gray-400' })}
-              </div>
-              <p className="text-gray-500">No users found</p>
-            </div>
-          ) : (
-            <div className="card-modern overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50 border-b">
-                    <tr>
-                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Name</th>
-                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Email</th>
-                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Role</th>
-                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Practice/Company</th>
-                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Access</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {filteredUsers.map(user => (
-                      <tr key={user.id} className="hover:bg-gray-50 transition">
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white font-semibold shadow-sm">
-                              {(user.name || 'U').charAt(0).toUpperCase()}
-                            </div>
-                            <span className="font-medium text-gray-900">{user.name || '-'}</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-gray-600">{user.email}</td>
-                        <td className="px-6 py-4">{getRoleBadge(user)}</td>
-                        <td className="px-6 py-4 text-gray-600">{user.practiceName || '-'}</td>
-                        <td className="px-6 py-4">
-                          <div className="flex flex-wrap gap-1">
-                            {user.hasServicePortalAccess && (
-                              <span className="px-2 py-0.5 bg-blue-50 text-blue-600 text-xs rounded-full">Service</span>
-                            )}
-                            {user.hasAdminHubAccess && (
-                              <span className="px-2 py-0.5 bg-purple-50 text-purple-600 text-xs rounded-full">Admin Hub</span>
-                            )}
-                            {user.hasImplementationsAccess && (
-                              <span className="px-2 py-0.5 bg-green-50 text-green-600 text-xs rounded-full">Implementations</span>
-                            )}
-                            {user.hasClientPortalAdminAccess && (
-                              <span className="px-2 py-0.5 bg-orange-50 text-orange-600 text-xs rounded-full">Client Portal Admin</span>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="px-6 py-4 border-t bg-gray-50 text-sm text-gray-500">
-                Showing {filteredUsers.length} of {users.length} users
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    };
-
     // Main App Component
     const App = () => {
       // Check multiple token sources - service_token, unified_token, or admin_token
@@ -1893,8 +1726,6 @@
             );
           case 'reports':
             return <ReportsPage token={token} onViewReport={handleViewReport} />;
-          case 'users':
-            return <UsersPage token={token} />;
           default:
             return <HomePage user={user} onNavigate={setActivePage} recentReports={data?.recentReports || []} />;
         }
