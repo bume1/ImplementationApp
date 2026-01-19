@@ -626,6 +626,12 @@ const AppHeader = ({ user, onLogout, children }) => {
                 {user.name}
                 {user.role === 'admin' && <span className="ml-1 text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded">ADMIN</span>}
               </span>
+              <a
+                href="/"
+                className="text-gray-500 hover:text-primary text-sm"
+              >
+                Portal Hub
+              </a>
               <button
                 onClick={onLogout}
                 className="text-gray-500 hover:text-red-600 text-sm"
@@ -7668,7 +7674,9 @@ const App = () => {
     setView('list');
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    window.history.pushState({}, '', '/launch/login');
+    localStorage.removeItem('unified_token');
+    localStorage.removeItem('unified_user');
+    window.location.href = '/';
   };
 
   const handleSelectProject = (project, taskId = null) => {
