@@ -819,7 +819,11 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
     if (name) users[idx].name = name;
     if (email) users[idx].email = email;
     if (role) users[idx].role = role;
-    if (password) users[idx].password = await bcrypt.hash(password, 10);
+    if (password) {
+      users[idx].password = await bcrypt.hash(password, 10);
+      users[idx].requirePasswordChange = true;
+      users[idx].lastPasswordReset = new Date().toISOString();
+    }
     if (assignedProjects !== undefined) users[idx].assignedProjects = assignedProjects;
     if (projectAccessLevels !== undefined) users[idx].projectAccessLevels = projectAccessLevels;
 
