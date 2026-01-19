@@ -83,8 +83,62 @@
 - Modernize UI across all portals with dynamic banner headers
 - Modernize Admin Hub UI with refined design system
 
+---
 
-### Version 2.5.0 - January 2026 (Current Release)
+### Version 2.6.1 - January 19, 2026
+
+#### Navigation Improvements
+- Added "Portal Hub" navigation button to Admin Hub sidebar for quick access to main portal
+- Added "Portal Hub" navigation button to Service Portal sidebar
+- Added "Portal Hub" navigation button to Client Portal Admin sidebar (admin users only)
+- Added "Portal Hub" link to Launch Portal header
+
+#### Bug Fixes
+- Fixed sign-out button in Admin Hub not redirecting to universal login
+- Fixed sign-out button in Service Portal not redirecting to universal login
+- Fixed sign-out button in Client Portal not redirecting to universal login
+- Fixed sign-out button in Launch Portal not redirecting to universal login
+- Sign-out now properly clears all authentication tokens across portals
+- Fixed Client Portal Admin access for users with hasClientPortalAdminAccess permission
+
+---
+
+### Version 2.6.0 - January 19, 2026
+
+#### Customer Support Center
+- HubSpot ticket history integration - clients can view their support tickets
+- Three-tab interface: Ticket History, Submit Ticket, Live Chat
+- Service reports now visible as tickets with file attachments
+- Ticket status and pipeline stage tracking from HubSpot
+
+#### Service Report HubSpot Integration
+- All service reports auto-push to HubSpot Ticket, Company, and Deal records
+- PDF attachments uploaded to HubSpot Files and linked to tickets
+- Enhanced tracking across CRM with full audit trail
+
+#### Admin Hub Improvements
+- New "Inbox" page for bug reports, feature requests, and password resets
+- Dashboard metrics updated: "New Launches" shows active projects, "Open Tickets" shows pending feedback
+- Personalized welcome messages using practice name
+
+#### Client Portal Updates
+- Inventory view simplified to show current stock levels only
+- Removed "Top Consumed Items" and "View History" from client view
+- Weekly inventory submission tracking with flags for overdue submissions
+
+#### Feedback System
+- "Report Bug or Request Feature" link added to Portal Hub footer
+- Bug report and feature request form with type selection
+- Admin inbox for reviewing and resolving submitted feedback
+
+#### Bug Fixes
+- Fixed client portal crash caused by missing SVG icons
+- Fixed changelog button link (route was not configured)
+- Fixed main login footer branding text
+
+---
+
+### Version 2.5.0 - January 2026
 
 #### UI Modernization & Branding Update
 - **Modern Design System**: Updated all portals with Inter font, refined color palette, and glass-card effects
