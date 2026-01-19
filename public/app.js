@@ -1062,7 +1062,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
   const copyClientLink = (project) => {
     const baseUrl = getBaseUrl(project.clientPortalDomain || clientPortalDomain);
     const linkId = project.clientLinkSlug || project.clientLinkId;
-    const link = `${baseUrl}/thrive365labslaunch/${linkId}`;
+    const link = `${baseUrl}/launch/${linkId}`;
     navigator.clipboard.writeText(link);
     alert(`Link copied!\n\n${link}`);
   };
@@ -1070,7 +1070,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
   const getClientLinkDisplay = (project) => {
     const baseUrl = getBaseUrl(project.clientPortalDomain || clientPortalDomain);
     const linkId = project.clientLinkSlug || project.clientLinkId;
-    return `${baseUrl}/thrive365labslaunch/${linkId}`;
+    return `${baseUrl}/launch/${linkId}`;
   };
 
   const handleEditProject = async () => {
@@ -1250,7 +1250,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
                   <h3 className="text-lg font-bold text-primary mb-3">Client Portal</h3>
                   <ul className="list-disc ml-5 text-gray-600 space-y-1">
                     <li>Each project has a shareable client link for external stakeholders</li>
-                    <li>Client portal URL format: <code className="bg-gray-100 px-1 rounded">https://deapps.pro/thrive365labslaunch/client-name</code></li>
+                    <li>Client portal URL format: <code className="bg-gray-100 px-1 rounded">https://deapps.pro/launch/client-name</code></li>
                     <li>Click "Copy Client Link" on project cards to share with clients</li>
                     <li>Clients can view progress without logging in</li>
                   </ul>
@@ -3906,14 +3906,14 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
 
   const copyClientLink = () => {
     const baseUrl = getBaseUrlForProject(project.clientPortalDomain || clientPortalDomain);
-    const link = `${baseUrl}/thrive365labslaunch/${project.clientLinkSlug || project.clientLinkId}`;
+    const link = `${baseUrl}/launch/${project.clientLinkSlug || project.clientLinkId}`;
     navigator.clipboard.writeText(link);
     alert(`Link copied!\n\n${link}`);
   };
 
   const getClientLinkDisplay = () => {
     const baseUrl = getBaseUrlForProject(project.clientPortalDomain || clientPortalDomain);
-    return `${baseUrl}/thrive365labslaunch/${project.clientLinkSlug || project.clientLinkId}`;
+    return `${baseUrl}/launch/${project.clientLinkSlug || project.clientLinkId}`;
   };
 
   const getPhaseColor = (phase) => {
@@ -7482,7 +7482,8 @@ const App = () => {
 
   useEffect(() => {
     const path = window.location.pathname;
-    const match = path.match(/\/thrive365labslaunch\/(.+)-internal$/i);
+    // Support both new /launch and legacy /thrive365labslaunch paths
+    const match = path.match(/\/(?:launch|thrive365labslaunch)\/(.+)-internal$/i);
     if (match) {
       setPendingInternalSlug(match[1]);
     }
@@ -7525,7 +7526,7 @@ const App = () => {
     setView('list');
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    window.history.pushState({}, '', '/thrive365labslaunch/login');
+    window.history.pushState({}, '', '/launch/login');
   };
 
   const handleSelectProject = (project, taskId = null) => {
@@ -7533,13 +7534,13 @@ const App = () => {
     setScrollToTaskId(taskId);
     setView('tracker');
     const slug = project.clientLinkSlug || project.clientLinkId;
-    window.history.pushState({}, '', `/thrive365labslaunch/${slug}-internal`);
+    window.history.pushState({}, '', `/launch/${slug}-internal`);
   };
 
   const handleBackToList = () => {
     setSelectedProject(null);
     setView('list');
-    window.history.pushState({}, '', '/thrive365labslaunch/home');
+    window.history.pushState({}, '', '/launch/home');
   };
 
   if (!token) {

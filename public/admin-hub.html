@@ -78,11 +78,17 @@
 
     const api = {
       adminLogin: (email, password) =>
-        fetch(`${API_URL}/api/auth/admin-login`, {
+        fetch(`${API_URL}/api/auth/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, password })
-        }).then(handleResponse).catch(err => ({ error: err.message })),
+        }).then(handleResponse).then(result => {
+          // Verify user has admin hub access
+          if (result.user && result.user.role !== 'admin' && !result.user.hasAdminHubAccess) {
+            return { error: 'Access denied. Admin privileges required.' };
+          }
+          return result;
+        }).catch(err => ({ error: err.message })),
 
       getDashboard: (token) =>
         fetch(`${API_URL}/api/admin-hub/dashboard`, {

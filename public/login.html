@@ -224,7 +224,7 @@
           description: 'Central administration, user management, and service portal',
           icon: Icons.admin,
           color: 'from-primary-500 to-primary-700',
-          path: '/admin-hub.html'
+          path: '/admin'
         });
       }
 
@@ -232,11 +232,11 @@
       if (isAdmin || user.hasImplementationsAccess || (user.assignedProjects && user.assignedProjects.length > 0)) {
         availablePortals.push({
           id: 'implementations',
-          name: 'Implementations',
+          name: 'Launch',
           description: 'Project tracking, client onboarding, and implementation management',
           icon: Icons.implementation,
           color: 'from-purple-500 to-purple-700',
-          path: '/thrive365labslaunch/'
+          path: '/launch'
         });
       }
 
@@ -248,7 +248,7 @@
           description: 'Submit and track service reports for field operations',
           icon: Icons.service,
           color: 'from-success-500 to-success-600',
-          path: '/service-portal.html'
+          path: '/service-portal'
         });
       }
 
@@ -260,7 +260,7 @@
           description: 'Manage client portal content, settings, and communications',
           icon: Icons.clientPortal,
           color: 'from-warning-500 to-warning-600',
-          path: '/portal.html'
+          path: '/portal'
         });
       }
 

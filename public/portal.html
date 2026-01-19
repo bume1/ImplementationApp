@@ -79,11 +79,17 @@
 
     const api = {
       clientLogin: (email, password, slug) =>
-        fetch(`${API_URL}/api/auth/client-login`, {
+        fetch(`${API_URL}/api/auth/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password, slug })
-        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+          body: JSON.stringify({ email, password })
+        }).then(handleResponse).then(result => {
+          // Verify slug matches for client users if a slug was specified in URL
+          if (result.user && result.user.role === 'client' && slug && result.user.slug !== slug) {
+            return { error: 'This account is not associated with this portal' };
+          }
+          return result;
+        }).catch(err => ({ error: err.message || 'Network error' })),
 
       getPortalData: (token) =>
         fetch(`${API_URL}/api/client-portal/data`, {

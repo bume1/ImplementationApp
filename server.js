@@ -45,18 +45,38 @@ app.use((req, res, next) => {
   next();
 });
 
-// Serve static files for the main app path (both cases)
+// Serve static files for the main app path
+app.use('/launch', express.static('public', staticOptions));
+// Legacy paths - keep for backward compatibility
 app.use('/thrive365labsLAUNCH', express.static('public', staticOptions));
 app.use('/thrive365labslaunch', express.static('public', staticOptions));
 app.use(express.static('public', staticOptions));
 app.use('/uploads', express.static('uploads', staticOptions));
 
-// Serve the main app at /thrive365labsLAUNCH and /thrive365labslaunch root only
-app.get('/thrive365labsLAUNCH', (req, res) => {
+// ============== ROOT ROUTE - UNIFIED LOGIN ==============
+// Root serves the unified login page
+app.get('/', (req, res) => {
+  res.sendFile(__dirname + '/public/login.html');
+});
+
+// ============== LAUNCH ROUTES (Implementations Portal) ==============
+// Main implementations dashboard
+app.get('/launch', (req, res) => {
   res.sendFile(__dirname + '/public/index.html');
 });
-app.get('/thrive365labslaunch', (req, res) => {
+app.get('/launch/login', (req, res) => {
   res.sendFile(__dirname + '/public/index.html');
+});
+app.get('/launch/home', (req, res) => {
+  res.sendFile(__dirname + '/public/index.html');
+});
+
+// Legacy routes - redirect to new /launch paths
+app.get('/thrive365labsLAUNCH', (req, res) => {
+  res.redirect(301, '/launch');
+});
+app.get('/thrive365labslaunch', (req, res) => {
+  res.redirect(301, '/launch');
 });
 // Note: Specific sub-routes (login, home, :slug, :slug-internal) are defined at the end of the file
 
@@ -1774,9 +1794,10 @@ app.post('/api/projects/:projectId/tasks/:taskId/reorder', authenticateToken, re
   }
 });
 
-// ============== CLIENT VIEW (No Auth) ==============
+// ============== CLIENT VIEW (Legacy - Redirect to /launch) ==============
 app.get('/client/:linkId', async (req, res) => {
-  res.sendFile(__dirname + '/public/client.html');
+  // Redirect legacy /client/:linkId URLs to new /launch/:slug format
+  res.redirect(301, `/launch/${req.params.linkId}`);
 });
 
 app.get('/api/client/:linkId', async (req, res) => {
@@ -4267,76 +4288,66 @@ app.delete('/api/templates/:id', authenticateToken, requireAdmin, async (req, re
   }
 });
 
-// ============== CLIENT PORTAL & INTERNAL ROUTES ==============
-// Reserved paths: login, home serve the main app
+// ============== LAUNCH PORTAL SLUG ROUTES ==============
+// Internal project tracker: /launch/{slug}-internal (authenticated team access)
+app.get('/launch/:slug-internal', async (req, res) => {
+  const slug = req.params.slug;
+  const projects = await getProjects();
+  const project = projects.find(p => p.clientLinkSlug === slug || p.clientLinkId === slug);
+
+  if (project) {
+    res.sendFile(__dirname + '/public/index.html');
+  } else {
+    res.status(404).send('Project not found');
+  }
+});
+
+// Public client launch board: /launch/{slug} (no auth required)
+app.get('/launch/:slug', async (req, res) => {
+  const slug = req.params.slug;
+  // Skip reserved paths
+  if (['login', 'home'].includes(slug)) {
+    return res.sendFile(__dirname + '/public/index.html');
+  }
+  // Skip if ends with -internal (handled above)
+  if (slug.endsWith('-internal')) {
+    return res.sendFile(__dirname + '/public/index.html');
+  }
+  const projects = await getProjects();
+  const project = projects.find(p => p.clientLinkSlug === slug || p.clientLinkId === slug);
+
+  if (project) {
+    res.sendFile(__dirname + '/public/client.html');
+  } else {
+    res.status(404).send('Project not found');
+  }
+});
+
+// ============== LEGACY LAUNCH ROUTES (Redirects) ==============
+// Redirect old /thrive365labslaunch paths to new /launch paths
 app.get('/thrive365labslaunch/login', (req, res) => {
-  res.sendFile(__dirname + '/public/index.html');
+  res.redirect(301, '/launch/login');
 });
 app.get('/thrive365labsLAUNCH/login', (req, res) => {
-  res.sendFile(__dirname + '/public/index.html');
+  res.redirect(301, '/launch/login');
 });
 app.get('/thrive365labslaunch/home', (req, res) => {
-  res.sendFile(__dirname + '/public/index.html');
+  res.redirect(301, '/launch/home');
 });
 app.get('/thrive365labsLAUNCH/home', (req, res) => {
-  res.sendFile(__dirname + '/public/index.html');
+  res.redirect(301, '/launch/home');
 });
-
-// Internal project tracker: /thrive365labslaunch/{slug}-internal
 app.get('/thrive365labslaunch/:slug-internal', async (req, res) => {
-  const slug = req.params.slug;
-  const projects = await getProjects();
-  const project = projects.find(p => p.clientLinkSlug === slug || p.clientLinkId === slug);
-  
-  if (project) {
-    res.sendFile(__dirname + '/public/index.html');
-  } else {
-    res.status(404).send('Project not found');
-  }
+  res.redirect(301, `/launch/${req.params.slug}-internal`);
 });
 app.get('/thrive365labsLAUNCH/:slug-internal', async (req, res) => {
-  const slug = req.params.slug;
-  const projects = await getProjects();
-  const project = projects.find(p => p.clientLinkSlug === slug || p.clientLinkId === slug);
-  
-  if (project) {
-    res.sendFile(__dirname + '/public/index.html');
-  } else {
-    res.status(404).send('Project not found');
-  }
+  res.redirect(301, `/launch/${req.params.slug}-internal`);
 });
-
-// Client portal: /thrive365labslaunch/{slug} (without -internal suffix)
 app.get('/thrive365labsLAUNCH/:slug', async (req, res) => {
-  const slug = req.params.slug;
-  // Skip if ends with -internal (handled above)
-  if (slug.endsWith('-internal')) {
-    return res.sendFile(__dirname + '/public/index.html');
-  }
-  const projects = await getProjects();
-  const project = projects.find(p => p.clientLinkSlug === slug || p.clientLinkId === slug);
-  
-  if (project) {
-    res.sendFile(__dirname + '/public/client.html');
-  } else {
-    res.status(404).send('Project not found');
-  }
+  res.redirect(301, `/launch/${req.params.slug}`);
 });
-
 app.get('/thrive365labslaunch/:slug', async (req, res) => {
-  const slug = req.params.slug;
-  // Skip if ends with -internal (handled above)
-  if (slug.endsWith('-internal')) {
-    return res.sendFile(__dirname + '/public/index.html');
-  }
-  const projects = await getProjects();
-  const project = projects.find(p => p.clientLinkSlug === slug || p.clientLinkId === slug);
-  
-  if (project) {
-    res.sendFile(__dirname + '/public/client.html');
-  } else {
-    res.status(404).send('Project not found');
-  }
+  res.redirect(301, `/launch/${req.params.slug}`);
 });
 
 // ============== SERVICE PORTAL ROUTES ==============
@@ -5053,21 +5064,19 @@ app.get('/portal/:slug/*', async (req, res) => {
   }
 });
 
-// Legacy root-level route DISABLED - use /thrive365labslaunch/{slug} instead
-// Redirect old URLs to new format for backwards compatibility
+// Legacy root-level route - redirect old project slugs to /launch
 app.get('/:slug', async (req, res, next) => {
   // Skip if it looks like a file request or known route
-  if (req.params.slug.includes('.') || ['api', 'client', 'favicon.ico', 'thrive365labsLAUNCH', 'thrive365labslaunch', 'portal'].includes(req.params.slug)) {
+  if (req.params.slug.includes('.') || ['api', 'client', 'favicon.ico', 'launch', 'thrive365labsLAUNCH', 'thrive365labslaunch', 'portal', 'admin', 'service-portal', 'login'].includes(req.params.slug)) {
     return next();
   }
-  
-  // Check if this slug matches a project - redirect to new URL format
+
+  // Check if this slug matches a project - redirect to /launch
   const projects = await getProjects();
   const project = projects.find(p => p.clientLinkSlug === req.params.slug);
-  
+
   if (project) {
-    // Redirect to the proper URL format
-    res.redirect(301, `/thrive365labslaunch/${req.params.slug}`);
+    res.redirect(301, `/launch/${req.params.slug}`);
   } else {
     next();
   }

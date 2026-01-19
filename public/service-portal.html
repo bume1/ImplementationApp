@@ -77,11 +77,17 @@
 
     const api = {
       serviceLogin: (email, password) =>
-        fetch(`${API_URL}/api/auth/service-login`, {
+        fetch(`${API_URL}/api/auth/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, password })
-        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+        }).then(handleResponse).then(result => {
+          // Verify user has service portal access
+          if (result.user && result.user.role !== 'admin' && !result.user.hasServicePortalAccess && result.user.role !== 'vendor') {
+            return { error: 'Access denied. You do not have Service Portal access.' };
+          }
+          return result;
+        }).catch(err => ({ error: err.message || 'Network error' })),
 
       getServicePortalData: (token) =>
         fetch(`${API_URL}/api/service-portal/data`, {
