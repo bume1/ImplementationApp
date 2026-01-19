@@ -241,7 +241,7 @@
     const Sidebar = ({ activePage, onNavigate, user, isMobileOpen, onClose, projects }) => {
       const [inventoryExpanded, setInventoryExpanded] = useState(activePage === 'inventory' || activePage === 'reports' || activePage === 'submission_history');
       const [adminExpanded, setAdminExpanded] = useState(activePage.startsWith('admin_'));
-      const isAdmin = user?.role === 'admin';
+      const isAdmin = user?.role === 'admin' || user?.hasClientPortalAdminAccess;
 
       const mainItems = [
         { id: 'home', label: isAdmin ? 'Admin Dashboard' : 'Home', icon: Icons.home }
@@ -3534,7 +3534,7 @@
     
     const Portal = ({ token, user }) => {
       const urlSlug = getSlugFromUrl();
-      const isAdmin = user?.role === 'admin';
+      const isAdmin = user?.role === 'admin' || user?.hasClientPortalAdminAccess;
       const slug = user?.slug || urlSlug;
 
       // URL routing helper functions
@@ -3717,8 +3717,8 @@
         if (!token || !user) {
           return <LoginPage slug={null} onLogin={handleLogin} />;
         }
-        // Admin users get the admin portal view directly at /portal
-        if (user.role === 'admin') {
+        // Admin users or users with Client Portal Admin access get the admin portal view directly at /portal
+        if (user.role === 'admin' || user.hasClientPortalAdminAccess) {
           return <Portal token={token} user={user} />;
         }
         // Client users logged in from central portal - redirect to their portal
