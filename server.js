@@ -388,6 +388,8 @@ app.post('/api/users', authenticateToken, async (req, res) => {
     // Vendor-specific fields
     if (role === 'vendor') {
       newUser.assignedClients = assignedClients || [];
+      // Vendors automatically get service portal access
+      newUser.hasServicePortalAccess = true;
     }
 
     // User/team member fields
