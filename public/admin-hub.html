@@ -126,18 +126,19 @@
         }).then(handleResponse).catch(err => ({ error: err.message })),
 
       getPasswordResetRequests: (token) =>
-        fetch(`${API_URL}/api/password-reset-requests`, {
+        fetch(`${API_URL}/api/admin/password-reset-requests`, {
           headers: { 'Authorization': `Bearer ${token}` }
         }).then(handleResponse).catch(err => ({ error: err.message })),
 
       handlePasswordReset: (token, requestId) =>
-        fetch(`${API_URL}/api/password-reset-requests/${requestId}/handle`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` }
+        fetch(`${API_URL}/api/admin/password-reset-requests/${requestId}`, {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'completed' })
         }).then(handleResponse).catch(err => ({ error: err.message })),
 
       dismissPasswordReset: (token, requestId) =>
-        fetch(`${API_URL}/api/password-reset-requests/${requestId}`, {
+        fetch(`${API_URL}/api/admin/password-reset-requests/${requestId}`, {
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${token}` }
         }).then(handleResponse).catch(err => ({ error: err.message })),
@@ -2180,7 +2181,7 @@
             <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-8" />
             <div className="w-6"></div>
           </div>
-          <main className="lg:ml-64 p-4 lg:p-8">{renderPage()}</main>
+          <main className="lg:ml-72 p-4 lg:p-8">{renderPage()}</main>
         </div>
       );
     };
