@@ -3072,10 +3072,17 @@
     };
     
     const App = () => {
-      const [token, setToken] = useState(localStorage.getItem('portal_token'));
+      // Check multiple token sources - portal_token, unified_token, or admin_token from Portal Hub
+      const [token, setToken] = useState(() => {
+        return localStorage.getItem('portal_token') || localStorage.getItem('unified_token') || localStorage.getItem('admin_token');
+      });
       const [user, setUser] = useState(() => {
-        const saved = localStorage.getItem('portal_user');
-        return saved ? JSON.parse(saved) : null;
+        try {
+          const userData = localStorage.getItem('portal_user') || localStorage.getItem('unified_user') || localStorage.getItem('admin_user');
+          return userData ? JSON.parse(userData) : null;
+        } catch {
+          return null;
+        }
       });
       const slug = getSlugFromUrl();
       
