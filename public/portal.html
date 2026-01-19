@@ -2113,12 +2113,22 @@
       );
     };
 
-    const SupportPage = ({ settings, token, userData }) => {
+    const SupportPage = ({ settings, token, userData, activeTab: propActiveTab, onTabChange }) => {
       const [tickets, setTickets] = useState([]);
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState(null);
-      const [activeTab, setActiveTab] = useState('tickets');
+      const [localActiveTab, setLocalActiveTab] = useState(propActiveTab || 'tickets');
       const [expandedTicket, setExpandedTicket] = useState(null);
+
+      // Use prop tab if provided (for URL routing), otherwise use local state
+      const activeTab = propActiveTab || localActiveTab;
+      const setActiveTab = (tab) => {
+        if (onTabChange) {
+          onTabChange(tab);
+        } else {
+          setLocalActiveTab(tab);
+        }
+      };
 
       const hasHubSpotConfig = userData?.hubspotCompanyId || userData?.hubspotContactId;
 
@@ -3512,18 +3522,60 @@
     
     
     const Portal = ({ token, user }) => {
-      const [activePage, setActivePage] = useState('home');
+      const urlSlug = getSlugFromUrl();
+      const isAdmin = user?.role === 'admin';
+      const slug = user?.slug || urlSlug;
+
+      // URL routing helper functions
+      const getPageFromUrl = () => {
+        const path = window.location.pathname;
+        const hash = window.location.hash;
+        // Parse path like /portal/slug/page or /portal/slug/page/tab
+        const match = path.match(/\/portal\/[^\/]+\/([^\/]+)(?:\/([^\/]+))?/);
+        const page = match ? match[1] : 'home';
+        const tab = match ? match[2] : null;
+        return { page, tab };
+      };
+
+      const updateUrl = (page, tab = null) => {
+        const basePath = `/portal/${slug}`;
+        let newPath = basePath;
+        if (page && page !== 'home') {
+          newPath += `/${page}`;
+          if (tab) newPath += `/${tab}`;
+        }
+        if (window.location.pathname !== newPath) {
+          window.history.pushState({ page, tab }, '', newPath);
+        }
+      };
+
+      const initialRoute = getPageFromUrl();
+      const [activePage, setActivePage] = useState(initialRoute.page || 'home');
+      const [activeSubTab, setActiveSubTab] = useState(initialRoute.tab || null);
       const [data, setData] = useState(null);
       const [settings, setSettings] = useState(null);
       const [announcements, setAnnouncements] = useState([]);
       const [documents, setDocuments] = useState([]);
       const [loading, setLoading] = useState(true);
       const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-      
-      const urlSlug = getSlugFromUrl();
-      const isAdmin = user?.role === 'admin';
-      // Use user's slug if available, fallback to URL slug
-      const slug = user?.slug || urlSlug;
+
+      // Navigate with URL update
+      const navigateTo = (page, tab = null) => {
+        setActivePage(page);
+        setActiveSubTab(tab);
+        updateUrl(page, tab);
+      };
+
+      // Handle browser back/forward
+      useEffect(() => {
+        const handlePopState = (event) => {
+          const route = getPageFromUrl();
+          setActivePage(route.page || 'home');
+          setActiveSubTab(route.tab || null);
+        };
+        window.addEventListener('popstate', handlePopState);
+        return () => window.removeEventListener('popstate', handlePopState);
+      }, []);
       
       useEffect(() => {
         const loadData = async () => {
@@ -3579,17 +3631,17 @@
           if (activePage === 'admin_documents') return <AdminDocumentsPage token={token} />;
           if (activePage === 'admin_clients') return <AdminClientsPage token={token} />;
           // Admin views aggregate inventory reports across all clients
-          if (activePage === 'reports') return <AdminReportsPage token={token} onNavigate={setActivePage} />;
-          if (activePage === 'submission_history') return <SubmissionHistoryPage token={token} slug={slug} isAdmin={true} onNavigate={setActivePage} />;
+          if (activePage === 'reports') return <AdminReportsPage token={token} onNavigate={navigateTo} />;
+          if (activePage === 'submission_history') return <SubmissionHistoryPage token={token} slug={slug} isAdmin={true} onNavigate={navigateTo} />;
         }
-        
+
         // Client pages
-        if (activePage === 'home') return <HomePage data={data} announcements={announcements} onNavigate={setActivePage} />;
-        if (activePage === 'milestones') return <MilestonesPage data={data} onNavigate={setActivePage} />;
+        if (activePage === 'home') return <HomePage data={data} announcements={announcements} onNavigate={navigateTo} />;
+        if (activePage === 'milestones') return <MilestonesPage data={data} onNavigate={navigateTo} />;
         if (activePage === 'inventory') return <InventoryPage token={token} slug={slug} />;
-        if (activePage === 'reports') return <ReportsPage token={token} slug={slug} onNavigate={setActivePage} />;
-        if (activePage === 'submission_history') return <SubmissionHistoryPage token={token} slug={slug} isAdmin={false} onNavigate={setActivePage} />;
-        if (activePage === 'support') return <SupportPage settings={settings} token={token} userData={data?.user} />;
+        if (activePage === 'reports') return <ReportsPage token={token} slug={slug} onNavigate={navigateTo} />;
+        if (activePage === 'submission_history') return <SubmissionHistoryPage token={token} slug={slug} isAdmin={false} onNavigate={navigateTo} />;
+        if (activePage === 'support') return <SupportPage settings={settings} token={token} userData={data?.user} activeTab={activeSubTab} onTabChange={(tab) => navigateTo('support', tab)} />;
         if (activePage === 'files') return <FilesPage settings={settings} documents={documents} token={token} projects={data?.projects || []} userData={data?.user} />;
         
         return null;
@@ -3608,7 +3660,7 @@
           
           <Sidebar
             activePage={activePage}
-            onNavigate={setActivePage}
+            onNavigate={navigateTo}
             user={data?.user || user}
             projects={data?.projects || []}
             isMobileOpen={mobileMenuOpen}
