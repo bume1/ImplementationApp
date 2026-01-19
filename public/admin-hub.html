@@ -1441,7 +1441,8 @@
         name: '', email: '', password: '', assignedClients: []
       });
       const [vendorSaving, setVendorSaving] = useState(false);
-      const canManageVendors = user?.role === 'admin' || user?.isManager;
+      // Vendor Management is only visible to Managers, not Super Admins
+      const canManageVendors = user?.isManager && user?.role !== 'admin';
 
       useEffect(() => {
         loadData();
