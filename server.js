@@ -11,6 +11,7 @@ const multer = require('multer');
 const hubspot = require('./hubspot');
 const googledrive = require('./googledrive');
 const pdfGenerator = require('./pdf-generator');
+const changelogGenerator = require('./changelog-generator');
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -5381,6 +5382,89 @@ app.delete('/api/changelog/:id', authenticateToken, requireAdmin, async (req, re
     res.json({ message: 'Changelog deleted' });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Generate changelog from git commits (admin only)
+app.post('/api/changelog/generate', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { version, sinceTag } = req.body;
+
+    console.log('📋 Generating changelog from git commits...');
+
+    // Generate changelog entry from commits
+    const entry = await changelogGenerator.generateChangelogFromCommits(version, sinceTag);
+
+    if (!entry) {
+      return res.status(400).json({ error: 'No commits found to generate changelog' });
+    }
+
+    // Get existing changelog
+    const changelog = (await db.get('changelog')) || [];
+
+    // Mark all existing as not current
+    changelog.forEach(e => e.isCurrent = false);
+
+    // Add metadata
+    entry.createdBy = req.user.email;
+    entry.generatedFromGit = true;
+
+    // Add new entry at the beginning
+    changelog.unshift(entry);
+    await db.set('changelog', changelog);
+
+    // Log activity
+    await logActivity(
+      req.user.id,
+      req.user.name,
+      'changelog_generated',
+      'changelog',
+      entry.id,
+      { version: entry.version, sectionsCount: entry.sections.length }
+    );
+
+    res.json({
+      message: 'Changelog generated successfully',
+      entry
+    });
+  } catch (error) {
+    console.error('Changelog generation error:', error);
+    res.status(500).json({ error: 'Failed to generate changelog: ' + error.message });
+  }
+});
+
+// Preview changelog from git commits (admin only, doesn't save)
+app.get('/api/changelog/preview', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { sinceTag, maxCommits } = req.query;
+
+    // Get recent commits
+    const commits = changelogGenerator.getRecentCommits(sinceTag, parseInt(maxCommits) || 50);
+
+    if (commits.length === 0) {
+      return res.json({ commits: [], sections: [] });
+    }
+
+    // Group by category
+    const sections = changelogGenerator.groupCommitsByCategory(commits);
+
+    res.json({
+      commitCount: commits.length,
+      commits: commits.slice(0, 20).map(c => ({
+        hash: c.hash.substring(0, 7),
+        message: c.message,
+        date: c.date
+      })),
+      sections: sections.map(s => ({
+        label: s.label,
+        color: s.color,
+        itemCount: s.items.length,
+        items: s.items.map(i => i.message)
+      }))
+    });
+  } catch (error) {
+    console.error('Changelog preview error:', error);
+    res.status(500).json({ error: 'Failed to preview changelog' });
   }
 });
 
