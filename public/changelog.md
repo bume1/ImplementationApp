@@ -4,6 +4,25 @@
 
 ---
 
+### Version 2.7.1 - January 2026
+
+#### New Features
+- Add Manager permissions to edit client details in Client Portal Admin
+- New API endpoint `/api/client-portal/clients/:clientId` for manager-restricted client updates
+- Client details edited by Managers sync with Admin Hub User Management
+
+#### Improvements
+- Enhanced Client Users page in Client Portal Admin with edit functionality
+- Managers can now update: Practice Name, Logo, HubSpot Company/Deal/Contact IDs
+- All client detail changes are logged in activity log
+
+#### Planned Features (Future Rollout)
+- **Customer Support Pipeline Enhancement**: Hide HubSpot pipeline view and show only portal-submitted tickets
+  - See README.md "Future Features" section for implementation details
+  - Benefits: Cleaner client experience, privacy, focused support view
+
+---
+
 ### Version 2.7.0 - January 2026
 
 #### New Features

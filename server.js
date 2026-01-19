@@ -892,6 +892,75 @@ app.delete('/api/users/:userId', authenticateToken, requireAdmin, async (req, re
   }
 });
 
+// ============== CLIENT DETAILS (Manager-restricted) ==============
+// This endpoint allows Managers and Client Portal Admins to update ONLY client details
+// without access to sensitive fields like role, permissions, or passwords.
+// Changes sync with the main user record visible in Admin Hub User Management.
+app.put('/api/client-portal/clients/:clientId', authenticateToken, requireClientPortalAdmin, async (req, res) => {
+  try {
+    const { clientId } = req.params;
+    const { practiceName, logo, hubspotCompanyId, hubspotDealId, hubspotContactId } = req.body;
+
+    const users = await getUsers();
+    const idx = users.findIndex(u => u.id === clientId);
+
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+
+    // Only allow editing client users
+    if (users[idx].role !== 'client') {
+      return res.status(403).json({ error: 'Can only edit client users through this endpoint' });
+    }
+
+    // Update only allowed client details fields
+    if (practiceName !== undefined) {
+      users[idx].practiceName = practiceName;
+      // Regenerate slug if practice name changes
+      if (practiceName) {
+        const existingSlugs = users.filter((u, i) => i !== idx && u.slug).map(u => u.slug);
+        users[idx].slug = generateClientSlug(practiceName, existingSlugs);
+      }
+    }
+    if (logo !== undefined) users[idx].logo = logo;
+    if (hubspotCompanyId !== undefined) users[idx].hubspotCompanyId = hubspotCompanyId;
+    if (hubspotDealId !== undefined) users[idx].hubspotDealId = hubspotDealId;
+    if (hubspotContactId !== undefined) users[idx].hubspotContactId = hubspotContactId;
+
+    // Track modification
+    users[idx].updatedAt = new Date().toISOString();
+    users[idx].updatedBy = req.user.id;
+
+    await db.set('users', users);
+
+    // Log the activity
+    await logActivity(
+      req.user.id,
+      req.user.name,
+      'update_client_details',
+      'user',
+      clientId,
+      `Updated client details for ${users[idx].name} (${users[idx].practiceName || 'No practice name'})`
+    );
+
+    res.json({
+      id: users[idx].id,
+      name: users[idx].name,
+      email: users[idx].email,
+      practiceName: users[idx].practiceName || null,
+      slug: users[idx].slug || null,
+      logo: users[idx].logo || '',
+      hubspotCompanyId: users[idx].hubspotCompanyId || '',
+      hubspotDealId: users[idx].hubspotDealId || '',
+      hubspotContactId: users[idx].hubspotContactId || '',
+      updatedAt: users[idx].updatedAt
+    });
+  } catch (error) {
+    console.error('Error updating client details:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ============== TEAM MEMBERS (for owner selection) ==============
 app.get('/api/team-members', authenticateToken, async (req, res) => {
   try {
