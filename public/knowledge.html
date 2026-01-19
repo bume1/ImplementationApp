@@ -52,7 +52,9 @@
       files: <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>,
       users: <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/></svg>,
       milestone: <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>,
-      external: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+      external: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>,
+      code: <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5"/></svg>,
+      lock: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
     };
 
     // Comprehensive Guide Data
@@ -599,16 +601,357 @@ Uploaded files appear in the "Your Uploads" section and are also visible to admi
 If configured, uploaded files are automatically attached to your HubSpot company/deal record.`
           }
         ]
+      },
+      'technical-docs': {
+        title: 'Technical Documentation',
+        description: 'System architecture, API reference, and developer resources',
+        icon: Icons.code,
+        color: 'bg-slate-700',
+        adminOnly: true,
+        articles: [
+          {
+            title: 'System Overview',
+            content: `Thrive 365 Labs Web App is a comprehensive multi-project launch tracker designed for managing complex clinical laboratory equipment installations.
+
+**Key Features:**
+- 102-task template for Biolis AU480 CLIA lab setups
+- Robust admin controls and team member accounts
+- Embeddable, authenticated client portals for external stakeholders
+- Service Portal for field service engineers and clinical application specialists
+- HubSpot CRM integration for seamless deal tracking and file management
+- Google Drive integration for document storage
+
+**Technology Stack:**
+- Backend: Express.js REST API
+- Frontend: React 18 (CDN-loaded), Babel standalone for JSX
+- Styling: Tailwind CSS (CDN)
+- Database: Replit Database (key-value store)
+- Authentication: JWT tokens, bcryptjs password hashing
+- PDF Generation: PDFKit, PDFMake
+
+**System Design Principles:**
+- Modularity: Clear separation of frontend and backend concerns
+- Scalability: CDN-based frontend delivery and flexible key-value data storage
+- Security: JWT-based authentication, bcrypt password hashing, role-based access control
+- User Experience: Streamlined workflows, intuitive reporting, and client-facing transparency`
+          },
+          {
+            title: 'Application Portals',
+            content: `The application consists of multiple interconnected portals, each serving different user roles:
+
+**1. Unified Login Portal (/login)**
+Central authentication hub where users log in once and access all portals they have permissions for.
+
+**2. Admin Hub (/admin)**
+Administrative dashboard for system management:
+- User management with granular permissions
+- Dashboard statistics and quick actions
+- Feedback/bug report inbox
+- Bulk password reset functionality
+- Activity logging and system settings
+
+**3. Launch App (/launch/home)**
+Project implementation tracking for internal teams:
+- Project boards with task management
+- 102-task template system
+- HubSpot synchronization
+- Soft-pilot checklist generation
+- Launch reports and analytics
+- Implementations calendar
+
+**4. Client Portal (/portal/{slug})**
+Authenticated client-facing portal:
+- Home dashboard with announcements
+- Launch milestones and progress tracking
+- Inventory management with weekly updates
+- Customer support with HubSpot ticket integration
+- Files and documents section
+
+**5. Service Portal (/service-portal)**
+Dedicated portal for field service engineers and CAS:
+- Service report creation and management
+- Validation reports (Phase 3)
+- Digital signature capture
+- PDF generation and export
+- HubSpot ticket auto-creation
+
+**6. Knowledge Hub (/knowledge)**
+Resource center with how-to guides, documentation, and link directory.
+
+**7. Changelog (/changelog)**
+Version history and release notes for the application.`
+          },
+          {
+            title: 'User Management & Permissions',
+            content: `The application uses a role-based access control system with granular permission flags.
+
+**User Roles:**
+- Admin: Full system access
+- Team Member: Internal staff with configurable permissions
+- Client: Client portal users tied to a specific practice
+- Vendor: External service providers with limited, client-specific access
+
+**Permission Flags:**
+- hasServicePortalAccess: Service Portal access
+- hasAdminHubAccess: Admin Hub access
+- hasImplementationsAccess: Implementation App access
+- hasClientPortalAdminAccess: Client Portal admin features
+- assignedClients: Array for vendor client assignments
+
+**Authentication Features:**
+- JWT-based authentication with secure token management
+- Password reset system with admin approval workflow
+- Bulk password reset with first-login change prompt
+- Forgot password request system`
+          },
+          {
+            title: 'Project & Task Management',
+            content: `The Launch App provides comprehensive project and task management.
+
+**102-Task Biolis AU480 CLIA Template:**
+Industry-standard workflow for clinical laboratory equipment installations.
+
+**Task Features:**
+- Per-stage task addition
+- Email-based owner assignment
+- Subtasks with completion enforcement
+- Task descriptions and notes
+- Due dates with timeline sorting
+- Task reordering within stages
+- File attachments (PDF, images, Word, Excel, text)
+- Tagging system with global tag library
+- Bulk operations (update, delete)
+
+**Additional Features:**
+- Project cloning for rapid duplication
+- CSV import/export for bulk task management
+- Template system for reusable project structures
+- Project notes log with aggregated view`
+          },
+          {
+            title: 'API Reference - Authentication',
+            content: `Authentication API endpoints for user login and management.
+
+**POST /api/auth/login**
+User login - returns JWT token and user data
+
+**POST /api/auth/signup**
+User registration - creates new user account
+
+**POST /api/auth/client-login**
+Client portal login - authenticates client users
+
+**POST /api/auth/service-login**
+Service portal login - authenticates service personnel
+
+**POST /api/auth/admin-login**
+Admin hub login - authenticates admin users
+
+**POST /api/auth/forgot-password**
+Password reset request - sends reset notification to admin
+
+**POST /api/auth/change-password**
+Change user password - updates password for authenticated user`
+          },
+          {
+            title: 'API Reference - Projects & Tasks',
+            content: `Project and task management API endpoints.
+
+**Projects:**
+- GET /api/projects - List all projects
+- POST /api/projects - Create new project
+- GET /api/projects/:id - Get project details
+- PUT /api/projects/:id - Update project
+- DELETE /api/projects/:id - Delete project
+- POST /api/projects/:id/clone - Clone project
+- GET /api/projects/:id/export - Export project data
+
+**Tasks:**
+- GET /api/projects/:id/tasks - List project tasks
+- POST /api/projects/:id/tasks - Create task
+- PUT /api/projects/:projectId/tasks/:taskId - Update task
+- DELETE /api/projects/:projectId/tasks/:taskId - Delete task
+- POST /api/projects/:projectId/tasks/:taskId/reorder - Reorder task
+- PUT /api/projects/:projectId/tasks/bulk-update - Bulk update tasks
+- POST /api/projects/:projectId/tasks/bulk-delete - Bulk delete tasks
+
+**Subtasks:**
+- POST /api/projects/:projectId/tasks/:taskId/subtasks - Create subtask
+- PUT /api/projects/:projectId/tasks/:taskId/subtasks/:subtaskId - Update subtask
+- DELETE /api/projects/:projectId/tasks/:taskId/subtasks/:subtaskId - Delete subtask
+
+**Notes & Files:**
+- POST /api/projects/:projectId/tasks/:taskId/notes - Add note
+- PUT /api/projects/:projectId/tasks/:taskId/notes/:noteId - Update note
+- DELETE /api/projects/:projectId/tasks/:taskId/notes/:noteId - Delete note
+- POST /api/projects/:projectId/tasks/:taskId/files - Upload file
+- DELETE /api/projects/:projectId/tasks/:taskId/files/:fileId - Delete file`
+          },
+          {
+            title: 'API Reference - Users & Templates',
+            content: `User management and template API endpoints.
+
+**User Management (Admin):**
+- GET /api/users - List all users
+- POST /api/users - Create user
+- PUT /api/users/:userId - Update user
+- DELETE /api/users/:userId - Delete user
+- GET /api/team-members - List team members
+- POST /api/admin/bulk-password-reset - Bulk password reset
+
+**Templates:**
+- GET /api/templates - List templates
+- POST /api/templates - Create template
+- GET /api/templates/:id - Get template
+- PUT /api/templates/:id - Update template
+- DELETE /api/templates/:id - Delete template
+- POST /api/templates/:id/clone - Clone template
+- POST /api/templates/:id/import-csv - Import CSV to template
+- PUT /api/templates/:id/set-default - Set as default template`
+          },
+          {
+            title: 'API Reference - Inventory & Service Portal',
+            content: `Inventory management and service portal API endpoints.
+
+**Inventory:**
+- GET /api/inventory/template - Get inventory template
+- PUT /api/inventory/template - Update inventory template
+- GET /api/inventory/submissions/:slug - Get submissions history
+- GET /api/inventory/latest/:slug - Get latest submission
+- POST /api/inventory/submit - Submit inventory update
+- GET /api/inventory/report/:slug - Get inventory report
+- GET /api/inventory/export/:slug - Export inventory CSV
+- GET /api/inventory/custom-items/:slug - Get custom items
+- POST /api/inventory/custom-items/:slug - Add custom item
+- DELETE /api/inventory/custom-items/:slug/:itemId - Delete custom item
+
+**Service Portal:**
+- GET /api/service-portal/data - Get portal data
+- GET /api/service-portal/clients - Get assigned clients
+- POST /api/service-reports - Create service report
+- GET /api/service-reports - List service reports
+- GET /api/service-reports/:id - Get service report
+- PUT /api/service-reports/:id - Update service report
+- DELETE /api/service-reports/:id - Delete service report
+- POST /api/validation-reports - Create validation report
+- GET /api/validation-reports - List validation reports
+- GET /api/validation-reports/:id - Get validation report
+- PUT /api/validation-reports/:id - Update validation report`
+          },
+          {
+            title: 'API Reference - HubSpot Integration',
+            content: `HubSpot CRM integration API endpoints.
+
+**HubSpot Endpoints:**
+- GET /api/hubspot/test - Test HubSpot connection
+- GET /api/hubspot/pipelines - Get deal pipelines
+- GET /api/hubspot/deals - Get deals
+- GET /api/hubspot/record/:recordId - Get HubSpot record
+- GET /api/hubspot/stage-mapping - Get stage mapping
+- PUT /api/hubspot/stage-mapping - Update stage mapping
+- POST /api/hubspot/upload-to-deal - Upload file to deal
+- POST /api/projects/:id/hubspot-sync - Sync project to HubSpot
+- POST /api/projects/:id/soft-pilot-checklist - Generate soft-pilot checklist
+
+**Integration Features:**
+- OAuth-based configuration for secure authentication
+- Deal pipeline sync with stage mapping
+- Task completion notes sync
+- Stage progression tracking
+- File uploads to Company, Deal, Contact records
+- HubSpot ticket integration for customer support
+- Chatbot embed for live chat support
+- Webhook endpoint for form submissions
+- Idempotent sync with stored HubSpot IDs to prevent duplicates`
+          },
+          {
+            title: 'External Dependencies & Environment',
+            content: `Third-party services and configuration requirements.
+
+**Third-Party Services:**
+- HubSpot: CRM integration for deal pipeline, client profiles, ticket management, and file storage
+- Google Drive: Storage for soft-pilot checklist uploads and document management
+- Replit Database: Primary data persistence (key-value store)
+
+**NPM Packages:**
+- @hubspot/api-client: ^13.4.0
+- @replit/database: ^2.0.5
+- axios: ^1.13.2
+- bcryptjs: ^2.4.3
+- body-parser: ^1.20.2
+- cors: ^2.8.5
+- express: ^4.18.2
+- form-data: ^4.0.5
+- googleapis: ^169.0.0
+- jsonwebtoken: ^9.0.2
+- multer: ^2.0.2
+- pdfkit: ^0.17.2
+- pdfmake: ^0.3.3
+- uuid: ^9.0.0
+
+**CDN Dependencies (Frontend):**
+- React 18 / ReactDOM 18
+- Babel standalone (JSX transpilation)
+- Tailwind CSS
+- Heroicons v2
+
+**Environment Variables:**
+- PORT: Server port (default: 3000) - Optional
+- JWT_SECRET: Secret key for JWT token signing - Required
+- HUBSPOT_WEBHOOK_SECRET: Secret for HubSpot webhook validation - Optional
+- HUBSPOT_PRIVATE_APP_TOKEN: HubSpot private app token for API access - Required
+- GOOGLE_SERVICE_ACCOUNT_KEY: Google service account credentials (JSON) - Optional`
+          },
+          {
+            title: 'Project Structure',
+            content: `File organization and directory structure.
+
+**Root Directory:**
+- server.js: Main Express server with API routes
+- hubspot.js: HubSpot integration module
+- googledrive.js: Google Drive integration module
+- pdf-generator.js: PDF generation utilities
+- changelog-generator.js: Automated changelog generation
+- package.json: Dependencies and scripts
+- template-biolis-au480-clia.json: Default task template
+
+**Public Directory (/public):**
+- index.html: Root HTML
+- login.html: Unified login portal
+- admin-hub.html: Admin dashboard
+- app.js: Main React application
+- portal.html: Client portal
+- service-portal.html: Service portal
+- client.html: Legacy client view
+- knowledge.html: Knowledge hub
+- link-directory.html: Resource links
+- changelog.html: Version history viewer
+- changelog.md: Markdown changelog
+
+**Static Assets:**
+- attached_assets/: Static assets directory
+- banners/: Banner images
+- thrive365-logo.webp: Logo file
+
+**Deployment:**
+1. Import the project to Replit
+2. Configure environment secrets in Replit Secrets
+3. Click "Run" to start the application
+4. Configure custom domain if needed
+
+The application supports custom domains for main application access and client portal URLs (e.g., launch.yourdomain.com/{slug}).`
+          }
+        ]
       }
     };
 
     // Expandable Guide Section Component
-    const GuideSection = ({ guide }) => {
+    const GuideSection = ({ guide, isAdmin }) => {
       const [isOpen, setIsOpen] = useState(false);
       const [openArticle, setOpenArticle] = useState(null);
 
       return (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-4">
+        <div className={`bg-white rounded-xl shadow-sm border overflow-hidden mb-4 ${guide.adminOnly ? 'border-amber-200 ring-1 ring-amber-100' : 'border-gray-100'}`}>
           <button
             onClick={() => setIsOpen(!isOpen)}
             className="w-full p-5 flex items-center justify-between hover:bg-gray-50 transition"
@@ -618,7 +961,15 @@ If configured, uploaded files are automatically attached to your HubSpot company
                 {guide.icon}
               </div>
               <div className="text-left">
-                <h3 className="text-lg font-semibold text-accent">{guide.title}</h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-semibold text-accent">{guide.title}</h3>
+                  {guide.adminOnly && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-medium rounded-full">
+                      {Icons.lock}
+                      Admin Only
+                    </span>
+                  )}
+                </div>
                 <p className="text-gray-500 text-sm">{guide.description}</p>
               </div>
             </div>
@@ -690,6 +1041,17 @@ If configured, uploaded files are automatically attached to your HubSpot company
         } catch {
           return null;
         }
+      });
+
+      // Check if user is admin
+      const isAdmin = user?.role === 'admin' || user?.isAdmin === true;
+
+      // Filter guides based on user permissions
+      const visibleGuides = Object.entries(guides).filter(([key, guide]) => {
+        if (guide.adminOnly) {
+          return isAdmin;
+        }
+        return true;
       });
 
       // Redirect to login if not authenticated
@@ -788,8 +1150,8 @@ If configured, uploaded files are automatically attached to your HubSpot company
             {/* Guide Categories */}
             <h3 className="text-xl font-bold text-accent mb-6">How-To Guides</h3>
 
-            {Object.values(guides).map((guide, idx) => (
-              <GuideSection key={idx} guide={guide} />
+            {visibleGuides.map(([key, guide], idx) => (
+              <GuideSection key={key} guide={guide} isAdmin={isAdmin} />
             ))}
 
             {/* Quick Tips Section */}

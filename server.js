@@ -580,6 +580,24 @@ app.put('/api/admin/password-reset-requests/:id', authenticateToken, requireAdmi
   }
 });
 
+// Delete/dismiss password reset request (Admin only)
+app.delete('/api/admin/password-reset-requests/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const resetRequests = await db.get('password_reset_requests') || [];
+    const filteredRequests = resetRequests.filter(r => r.id !== id);
+
+    if (filteredRequests.length === resetRequests.length) {
+      return res.status(404).json({ error: 'Request not found' });
+    }
+
+    await db.set('password_reset_requests', filteredRequests);
+    res.json({ message: 'Request dismissed' });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Submit feedback/bug report (authenticated users)
 app.post('/api/feedback', authenticateToken, async (req, res) => {
   try {
