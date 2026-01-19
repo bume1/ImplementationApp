@@ -2474,6 +2474,67 @@ app.post('/api/client/hubspot/upload', authenticateToken, upload.single('file'),
   }
 });
 
+// ============== CLIENT HUBSPOT TICKETS ==============
+// Fetch support tickets from HubSpot for the logged-in client
+app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
+  try {
+    // Only clients can use this endpoint
+    if (req.user.role !== 'client') {
+      return res.status(403).json({ error: 'Client access required' });
+    }
+
+    // Get fresh user data with HubSpot IDs
+    const users = await getUsers();
+    const clientUser = users.find(u => u.id === req.user.id);
+
+    if (!clientUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const hubspotCompanyId = clientUser.hubspotCompanyId || '';
+    const hubspotContactId = clientUser.hubspotContactId || '';
+
+    // Check if we have a company or contact ID to fetch tickets for
+    if (!hubspotCompanyId && !hubspotContactId) {
+      return res.json({ tickets: [], message: 'No HubSpot account linked' });
+    }
+
+    let tickets = [];
+
+    // Fetch tickets by company first (primary), then merge with contact tickets
+    if (hubspotCompanyId) {
+      try {
+        const companyTickets = await hubspot.getTicketsForCompany(hubspotCompanyId);
+        tickets = [...companyTickets];
+        console.log(`📋 Fetched ${companyTickets.length} tickets for company ${hubspotCompanyId}`);
+      } catch (err) {
+        console.error('Error fetching company tickets:', err.message);
+      }
+    }
+
+    // If contact ID is also available, fetch those tickets and merge (deduping by ID)
+    if (hubspotContactId) {
+      try {
+        const contactTickets = await hubspot.getTicketsForContact(hubspotContactId);
+        const existingIds = new Set(tickets.map(t => t.id));
+        const newTickets = contactTickets.filter(t => !existingIds.has(t.id));
+        tickets = [...tickets, ...newTickets];
+        console.log(`📋 Added ${newTickets.length} additional tickets from contact ${hubspotContactId}`);
+      } catch (err) {
+        console.error('Error fetching contact tickets:', err.message);
+      }
+    }
+
+    // Sort by creation date, newest first
+    tickets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    res.json({ tickets, count: tickets.length });
+  } catch (error) {
+    console.error('Error fetching client tickets:', error);
+    res.status(500).json({ error: error.message || 'Failed to fetch tickets' });
+  }
+});
+
 // ============== HUBSPOT WEBHOOKS ==============
 const HUBSPOT_WEBHOOK_SECRET = process.env.HUBSPOT_WEBHOOK_SECRET;
 

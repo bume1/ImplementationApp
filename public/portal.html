@@ -281,8 +281,8 @@
             
             <div className="p-4 border-b bg-gray-50">
               <p className="text-sm text-gray-500">Welcome,</p>
-              <p className="font-semibold text-accent">{user?.name || 'Client'}</p>
-              <p className="text-xs text-gray-500">{user?.practiceName}</p>
+              <p className="font-semibold text-accent">{user?.practiceName || user?.name || 'Client'}</p>
+              {user?.practiceName && user?.name && <p className="text-xs text-gray-500">{user?.name}</p>}
             </div>
             
             <nav className="p-2">
@@ -2075,30 +2075,192 @@
       );
     };
 
-    const SupportPage = ({ settings }) => {
-      const supportUrl = settings?.supportUrl || 'https://thrive365labs-49020024.hs-sites.com/support';
-      
+    const SupportPage = ({ settings, token, userData }) => {
+      const [tickets, setTickets] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState(null);
+      const [activeTab, setActiveTab] = useState('tickets');
+      const [expandedTicket, setExpandedTicket] = useState(null);
+
+      const hasHubSpotConfig = userData?.hubspotCompanyId || userData?.hubspotContactId;
+
+      useEffect(() => {
+        if (hasHubSpotConfig && token) {
+          fetchTickets();
+        } else {
+          setLoading(false);
+        }
+      }, [token]);
+
+      const fetchTickets = async () => {
+        try {
+          const response = await fetch(`${API_URL}/api/client/hubspot/tickets`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await response.json();
+          if (data.tickets) {
+            setTickets(data.tickets);
+          }
+        } catch (err) {
+          console.error('Error fetching tickets:', err);
+          setError('Unable to load ticket history');
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const getStageColor = (stage) => {
+        const stageLower = (stage || '').toLowerCase();
+        if (stageLower.includes('closed') || stageLower.includes('resolved')) return 'bg-green-100 text-green-700';
+        if (stageLower.includes('waiting') || stageLower.includes('pending')) return 'bg-yellow-100 text-yellow-700';
+        if (stageLower.includes('new') || stageLower.includes('open')) return 'bg-blue-100 text-blue-700';
+        if (stageLower.includes('progress') || stageLower.includes('working')) return 'bg-purple-100 text-purple-700';
+        return 'bg-gray-100 text-gray-700';
+      };
+
+      const formatDate = (dateStr) => {
+        if (!dateStr) return '-';
+        return new Date(dateStr).toLocaleDateString('en-US', {
+          year: 'numeric', month: 'short', day: 'numeric'
+        });
+      };
+
       return (
         <div className="space-y-6">
           <div className="bg-white p-6 rounded-xl shadow-sm">
-            <h1 className="text-2xl font-bold text-accent">Customer Support</h1>
-            <p className="text-gray-600 mt-1">Get help from our support team</p>
+            <h1 className="text-2xl font-bold text-accent">Customer Support Center</h1>
+            <p className="text-gray-600 mt-1">Submit tickets, view history, and chat with our support team</p>
           </div>
-          
-          <div className="bg-white p-6 rounded-xl shadow-sm text-center">
-            <div className="flex justify-center mb-4 text-primary">{React.cloneElement(Icons.chat, { className: 'w-16 h-16' })}</div>
-            <h2 className="text-xl font-semibold text-gray-800 mb-2">Need Assistance?</h2>
-            <p className="text-gray-600 mb-6">
-              Our support team is ready to help you with any questions or issues.
-            </p>
-            <a
-              href={supportUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-block bg-primary text-white px-8 py-3 rounded-lg font-medium hover:bg-accent transition-colors"
-            >
-              Open Support Center
-            </a>
+
+          {/* Tab Navigation */}
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+            <div className="flex border-b">
+              <button
+                onClick={() => setActiveTab('tickets')}
+                className={`flex-1 py-4 px-6 text-center font-medium transition ${activeTab === 'tickets' ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+              >
+                {Icons.list} Ticket History
+              </button>
+              <button
+                onClick={() => setActiveTab('submit')}
+                className={`flex-1 py-4 px-6 text-center font-medium transition ${activeTab === 'submit' ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+              >
+                {Icons.plus} Submit a Ticket
+              </button>
+              <button
+                onClick={() => setActiveTab('chat')}
+                className={`flex-1 py-4 px-6 text-center font-medium transition ${activeTab === 'chat' ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+              >
+                {Icons.chat} Live Chat
+              </button>
+            </div>
+
+            <div className="p-6">
+              {/* Ticket History Tab */}
+              {activeTab === 'tickets' && (
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg font-semibold text-gray-800">Your Support Tickets</h2>
+                    <button onClick={fetchTickets} className="text-primary hover:text-accent text-sm flex items-center gap-1">
+                      {Icons.refresh || '↻'} Refresh
+                    </button>
+                  </div>
+
+                  {loading ? (
+                    <div className="flex justify-center py-12">
+                      <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent"></div>
+                    </div>
+                  ) : !hasHubSpotConfig ? (
+                    <div className="text-center py-12 text-gray-500">
+                      <div className="flex justify-center mb-4 text-gray-300">{React.cloneElement(Icons.folder, { className: 'w-16 h-16' })}</div>
+                      <p>Ticket history is not available for your account.</p>
+                      <p className="text-sm mt-2">Please contact support using the form or chat options.</p>
+                    </div>
+                  ) : error ? (
+                    <div className="text-center py-12 text-red-500">
+                      <p>{error}</p>
+                      <button onClick={fetchTickets} className="mt-4 text-primary hover:underline">Try again</button>
+                    </div>
+                  ) : tickets.length === 0 ? (
+                    <div className="text-center py-12 text-gray-500">
+                      <div className="flex justify-center mb-4 text-green-400">{React.cloneElement(Icons.check, { className: 'w-16 h-16' })}</div>
+                      <p className="font-medium">No support tickets</p>
+                      <p className="text-sm mt-2">You haven't submitted any support tickets yet.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {tickets.map(ticket => (
+                        <div key={ticket.id} className="border rounded-lg overflow-hidden">
+                          <button
+                            onClick={() => setExpandedTicket(expandedTicket === ticket.id ? null : ticket.id)}
+                            className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition text-left"
+                          >
+                            <div className="flex-1">
+                              <p className="font-medium text-gray-800">{ticket.subject}</p>
+                              <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
+                                <span>Created: {formatDate(ticket.createdAt)}</span>
+                                {ticket.updatedAt && ticket.updatedAt !== ticket.createdAt && (
+                                  <span>Updated: {formatDate(ticket.updatedAt)}</span>
+                                )}
+                              </div>
+                            </div>
+                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStageColor(ticket.stage)}`}>
+                              {ticket.stage}
+                            </span>
+                          </button>
+                          {expandedTicket === ticket.id && ticket.content && (
+                            <div className="px-4 pb-4 border-t bg-gray-50">
+                              <p className="text-sm text-gray-600 pt-3 whitespace-pre-wrap">{ticket.content}</p>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Submit Ticket Tab */}
+              {activeTab === 'submit' && (
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-800 mb-2">Submit a New Ticket</h2>
+                  <p className="text-gray-600 text-sm mb-6">Fill out the form below and our support team will respond within 24-48 hours.</p>
+
+                  <div className="bg-gray-50 rounded-lg p-4" style={{ minHeight: '500px' }}>
+                    <div id="hubspot-form-container">
+                      <script charSet="utf-8" type="text/javascript" src="//js.hsforms.net/forms/embed/v2.js"></script>
+                    </div>
+                    <iframe
+                      src="https://share.hsforms.com/1H4l-uiwVTi-1_K1LZ3P-VA4ge7x"
+                      style={{ width: '100%', minHeight: '500px', border: 'none' }}
+                      title="Support Request Form"
+                    ></iframe>
+                  </div>
+
+                  <p className="text-center text-gray-500 text-sm mt-4">
+                    Or simply email us at <a href="mailto:support@thrive365labs.com" className="text-primary hover:underline">support@thrive365labs.com</a>
+                  </p>
+                </div>
+              )}
+
+              {/* Live Chat Tab */}
+              {activeTab === 'chat' && (
+                <div className="text-center">
+                  <h2 className="text-lg font-semibold text-gray-800 mb-2">Talk to a Live Customer Support Agent</h2>
+                  <p className="text-gray-600 text-sm mb-6">
+                    Need immediate help? Our support team is available during business hours to assist you in real time.
+                  </p>
+
+                  <div className="bg-gray-50 rounded-lg p-6 flex flex-col items-center">
+                    <div className="flex justify-center mb-4 text-primary">
+                      {React.cloneElement(Icons.chat, { className: 'w-16 h-16' })}
+                    </div>
+                    <p className="text-gray-600 mb-4">Click the chat widget in the bottom-right corner to start a conversation.</p>
+                    <p className="text-sm text-gray-500">Typical response time: A few minutes</p>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       );
@@ -3252,7 +3414,7 @@
         if (activePage === 'inventory') return <InventoryPage token={token} slug={slug} />;
         if (activePage === 'reports') return <ReportsPage token={token} slug={slug} onNavigate={setActivePage} />;
         if (activePage === 'submission_history') return <SubmissionHistoryPage token={token} slug={slug} isAdmin={false} onNavigate={setActivePage} />;
-        if (activePage === 'support') return <SupportPage settings={settings} />;
+        if (activePage === 'support') return <SupportPage settings={settings} token={token} userData={data?.user} />;
         if (activePage === 'files') return <FilesPage settings={settings} documents={documents} token={token} projects={data?.projects || []} userData={data?.user} />;
         
         return null;

@@ -511,6 +511,194 @@ async function createTask(dealId, taskSubject, taskBody, ownerId = null) {
   return createOrUpdateTask(dealId, taskSubject, taskBody, ownerId, null);
 }
 
+async function getTicketPipelines() {
+  try {
+    const client = await getHubSpotClient();
+    const response = await client.crm.pipelines.pipelinesApi.getAll('tickets');
+    return response.results.map(pipeline => ({
+      id: pipeline.id,
+      label: pipeline.label,
+      stages: pipeline.stages.map(stage => ({
+        id: stage.id,
+        label: stage.label,
+        displayOrder: stage.displayOrder
+      })).sort((a, b) => a.displayOrder - b.displayOrder)
+    }));
+  } catch (error) {
+    console.error('Error fetching HubSpot ticket pipelines:', error.message);
+    throw error;
+  }
+}
+
+async function getTicketsForCompany(companyId) {
+  if (!companyId || !isValidRecordId(companyId)) {
+    console.log(`📋 Ticket fetch skipped: Invalid Company ID "${companyId}"`);
+    return [];
+  }
+
+  const privateAppToken = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
+  if (!privateAppToken) {
+    throw new Error('HubSpot Private App token not configured');
+  }
+
+  try {
+    const axios = require('axios');
+
+    // First get ticket IDs associated with the company
+    const assocResponse = await axios.get(
+      `https://api.hubapi.com/crm/v4/objects/companies/${companyId}/associations/tickets`,
+      {
+        headers: {
+          'Authorization': `Bearer ${privateAppToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const ticketIds = assocResponse.data?.results?.map(r => r.toObjectId) || [];
+
+    if (ticketIds.length === 0) {
+      console.log(`📋 No tickets found for company ${companyId}`);
+      return [];
+    }
+
+    console.log(`📋 Found ${ticketIds.length} tickets for company ${companyId}`);
+
+    // Fetch ticket details with pipeline info
+    const ticketsResponse = await axios.post(
+      'https://api.hubapi.com/crm/v3/objects/tickets/batch/read',
+      {
+        inputs: ticketIds.map(id => ({ id })),
+        properties: ['subject', 'content', 'hs_pipeline', 'hs_pipeline_stage', 'hs_ticket_priority', 'createdate', 'hs_lastmodifieddate', 'closed_date']
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${privateAppToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    // Get pipeline info for stage labels
+    const pipelines = await getTicketPipelines();
+    const stageMap = {};
+    pipelines.forEach(p => {
+      p.stages.forEach(s => {
+        stageMap[s.id] = { label: s.label, pipelineName: p.label };
+      });
+    });
+
+    const tickets = ticketsResponse.data?.results?.map(ticket => {
+      const props = ticket.properties;
+      const stageInfo = stageMap[props.hs_pipeline_stage] || {};
+      return {
+        id: ticket.id,
+        subject: props.subject || 'No Subject',
+        content: props.content || '',
+        pipeline: stageInfo.pipelineName || props.hs_pipeline || 'Support',
+        stage: stageInfo.label || props.hs_pipeline_stage || 'Unknown',
+        stageId: props.hs_pipeline_stage,
+        priority: props.hs_ticket_priority || 'MEDIUM',
+        createdAt: props.createdate,
+        updatedAt: props.hs_lastmodifieddate,
+        closedAt: props.closed_date
+      };
+    }) || [];
+
+    // Sort by creation date, newest first
+    tickets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    return tickets;
+  } catch (error) {
+    console.error('Error fetching tickets for company:', error.response?.data || error.message);
+    throw error;
+  }
+}
+
+async function getTicketsForContact(contactId) {
+  if (!contactId || !isValidRecordId(contactId)) {
+    console.log(`📋 Ticket fetch skipped: Invalid Contact ID "${contactId}"`);
+    return [];
+  }
+
+  const privateAppToken = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
+  if (!privateAppToken) {
+    throw new Error('HubSpot Private App token not configured');
+  }
+
+  try {
+    const axios = require('axios');
+
+    // Get ticket IDs associated with the contact
+    const assocResponse = await axios.get(
+      `https://api.hubapi.com/crm/v4/objects/contacts/${contactId}/associations/tickets`,
+      {
+        headers: {
+          'Authorization': `Bearer ${privateAppToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const ticketIds = assocResponse.data?.results?.map(r => r.toObjectId) || [];
+
+    if (ticketIds.length === 0) {
+      console.log(`📋 No tickets found for contact ${contactId}`);
+      return [];
+    }
+
+    console.log(`📋 Found ${ticketIds.length} tickets for contact ${contactId}`);
+
+    // Fetch ticket details
+    const ticketsResponse = await axios.post(
+      'https://api.hubapi.com/crm/v3/objects/tickets/batch/read',
+      {
+        inputs: ticketIds.map(id => ({ id })),
+        properties: ['subject', 'content', 'hs_pipeline', 'hs_pipeline_stage', 'hs_ticket_priority', 'createdate', 'hs_lastmodifieddate', 'closed_date']
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${privateAppToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    // Get pipeline info for stage labels
+    const pipelines = await getTicketPipelines();
+    const stageMap = {};
+    pipelines.forEach(p => {
+      p.stages.forEach(s => {
+        stageMap[s.id] = { label: s.label, pipelineName: p.label };
+      });
+    });
+
+    const tickets = ticketsResponse.data?.results?.map(ticket => {
+      const props = ticket.properties;
+      const stageInfo = stageMap[props.hs_pipeline_stage] || {};
+      return {
+        id: ticket.id,
+        subject: props.subject || 'No Subject',
+        content: props.content || '',
+        pipeline: stageInfo.pipelineName || props.hs_pipeline || 'Support',
+        stage: stageInfo.label || props.hs_pipeline_stage || 'Unknown',
+        stageId: props.hs_pipeline_stage,
+        priority: props.hs_ticket_priority || 'MEDIUM',
+        createdAt: props.createdate,
+        updatedAt: props.hs_lastmodifieddate,
+        closedAt: props.closed_date
+      };
+    }) || [];
+
+    tickets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    return tickets;
+  } catch (error) {
+    console.error('Error fetching tickets for contact:', error.response?.data || error.message);
+    throw error;
+  }
+}
+
 module.exports = {
   getHubSpotClient,
   getPipelines,
@@ -525,5 +713,8 @@ module.exports = {
   createOrUpdateTask,
   uploadFileAndAttachToRecord,
   syncTaskNoteToRecord,
-  isValidRecordId
+  isValidRecordId,
+  getTicketPipelines,
+  getTicketsForCompany,
+  getTicketsForContact
 };
