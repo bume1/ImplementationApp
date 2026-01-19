@@ -576,6 +576,64 @@ app.put('/api/admin/password-reset-requests/:id', authenticateToken, requireAdmi
   }
 });
 
+// Submit feedback/bug report (authenticated users)
+app.post('/api/feedback', authenticateToken, async (req, res) => {
+  try {
+    const { type, subject, description, userEmail, userName } = req.body;
+    const feedbackRequests = (await db.get('feedback_requests')) || [];
+
+    const newFeedback = {
+      id: Date.now().toString(),
+      type,
+      subject,
+      description,
+      userEmail: userEmail || req.user.email,
+      userName: userName || req.user.name,
+      status: 'open',
+      createdAt: new Date().toISOString()
+    };
+
+    feedbackRequests.unshift(newFeedback);
+    await db.set('feedback_requests', feedbackRequests);
+
+    res.json({ message: 'Feedback submitted successfully', id: newFeedback.id });
+  } catch (error) {
+    console.error('Feedback submission error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get all feedback (Admin only)
+app.get('/api/admin/feedback', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const feedbackRequests = (await db.get('feedback_requests')) || [];
+    res.json(feedbackRequests);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update feedback status (Admin only)
+app.put('/api/admin/feedback/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, adminNote } = req.body;
+    const feedbackRequests = (await db.get('feedback_requests')) || [];
+    const idx = feedbackRequests.findIndex(f => f.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'Feedback not found' });
+
+    feedbackRequests[idx].status = status || feedbackRequests[idx].status;
+    if (adminNote) feedbackRequests[idx].adminNote = adminNote;
+    feedbackRequests[idx].updatedAt = new Date().toISOString();
+    feedbackRequests[idx].updatedBy = req.user.email;
+    await db.set('feedback_requests', feedbackRequests);
+
+    res.json({ message: 'Feedback updated' });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Get activity log (Admin only)
 app.get('/api/admin/activity-log', authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -2532,6 +2590,58 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error fetching client tickets:', error);
     res.status(500).json({ error: error.message || 'Failed to fetch tickets' });
+  }
+});
+
+// Get HubSpot file download URL for clients
+app.get('/api/client/hubspot/file/:fileId', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'client') {
+      return res.status(403).json({ error: 'Client access required' });
+    }
+
+    const { fileId } = req.params;
+    const privateAppToken = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
+
+    if (!privateAppToken) {
+      return res.status(500).json({ error: 'HubSpot not configured' });
+    }
+
+    const axios = require('axios');
+
+    // Get file details from HubSpot
+    const fileResponse = await axios.get(
+      `https://api.hubapi.com/files/v3/files/${fileId}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${privateAppToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const fileData = fileResponse.data;
+
+    // Get signed download URL
+    const signedUrlResponse = await axios.get(
+      `https://api.hubapi.com/files/v3/files/${fileId}/signed-url`,
+      {
+        headers: {
+          'Authorization': `Bearer ${privateAppToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    res.json({
+      fileName: fileData.name,
+      fileType: fileData.type,
+      downloadUrl: signedUrlResponse.data.url,
+      size: fileData.size
+    });
+  } catch (error) {
+    console.error('Error getting HubSpot file:', error.response?.data || error.message);
+    res.status(500).json({ error: 'Failed to get file' });
   }
 });
 
@@ -4776,31 +4886,58 @@ app.post('/api/service-reports', authenticateToken, requireServiceAccess, async 
 
         console.log(`✅ Service report uploaded to HubSpot for company ${reportData.hubspotCompanyId}`);
 
-        // Create HubSpot ticket with service report attached (except for Validations)
-        if (reportData.serviceType !== 'Validations') {
-          try {
-            const ticketResult = await hubspot.createTicketWithFile(
-              {
-                subject: `Service Report: ${reportData.clientFacilityName} - ${reportData.serviceType}`,
-                content: `Service Report Submitted\n\nClient: ${reportData.clientFacilityName}\nService Type: ${reportData.serviceType}\nTechnician: ${reportData.serviceProviderName || req.user.name}\nDate: ${reportDate}\n\nDescription: ${reportData.descriptionOfWork || 'See attached report'}`,
-                priority: 'LOW',
-                isBase64: false
-              },
-              htmlReport,
-              fileName,
-              reportData.hubspotCompanyId
-            );
+        // Create HubSpot ticket with service report attached (for ALL service types)
+        try {
+          const ticketResult = await hubspot.createTicketWithFile(
+            {
+              subject: `Service Report: ${reportData.clientFacilityName} - ${reportData.serviceType}`,
+              content: `Service Report Submitted\n\nClient: ${reportData.clientFacilityName}\nService Type: ${reportData.serviceType}\nTechnician: ${reportData.serviceProviderName || req.user.name}\nDate: ${reportDate}\n\nDescription: ${reportData.descriptionOfWork || reportData.validationResults || 'See attached report'}`,
+              priority: 'LOW',
+              isBase64: false
+            },
+            htmlReport,
+            fileName,
+            reportData.hubspotCompanyId
+          );
 
-            newReport.hubspotTicketId = ticketResult.ticketId;
-            await db.set('service_reports', serviceReports);
-            console.log(`✅ HubSpot ticket created for service report: ${ticketResult.ticketId}`);
-          } catch (ticketError) {
-            console.error('HubSpot ticket creation error (non-blocking):', ticketError.message);
-          }
+          newReport.hubspotTicketId = ticketResult.ticketId;
+          newReport.hubspotTicketFileId = ticketResult.fileId;
+          await db.set('service_reports', serviceReports);
+          console.log(`✅ HubSpot ticket created for service report: ${ticketResult.ticketId}`);
+        } catch (ticketError) {
+          console.error('HubSpot ticket creation error (non-blocking):', ticketError.message);
         }
       } catch (hubspotError) {
         console.error('HubSpot upload error (non-blocking):', hubspotError.message);
         // Don't fail the request if HubSpot upload fails
+      }
+    }
+
+    // Also upload to Deal record if hubspotDealId is available
+    if (reportData.hubspotDealId && hubspot.isValidRecordId(reportData.hubspotDealId)) {
+      try {
+        const reportDate = new Date(reportData.serviceCompletionDate || newReport.createdAt).toLocaleDateString();
+        const fileName = `Service_Report_${reportData.clientFacilityName.replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate.replace(/\//g, '-')}.html`;
+        const noteText = `Service Report Submitted\n\nClient: ${reportData.clientFacilityName}\nService Type: ${reportData.serviceType}\nTechnician: ${reportData.serviceProviderName || req.user.name}`;
+
+        // Generate HTML report if not already done
+        const htmlReportForDeal = newReport.htmlReport || `<!DOCTYPE html><html><body><h1>Service Report</h1><p>See company record for full report.</p></body></html>`;
+
+        await hubspot.uploadFileAndAttachToRecord(
+          reportData.hubspotDealId,
+          htmlReportForDeal,
+          fileName,
+          noteText,
+          {
+            recordType: 'deals',
+            folderPath: '/service-reports',
+            notePrefix: '[Service Portal]',
+            isBase64: false
+          }
+        );
+        console.log(`✅ Service report uploaded to HubSpot deal ${reportData.hubspotDealId}`);
+      } catch (dealError) {
+        console.error('HubSpot deal upload error (non-blocking):', dealError.message);
       }
     }
 
@@ -5167,6 +5304,11 @@ app.get('/knowledge', (req, res) => {
   res.sendFile(__dirname + '/public/knowledge.html');
 });
 
+// Changelog route
+app.get('/changelog', (req, res) => {
+  res.sendFile(__dirname + '/public/changelog.html');
+});
+
 // ============== ADMIN HUB ROUTES ==============
 
 // Admin hub HTML route
@@ -5214,6 +5356,10 @@ app.get('/api/admin-hub/dashboard', authenticateToken, requireAdmin, async (req,
     const projects = await getProjects();
     const serviceReports = (await db.get('service_reports')) || [];
 
+    // Get feedback/requests for admin inbox
+    const feedbackRequests = (await db.get('feedback_requests')) || [];
+    const openFeedback = feedbackRequests.filter(f => f.status !== 'resolved').length;
+
     // Calculate statistics
     const stats = {
       totalUsers: users.length,
@@ -5223,7 +5369,8 @@ app.get('/api/admin-hub/dashboard', authenticateToken, requireAdmin, async (req,
       totalProjects: projects.length,
       activeProjects: projects.filter(p => p.status !== 'completed').length,
       totalServiceReports: serviceReports.length,
-      recentServiceReports: serviceReports.slice(0, 5)
+      recentServiceReports: serviceReports.slice(0, 5),
+      openTickets: openFeedback
     };
 
     res.json(stats);

@@ -224,7 +224,10 @@
       menu: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"/></svg>,
       close: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>,
       upload: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>,
-      download: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+      download: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>,
+      plus: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"/></svg>,
+      refresh: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>,
+      check: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>
     };
     
     // Additional icons for admin portal
@@ -2208,9 +2211,43 @@
                               {ticket.stage}
                             </span>
                           </button>
-                          {expandedTicket === ticket.id && ticket.content && (
+                          {expandedTicket === ticket.id && (
                             <div className="px-4 pb-4 border-t bg-gray-50">
-                              <p className="text-sm text-gray-600 pt-3 whitespace-pre-wrap">{ticket.content}</p>
+                              {ticket.content && (
+                                <p className="text-sm text-gray-600 pt-3 whitespace-pre-wrap">{ticket.content}</p>
+                              )}
+                              {ticket.attachments && ticket.attachments.length > 0 && (
+                                <div className="mt-3 pt-3 border-t border-gray-200">
+                                  <p className="text-sm font-medium text-gray-700 mb-2">Attachments:</p>
+                                  <div className="space-y-2">
+                                    {ticket.attachments.map((att, idx) => (
+                                      <button
+                                        key={idx}
+                                        onClick={async (e) => {
+                                          e.stopPropagation();
+                                          try {
+                                            const response = await fetch(`${API_URL}/api/client/hubspot/file/${att.fileId}`, {
+                                              headers: { 'Authorization': `Bearer ${token}` }
+                                            });
+                                            const data = await response.json();
+                                            if (data.downloadUrl) {
+                                              window.open(data.downloadUrl, '_blank');
+                                            }
+                                          } catch (err) {
+                                            console.error('Error downloading file:', err);
+                                          }
+                                        }}
+                                        className="flex items-center gap-2 text-sm text-primary hover:text-accent hover:underline"
+                                      >
+                                        {Icons.download} Service Report (Click to Download)
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {!ticket.content && (!ticket.attachments || ticket.attachments.length === 0) && (
+                                <p className="text-sm text-gray-400 pt-3 italic">No additional details available</p>
+                              )}
                             </div>
                           )}
                         </div>
