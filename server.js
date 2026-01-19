@@ -4645,8 +4645,21 @@ app.post('/api/service-reports', authenticateToken, requireServiceAccess, async 
     <h2>SERVICE PERFORMED</h2>
     <div class="field"><label>Service Type:</label><value>${reportData.serviceType || '-'}</value></div>
     ${reportData.serviceType === 'Validations' ? `
-    <div class="field"><label>Validation Segments:</label><value>${reportData.validationSegments || '-'}</value></div>
-    <div class="field"><label>Materials Used:</label><value>${reportData.materialsUsed || '-'}</value></div>
+    <div class="grid">
+      <div class="field"><label>Start Date:</label><value>${reportData.validationStartDate || '-'}</value></div>
+      <div class="field"><label>End Date:</label><value>${reportData.validationEndDate || '-'}</value></div>
+    </div>
+    ${reportData.analyzersValidated && reportData.analyzersValidated.length > 0 ? `
+    <div class="field">
+      <label>Analyzers Validated:</label>
+      <table style="width:100%; border-collapse:collapse; margin-top:5px;">
+        <tr style="background:#f5f5f5;"><th style="padding:5px; border:1px solid #ddd; text-align:left;">Model</th><th style="padding:5px; border:1px solid #ddd; text-align:left;">Serial Number</th><th style="padding:5px; border:1px solid #ddd; text-align:left;">Status</th></tr>
+        ${reportData.analyzersValidated.map(a => `<tr><td style="padding:5px; border:1px solid #ddd;">${a.model || '-'}</td><td style="padding:5px; border:1px solid #ddd;">${a.serialNumber || '-'}</td><td style="padding:5px; border:1px solid #ddd;">${a.status || '-'}</td></tr>`).join('')}
+      </table>
+    </div>
+    ` : ''}
+    <div class="field"><label>Training Provided:</label><value>${reportData.trainingProvided || '-'}</value></div>
+    <div class="field"><label>Validation Results:</label><value>${reportData.validationResults || '-'}</value></div>
     <div class="field"><label>Recommendations:</label><value>${reportData.recommendations || '-'}</value></div>
     ` : `
     <div class="field"><label>Description of Work:</label><value>${reportData.descriptionOfWork || '-'}</value></div>
