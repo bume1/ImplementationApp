@@ -304,10 +304,7 @@
               </button>
               <button
                 onClick={() => {
-                  localStorage.removeItem('service_token');
-                  localStorage.removeItem('service_user');
-                  localStorage.removeItem('unified_token');
-                  localStorage.removeItem('unified_user');
+                  localStorage.clear();
                   window.location.href = '/';
                 }}
                 className="w-full text-left px-4 py-2.5 text-red-600 hover:bg-red-50 rounded-xl flex items-center gap-3 transition font-medium text-sm"

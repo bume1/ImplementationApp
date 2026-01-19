@@ -684,12 +684,7 @@
       };
 
       const handleLogout = () => {
-        localStorage.removeItem('unified_token');
-        localStorage.removeItem('unified_user');
-        localStorage.removeItem('admin_token');
-        localStorage.removeItem('admin_user');
-        localStorage.removeItem('portal_token');
-        localStorage.removeItem('portal_user');
+        localStorage.clear();
         setToken(null);
         setUser(null);
         setShowPasswordChange(false);
