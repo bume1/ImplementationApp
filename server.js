@@ -2551,17 +2551,26 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
 
     const hubspotCompanyId = clientUser.hubspotCompanyId || '';
     const hubspotContactId = clientUser.hubspotContactId || '';
+    const hubspotDealId = clientUser.hubspotDealId || '';
 
-    // Check if we have a company or contact ID to fetch tickets for
-    if (!hubspotCompanyId && !hubspotContactId) {
+    // Debug logging
+    console.log(`🎫 Ticket fetch for user ${clientUser.username}:`);
+    console.log(`   - Company ID: "${hubspotCompanyId}"`);
+    console.log(`   - Contact ID: "${hubspotContactId}"`);
+    console.log(`   - Deal ID: "${hubspotDealId}"`);
+
+    // Check if we have any HubSpot ID to fetch tickets for
+    if (!hubspotCompanyId && !hubspotContactId && !hubspotDealId) {
+      console.log(`🎫 No HubSpot IDs configured for ${clientUser.username}`);
       return res.json({ tickets: [], message: 'No HubSpot account linked' });
     }
 
     let tickets = [];
 
-    // Fetch tickets by company first (primary), then merge with contact tickets
+    // Fetch tickets by company first (primary)
     if (hubspotCompanyId) {
       try {
+        console.log(`🎫 Fetching tickets for company ID: ${hubspotCompanyId}`);
         const companyTickets = await hubspot.getTicketsForCompany(hubspotCompanyId);
         tickets = [...companyTickets];
         console.log(`📋 Fetched ${companyTickets.length} tickets for company ${hubspotCompanyId}`);
@@ -2570,9 +2579,24 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
       }
     }
 
-    // If contact ID is also available, fetch those tickets and merge (deduping by ID)
+    // Fetch tickets by deal ID and merge
+    if (hubspotDealId && hubspot.getTicketsForDeal) {
+      try {
+        console.log(`🎫 Fetching tickets for deal ID: ${hubspotDealId}`);
+        const dealTickets = await hubspot.getTicketsForDeal(hubspotDealId);
+        const existingIds = new Set(tickets.map(t => t.id));
+        const newTickets = dealTickets.filter(t => !existingIds.has(t.id));
+        tickets = [...tickets, ...newTickets];
+        console.log(`📋 Added ${newTickets.length} additional tickets from deal ${hubspotDealId}`);
+      } catch (err) {
+        console.error('Error fetching deal tickets:', err.message);
+      }
+    }
+
+    // Fetch tickets by contact ID and merge (deduping by ID)
     if (hubspotContactId) {
       try {
+        console.log(`🎫 Fetching tickets for contact ID: ${hubspotContactId}`);
         const contactTickets = await hubspot.getTicketsForContact(hubspotContactId);
         const existingIds = new Set(tickets.map(t => t.id));
         const newTickets = contactTickets.filter(t => !existingIds.has(t.id));
@@ -2586,6 +2610,7 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
     // Sort by creation date, newest first
     tickets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
+    console.log(`🎫 Total tickets returned for ${clientUser.username}: ${tickets.length}`);
     res.json({ tickets, count: tickets.length });
   } catch (error) {
     console.error('Error fetching client tickets:', error);
