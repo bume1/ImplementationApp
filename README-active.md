@@ -306,6 +306,14 @@ Version history and release notes for the application.
 | GET | `/api/team-members` | List team members |
 | POST | `/api/admin/bulk-password-reset` | Bulk password reset |
 
+### Client Portal Admin Endpoints (Manager-Accessible)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| PUT | `/api/client-portal/clients/:clientId` | Update client details (Manager-restricted) |
+
+> **Note**: The client details endpoint allows Managers and Client Portal Admins to update only client-specific fields (practiceName, logo, HubSpot IDs). Changes sync with Admin Hub User Management.
+
 ### Template Endpoints
 
 | Method | Endpoint | Description |
@@ -523,6 +531,42 @@ For issues, feature requests, or feedback:
 - Use the in-app feedback form
 - Contact system administrators
 - Check the Knowledge Hub for documentation
+
+---
+
+## Future Features (Roadmap)
+
+### Customer Support Pipeline Enhancement
+
+**Feature**: Portal-Submitted Tickets Only View
+
+**Status**: Planned for future release
+
+**Description**:
+The current Customer Support "Ticket History" tab displays all HubSpot pipeline tickets associated with the client's Company/Contact/Deal IDs. This includes tickets created from various sources (internal, phone, email, etc.).
+
+**Planned Change**:
+- Hide the full HubSpot pipeline ticket view from clients
+- Display ONLY tickets submitted via the "Submit a Ticket" form in the Client Portal
+- This ensures clients see only their own portal-submitted support requests
+
+**Implementation Notes**:
+1. The current ticket fetching logic in `SupportPage` (portal.html) fetches all tickets via `/api/client/hubspot/tickets`
+2. To implement this change:
+   - Add a `source` or `portal_submitted` flag when creating tickets via the HubSpot form
+   - Filter the ticket display to show only portal-submitted tickets
+   - Alternatively, track portal-submitted ticket IDs in the local database and filter client-side
+3. The HubSpot form submission (form ID: `089d904f-4acb-4ff7-8c61-53ee99e12345`) should tag tickets for identification
+
+**Current Code Location**:
+- Ticket fetching: `portal.html` lines 2163-2178 (`SupportPage` component)
+- HubSpot form embed: `portal.html` lines 2386-2401 (Submit Ticket tab)
+- Backend ticket endpoint: `server.js` `/api/client/hubspot/tickets`
+
+**Benefits**:
+- Cleaner client experience showing only their own submissions
+- Privacy - clients don't see internal ticket notes or escalations
+- Focused support view for self-service
 
 ---
 

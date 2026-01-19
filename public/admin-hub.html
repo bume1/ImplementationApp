@@ -84,9 +84,9 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, password })
         }).then(handleResponse).then(result => {
-          // Verify user has admin hub access
-          if (result.user && result.user.role !== 'admin' && !result.user.hasAdminHubAccess) {
-            return { error: 'Access denied. Admin privileges required.' };
+          // Verify user has admin hub access (super admins, managers, or users with hasAdminHubAccess)
+          if (result.user && result.user.role !== 'admin' && !result.user.isManager && !result.user.hasAdminHubAccess) {
+            return { error: 'Access denied. Admin Hub access required.' };
           }
           return result;
         }).catch(err => ({ error: err.message })),
@@ -340,12 +340,31 @@
 
     // Sidebar with portal access - Modern design
     const Sidebar = ({ activePage, onNavigate, user, token, isMobileOpen, onClose }) => {
-      const menuItems = [
-        { id: 'dashboard', label: 'Dashboard', icon: Icons.home, color: 'text-primary-500' },
-        { id: 'inbox', label: 'Inbox', icon: Icons.inbox, color: 'text-orange-500' },
-        { id: 'users', label: 'User Management', icon: Icons.users, color: 'text-primary-500' },
-        { id: 'service_portal', label: 'Service Portal', icon: Icons.clipboard, color: 'text-success-500' },
+      // Check if user is a Super Admin (role === 'admin')
+      const isSuperAdmin = user?.role === 'admin';
+      // Check if user is a Manager
+      const isManager = user?.isManager && !isSuperAdmin;
+
+      // Build menu items based on user permissions
+      // Managers can only see Dashboard and Service Portal (no Inbox or User Management)
+      const allMenuItems = [
+        { id: 'dashboard', label: 'Dashboard', icon: Icons.home, color: 'text-primary-500', superAdminOnly: false },
+        { id: 'inbox', label: 'Inbox', icon: Icons.inbox, color: 'text-orange-500', superAdminOnly: true },
+        { id: 'users', label: 'User Management', icon: Icons.users, color: 'text-primary-500', superAdminOnly: true },
+        { id: 'service_portal', label: 'Service Portal', icon: Icons.clipboard, color: 'text-success-500', superAdminOnly: false },
       ];
+
+      // Filter menu items: Super Admin sees all, Manager only sees non-superAdminOnly items
+      const menuItems = isSuperAdmin
+        ? allMenuItems
+        : allMenuItems.filter(item => !item.superAdminOnly);
+
+      // Determine user role label
+      const getRoleLabel = () => {
+        if (isSuperAdmin) return 'Super Admin';
+        if (isManager) return 'Manager';
+        return 'Admin Hub User';
+      };
 
       // External links with token passing
       const openExternalApp = (path) => {
@@ -371,7 +390,7 @@
                   {user?.name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0,2)}
                 </div>
                 <div>
-                  <p className="text-xs opacity-75">Administrator</p>
+                  <p className="text-xs opacity-75">{getRoleLabel()}</p>
                   <p className="font-semibold text-sm">{user?.name}</p>
                 </div>
               </div>
@@ -787,6 +806,7 @@
 
       const defaultFormData = {
         name: '', email: '', password: '', role: 'user',
+        isManager: false, // Manager flag - limited admin access (no inbox/user management)
         hasServicePortalAccess: false, hasAdminHubAccess: false,
         hasImplementationsAccess: false, hasClientPortalAdminAccess: false,
         practiceName: '', isNewClient: false,
@@ -852,6 +872,7 @@
           email: user.email || '',
           password: '',
           role: user.role || 'user',
+          isManager: user.isManager || false,
           hasServicePortalAccess: user.hasServicePortalAccess || false,
           hasAdminHubAccess: user.hasAdminHubAccess || false,
           hasImplementationsAccess: user.hasImplementationsAccess || false,
@@ -932,10 +953,20 @@
       // Export users to xlsx
       const exportUsersToXlsx = () => {
         // Prepare data for export
+        const getRoleDisplay = (user) => {
+          if (user.role === 'admin') return 'Super Admin';
+          if (user.isManager) return 'Manager';
+          if (user.role === 'user') return 'Team Member';
+          if (user.role === 'client') return 'Client';
+          if (user.role === 'vendor') return 'Vendor';
+          return user.role || '';
+        };
+
         const exportData = users.map(user => ({
           'Name': user.name || '',
           'Email': user.email || '',
-          'Role': user.role === 'user' ? 'Team Member' : user.role === 'admin' ? 'Admin' : user.role === 'client' ? 'Client' : user.role === 'vendor' ? 'Vendor' : user.role || '',
+          'Role': getRoleDisplay(user),
+          'Is Manager': user.isManager ? 'Yes' : 'No',
           'Practice/Company': user.practiceName || '',
           'Service Portal Access': user.hasServicePortalAccess ? 'Yes' : 'No',
           'Admin Hub Access': user.hasAdminHubAccess ? 'Yes' : 'No',
@@ -1115,6 +1146,22 @@
                   {(formData.role === 'user' || formData.role === 'admin') && (
                     <div className="border-t pt-4">
                       <h3 className="font-medium text-gray-800 mb-3">Access Permissions</h3>
+
+                      {/* Manager Role - Special elevated role */}
+                      {formData.role === 'user' && (
+                        <div className="mb-4">
+                          <div className="flex items-center gap-3 p-4 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl border-2 border-indigo-200">
+                            <input type="checkbox" id="isManager" checked={formData.isManager}
+                              onChange={(e) => setFormData({ ...formData, isManager: e.target.checked })}
+                              className="w-5 h-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                            <div>
+                              <label htmlFor="isManager" className="text-sm font-semibold text-indigo-800 cursor-pointer">Manager</label>
+                              <p className="text-xs text-indigo-600 mt-0.5">Grants access to Client Portal Admin + Service Portal in Admin Hub (excludes Inbox & User Management)</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
                       <div className="grid md:grid-cols-2 gap-3">
                         <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg">
                           <input type="checkbox" id="serviceAccess" checked={formData.hasServicePortalAccess}
@@ -1141,7 +1188,7 @@
                           <label htmlFor="clientPortalAdmin" className="text-sm font-medium text-gray-700">Client Portal Admin</label>
                         </div>
                       </div>
-                      <p className="text-xs text-gray-500 mt-2">Admins automatically have all permissions</p>
+                      <p className="text-xs text-gray-500 mt-2">Super Admins automatically have all permissions. Managers get Client Portal Admin + Service Portal access.</p>
                     </div>
                   )}
 
@@ -1311,8 +1358,16 @@
                           <td className="px-4 py-4">
                             <span className={`px-2 py-1 text-xs rounded-full font-medium ${
                               user.role === 'admin' ? 'bg-purple-100 text-purple-700' :
-                              user.role === 'client' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'
-                            }`}>{user.role}</span>
+                              user.isManager ? 'bg-indigo-100 text-indigo-700' :
+                              user.role === 'client' ? 'bg-blue-100 text-blue-700' :
+                              user.role === 'vendor' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+                            }`}>{
+                              user.role === 'admin' ? 'Super Admin' :
+                              user.isManager ? 'Manager' :
+                              user.role === 'client' ? 'Client' :
+                              user.role === 'vendor' ? 'Vendor' :
+                              user.role === 'user' ? 'Team Member' : user.role
+                            }</span>
                           </td>
                           <td className="px-4 py-4">
                             <div className="flex flex-wrap gap-1 justify-center">
@@ -2228,19 +2283,39 @@
 
       if (!token || !user) return <LoginPage onLogin={handleLogin} />;
 
+      // Check if user is a Super Admin (role === 'admin') - full access
+      const isSuperAdmin = user?.role === 'admin';
+      // Check if user is a Manager - limited access (no inbox/user management)
+      const isManager = user?.isManager && !isSuperAdmin;
+
+      // Navigation guard: Managers cannot access inbox or users pages
+      const handleNavigation = (page) => {
+        if (isManager && (page === 'inbox' || page === 'users')) {
+          // Redirect managers to dashboard if they try to access restricted pages
+          setActivePage('dashboard');
+        } else {
+          setActivePage(page);
+        }
+      };
+
       const renderPage = () => {
+        // Additional protection: if manager somehow gets to restricted page, show dashboard
+        if (isManager && (activePage === 'inbox' || activePage === 'users')) {
+          return <DashboardPage token={token} onNavigate={handleNavigation} />;
+        }
+
         switch (activePage) {
-          case 'dashboard': return <DashboardPage token={token} onNavigate={setActivePage} />;
+          case 'dashboard': return <DashboardPage token={token} onNavigate={handleNavigation} />;
           case 'inbox': return <InboxPage token={token} />;
           case 'users': return <UsersPage token={token} />;
           case 'service_portal': return <ServicePortalPage token={token} user={user} />;
-          default: return <DashboardPage token={token} onNavigate={setActivePage} />;
+          default: return <DashboardPage token={token} onNavigate={handleNavigation} />;
         }
       };
 
       return (
         <div className="min-h-screen bg-gray-50">
-          <Sidebar activePage={activePage} onNavigate={setActivePage} user={user} token={token} isMobileOpen={isMobileOpen} onClose={() => setIsMobileOpen(false)} />
+          <Sidebar activePage={activePage} onNavigate={handleNavigation} user={user} token={token} isMobileOpen={isMobileOpen} onClose={() => setIsMobileOpen(false)} />
           <div className="lg:hidden bg-white border-b p-4 flex items-center justify-between sticky top-0 z-30">
             <button onClick={() => setIsMobileOpen(true)} className="text-gray-600">{Icons.menu}</button>
             <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-8" />

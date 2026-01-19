@@ -82,8 +82,8 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, password })
         }).then(handleResponse).then(result => {
-          // Verify user has service portal access
-          if (result.user && result.user.role !== 'admin' && !result.user.hasServicePortalAccess && result.user.role !== 'vendor') {
+          // Verify user has service portal access (super admin, manager, vendor, or explicit access)
+          if (result.user && result.user.role !== 'admin' && !result.user.isManager && !result.user.hasServicePortalAccess && result.user.role !== 'vendor') {
             return { error: 'Access denied. You do not have Service Portal access.' };
           }
           return result;
@@ -116,6 +116,11 @@
       getServiceReport: (token, reportId) =>
         fetch(`${API_URL}/api/service-reports/${reportId}`, {
           headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+      getUsers: (token) =>
+        fetch(`${API_URL}/api/users`, {
+          headers: { 'Authorization': `Bearer ${token}` }
         }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' }))
     };
 
@@ -134,7 +139,8 @@
       wrench: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437l1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008z"/></svg>,
       check: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>,
       beaker: <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5"/></svg>,
-      chartBar: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>
+      chartBar: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>,
+      users: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/></svg>
     };
 
     // Login Page Component
@@ -235,11 +241,16 @@
 
     // Sidebar Component
     const Sidebar = ({ activePage, onNavigate, user, isMobileOpen, onClose }) => {
-      const menuItems = [
+      const baseMenuItems = [
         { id: 'home', label: 'Dashboard', icon: Icons.home },
         { id: 'new_report', label: 'New Service Report', icon: Icons.plus },
         { id: 'reports', label: 'Service Reports', icon: Icons.folder }
       ];
+
+      // Add Users menu item for admins and client portal admins
+      const menuItems = (user?.role === 'admin' || user?.hasClientPortalAdminAccess)
+        ? [...baseMenuItems, { id: 'users', label: 'Users', icon: Icons.users }]
+        : baseMenuItems;
 
       const handleNavigate = (id) => {
         onNavigate(id);
@@ -270,7 +281,9 @@
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-gray-900 truncate">{user?.name || 'Technician'}</p>
                   <p className="text-xs text-primary-600 font-medium">
-                    {user?.role === 'admin' ? 'Administrator' : 'Service Technician'}
+                    {user?.role === 'admin' ? 'Super Admin' :
+                     user?.isManager ? 'Manager' :
+                     user?.role === 'vendor' ? 'Vendor' : 'Service Technician'}
                   </p>
                 </div>
               </div>
@@ -1623,6 +1636,161 @@
       );
     };
 
+    // Users Page Component (for admins and client portal admins)
+    const UsersPage = ({ token }) => {
+      const [users, setUsers] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [searchTerm, setSearchTerm] = useState('');
+      const [roleFilter, setRoleFilter] = useState('all');
+
+      useEffect(() => {
+        loadUsers();
+      }, []);
+
+      const loadUsers = async () => {
+        setLoading(true);
+        const result = await api.getUsers(token);
+        if (!result.error) {
+          setUsers(result);
+        }
+        setLoading(false);
+      };
+
+      const filteredUsers = users.filter(user => {
+        const matchesSearch = (user.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                              (user.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                              (user.practiceName || '').toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesRole = roleFilter === 'all' || user.role === roleFilter;
+        return matchesSearch && matchesRole;
+      });
+
+      const getRoleBadge = (role) => {
+        const styles = {
+          admin: 'bg-purple-100 text-purple-700',
+          user: 'bg-blue-100 text-blue-700',
+          client: 'bg-green-100 text-green-700',
+          vendor: 'bg-orange-100 text-orange-700'
+        };
+        const labels = {
+          admin: 'Admin',
+          user: 'Team Member',
+          client: 'Client',
+          vendor: 'Vendor'
+        };
+        return (
+          <span className={`px-2 py-1 rounded-full text-xs font-medium ${styles[role] || 'bg-gray-100 text-gray-700'}`}>
+            {labels[role] || role}
+          </span>
+        );
+      };
+
+      return (
+        <div className="space-y-6 animate-fade-in">
+          {/* Header */}
+          <div className="card-modern p-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">Users</h1>
+                <p className="text-gray-500 mt-1">View all users in the system</p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Search users..."
+                    className="input-modern pl-10 pr-4 py-2 w-full sm:w-64"
+                  />
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                    {Icons.search}
+                  </span>
+                </div>
+                <select
+                  value={roleFilter}
+                  onChange={(e) => setRoleFilter(e.target.value)}
+                  className="input-modern px-4 py-2"
+                >
+                  <option value="all">All Roles</option>
+                  <option value="admin">Admins</option>
+                  <option value="user">Team Members</option>
+                  <option value="client">Clients</option>
+                  <option value="vendor">Vendors</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Users List */}
+          {loading ? (
+            <div className="card-modern p-12 text-center">
+              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-500 mx-auto"></div>
+              <p className="mt-4 text-gray-500">Loading users...</p>
+            </div>
+          ) : filteredUsers.length === 0 ? (
+            <div className="card-modern p-12 text-center">
+              <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
+                {React.cloneElement(Icons.users, { className: 'w-8 h-8 text-gray-400' })}
+              </div>
+              <p className="text-gray-500">No users found</p>
+            </div>
+          ) : (
+            <div className="card-modern overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b">
+                    <tr>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Name</th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Email</th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Role</th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Practice/Company</th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Access</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {filteredUsers.map(user => (
+                      <tr key={user.id} className="hover:bg-gray-50 transition">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white font-semibold shadow-sm">
+                              {(user.name || 'U').charAt(0).toUpperCase()}
+                            </div>
+                            <span className="font-medium text-gray-900">{user.name || '-'}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-gray-600">{user.email}</td>
+                        <td className="px-6 py-4">{getRoleBadge(user.role)}</td>
+                        <td className="px-6 py-4 text-gray-600">{user.practiceName || '-'}</td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-wrap gap-1">
+                            {user.hasServicePortalAccess && (
+                              <span className="px-2 py-0.5 bg-blue-50 text-blue-600 text-xs rounded-full">Service</span>
+                            )}
+                            {user.hasAdminHubAccess && (
+                              <span className="px-2 py-0.5 bg-purple-50 text-purple-600 text-xs rounded-full">Admin Hub</span>
+                            )}
+                            {user.hasImplementationsAccess && (
+                              <span className="px-2 py-0.5 bg-green-50 text-green-600 text-xs rounded-full">Implementations</span>
+                            )}
+                            {user.hasClientPortalAdminAccess && (
+                              <span className="px-2 py-0.5 bg-orange-50 text-orange-600 text-xs rounded-full">Client Portal Admin</span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="px-6 py-4 border-t bg-gray-50 text-sm text-gray-500">
+                Showing {filteredUsers.length} of {users.length} users
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+
     // Main App Component
     const App = () => {
       // Check multiple token sources - service_token, unified_token, or admin_token
@@ -1720,6 +1888,8 @@
             );
           case 'reports':
             return <ReportsPage token={token} onViewReport={handleViewReport} />;
+          case 'users':
+            return <UsersPage token={token} />;
           default:
             return <HomePage user={user} onNavigate={setActivePage} recentReports={data?.recentReports || []} />;
         }
