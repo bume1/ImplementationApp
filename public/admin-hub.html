@@ -190,6 +190,19 @@
       getInventoryReports: (token) =>
         fetch(`${API_URL}/api/inventory/all-reports`, {
           headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      // Feedback/Inbox APIs
+      getFeedback: (token) =>
+        fetch(`${API_URL}/api/admin/feedback`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      updateFeedback: (token, id, data) =>
+        fetch(`${API_URL}/api/admin/feedback/${id}`, {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
         }).then(handleResponse).catch(err => ({ error: err.message }))
     };
 
@@ -215,7 +228,11 @@
       upload: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>,
       chart: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>,
       beaker: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5"/></svg>,
-      rocket: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.59 14.37a6 6 0 01-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 006.16-12.12A14.98 14.98 0 009.631 8.41m5.96 5.96a14.926 14.926 0 01-5.841 2.58m-.119-8.54a6 6 0 00-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 00-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 01-2.448-2.448 14.9 14.9 0 01.06-.312m-2.24 2.39a4.493 4.493 0 00-1.757 4.306 4.493 4.493 0 004.306-1.758M16.5 9a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z"/></svg>
+      rocket: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.59 14.37a6 6 0 01-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 006.16-12.12A14.98 14.98 0 009.631 8.41m5.96 5.96a14.926 14.926 0 01-5.841 2.58m-.119-8.54a6 6 0 00-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 00-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 01-2.448-2.448 14.9 14.9 0 01.06-.312m-2.24 2.39a4.493 4.493 0 00-1.757 4.306 4.493 4.493 0 004.306-1.758M16.5 9a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z"/></svg>,
+      chat: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>,
+      message: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/></svg>,
+      inbox: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 13.5h3.86a2.25 2.25 0 012.012 1.244l.256.512a2.25 2.25 0 002.013 1.244h3.218a2.25 2.25 0 002.013-1.244l.256-.512a2.25 2.25 0 012.013-1.244h3.859m-17.5 0a2.25 2.25 0 00-1.883 1.013A11.945 11.945 0 003 19.5h18c.844 0 1.654-.178 2.383-.5a2.25 2.25 0 00-1.883-1.013M2.25 13.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0115.686 0c1.1.128 1.907 1.077 1.907 2.185V13.5"/></svg>,
+      bug: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 12.75c1.148 0 2.278.08 3.383.237 1.037.146 1.866.966 1.866 2.013 0 3.728-2.35 6.75-5.25 6.75S6.75 18.728 6.75 15c0-1.046.83-1.867 1.866-2.013A24.204 24.204 0 0112 12.75zm0 0c2.883 0 5.647.508 8.207 1.44a23.91 23.91 0 01-1.152 6.06M12 12.75c-2.883 0-5.647.508-8.208 1.44.125 2.104.52 4.136 1.153 6.06M12 12.75V8.25m0 0c1.086 0 2.152-.14 3.181-.406a1.128 1.128 0 01-.664-.814 2.999 2.999 0 00-5.034 0 1.128 1.128 0 01-.664.814A10.988 10.988 0 0012 8.25zM12 21c-.17.001-.34 0-.508-.004A23.91 23.91 0 015.793 14.69M12 21c.17.001.34 0 .508-.004a23.91 23.91 0 005.699-6.306M9 9.75h6m-3-6.75a2.25 2.25 0 012.25 2.25v.407a2.25 2.25 0 01-.664 1.591L15 9.75"/></svg>
     };
 
     // Login Page - Modern sleek design
@@ -322,6 +339,7 @@
     const Sidebar = ({ activePage, onNavigate, user, token, isMobileOpen, onClose }) => {
       const menuItems = [
         { id: 'dashboard', label: 'Dashboard', icon: Icons.home, color: 'text-primary-500' },
+        { id: 'inbox', label: 'Inbox', icon: Icons.inbox, color: 'text-orange-500' },
         { id: 'users', label: 'User Management', icon: Icons.users, color: 'text-primary-500' },
         { id: 'service_portal', label: 'Service Portal', icon: Icons.clipboard, color: 'text-success-500' },
       ];
@@ -507,9 +525,252 @@
                   </div>
                   <span className="text-xl font-bold text-warning-600">{stats?.activeProjects || 0}</span>
                 </div>
+                <div className="flex justify-between items-center p-4 bg-gray-50 rounded-xl">
+                  <div className="flex items-center gap-3">
+                    <span className="w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center">{Icons.chat}</span>
+                    <span className="text-gray-700">Open Tickets</span>
+                  </div>
+                  <span className="text-xl font-bold text-red-600">{stats?.openTickets || 0}</span>
+                </div>
               </div>
             </div>
           </div>
+        </div>
+      );
+    };
+
+    // Inbox Page - Bug Reports and Feature Requests
+    const InboxPage = ({ token }) => {
+      const [feedback, setFeedback] = useState([]);
+      const [passwordResets, setPasswordResets] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [activeTab, setActiveTab] = useState('feedback');
+      const [selectedItem, setSelectedItem] = useState(null);
+
+      useEffect(() => {
+        loadData();
+      }, [token]);
+
+      const loadData = async () => {
+        setLoading(true);
+        const [feedbackData, resetData] = await Promise.all([
+          api.getFeedback(token),
+          api.getPasswordResetRequests(token)
+        ]);
+        if (!feedbackData.error) setFeedback(feedbackData);
+        if (!resetData.error) setPasswordResets(resetData);
+        setLoading(false);
+      };
+
+      const updateFeedbackStatus = async (id, status) => {
+        await api.updateFeedback(token, id, { status });
+        loadData();
+        setSelectedItem(null);
+      };
+
+      const handlePasswordReset = async (id) => {
+        await api.handlePasswordReset(token, id);
+        loadData();
+      };
+
+      const dismissPasswordReset = async (id) => {
+        await api.dismissPasswordReset(token, id);
+        loadData();
+      };
+
+      const openFeedback = feedback.filter(f => f.status === 'open');
+      const resolvedFeedback = feedback.filter(f => f.status === 'resolved');
+
+      if (loading) return (
+        <div className="flex items-center justify-center py-20">
+          <div className="flex flex-col items-center gap-4">
+            <div className="animate-spin rounded-full h-10 w-10 border-[3px] border-primary-500 border-t-transparent"></div>
+            <p className="text-gray-500 text-sm">Loading inbox...</p>
+          </div>
+        </div>
+      );
+
+      return (
+        <div className="space-y-6">
+          {/* Header */}
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-2xl font-bold text-accent">Inbox</h1>
+              <p className="text-gray-500 text-sm mt-1">Bug reports, feature requests, and password resets</p>
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <div className="flex gap-2 border-b border-gray-200">
+            <button onClick={() => setActiveTab('feedback')}
+              className={`px-4 py-3 text-sm font-medium border-b-2 transition ${activeTab === 'feedback' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+              Feedback & Requests
+              {openFeedback.length > 0 && <span className="ml-2 px-2 py-0.5 bg-red-100 text-red-600 rounded-full text-xs">{openFeedback.length}</span>}
+            </button>
+            <button onClick={() => setActiveTab('password')}
+              className={`px-4 py-3 text-sm font-medium border-b-2 transition ${activeTab === 'password' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+              Password Resets
+              {passwordResets.length > 0 && <span className="ml-2 px-2 py-0.5 bg-orange-100 text-orange-600 rounded-full text-xs">{passwordResets.length}</span>}
+            </button>
+          </div>
+
+          {activeTab === 'feedback' && (
+            <div className="space-y-4">
+              {/* Open Feedback */}
+              <div className="bg-white rounded-xl shadow-soft border border-gray-100 overflow-hidden">
+                <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/50">
+                  <h3 className="font-semibold text-gray-800">Open Items ({openFeedback.length})</h3>
+                </div>
+                {openFeedback.length === 0 ? (
+                  <div className="p-8 text-center text-gray-500">
+                    <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                      {Icons.check}
+                    </div>
+                    <p>No open feedback items</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-gray-100">
+                    {openFeedback.map(item => (
+                      <div key={item.id} className="p-4 hover:bg-gray-50 cursor-pointer transition" onClick={() => setSelectedItem(item)}>
+                        <div className="flex items-start gap-4">
+                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${item.type === 'bug' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>
+                            {item.type === 'bug' ? Icons.bug : Icons.chat}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className={`px-2 py-0.5 rounded text-xs font-medium ${item.type === 'bug' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                                {item.type === 'bug' ? 'Bug Report' : 'Feature Request'}
+                              </span>
+                              <span className="text-xs text-gray-400">{new Date(item.createdAt).toLocaleDateString()}</span>
+                            </div>
+                            <h4 className="font-medium text-gray-800 truncate">{item.subject}</h4>
+                            <p className="text-sm text-gray-500 truncate">{item.description}</p>
+                            <p className="text-xs text-gray-400 mt-1">From: {item.userName} ({item.userEmail})</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Resolved Feedback */}
+              {resolvedFeedback.length > 0 && (
+                <div className="bg-white rounded-xl shadow-soft border border-gray-100 overflow-hidden">
+                  <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/50">
+                    <h3 className="font-semibold text-gray-800">Resolved ({resolvedFeedback.length})</h3>
+                  </div>
+                  <div className="divide-y divide-gray-100">
+                    {resolvedFeedback.slice(0, 5).map(item => (
+                      <div key={item.id} className="p-4 opacity-60">
+                        <div className="flex items-start gap-4">
+                          <div className="w-10 h-10 rounded-lg bg-green-100 text-green-600 flex items-center justify-center flex-shrink-0">
+                            {Icons.check}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-medium text-gray-800 truncate">{item.subject}</h4>
+                            <p className="text-sm text-gray-500">{item.type === 'bug' ? 'Bug Report' : 'Feature Request'} - Resolved</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'password' && (
+            <div className="bg-white rounded-xl shadow-soft border border-gray-100 overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/50">
+                <h3 className="font-semibold text-gray-800">Pending Password Reset Requests</h3>
+              </div>
+              {passwordResets.length === 0 ? (
+                <div className="p-8 text-center text-gray-500">
+                  <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                    {Icons.key}
+                  </div>
+                  <p>No pending password reset requests</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {passwordResets.map(request => (
+                    <div key={request.id} className="p-4 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center">
+                          {Icons.key}
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-800">{request.email}</p>
+                          <p className="text-sm text-gray-500">Requested: {new Date(request.requestedAt).toLocaleString()}</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => handlePasswordReset(request.id)}
+                          className="px-3 py-1.5 bg-primary-500 text-white text-sm rounded-lg hover:bg-primary-600 transition">
+                          Reset Password
+                        </button>
+                        <button onClick={() => dismissPasswordReset(request.id)}
+                          className="px-3 py-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 text-sm rounded-lg transition">
+                          Dismiss
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Detail Modal */}
+          {selectedItem && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg animate-fade-in">
+                <div className="p-6 border-b border-gray-100">
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${selectedItem.type === 'bug' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>
+                        {selectedItem.type === 'bug' ? Icons.bug : Icons.chat}
+                      </div>
+                      <div>
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${selectedItem.type === 'bug' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                          {selectedItem.type === 'bug' ? 'Bug Report' : 'Feature Request'}
+                        </span>
+                        <h2 className="text-lg font-bold text-accent mt-1">{selectedItem.subject}</h2>
+                      </div>
+                    </div>
+                    <button onClick={() => setSelectedItem(null)} className="text-gray-400 hover:text-gray-600">
+                      {Icons.close}
+                    </button>
+                  </div>
+                </div>
+                <div className="p-6 space-y-4">
+                  <div>
+                    <p className="text-sm font-medium text-gray-500 mb-1">From</p>
+                    <p className="text-gray-800">{selectedItem.userName} ({selectedItem.userEmail})</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-500 mb-1">Submitted</p>
+                    <p className="text-gray-800">{new Date(selectedItem.createdAt).toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-500 mb-1">Description</p>
+                    <p className="text-gray-800 whitespace-pre-wrap bg-gray-50 p-4 rounded-lg">{selectedItem.description}</p>
+                  </div>
+                </div>
+                <div className="p-6 border-t border-gray-100 flex gap-3">
+                  <button onClick={() => setSelectedItem(null)}
+                    className="flex-1 py-2.5 px-4 rounded-xl border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition">
+                    Close
+                  </button>
+                  <button onClick={() => updateFeedbackStatus(selectedItem.id, 'resolved')}
+                    className="flex-1 py-2.5 px-4 rounded-xl bg-green-500 text-white font-medium hover:bg-green-600 transition">
+                    Mark Resolved
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       );
     };
@@ -1918,6 +2179,7 @@
       const renderPage = () => {
         switch (activePage) {
           case 'dashboard': return <DashboardPage token={token} onNavigate={setActivePage} />;
+          case 'inbox': return <InboxPage token={token} />;
           case 'users': return <UsersPage token={token} />;
           case 'service_portal': return <ServicePortalPage token={token} user={user} />;
           default: return <DashboardPage token={token} onNavigate={setActivePage} />;

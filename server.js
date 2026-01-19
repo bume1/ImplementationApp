@@ -576,6 +576,64 @@ app.put('/api/admin/password-reset-requests/:id', authenticateToken, requireAdmi
   }
 });
 
+// Submit feedback/bug report (authenticated users)
+app.post('/api/feedback', authenticateToken, async (req, res) => {
+  try {
+    const { type, subject, description, userEmail, userName } = req.body;
+    const feedbackRequests = (await db.get('feedback_requests')) || [];
+
+    const newFeedback = {
+      id: Date.now().toString(),
+      type,
+      subject,
+      description,
+      userEmail: userEmail || req.user.email,
+      userName: userName || req.user.name,
+      status: 'open',
+      createdAt: new Date().toISOString()
+    };
+
+    feedbackRequests.unshift(newFeedback);
+    await db.set('feedback_requests', feedbackRequests);
+
+    res.json({ message: 'Feedback submitted successfully', id: newFeedback.id });
+  } catch (error) {
+    console.error('Feedback submission error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get all feedback (Admin only)
+app.get('/api/admin/feedback', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const feedbackRequests = (await db.get('feedback_requests')) || [];
+    res.json(feedbackRequests);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update feedback status (Admin only)
+app.put('/api/admin/feedback/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, adminNote } = req.body;
+    const feedbackRequests = (await db.get('feedback_requests')) || [];
+    const idx = feedbackRequests.findIndex(f => f.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'Feedback not found' });
+
+    feedbackRequests[idx].status = status || feedbackRequests[idx].status;
+    if (adminNote) feedbackRequests[idx].adminNote = adminNote;
+    feedbackRequests[idx].updatedAt = new Date().toISOString();
+    feedbackRequests[idx].updatedBy = req.user.email;
+    await db.set('feedback_requests', feedbackRequests);
+
+    res.json({ message: 'Feedback updated' });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Get activity log (Admin only)
 app.get('/api/admin/activity-log', authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -5246,6 +5304,11 @@ app.get('/knowledge', (req, res) => {
   res.sendFile(__dirname + '/public/knowledge.html');
 });
 
+// Changelog route
+app.get('/changelog', (req, res) => {
+  res.sendFile(__dirname + '/public/changelog.html');
+});
+
 // ============== ADMIN HUB ROUTES ==============
 
 // Admin hub HTML route
@@ -5293,6 +5356,10 @@ app.get('/api/admin-hub/dashboard', authenticateToken, requireAdmin, async (req,
     const projects = await getProjects();
     const serviceReports = (await db.get('service_reports')) || [];
 
+    // Get feedback/requests for admin inbox
+    const feedbackRequests = (await db.get('feedback_requests')) || [];
+    const openFeedback = feedbackRequests.filter(f => f.status !== 'resolved').length;
+
     // Calculate statistics
     const stats = {
       totalUsers: users.length,
@@ -5302,7 +5369,8 @@ app.get('/api/admin-hub/dashboard', authenticateToken, requireAdmin, async (req,
       totalProjects: projects.length,
       activeProjects: projects.filter(p => p.status !== 'completed').length,
       totalServiceReports: serviceReports.length,
-      recentServiceReports: serviceReports.slice(0, 5)
+      recentServiceReports: serviceReports.slice(0, 5),
+      openTickets: openFeedback
     };
 
     res.json(stats);
