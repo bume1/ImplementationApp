@@ -687,7 +687,8 @@
                 <p className="text-gray-600 mt-1">Manage all users, roles, and portal access</p>
               </div>
               <button onClick={() => { setShowForm(true); setEditingUser(null); setFormData(defaultFormData); }}
-                className="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-accent flex items-center gap-2">
+                className="px-4 py-2 rounded-lg font-medium flex items-center gap-2 shadow-sm hover:shadow-md transition-all"
+                style={{backgroundColor: '#045E9F', color: 'white'}}>
                 {Icons.plus} Add User
               </button>
             </div>
