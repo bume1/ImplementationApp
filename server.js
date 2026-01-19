@@ -411,7 +411,20 @@ app.post('/api/auth/login', async (req, res) => {
     if (user.role === 'client') {
       userResponse.practiceName = user.practiceName;
       userResponse.isNewClient = user.isNewClient;
-      userResponse.slug = user.slug;
+      // Auto-generate slug if client doesn't have one
+      if (!user.slug) {
+        const existingSlugs = users.filter(u => u.slug).map(u => u.slug);
+        const generatedSlug = generateClientSlug(user.practiceName || user.name || user.email.split('@')[0], existingSlugs);
+        // Update user in database with new slug
+        const userIndex = users.findIndex(u => u.id === user.id);
+        if (userIndex !== -1) {
+          users[userIndex].slug = generatedSlug;
+          await db.set('users', users);
+        }
+        userResponse.slug = generatedSlug;
+      } else {
+        userResponse.slug = user.slug;
+      }
     }
     // Include project access levels for team members
     if (user.role === 'user') {
