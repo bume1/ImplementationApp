@@ -394,22 +394,27 @@ app.post('/api/auth/login', async (req, res) => {
       JWT_SECRET,
       { expiresIn: '24h' }
     );
-    const userResponse = { 
-      id: user.id, 
-      email: user.email, 
-      name: user.name, 
-      role: user.role 
+    const userResponse = {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      // Include permission flags for all users
+      hasServicePortalAccess: user.hasServicePortalAccess || false,
+      hasAdminHubAccess: user.hasAdminHubAccess || false,
+      hasImplementationsAccess: user.hasImplementationsAccess || false,
+      hasClientPortalAdminAccess: user.hasClientPortalAdminAccess || false,
+      assignedProjects: user.assignedProjects || [],
+      assignedClients: user.assignedClients || []
     };
     // Include client-specific fields
     if (user.role === 'client') {
       userResponse.practiceName = user.practiceName;
       userResponse.isNewClient = user.isNewClient;
       userResponse.slug = user.slug;
-      userResponse.assignedProjects = user.assignedProjects || [];
     }
     // Include project access levels for team members
     if (user.role === 'user') {
-      userResponse.assignedProjects = user.assignedProjects || [];
       userResponse.projectAccessLevels = user.projectAccessLevels || {};
     }
     res.json({ token, user: userResponse });
