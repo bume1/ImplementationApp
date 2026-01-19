@@ -216,18 +216,24 @@ const authenticateToken = async (req, res, next) => {
     const freshUser = users.find(u => u.id === tokenUser.id);
     if (!freshUser) return res.status(403).json({ error: 'User not found' });
     // Use fresh data for all user properties to ensure permission changes take effect immediately
+    // Determine if user is a manager (has limited admin access)
+    const isManager = freshUser.isManager || false;
+
     req.user = {
       id: freshUser.id,
       email: freshUser.email,
       name: freshUser.name,
-      role: freshUser.role, // admin, user, client, vendor
+      role: freshUser.role, // admin (super admin), user, client, vendor
       assignedProjects: freshUser.assignedProjects || [],
       projectAccessLevels: freshUser.projectAccessLevels || {},
+      // Manager flag - provides limited admin access (client portal admin + service portal in admin hub)
+      isManager: isManager,
       // Granular permission flags
       hasServicePortalAccess: freshUser.hasServicePortalAccess || false,
       hasAdminHubAccess: freshUser.hasAdminHubAccess || false,
       hasImplementationsAccess: freshUser.hasImplementationsAccess || false,
-      hasClientPortalAdminAccess: freshUser.hasClientPortalAdminAccess || false,
+      // Managers automatically get client portal admin access
+      hasClientPortalAdminAccess: freshUser.hasClientPortalAdminAccess || isManager || false,
       // Vendor-specific: clients they can service
       assignedClients: freshUser.assignedClients || [],
       // Client-specific fields
@@ -255,19 +261,32 @@ const generateClientUserSlug = async (practiceName) => {
   return generateClientSlug(practiceName, existingSlugs);
 };
 
+// Super Admin access - full system access (role === 'admin')
 const requireAdmin = (req, res, next) => {
   if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Admin access required' });
+    return res.status(403).json({ error: 'Super Admin access required' });
   }
   next();
 };
 
-// Require Admin Hub access (admins or users with hasAdminHubAccess)
+// Alias for clarity - Super Admin only routes
+const requireSuperAdmin = requireAdmin;
+
+// Require Admin Hub access (super admins, managers, or users with hasAdminHubAccess)
+// Note: Managers can access Admin Hub but only Service Portal section (UI handles section visibility)
 const requireAdminHubAccess = (req, res, next) => {
-  if (req.user.role === 'admin' || req.user.hasAdminHubAccess) {
+  if (req.user.role === 'admin' || req.user.isManager || req.user.hasAdminHubAccess) {
     return next();
   }
   return res.status(403).json({ error: 'Admin Hub access required' });
+};
+
+// Require Super Admin for sensitive Admin Hub operations (Inbox, User Management)
+const requireAdminHubFullAccess = (req, res, next) => {
+  if (req.user.role === 'admin') {
+    return next();
+  }
+  return res.status(403).json({ error: 'Super Admin access required for this operation' });
 };
 
 // Require Implementations App access
@@ -279,9 +298,9 @@ const requireImplementationsAccess = (req, res, next) => {
   return res.status(403).json({ error: 'Implementations App access required' });
 };
 
-// Require Client Portal Admin access
+// Require Client Portal Admin access (super admins, managers, or users with hasClientPortalAdminAccess)
 const requireClientPortalAdmin = (req, res, next) => {
-  if (req.user.role === 'admin' || req.user.hasClientPortalAdminAccess) {
+  if (req.user.role === 'admin' || req.user.isManager || req.user.hasClientPortalAdminAccess) {
     return next();
   }
   return res.status(403).json({ error: 'Client Portal admin access required' });
@@ -315,16 +334,16 @@ app.post('/api/auth/signup', async (req, res) => {
   }
 });
 
-// Admin create user endpoint
+// Admin create user endpoint (Super Admin only)
 app.post('/api/users', authenticateToken, async (req, res) => {
   try {
     if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Admin access required' });
+      return res.status(403).json({ error: 'Super Admin access required' });
     }
     const {
       email, password, name, role, practiceName, isNewClient, assignedProjects, logo,
       hasServicePortalAccess, hasAdminHubAccess, hasImplementationsAccess, hasClientPortalAdminAccess,
-      assignedClients, hubspotCompanyId, hubspotDealId, hubspotContactId, projectAccessLevels
+      isManager, assignedClients, hubspotCompanyId, hubspotDealId, hubspotContactId, projectAccessLevels
     } = req.body;
     if (!email || !password || !name) {
       return res.status(400).json({ error: 'Email, password, and name are required' });
@@ -339,7 +358,9 @@ app.post('/api/users', authenticateToken, async (req, res) => {
       email,
       name,
       password: hashedPassword,
-      role: role || 'user', // admin, user, client, vendor
+      role: role || 'user', // admin (super admin), user, client, vendor
+      // Manager flag - provides limited admin access
+      isManager: isManager || false,
       // Permission flags
       hasServicePortalAccess: hasServicePortalAccess || false,
       hasAdminHubAccess: hasAdminHubAccess || false,
@@ -382,6 +403,7 @@ app.post('/api/users', authenticateToken, async (req, res) => {
       email: newUser.email,
       name: newUser.name,
       role: newUser.role,
+      isManager: newUser.isManager,
       hasServicePortalAccess: newUser.hasServicePortalAccess,
       hasAdminHubAccess: newUser.hasAdminHubAccess,
       hasImplementationsAccess: newUser.hasImplementationsAccess,
@@ -423,16 +445,20 @@ app.post('/api/auth/login', async (req, res) => {
       JWT_SECRET,
       { expiresIn: '24h' }
     );
+    const isManager = user.isManager || false;
     const userResponse = {
       id: user.id,
       email: user.email,
       name: user.name,
       role: user.role,
+      // Manager flag - provides limited admin access
+      isManager: isManager,
       // Include permission flags for all users
       hasServicePortalAccess: user.hasServicePortalAccess || false,
       hasAdminHubAccess: user.hasAdminHubAccess || false,
       hasImplementationsAccess: user.hasImplementationsAccess || false,
-      hasClientPortalAdminAccess: user.hasClientPortalAdminAccess || false,
+      // Managers automatically get client portal admin access
+      hasClientPortalAdminAccess: user.hasClientPortalAdminAccess || isManager || false,
       assignedProjects: user.assignedProjects || [],
       assignedClients: user.assignedClients || [],
       // Password reset flag
@@ -468,7 +494,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// Client portal login endpoint (also supports admin access to portal management)
+// Client portal login endpoint (supports admin, manager, and client access)
 app.post('/api/auth/client-login', async (req, res) => {
   try {
     const { email, password, slug } = req.body;
@@ -476,8 +502,8 @@ app.post('/api/auth/client-login', async (req, res) => {
       return res.status(400).json({ error: 'Missing credentials' });
     }
     const users = await getUsers();
-    // Allow both clients and admins to log into the portal
-    const user = users.find(u => u.email === email && (u.role === 'client' || u.role === 'admin'));
+    // Allow clients, admins (super admin), and managers to log into the portal
+    const user = users.find(u => u.email === email && (u.role === 'client' || u.role === 'admin' || u.isManager));
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
@@ -490,16 +516,21 @@ app.post('/api/auth/client-login', async (req, res) => {
       JWT_SECRET,
       { expiresIn: '24h' }
     );
-    res.json({ 
-      token, 
-      user: { 
-        id: user.id, 
-        email: user.email, 
-        name: user.name, 
+    const isManager = user.isManager || false;
+    // Admin and Manager get 'admin' slug for portal admin access
+    const effectiveSlug = (user.role === 'admin' || isManager) ? 'admin' : user.slug;
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
         role: user.role,
+        isManager: isManager,
+        hasClientPortalAdminAccess: user.hasClientPortalAdminAccess || isManager || user.role === 'admin',
         practiceName: user.practiceName,
         isNewClient: user.isNewClient,
-        slug: user.role === 'admin' ? 'admin' : user.slug,
+        slug: effectiveSlug,
         logo: user.logo || '',
         assignedProjects: user.assignedProjects || []
       }
@@ -676,8 +707,12 @@ app.get('/api/admin/activity-log', authenticateToken, requireAdmin, async (req, 
   }
 });
 
-// ============== USER MANAGEMENT (Admin Only) ==============
-app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
+// ============== USER MANAGEMENT (Super Admin, Manager, and Client Portal Admin) ==============
+app.get('/api/users', authenticateToken, async (req, res) => {
+  // Allow super admins, managers, and client portal admins to view users
+  if (req.user.role !== 'admin' && !req.user.isManager && !req.user.hasClientPortalAdminAccess) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
   try {
     const users = await getUsers();
     const safeUsers = users.map(u => ({
@@ -686,6 +721,8 @@ app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
       name: u.name,
       role: u.role,
       createdAt: u.createdAt,
+      // Manager flag
+      isManager: u.isManager || false,
       // Permission flags
       hasServicePortalAccess: u.hasServicePortalAccess || false,
       hasAdminHubAccess: u.hasAdminHubAccess || false,
@@ -771,7 +808,7 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
       name, email, role, password, assignedProjects, projectAccessLevels,
       practiceName, isNewClient, logo, hubspotCompanyId, hubspotDealId, hubspotContactId,
       hasServicePortalAccess, hasAdminHubAccess, hasImplementationsAccess, hasClientPortalAdminAccess,
-      assignedClients
+      isManager, assignedClients
     } = req.body;
     const users = await getUsers();
     const idx = users.findIndex(u => u.id === userId);
@@ -783,6 +820,9 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
     if (password) users[idx].password = await bcrypt.hash(password, 10);
     if (assignedProjects !== undefined) users[idx].assignedProjects = assignedProjects;
     if (projectAccessLevels !== undefined) users[idx].projectAccessLevels = projectAccessLevels;
+
+    // Manager flag - provides limited admin access
+    if (isManager !== undefined) users[idx].isManager = isManager;
 
     // Permission flags
     if (hasServicePortalAccess !== undefined) users[idx].hasServicePortalAccess = hasServicePortalAccess;
@@ -816,6 +856,7 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
       email: users[idx].email,
       name: users[idx].name,
       role: users[idx].role,
+      isManager: users[idx].isManager || false,
       hasServicePortalAccess: users[idx].hasServicePortalAccess || false,
       hasAdminHubAccess: users[idx].hasAdminHubAccess || false,
       hasImplementationsAccess: users[idx].hasImplementationsAccess || false,
@@ -2160,13 +2201,15 @@ app.put('/api/portal-settings', authenticateToken, requireAdmin, async (req, res
 app.get('/api/client-documents', authenticateToken, async (req, res) => {
   try {
     const documents = (await db.get('client_documents')) || [];
-    
+
     if (req.user.role === 'client') {
-      // Clients only see documents for their slug
-      const clientDocs = documents.filter(d => d.slug === req.user.slug && d.active);
+      // Clients see documents for their slug OR documents shared with all clients
+      const clientDocs = documents.filter(d =>
+        d.active && (d.slug === req.user.slug || d.shareWithAll === true)
+      );
       return res.json(clientDocs);
     }
-    
+
     // Admins see all documents
     res.json(documents);
   } catch (error) {
@@ -2178,7 +2221,10 @@ app.get('/api/client-documents', authenticateToken, async (req, res) => {
 app.get('/api/client-documents/:slug', async (req, res) => {
   try {
     const documents = (await db.get('client_documents')) || [];
-    const clientDocs = documents.filter(d => d.slug === req.params.slug && d.active);
+    // Include documents for specific slug OR documents shared with all clients
+    const clientDocs = documents.filter(d =>
+      d.active && (d.slug === req.params.slug || d.shareWithAll === true)
+    );
     res.json(clientDocs);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
@@ -2188,33 +2234,38 @@ app.get('/api/client-documents/:slug', async (req, res) => {
 // Add a document for a client (admin only)
 app.post('/api/client-documents', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { slug, title, description, url, category } = req.body;
-    if (!slug || !title || !url) {
-      return res.status(400).json({ error: 'Missing required fields (slug, title, url)' });
+    const { slug, title, description, url, category, shareWithAll } = req.body;
+    // slug is not required if shareWithAll is true
+    if (!title || !url) {
+      return res.status(400).json({ error: 'Missing required fields (title, url)' });
     }
-    
+    if (!shareWithAll && !slug) {
+      return res.status(400).json({ error: 'Either slug or shareWithAll must be provided' });
+    }
+
     const documents = (await db.get('client_documents')) || [];
     const newDoc = {
       id: require('uuid').v4(),
-      slug,
+      slug: shareWithAll ? null : slug,
       title,
       description: description || '',
       url,
       category: category || 'General',
+      shareWithAll: shareWithAll || false,
       active: true,
       createdAt: new Date().toISOString(),
       createdBy: req.user.name
     };
-    
+
     documents.push(newDoc);
     await db.set('client_documents', documents);
-    
+
     // Log activity
     await logActivity(null, 'document_added', req.user.name, {
       documentTitle: title,
-      clientSlug: slug
+      clientSlug: shareWithAll ? 'ALL CLIENTS' : slug
     });
-    
+
     res.json(newDoc);
   } catch (error) {
     console.error('Add document error:', error);
@@ -2230,8 +2281,8 @@ app.put('/api/client-documents/:id', authenticateToken, requireAdmin, async (req
     if (idx === -1) {
       return res.status(404).json({ error: 'Document not found' });
     }
-    
-    const { title, description, url, category, active } = req.body;
+
+    const { title, description, url, category, active, shareWithAll, slug } = req.body;
     documents[idx] = {
       ...documents[idx],
       title: title || documents[idx].title,
@@ -2239,10 +2290,12 @@ app.put('/api/client-documents/:id', authenticateToken, requireAdmin, async (req
       url: url || documents[idx].url,
       category: category || documents[idx].category,
       active: active !== undefined ? active : documents[idx].active,
+      shareWithAll: shareWithAll !== undefined ? shareWithAll : documents[idx].shareWithAll,
+      slug: shareWithAll ? null : (slug !== undefined ? slug : documents[idx].slug),
       updatedAt: new Date().toISOString(),
       updatedBy: req.user.name
     };
-    
+
     await db.set('client_documents', documents);
     res.json(documents[idx]);
   } catch (error) {
@@ -4684,8 +4737,10 @@ app.post('/api/auth/service-login', async (req, res) => {
 
 // Middleware to check service portal access
 const requireServiceAccess = (req, res, next) => {
-  // Admins always have access
+  // Super Admins always have access
   if (req.user.role === 'admin') return next();
+  // Managers have access to service portal (part of their Admin Hub access)
+  if (req.user.isManager) return next();
   // Vendors always have service portal access
   if (req.user.role === 'vendor') return next();
   // Users with explicit service portal access
@@ -4699,8 +4754,8 @@ app.get('/api/service-portal/data', authenticateToken, requireServiceAccess, asy
     const serviceReports = (await db.get('service_reports')) || [];
     let userReports;
 
-    if (req.user.role === 'admin') {
-      // Admins see all reports
+    if (req.user.role === 'admin' || req.user.isManager) {
+      // Super Admins and Managers see all reports
       userReports = serviceReports;
     } else if (req.user.role === 'vendor') {
       // Vendors see their own reports + reports for their assigned clients
@@ -5697,22 +5752,25 @@ app.post('/api/auth/admin-login', async (req, res) => {
 });
 
 // Admin hub dashboard data
-app.get('/api/admin-hub/dashboard', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin-hub/dashboard', authenticateToken, requireAdminHubAccess, async (req, res) => {
   try {
     const users = await getUsers();
     const projects = await getProjects();
     const serviceReports = (await db.get('service_reports')) || [];
 
-    // Get feedback/requests for admin inbox
+    // Get feedback/requests for admin inbox (only for super admins)
     const feedbackRequests = (await db.get('feedback_requests')) || [];
     const openFeedback = feedbackRequests.filter(f => f.status !== 'resolved').length;
 
     // Calculate statistics
     const stats = {
       totalUsers: users.length,
+      // adminUsers kept for backward compatibility (super admins)
       adminUsers: users.filter(u => u.role === 'admin').length,
+      superAdminUsers: users.filter(u => u.role === 'admin').length,
+      managerUsers: users.filter(u => u.isManager).length,
       clientUsers: users.filter(u => u.role === 'client').length,
-      servicePortalUsers: users.filter(u => u.hasServicePortalAccess).length,
+      servicePortalUsers: users.filter(u => u.hasServicePortalAccess || u.role === 'vendor').length,
       totalProjects: projects.length,
       activeProjects: projects.filter(p => p.status !== 'completed').length,
       totalServiceReports: serviceReports.length,

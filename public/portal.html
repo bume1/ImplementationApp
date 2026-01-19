@@ -241,7 +241,8 @@
     const Sidebar = ({ activePage, onNavigate, user, isMobileOpen, onClose, projects }) => {
       const [inventoryExpanded, setInventoryExpanded] = useState(activePage === 'inventory' || activePage === 'reports' || activePage === 'submission_history');
       const [adminExpanded, setAdminExpanded] = useState(activePage.startsWith('admin_'));
-      const isAdmin = user?.role === 'admin' || user?.hasClientPortalAdminAccess;
+      // Super Admin, Manager, or users with hasClientPortalAdminAccess can access admin features
+      const isAdmin = user?.role === 'admin' || user?.isManager || user?.hasClientPortalAdminAccess;
 
       const mainItems = [
         { id: 'home', label: isAdmin ? 'Admin Dashboard' : 'Home', icon: Icons.home }
@@ -283,9 +284,20 @@
             </div>
             
             <div className="p-4 border-b bg-gray-50">
-              <p className="text-sm text-gray-500">Welcome,</p>
-              <p className="font-semibold text-accent">{user?.practiceName || user?.name || 'Client'}</p>
-              {user?.practiceName && user?.name && <p className="text-xs text-gray-500">{user?.name}</p>}
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-500">Welcome,</p>
+                  <p className="font-semibold text-accent">{user?.practiceName || user?.name || 'Client'}</p>
+                </div>
+                <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                  user?.role === 'admin' ? 'bg-purple-100 text-purple-700' :
+                  user?.isManager ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'
+                }`}>{
+                  user?.role === 'admin' ? 'Super Admin' :
+                  user?.isManager ? 'Manager' : 'Client'
+                }</span>
+              </div>
+              {user?.practiceName && user?.name && <p className="text-xs text-gray-500 mt-1">{user?.name}</p>}
             </div>
             
             <nav className="p-2">
@@ -3531,7 +3543,8 @@
     
     const Portal = ({ token, user }) => {
       const urlSlug = getSlugFromUrl();
-      const isAdmin = user?.role === 'admin' || user?.hasClientPortalAdminAccess;
+      // Super Admin, Manager, or users with hasClientPortalAdminAccess can access admin features
+      const isAdmin = user?.role === 'admin' || user?.isManager || user?.hasClientPortalAdminAccess;
       const slug = user?.slug || urlSlug || (isAdmin ? 'admin' : null);
 
       // URL routing helper functions
@@ -3714,8 +3727,8 @@
         if (!token || !user) {
           return <LoginPage slug={null} onLogin={handleLogin} />;
         }
-        // Admin users or users with Client Portal Admin access get the admin portal view directly at /portal
-        if (user.role === 'admin' || user.hasClientPortalAdminAccess) {
+        // Super Admin, Manager, or users with Client Portal Admin access get the admin portal view directly at /portal
+        if (user.role === 'admin' || user.isManager || user.hasClientPortalAdminAccess) {
           return <Portal token={token} user={user} />;
         }
         // Client users logged in from central portal - redirect to their portal
