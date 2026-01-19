@@ -2327,21 +2327,40 @@
 
               {/* Submit Ticket Tab */}
               {activeTab === 'submit' && (
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-800 mb-2">Submit a New Ticket</h2>
-                  <p className="text-gray-600 text-sm mb-6">Fill out the form below and our support team will respond within 24-48 hours.</p>
-
-                  <div className="bg-gray-50 rounded-lg p-4" style={{ minHeight: '500px' }}>
-                    <iframe
-                      src="https://share.hsforms.com/1H4l-uiwVTi-1_K1LZ3P-VA4ge7x"
-                      style={{ width: '100%', minHeight: '500px', border: 'none' }}
-                      title="Support Request Form"
-                    ></iframe>
+                <div className="grid md:grid-cols-2 gap-8 items-start">
+                  {/* Left Side - Header */}
+                  <div className="text-center md:text-left py-8">
+                    <h2 className="text-4xl font-bold text-gray-800 mb-6">Submit a Ticket</h2>
+                    <p className="text-gray-500 text-lg">
+                      <span className="italic">or</span> simply email us at
+                    </p>
+                    <a href="mailto:support@thrive365labs.com" className="text-primary hover:text-accent font-semibold text-lg">
+                      support@thrive365labs.com
+                    </a>
                   </div>
 
-                  <p className="text-center text-gray-500 text-sm mt-4">
-                    Or simply email us at <a href="mailto:support@thrive365labs.com" className="text-primary hover:underline">support@thrive365labs.com</a>
-                  </p>
+                  {/* Right Side - Form */}
+                  <div className="bg-white rounded-xl shadow-sm border p-6">
+                    <div className="text-center mb-4">
+                      <h3 className="text-xl font-bold text-gray-800">Support Request</h3>
+                      <p className="text-gray-500 text-sm">Agent response within 24-48 hours</p>
+                    </div>
+                    <div
+                      className="hs-form-frame"
+                      data-region="na1"
+                      data-form-id="089d904f-4acb-4ff7-8c61-53ee99e12345"
+                      data-portal-id="49020024"
+                      ref={(el) => {
+                        if (el && !document.getElementById('hs-form-script')) {
+                          const script = document.createElement('script');
+                          script.id = 'hs-form-script';
+                          script.src = 'https://js.hsforms.net/forms/embed/49020024.js';
+                          script.defer = true;
+                          document.body.appendChild(script);
+                        }
+                      }}
+                    ></div>
+                  </div>
                 </div>
               )}
 
