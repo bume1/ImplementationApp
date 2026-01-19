@@ -4775,6 +4775,29 @@ app.post('/api/service-reports', authenticateToken, requireServiceAccess, async 
         await db.set('service_reports', serviceReports);
 
         console.log(`✅ Service report uploaded to HubSpot for company ${reportData.hubspotCompanyId}`);
+
+        // Create HubSpot ticket with service report attached (except for Validations)
+        if (reportData.serviceType !== 'Validations') {
+          try {
+            const ticketResult = await hubspot.createTicketWithFile(
+              {
+                subject: `Service Report: ${reportData.clientFacilityName} - ${reportData.serviceType}`,
+                content: `Service Report Submitted\n\nClient: ${reportData.clientFacilityName}\nService Type: ${reportData.serviceType}\nTechnician: ${reportData.serviceProviderName || req.user.name}\nDate: ${reportDate}\n\nDescription: ${reportData.descriptionOfWork || 'See attached report'}`,
+                priority: 'LOW',
+                isBase64: false
+              },
+              htmlReport,
+              fileName,
+              reportData.hubspotCompanyId
+            );
+
+            newReport.hubspotTicketId = ticketResult.ticketId;
+            await db.set('service_reports', serviceReports);
+            console.log(`✅ HubSpot ticket created for service report: ${ticketResult.ticketId}`);
+          } catch (ticketError) {
+            console.error('HubSpot ticket creation error (non-blocking):', ticketError.message);
+          }
+        }
       } catch (hubspotError) {
         console.error('HubSpot upload error (non-blocking):', hubspotError.message);
         // Don't fail the request if HubSpot upload fails

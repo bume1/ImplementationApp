@@ -699,6 +699,140 @@ async function getTicketsForContact(contactId) {
   }
 }
 
+async function createTicketWithFile(ticketData, fileContent, fileName, companyId = null) {
+  const privateAppToken = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
+  if (!privateAppToken) {
+    throw new Error('HubSpot Private App token not configured');
+  }
+
+  try {
+    const axios = require('axios');
+    const FormData = require('form-data');
+
+    // 1. Upload the file first
+    const formData = new FormData();
+    const isBase64 = ticketData.isBase64 || false;
+    const fileBuffer = isBase64 ? Buffer.from(fileContent, 'base64') : Buffer.from(fileContent, 'utf8');
+
+    const ext = fileName.split('.').pop().toLowerCase();
+    const mimeTypes = {
+      'pdf': 'application/pdf',
+      'html': 'text/html',
+      'doc': 'application/msword',
+      'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'txt': 'text/plain'
+    };
+    const contentType = mimeTypes[ext] || 'application/octet-stream';
+
+    formData.append('file', fileBuffer, { filename: fileName, contentType: contentType });
+    formData.append('folderPath', '/service-reports');
+    formData.append('options', JSON.stringify({
+      access: 'PRIVATE',
+      overwrite: false,
+      duplicateValidationStrategy: 'NONE',
+      duplicateValidationScope: 'ENTIRE_PORTAL'
+    }));
+
+    console.log(`📤 Uploading file for ticket: ${fileName}`);
+
+    const uploadResponse = await axios.post(
+      'https://api.hubapi.com/files/v3/files',
+      formData,
+      {
+        headers: {
+          'Authorization': `Bearer ${privateAppToken}`,
+          ...formData.getHeaders()
+        },
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity
+      }
+    );
+
+    const fileId = uploadResponse.data.id;
+    console.log(`✅ File uploaded: ${fileId}`);
+
+    // 2. Create the ticket
+    const ticketProperties = {
+      subject: ticketData.subject || 'Service Report',
+      content: ticketData.content || 'Service report attached',
+      hs_pipeline: ticketData.pipelineId || '0', // Default pipeline
+      hs_pipeline_stage: ticketData.stageId || '1', // First stage
+      hs_ticket_priority: ticketData.priority || 'LOW'
+    };
+
+    const ticketInput = { properties: ticketProperties };
+
+    // Add associations if company ID provided
+    if (companyId && isValidRecordId(companyId)) {
+      ticketInput.associations = [{
+        to: { id: companyId },
+        types: [{
+          associationCategory: 'HUBSPOT_DEFINED',
+          associationTypeId: 26 // Ticket to Company
+        }]
+      }];
+    }
+
+    const ticketResponse = await axios.post(
+      'https://api.hubapi.com/crm/v3/objects/tickets',
+      ticketInput,
+      {
+        headers: {
+          'Authorization': `Bearer ${privateAppToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const ticketId = ticketResponse.data.id;
+    console.log(`✅ Ticket created: ${ticketId}`);
+
+    // 3. Create a note with the file attachment and associate with ticket
+    const noteProperties = {
+      hs_timestamp: Date.now().toString(),
+      hs_note_body: `Service Report Attached\n\nFile: ${fileName}`,
+      hs_attachment_ids: fileId.toString()
+    };
+
+    const noteResponse = await axios.post(
+      'https://api.hubapi.com/crm/v3/objects/notes',
+      { properties: noteProperties },
+      {
+        headers: {
+          'Authorization': `Bearer ${privateAppToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const noteId = noteResponse.data.id;
+
+    // Associate note with ticket
+    await axios.put(
+      `https://api.hubapi.com/crm/v4/objects/notes/${noteId}/associations/tickets/${ticketId}`,
+      [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 18 }], // Note to Ticket
+      {
+        headers: {
+          'Authorization': `Bearer ${privateAppToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    console.log(`✅ Note ${noteId} associated with ticket ${ticketId}`);
+
+    return {
+      ticketId,
+      fileId,
+      noteId,
+      ticketUrl: `https://app.hubspot.com/contacts/tickets/${ticketId}`
+    };
+  } catch (error) {
+    console.error('Error creating ticket with file:', error.response?.data || error.message);
+    throw error;
+  }
+}
+
 module.exports = {
   getHubSpotClient,
   getPipelines,
@@ -716,5 +850,6 @@ module.exports = {
   isValidRecordId,
   getTicketPipelines,
   getTicketsForCompany,
-  getTicketsForContact
+  getTicketsForContact,
+  createTicketWithFile
 };
