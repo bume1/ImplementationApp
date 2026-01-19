@@ -2182,31 +2182,43 @@
 
       return (
         <div className="space-y-6">
-          <div className="bg-white p-6 rounded-xl shadow-sm">
-            <h1 className="text-2xl font-bold text-accent">Customer Support Center</h1>
-            <p className="text-gray-600 mt-1">Submit tickets, view history, and chat with our support team</p>
+          {/* Hero Banner */}
+          <div className="relative rounded-2xl overflow-hidden shadow-lg">
+            <div className="absolute inset-0 bg-gradient-to-r from-blue-900/80 to-blue-700/60 z-10"></div>
+            <img
+              src="https://images.unsplash.com/photo-1579154204601-01588f351e67?w=1200&h=400&fit=crop"
+              alt="Laboratory Equipment"
+              className="w-full h-48 object-cover"
+            />
+            <div className="absolute inset-0 z-20 flex flex-col justify-center items-center text-white text-center px-6">
+              <h1 className="text-3xl md:text-4xl font-bold drop-shadow-lg">Customer Support Center</h1>
+              <p className="text-lg mt-2 opacity-90 drop-shadow">Thrive 365 Labs Client Portal</p>
+            </div>
           </div>
 
           {/* Tab Navigation */}
           <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-            <div className="flex border-b">
+            <div className="grid grid-cols-3 border-b">
               <button
                 onClick={() => setActiveTab('tickets')}
-                className={`flex-1 py-4 px-6 text-center font-medium transition ${activeTab === 'tickets' ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+                className={`py-4 px-4 font-medium transition flex items-center justify-center gap-2 ${activeTab === 'tickets' ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-50 border-r'}`}
               >
-                {Icons.list} Ticket History
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+                <span>Ticket History</span>
               </button>
               <button
                 onClick={() => setActiveTab('submit')}
-                className={`flex-1 py-4 px-6 text-center font-medium transition ${activeTab === 'submit' ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+                className={`py-4 px-4 font-medium transition flex items-center justify-center gap-2 ${activeTab === 'submit' ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-50 border-r'}`}
               >
-                {Icons.plus} Submit a Ticket
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                <span>Submit a Ticket</span>
               </button>
               <button
                 onClick={() => setActiveTab('chat')}
-                className={`flex-1 py-4 px-6 text-center font-medium transition ${activeTab === 'chat' ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+                className={`py-4 px-4 font-medium transition flex items-center justify-center gap-2 ${activeTab === 'chat' ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-50'}`}
               >
-                {Icons.chat} Live Chat
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+                <span>Live Chat</span>
               </button>
             </div>
 
