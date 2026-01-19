@@ -4644,10 +4644,16 @@ app.post('/api/service-reports', authenticateToken, requireServiceAccess, async 
   <div class="section">
     <h2>SERVICE PERFORMED</h2>
     <div class="field"><label>Service Type:</label><value>${reportData.serviceType || '-'}</value></div>
+    ${reportData.serviceType === 'Validations' ? `
+    <div class="field"><label>Validation Segments:</label><value>${reportData.validationSegments || '-'}</value></div>
+    <div class="field"><label>Materials Used:</label><value>${reportData.materialsUsed || '-'}</value></div>
+    <div class="field"><label>Recommendations:</label><value>${reportData.recommendations || '-'}</value></div>
+    ` : `
     <div class="field"><label>Description of Work:</label><value>${reportData.descriptionOfWork || '-'}</value></div>
     <div class="field"><label>Materials Used:</label><value>${reportData.materialsUsed || '-'}</value></div>
     <div class="field"><label>Solution:</label><value>${reportData.solution || '-'}</value></div>
-    <div class="field"><label>Outstanding Issues:</label><value>${reportData.outstandingIssues || '-'}</value></div>
+    <div class="field"><label>Final Recommendations:</label><value>${reportData.outstandingIssues || '-'}</value></div>
+    `}
   </div>
 
   <div class="section">
@@ -4698,6 +4704,46 @@ app.post('/api/service-reports', authenticateToken, requireServiceAccess, async 
       } catch (hubspotError) {
         console.error('HubSpot upload error (non-blocking):', hubspotError.message);
         // Don't fail the request if HubSpot upload fails
+      }
+    }
+
+    // Auto-upload signed service reports to client's Files section
+    if (reportData.customerSignature) {
+      try {
+        // Find client by name to get their slug
+        const users = (await db.get('users')) || [];
+        const client = users.find(u =>
+          u.role === 'client' &&
+          (u.name?.toLowerCase() === reportData.clientFacilityName?.toLowerCase() ||
+           u.clientName?.toLowerCase() === reportData.clientFacilityName?.toLowerCase() ||
+           u.companyName?.toLowerCase() === reportData.clientFacilityName?.toLowerCase())
+        );
+
+        if (client && client.slug) {
+          const clientDocuments = (await db.get('client_documents')) || [];
+          const reportDate = new Date(reportData.serviceCompletionDate || newReport.createdAt).toLocaleDateString();
+          const reportTypeName = reportData.serviceType === 'Validations' ? 'Validation Report' : 'Service Report';
+
+          const newDocument = {
+            id: uuidv4(),
+            slug: client.slug,
+            title: `${reportTypeName} - ${reportDate}`,
+            description: `${reportData.serviceType} - ${reportData.serviceProviderName || req.user.name}`,
+            category: 'Service Reports',
+            serviceReportId: newReport.id,
+            serviceType: reportData.serviceType,
+            createdAt: new Date().toISOString(),
+            uploadedBy: 'system',
+            uploadedByName: 'Thrive 365 Labs'
+          };
+
+          clientDocuments.push(newDocument);
+          await db.set('client_documents', clientDocuments);
+
+          console.log(`✅ Service report auto-added to client files for ${client.slug}`);
+        }
+      } catch (clientDocError) {
+        console.error('Client document auto-upload error (non-blocking):', clientDocError.message);
       }
     }
 

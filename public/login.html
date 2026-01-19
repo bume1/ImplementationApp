@@ -396,6 +396,9 @@
           {/* Footer */}
           <footer className="text-center py-6 text-gray-500 text-sm">
             <p>&copy; 2026 Thrive 365 Labs. All rights reserved.</p>
+            {!isClient && !isVendor && (
+              <a href="/changelog" className="text-primary-500 hover:underline text-xs mt-1 inline-block">View Changelog</a>
+            )}
           </footer>
         </div>
       );

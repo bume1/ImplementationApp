@@ -565,7 +565,7 @@
       );
     };
     
-    const MilestonesPage = ({ data }) => {
+    const MilestonesPage = ({ data, onNavigate }) => {
       const project = data?.projects?.[0];
       const allTasks = project?.tasks || [];
       const tasks = allTasks.filter(t => t.showToClient !== false);
@@ -660,6 +660,11 @@
                       <div>
                         <h3 className="font-semibold text-gray-700">{stageName}</h3>
                         <p className="text-xs text-gray-500">{stageTasks.filter(t => t.completed).length} of {stageTasks.length} complete</p>
+                        {phase === 'Phase 3' && stageName === 'Training/Validation' && onNavigate && (
+                          <button onClick={() => onNavigate('files')} className="text-xs text-primary hover:underline mt-1 inline-block">
+                            View Validation Reports in Files →
+                          </button>
+                        )}
                       </div>
                       {targetDate && (
                         <span className="text-xs bg-blue-100 text-primary px-2 py-1 rounded">
@@ -763,7 +768,14 @@
                       return (
                         <div key={stage} className="bg-gray-50 rounded-lg p-4">
                           <div className="flex justify-between items-start mb-3">
-                            <h4 className="font-semibold text-gray-800">{stage}</h4>
+                            <div>
+                              <h4 className="font-semibold text-gray-800">{stage}</h4>
+                              {phase === 'Phase 3' && stage === 'Training/Validation' && onNavigate && (
+                                <button onClick={() => onNavigate('files')} className="text-xs text-primary hover:underline mt-1 inline-block">
+                                  View Validation Reports in Files →
+                                </button>
+                              )}
+                            </div>
                             {targetDate && <span className="text-xs bg-blue-100 text-primary px-2 py-1 rounded">Target Due Date: {targetDate}</span>}
                           </div>
                           <div className="space-y-2">
@@ -2175,7 +2187,7 @@
         return acc;
       }, {});
       
-      const categories = ['Contracts', 'Onboarding', 'Inserts', 'Certificates of Analysis', 'SOP Templates', 'Other'];
+      const categories = ['Contracts', 'Onboarding', 'Inserts', 'Certificates of Analysis', 'Analyzer', 'Other'];
       
       const handleFileUpload = async (e) => {
         e.preventDefault();
@@ -3076,6 +3088,8 @@
                         <option value="Inserts">Inserts</option>
                         <option value="Certificates of Analysis">Certificates of Analysis</option>
                         <option value="SOP Templates">SOP Templates</option>
+                        <option value="Analyzer">Analyzer</option>
+                        <option value="Service Reports">Service Reports</option>
                       </select>
                     </div>
                     <div>
@@ -3283,7 +3297,7 @@
         
         // Client pages
         if (activePage === 'home') return <HomePage data={data} announcements={announcements} onNavigate={setActivePage} />;
-        if (activePage === 'milestones') return <MilestonesPage data={data} />;
+        if (activePage === 'milestones') return <MilestonesPage data={data} onNavigate={setActivePage} />;
         if (activePage === 'inventory') return <InventoryPage token={token} slug={slug} />;
         if (activePage === 'reports') return <ReportsPage token={token} slug={slug} onNavigate={setActivePage} />;
         if (activePage === 'submission_history') return <SubmissionHistoryPage token={token} slug={slug} isAdmin={false} onNavigate={setActivePage} />;
@@ -3318,6 +3332,9 @@
             
             <footer className="mt-12 text-center text-sm text-gray-500">
               <p>&copy; 2026 Thrive 365 Labs. All rights reserved.</p>
+              {isAdmin && (
+                <a href="/changelog" className="text-primary hover:underline text-xs mt-1 inline-block">View Changelog</a>
+              )}
             </footer>
           </main>
         </div>

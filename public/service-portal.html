@@ -506,34 +506,108 @@
       const [loading, setLoading] = useState(false);
       const [error, setError] = useState('');
       const [success, setSuccess] = useState(false);
-      const [formData, setFormData] = useState({
-        // Client Information
-        clientFacilityName: '',
-        customerName: '',
-        serviceProviderName: user?.name || '',
-        address: '',
-        serviceCompletionDate: new Date().toISOString().split('T')[0],
-        analyzerModel: '',
-        analyzerSerialNumber: '',
-        hubspotTicketNumber: '',
-        hubspotCompanyId: '',
+      const [hasDraft, setHasDraft] = useState(false);
+      const [draftSaved, setDraftSaved] = useState(false);
 
-        // Service Performed
-        serviceType: '',
-        descriptionOfWork: '',
-        materialsUsed: '',
-        solution: '',
-        outstandingIssues: '',
+      const getInitialFormData = () => {
+        const defaultData = {
+          // Client Information
+          clientFacilityName: '',
+          customerName: '',
+          serviceProviderName: user?.name || '',
+          address: '',
+          serviceCompletionDate: new Date().toISOString().split('T')[0],
+          analyzerModel: '',
+          analyzerSerialNumber: '',
+          hubspotTicketNumber: '',
+          hubspotCompanyId: '',
 
-        // Signatures
-        customerSignature: '',
-        customerSignatureDate: '',
-        technicianSignature: '',
-        technicianSignatureDate: new Date().toISOString().split('T')[0]
-      });
+          // Service Performed
+          serviceType: '',
+          descriptionOfWork: '',
+          materialsUsed: '',
+          solution: '',
+          outstandingIssues: '',
+
+          // Validation-specific fields
+          validationSegments: '',
+          recommendations: '',
+
+          // Signatures
+          customerSignature: '',
+          customerSignatureDate: '',
+          technicianSignature: '',
+          technicianSignatureDate: new Date().toISOString().split('T')[0]
+        };
+
+        try {
+          const savedDraft = localStorage.getItem('service_report_draft');
+          if (savedDraft) {
+            const parsed = JSON.parse(savedDraft);
+            return { ...defaultData, ...parsed, serviceProviderName: user?.name || parsed.serviceProviderName };
+          }
+        } catch (e) {
+          console.error('Error loading draft:', e);
+        }
+        return defaultData;
+      };
+
+      const [formData, setFormData] = useState(getInitialFormData);
+
+      // Check if draft exists on mount
+      useEffect(() => {
+        const savedDraft = localStorage.getItem('service_report_draft');
+        setHasDraft(!!savedDraft);
+      }, []);
+
+      const isValidationType = formData.serviceType === 'Validations';
 
       const updateField = (field, value) => {
         setFormData(prev => ({ ...prev, [field]: value }));
+      };
+
+      // Save draft to localStorage
+      const saveDraft = () => {
+        try {
+          // Don't save signatures in draft (too large)
+          const draftData = { ...formData };
+          delete draftData.customerSignature;
+          delete draftData.technicianSignature;
+          localStorage.setItem('service_report_draft', JSON.stringify(draftData));
+          setHasDraft(true);
+          setDraftSaved(true);
+          setTimeout(() => setDraftSaved(false), 2000);
+        } catch (e) {
+          console.error('Error saving draft:', e);
+        }
+      };
+
+      // Clear draft from localStorage
+      const clearDraft = () => {
+        localStorage.removeItem('service_report_draft');
+        setHasDraft(false);
+        setFormData({
+          clientFacilityName: '',
+          customerName: '',
+          serviceProviderName: user?.name || '',
+          address: '',
+          serviceCompletionDate: new Date().toISOString().split('T')[0],
+          analyzerModel: '',
+          analyzerSerialNumber: '',
+          hubspotTicketNumber: '',
+          hubspotCompanyId: '',
+          serviceType: '',
+          descriptionOfWork: '',
+          materialsUsed: '',
+          solution: '',
+          outstandingIssues: '',
+          validationSegments: '',
+          recommendations: '',
+          customerSignature: '',
+          customerSignatureDate: '',
+          technicianSignature: '',
+          technicianSignatureDate: new Date().toISOString().split('T')[0]
+        });
       };
 
       const handleClientSelect = (clientName) => {
@@ -554,8 +628,19 @@
         setError('');
 
         // Validate required fields
-        if (!formData.clientFacilityName || !formData.serviceType || !formData.descriptionOfWork) {
+        const isValidation = formData.serviceType === 'Validations';
+        if (!formData.clientFacilityName || !formData.serviceType) {
           setError('Please fill in all required fields');
+          setLoading(false);
+          return;
+        }
+        if (isValidation && !formData.validationSegments) {
+          setError('Please fill in the validation segments');
+          setLoading(false);
+          return;
+        }
+        if (!isValidation && !formData.descriptionOfWork) {
+          setError('Please fill in the description of work');
           setLoading(false);
           return;
         }
@@ -576,6 +661,9 @@
           if (result.error) {
             setError(result.error);
           } else {
+            // Clear draft on successful submission
+            localStorage.removeItem('service_report_draft');
+            setHasDraft(false);
             setSuccess(true);
             setTimeout(() => {
               if (onSuccess) onSuccess();
@@ -602,6 +690,15 @@
 
       return (
         <div className="space-y-6">
+          {hasDraft && (
+            <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg flex items-center gap-2">
+              <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              <span className="text-sm">You have a saved draft. Your previous form data has been restored.</span>
+            </div>
+          )}
+
           <div className="bg-white p-6 rounded-xl shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -741,53 +838,94 @@
                     <option value="Billing & Fees">Billing & Fees</option>
                     <option value="Compliance">Compliance</option>
                     <option value="Training">Training</option>
+                    <option value="Validations">Validations</option>
                   </select>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Description of Work Performed *</label>
-                  <textarea
-                    value={formData.descriptionOfWork}
-                    onChange={(e) => updateField('descriptionOfWork', e.target.value)}
-                    rows={5}
-                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
-                    placeholder="Describe the work performed in detail..."
-                    required
-                  />
-                </div>
+                {isValidationType ? (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Validation Segments *</label>
+                      <textarea
+                        value={formData.validationSegments}
+                        onChange={(e) => updateField('validationSegments', e.target.value)}
+                        rows={6}
+                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                        placeholder="List all validation segments performed (e.g., accuracy, precision, linearity, reportable range, reference range, carryover, etc.)..."
+                        required
+                      />
+                    </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Materials Used</label>
-                  <textarea
-                    value={formData.materialsUsed}
-                    onChange={(e) => updateField('materialsUsed', e.target.value)}
-                    rows={2}
-                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
-                    placeholder="e.g., Hydra-DI, DZLite, plumbers tape/tubing"
-                  />
-                </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Materials Used</label>
+                      <textarea
+                        value={formData.materialsUsed}
+                        onChange={(e) => updateField('materialsUsed', e.target.value)}
+                        rows={2}
+                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                        placeholder="e.g., QC materials, calibrators, patient samples..."
+                      />
+                    </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Solution</label>
-                  <textarea
-                    value={formData.solution}
-                    onChange={(e) => updateField('solution', e.target.value)}
-                    rows={3}
-                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
-                    placeholder="Describe the solution implemented..."
-                  />
-                </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Recommendations</label>
+                      <textarea
+                        value={formData.recommendations}
+                        onChange={(e) => updateField('recommendations', e.target.value)}
+                        rows={3}
+                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                        placeholder="List any recommendations for the client..."
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Description of Work Performed *</label>
+                      <textarea
+                        value={formData.descriptionOfWork}
+                        onChange={(e) => updateField('descriptionOfWork', e.target.value)}
+                        rows={5}
+                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                        placeholder="Describe the work performed in detail..."
+                        required
+                      />
+                    </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Outstanding Issues / Recommendations</label>
-                  <textarea
-                    value={formData.outstandingIssues}
-                    onChange={(e) => updateField('outstandingIssues', e.target.value)}
-                    rows={3}
-                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
-                    placeholder="List any outstanding issues or recommendations..."
-                  />
-                </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Materials Used</label>
+                      <textarea
+                        value={formData.materialsUsed}
+                        onChange={(e) => updateField('materialsUsed', e.target.value)}
+                        rows={2}
+                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                        placeholder="e.g., Hydra-DI, DZLite, plumbers tape/tubing"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Solution</label>
+                      <textarea
+                        value={formData.solution}
+                        onChange={(e) => updateField('solution', e.target.value)}
+                        rows={3}
+                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                        placeholder="Describe the solution implemented..."
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Final Recommendations</label>
+                      <textarea
+                        value={formData.outstandingIssues}
+                        onChange={(e) => updateField('outstandingIssues', e.target.value)}
+                        rows={3}
+                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                        placeholder="List any final recommendations for the client..."
+                      />
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -832,8 +970,26 @@
               </div>
             </div>
 
-            {/* Submit Button */}
-            <div className="flex justify-end gap-4">
+            {/* Draft and Submit Buttons */}
+            <div className="flex justify-between items-center gap-4">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={saveDraft}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors text-sm"
+                >
+                  {draftSaved ? '✓ Draft Saved' : 'Save Draft'}
+                </button>
+                {hasDraft && (
+                  <button
+                    type="button"
+                    onClick={clearDraft}
+                    className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg font-medium transition-colors text-sm"
+                  >
+                    Clear Draft
+                  </button>
+                )}
+              </div>
               <button
                 type="submit"
                 disabled={loading}
@@ -1101,22 +1257,41 @@
                   <p className="text-sm text-gray-500">Service Type</p>
                   <p className="font-medium">{report.serviceType}</p>
                 </div>
-                <div>
-                  <p className="text-sm text-gray-500">Description of Work Performed</p>
-                  <p className="font-medium whitespace-pre-wrap bg-gray-50 p-3 rounded-lg">{report.descriptionOfWork}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Materials Used</p>
-                  <p className="font-medium">{report.materialsUsed || '-'}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Solution</p>
-                  <p className="font-medium whitespace-pre-wrap bg-gray-50 p-3 rounded-lg">{report.solution || '-'}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Outstanding Issues / Recommendations</p>
-                  <p className="font-medium whitespace-pre-wrap bg-gray-50 p-3 rounded-lg">{report.outstandingIssues || '-'}</p>
-                </div>
+                {report.serviceType === 'Validations' ? (
+                  <>
+                    <div>
+                      <p className="text-sm text-gray-500">Validation Segments</p>
+                      <p className="font-medium whitespace-pre-wrap bg-gray-50 p-3 rounded-lg">{report.validationSegments || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500">Materials Used</p>
+                      <p className="font-medium">{report.materialsUsed || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500">Recommendations</p>
+                      <p className="font-medium whitespace-pre-wrap bg-gray-50 p-3 rounded-lg">{report.recommendations || '-'}</p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <p className="text-sm text-gray-500">Description of Work Performed</p>
+                      <p className="font-medium whitespace-pre-wrap bg-gray-50 p-3 rounded-lg">{report.descriptionOfWork}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500">Materials Used</p>
+                      <p className="font-medium">{report.materialsUsed || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500">Solution</p>
+                      <p className="font-medium whitespace-pre-wrap bg-gray-50 p-3 rounded-lg">{report.solution || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500">Final Recommendations</p>
+                      <p className="font-medium whitespace-pre-wrap bg-gray-50 p-3 rounded-lg">{report.outstandingIssues || '-'}</p>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 

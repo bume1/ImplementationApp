@@ -895,6 +895,7 @@ const AuthScreen = ({ onLogin }) => {
         </div>
         <div className="mt-8 text-center text-sm text-gray-500">
           <p>&copy; 2026 Thrive 365 Labs. All rights reserved.</p>
+          <a href="/changelog" className="text-primary hover:underline text-xs mt-1 inline-block">View Changelog</a>
         </div>
       </div>
     </div>
@@ -2259,14 +2260,17 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
       </div>
       <footer className="mt-8 py-4 text-center text-sm text-gray-500 border-t max-w-6xl mx-auto">
         <p>&copy; 2026 Thrive 365 Labs. All rights reserved.</p>
-        {user.role === 'admin' && (
-          <button 
-            onClick={() => { setShowActivityLog(true); loadActivityLog(); }}
-            className="mt-2 text-primary hover:text-accent text-xs underline"
-          >
-            View Activity Log
-          </button>
-        )}
+        <div className="flex items-center justify-center gap-4 mt-2">
+          <a href="/changelog" className="text-primary hover:text-accent text-xs underline">View Changelog</a>
+          {user.role === 'admin' && (
+            <button
+              onClick={() => { setShowActivityLog(true); loadActivityLog(); }}
+              className="text-primary hover:text-accent text-xs underline"
+            >
+              View Activity Log
+            </button>
+          )}
+        </div>
       </footer>
 
       {showActivityLog && (
