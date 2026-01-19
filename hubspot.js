@@ -579,14 +579,18 @@ async function getTicketsForCompany(companyId) {
       }
     );
 
-    // Get pipeline info for stage labels
-    const pipelines = await getTicketPipelines();
-    const stageMap = {};
-    pipelines.forEach(p => {
-      p.stages.forEach(s => {
-        stageMap[s.id] = { label: s.label, pipelineName: p.label };
+    // Get pipeline info for stage labels (optional - may fail without tickets scope)
+    let stageMap = {};
+    try {
+      const pipelines = await getTicketPipelines();
+      pipelines.forEach(p => {
+        p.stages.forEach(s => {
+          stageMap[s.id] = { label: s.label, pipelineName: p.label };
+        });
       });
-    });
+    } catch (pipelineErr) {
+      console.log('📋 Could not fetch pipeline info, using raw stage IDs');
+    }
 
     const tickets = await Promise.all(ticketsResponse.data?.results?.map(async ticket => {
       const props = ticket.properties;
@@ -715,14 +719,18 @@ async function getTicketsForContact(contactId) {
       }
     );
 
-    // Get pipeline info for stage labels
-    const pipelines = await getTicketPipelines();
-    const stageMap = {};
-    pipelines.forEach(p => {
-      p.stages.forEach(s => {
-        stageMap[s.id] = { label: s.label, pipelineName: p.label };
+    // Get pipeline info for stage labels (optional - may fail without tickets scope)
+    let stageMap = {};
+    try {
+      const pipelines = await getTicketPipelines();
+      pipelines.forEach(p => {
+        p.stages.forEach(s => {
+          stageMap[s.id] = { label: s.label, pipelineName: p.label };
+        });
       });
-    });
+    } catch (pipelineErr) {
+      console.log('📋 Could not fetch pipeline info, using raw stage IDs');
+    }
 
     const tickets = await Promise.all(ticketsResponse.data?.results?.map(async ticket => {
       const props = ticket.properties;
@@ -849,14 +857,18 @@ async function getTicketsForDeal(dealId) {
       }
     );
 
-    // Get pipeline info for stage labels
-    const pipelines = await getTicketPipelines();
-    const stageMap = {};
-    pipelines.forEach(p => {
-      p.stages.forEach(s => {
-        stageMap[s.id] = { label: s.label, pipelineName: p.label };
+    // Get pipeline info for stage labels (optional - may fail without tickets scope)
+    let stageMap = {};
+    try {
+      const pipelines = await getTicketPipelines();
+      pipelines.forEach(p => {
+        p.stages.forEach(s => {
+          stageMap[s.id] = { label: s.label, pipelineName: p.label };
+        });
       });
-    });
+    } catch (pipelineErr) {
+      console.log('📋 Could not fetch pipeline info, using raw stage IDs');
+    }
 
     const tickets = await Promise.all(ticketsResponse.data?.results?.map(async ticket => {
       const props = ticket.properties;
