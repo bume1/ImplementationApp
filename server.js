@@ -5827,9 +5827,12 @@ app.get('/api/admin-hub/dashboard', authenticateToken, requireAdminHubAccess, as
     const projects = await getProjects();
     const serviceReports = (await db.get('service_reports')) || [];
 
-    // Get feedback/requests for admin inbox (only for super admins)
+    // Get all open tickets across the app (feedback requests + password reset requests)
     const feedbackRequests = (await db.get('feedback_requests')) || [];
     const openFeedback = feedbackRequests.filter(f => f.status !== 'resolved').length;
+    const passwordResetRequests = (await db.get('password_reset_requests')) || [];
+    const pendingPasswordResets = passwordResetRequests.filter(r => r.status === 'pending').length;
+    const totalOpenTickets = openFeedback + pendingPasswordResets;
 
     // Calculate statistics
     const stats = {
@@ -5844,7 +5847,7 @@ app.get('/api/admin-hub/dashboard', authenticateToken, requireAdminHubAccess, as
       activeProjects: projects.filter(p => p.status !== 'completed').length,
       totalServiceReports: serviceReports.length,
       recentServiceReports: serviceReports.slice(0, 5),
-      openTickets: openFeedback
+      openTickets: totalOpenTickets
     };
 
     res.json(stats);

@@ -1664,22 +1664,27 @@
         return matchesSearch && matchesRole;
       });
 
-      const getRoleBadge = (role) => {
+      const getRoleBadge = (user) => {
+        const role = user?.role;
+        const isManager = user?.isManager && role !== 'admin';
         const styles = {
           admin: 'bg-purple-100 text-purple-700',
+          manager: 'bg-indigo-100 text-indigo-700',
           user: 'bg-blue-100 text-blue-700',
           client: 'bg-green-100 text-green-700',
           vendor: 'bg-orange-100 text-orange-700'
         };
         const labels = {
-          admin: 'Admin',
+          admin: 'Super Admin',
+          manager: 'Manager',
           user: 'Team Member',
           client: 'Client',
           vendor: 'Vendor'
         };
+        const effectiveRole = isManager ? 'manager' : role;
         return (
-          <span className={`px-2 py-1 rounded-full text-xs font-medium ${styles[role] || 'bg-gray-100 text-gray-700'}`}>
-            {labels[role] || role}
+          <span className={`px-2 py-1 rounded-full text-xs font-medium ${styles[effectiveRole] || 'bg-gray-100 text-gray-700'}`}>
+            {labels[effectiveRole] || effectiveRole}
           </span>
         );
       };
@@ -1759,7 +1764,7 @@
                           </div>
                         </td>
                         <td className="px-6 py-4 text-gray-600">{user.email}</td>
-                        <td className="px-6 py-4">{getRoleBadge(user.role)}</td>
+                        <td className="px-6 py-4">{getRoleBadge(user)}</td>
                         <td className="px-6 py-4 text-gray-600">{user.practiceName || '-'}</td>
                         <td className="px-6 py-4">
                           <div className="flex flex-wrap gap-1">
