@@ -2134,11 +2134,11 @@
     };
 
     const SupportPage = ({ settings, token, userData, activeTab: propActiveTab, onTabChange }) => {
-      const [tickets, setTickets] = useState([]);
+      const [reports, setReports] = useState([]);
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState(null);
-      const [localActiveTab, setLocalActiveTab] = useState(propActiveTab || 'tickets');
-      const [expandedTicket, setExpandedTicket] = useState(null);
+      const [localActiveTab, setLocalActiveTab] = useState(propActiveTab || 'history');
+      const [expandedReport, setExpandedReport] = useState(null);
 
       // Use prop tab if provided (for URL routing), otherwise use local state
       const activeTab = propActiveTab || localActiveTab;
@@ -2150,61 +2150,29 @@
         }
       };
 
-      const hasHubSpotConfig = userData?.hubspotCompanyId || userData?.hubspotContactId;
-
       useEffect(() => {
-        if (hasHubSpotConfig && token) {
-          fetchTickets();
+        if (token) {
+          fetchServiceReports();
         } else {
           setLoading(false);
         }
       }, [token]);
 
-      const fetchTickets = async () => {
+      const fetchServiceReports = async () => {
         try {
-          const response = await fetch(`${API_URL}/api/client/hubspot/tickets`, {
+          const response = await fetch(`${API_URL}/api/client/service-reports`, {
             headers: { 'Authorization': `Bearer ${token}` }
           });
           const data = await response.json();
-          if (data.tickets) {
-            setTickets(data.tickets);
+          if (data.reports) {
+            setReports(data.reports);
           }
         } catch (err) {
-          console.error('Error fetching tickets:', err);
-          setError('Unable to load ticket history');
+          console.error('Error fetching service reports:', err);
+          setError('Unable to load service history');
         } finally {
           setLoading(false);
         }
-      };
-
-      // Map HubSpot stage IDs to readable names
-      const getStageLabel = (stage) => {
-        const stageStr = String(stage || '');
-        // Thrive 365 Labs custom ticket pipeline stages
-        const stageMap = {
-          '1': 'New',
-          '2': 'In Progress',
-          '3': 'Assigned',
-          '1155252903': 'Vendor Escalation',
-          '1155252904': 'Resolved',
-          '4': 'Closed'
-        };
-        // If it's a number, try to map it
-        if (/^\d+$/.test(stageStr)) {
-          return stageMap[stageStr] || `Stage ${stageStr}`;
-        }
-        return stageStr;
-      };
-
-      const getStageColor = (stage) => {
-        const stageLabel = getStageLabel(stage).toLowerCase();
-        if (stageLabel.includes('closed')) return 'bg-gray-100 text-gray-700 border border-gray-300';
-        if (stageLabel.includes('resolved')) return 'bg-green-100 text-green-700 border border-green-200';
-        if (stageLabel.includes('assigned')) return 'bg-purple-100 text-purple-700 border border-purple-200';
-        if (stageLabel.includes('in progress')) return 'bg-blue-100 text-blue-700 border border-blue-200';
-        if (stageLabel.includes('escalation') || stageLabel.includes('vendor')) return 'bg-orange-100 text-orange-700 border border-orange-200';
-        if (stageLabel.includes('new')) return 'bg-sky-100 text-sky-700 border border-sky-200';
-        return 'bg-gray-100 text-gray-700 border border-gray-200';
       };
 
       const formatDate = (dateStr) => {
@@ -2234,12 +2202,12 @@
           <div className="bg-white rounded-xl shadow-sm overflow-hidden">
             <div className="grid grid-cols-2 border-b">
               <button
-                onClick={() => setActiveTab('tickets')}
-                style={activeTab === 'tickets' ? {backgroundColor: '#045E9F', color: 'white'} : {}}
-                className={`py-4 px-4 font-medium transition flex items-center justify-center gap-2 ${activeTab === 'tickets' ? '' : 'text-gray-600 hover:bg-gray-50 border-r'}`}
+                onClick={() => setActiveTab('history')}
+                style={activeTab === 'history' ? {backgroundColor: '#045E9F', color: 'white'} : {}}
+                className={`py-4 px-4 font-medium transition flex items-center justify-center gap-2 ${activeTab === 'history' ? '' : 'text-gray-600 hover:bg-gray-50 border-r'}`}
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
-                <span>Ticket History</span>
+                <span>Service History</span>
               </button>
               <button
                 onClick={() => setActiveTab('submit')}
@@ -2252,12 +2220,12 @@
             </div>
 
             <div className="p-6">
-              {/* Ticket History Tab */}
-              {activeTab === 'tickets' && (
+              {/* Service History Tab */}
+              {activeTab === 'history' && (
                 <div>
                   <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-semibold text-gray-800">Your Support Tickets</h2>
-                    <button onClick={fetchTickets} className="text-primary hover:text-accent text-sm flex items-center gap-1">
+                    <h2 className="text-lg font-semibold text-gray-800">Your Service History</h2>
+                    <button onClick={fetchServiceReports} className="text-primary hover:text-accent text-sm flex items-center gap-1">
                       {Icons.refresh || '↻'} Refresh
                     </button>
                   </div>
@@ -2266,90 +2234,50 @@
                     <div className="flex justify-center py-12">
                       <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent"></div>
                     </div>
-                  ) : !hasHubSpotConfig ? (
-                    <div className="text-center py-12 text-gray-500">
-                      <div className="flex justify-center mb-4 text-gray-300">{React.cloneElement(Icons.folder, { className: 'w-16 h-16' })}</div>
-                      <p>Ticket history is not available for your account.</p>
-                      <p className="text-sm mt-2">Please contact support using the form or chat options.</p>
-                    </div>
                   ) : error ? (
                     <div className="text-center py-12 text-red-500">
                       <p>{error}</p>
-                      <button onClick={fetchTickets} className="mt-4 text-primary hover:underline">Try again</button>
+                      <button onClick={fetchServiceReports} className="mt-4 text-primary hover:underline">Try again</button>
                     </div>
-                  ) : tickets.length === 0 ? (
+                  ) : reports.length === 0 ? (
                     <div className="text-center py-12 text-gray-500">
                       <div className="flex justify-center mb-4 text-green-400">{React.cloneElement(Icons.check, { className: 'w-16 h-16' })}</div>
-                      <p className="font-medium">No support tickets</p>
-                      <p className="text-sm mt-2">You haven't submitted any support tickets yet.</p>
+                      <p className="font-medium">No service reports</p>
+                      <p className="text-sm mt-2">No service reports have been filed for your account yet.</p>
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {tickets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(ticket => (
-                        <div key={ticket.id} className="border rounded-lg overflow-hidden">
+                      {reports.map(report => (
+                        <div key={report.id} className="border rounded-lg overflow-hidden">
                           <button
-                            onClick={() => setExpandedTicket(expandedTicket === ticket.id ? null : ticket.id)}
+                            onClick={() => setExpandedReport(expandedReport === report.id ? null : report.id)}
                             className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition text-left"
                           >
                             <div className="flex-1">
-                              <p className="font-medium text-gray-800">{ticket.subject}</p>
+                              <p className="font-medium text-gray-800">{report.serviceType}</p>
                               <div className="flex flex-wrap items-center gap-3 mt-1 text-sm text-gray-500">
-                                <span>Created: {formatDate(ticket.createdAt)}</span>
-                                {ticket.closedAt && (
-                                  <span className="text-green-600">Closed: {formatDate(ticket.closedAt)}</span>
+                                <span>Completed: {formatDate(report.completedAt)}</span>
+                                <span>Technician: {report.technicianName}</span>
+                                {report.ticketNumber && (
+                                  <span className="text-primary font-medium">Ticket #{report.ticketNumber}</span>
                                 )}
                               </div>
                             </div>
-                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStageColor(ticket.stage)}`}>
-                              {getStageLabel(ticket.stage)}
+                            <span className="px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-200">
+                              {report.status}
                             </span>
                           </button>
-                          {expandedTicket === ticket.id && (
+                          {expandedReport === report.id && (
                             <div className="px-4 pb-4 border-t bg-gray-50">
-                              {ticket.content && (
+                              {report.description && (
                                 <div className="pt-3">
-                                  <p className="text-xs font-medium text-gray-500 mb-1">Description:</p>
-                                  <p className="text-sm text-gray-600 whitespace-pre-wrap">{ticket.content}</p>
+                                  <p className="text-xs font-medium text-gray-500 mb-1">Work Description:</p>
+                                  <p className="text-sm text-gray-600 whitespace-pre-wrap">{report.description}</p>
                                 </div>
                               )}
-                              {ticket.resolution && (
-                                <div className="mt-3 pt-3 border-t border-gray-200">
-                                  <p className="text-xs font-medium text-green-600 mb-1">Resolution Notes:</p>
-                                  <p className="text-sm text-gray-600 whitespace-pre-wrap bg-green-50 p-3 rounded-lg border border-green-100">{ticket.resolution}</p>
-                                </div>
-                              )}
-                              {ticket.attachments && ticket.attachments.length > 0 && (
-                                <div className="mt-3 pt-3 border-t border-gray-200">
-                                  <p className="text-sm font-medium text-gray-700 mb-2">Attachments:</p>
-                                  <div className="space-y-2">
-                                    {ticket.attachments.map((att, idx) => (
-                                      <button
-                                        key={idx}
-                                        onClick={async (e) => {
-                                          e.stopPropagation();
-                                          try {
-                                            const response = await fetch(`${API_URL}/api/client/hubspot/file/${att.fileId}`, {
-                                              headers: { 'Authorization': `Bearer ${token}` }
-                                            });
-                                            const data = await response.json();
-                                            if (data.downloadUrl) {
-                                              window.open(data.downloadUrl, '_blank');
-                                            }
-                                          } catch (err) {
-                                            console.error('Error downloading file:', err);
-                                          }
-                                        }}
-                                        className="flex items-center gap-2 text-sm text-primary hover:text-accent hover:underline"
-                                      >
-                                        {Icons.download} Service Report (Click to Download)
-                                      </button>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-                              {!ticket.content && !ticket.resolution && (!ticket.attachments || ticket.attachments.length === 0) && (
-                                <p className="text-sm text-gray-400 pt-3 italic">No additional details available</p>
-                              )}
+                              <div className="mt-3 pt-3 border-t border-gray-200 text-sm text-gray-500">
+                                <p>Service reports are available in your <a href="#" onClick={(e) => { e.preventDefault(); window.location.hash = '#/files'; }} className="text-primary hover:underline">Files</a> section.</p>
+                              </div>
                             </div>
                           )}
                         </div>
