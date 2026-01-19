@@ -405,8 +405,14 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(400).json({ error: 'Missing credentials' });
     }
     const users = await getUsers();
-    const user = users.find(u => u.email === email);
-    if (!user || !(await bcrypt.compare(password, user.password))) {
+    const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase());
+    if (!user) {
+      console.log('Login failed: User not found for email:', email);
+      return res.status(400).json({ error: 'Invalid credentials' });
+    }
+    const passwordMatch = await bcrypt.compare(password, user.password);
+    if (!passwordMatch) {
+      console.log('Login failed: Password mismatch for:', email);
       return res.status(400).json({ error: 'Invalid credentials' });
     }
     const token = jwt.sign(
@@ -620,6 +626,23 @@ app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
       hubspotContactId: u.hubspotContactId || ''
     }));
     res.json(safeUsers);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Debug endpoint to check client users (temporary)
+app.get('/api/debug/clients', async (req, res) => {
+  try {
+    const users = await getUsers();
+    const clients = users.filter(u => u.role === 'client').map(u => ({
+      email: u.email,
+      name: u.name,
+      practiceName: u.practiceName,
+      slug: u.slug,
+      hasPassword: !!u.password
+    }));
+    res.json({ totalUsers: users.length, clients });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }
