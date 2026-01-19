@@ -2535,6 +2535,58 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
   }
 });
 
+// Get HubSpot file download URL for clients
+app.get('/api/client/hubspot/file/:fileId', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'client') {
+      return res.status(403).json({ error: 'Client access required' });
+    }
+
+    const { fileId } = req.params;
+    const privateAppToken = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
+
+    if (!privateAppToken) {
+      return res.status(500).json({ error: 'HubSpot not configured' });
+    }
+
+    const axios = require('axios');
+
+    // Get file details from HubSpot
+    const fileResponse = await axios.get(
+      `https://api.hubapi.com/files/v3/files/${fileId}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${privateAppToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const fileData = fileResponse.data;
+
+    // Get signed download URL
+    const signedUrlResponse = await axios.get(
+      `https://api.hubapi.com/files/v3/files/${fileId}/signed-url`,
+      {
+        headers: {
+          'Authorization': `Bearer ${privateAppToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    res.json({
+      fileName: fileData.name,
+      fileType: fileData.type,
+      downloadUrl: signedUrlResponse.data.url,
+      size: fileData.size
+    });
+  } catch (error) {
+    console.error('Error getting HubSpot file:', error.response?.data || error.message);
+    res.status(500).json({ error: 'Failed to get file' });
+  }
+});
+
 // ============== HUBSPOT WEBHOOKS ==============
 const HUBSPOT_WEBHOOK_SECRET = process.env.HUBSPOT_WEBHOOK_SECRET;
 
@@ -4776,31 +4828,58 @@ app.post('/api/service-reports', authenticateToken, requireServiceAccess, async 
 
         console.log(`✅ Service report uploaded to HubSpot for company ${reportData.hubspotCompanyId}`);
 
-        // Create HubSpot ticket with service report attached (except for Validations)
-        if (reportData.serviceType !== 'Validations') {
-          try {
-            const ticketResult = await hubspot.createTicketWithFile(
-              {
-                subject: `Service Report: ${reportData.clientFacilityName} - ${reportData.serviceType}`,
-                content: `Service Report Submitted\n\nClient: ${reportData.clientFacilityName}\nService Type: ${reportData.serviceType}\nTechnician: ${reportData.serviceProviderName || req.user.name}\nDate: ${reportDate}\n\nDescription: ${reportData.descriptionOfWork || 'See attached report'}`,
-                priority: 'LOW',
-                isBase64: false
-              },
-              htmlReport,
-              fileName,
-              reportData.hubspotCompanyId
-            );
+        // Create HubSpot ticket with service report attached (for ALL service types)
+        try {
+          const ticketResult = await hubspot.createTicketWithFile(
+            {
+              subject: `Service Report: ${reportData.clientFacilityName} - ${reportData.serviceType}`,
+              content: `Service Report Submitted\n\nClient: ${reportData.clientFacilityName}\nService Type: ${reportData.serviceType}\nTechnician: ${reportData.serviceProviderName || req.user.name}\nDate: ${reportDate}\n\nDescription: ${reportData.descriptionOfWork || reportData.validationResults || 'See attached report'}`,
+              priority: 'LOW',
+              isBase64: false
+            },
+            htmlReport,
+            fileName,
+            reportData.hubspotCompanyId
+          );
 
-            newReport.hubspotTicketId = ticketResult.ticketId;
-            await db.set('service_reports', serviceReports);
-            console.log(`✅ HubSpot ticket created for service report: ${ticketResult.ticketId}`);
-          } catch (ticketError) {
-            console.error('HubSpot ticket creation error (non-blocking):', ticketError.message);
-          }
+          newReport.hubspotTicketId = ticketResult.ticketId;
+          newReport.hubspotTicketFileId = ticketResult.fileId;
+          await db.set('service_reports', serviceReports);
+          console.log(`✅ HubSpot ticket created for service report: ${ticketResult.ticketId}`);
+        } catch (ticketError) {
+          console.error('HubSpot ticket creation error (non-blocking):', ticketError.message);
         }
       } catch (hubspotError) {
         console.error('HubSpot upload error (non-blocking):', hubspotError.message);
         // Don't fail the request if HubSpot upload fails
+      }
+    }
+
+    // Also upload to Deal record if hubspotDealId is available
+    if (reportData.hubspotDealId && hubspot.isValidRecordId(reportData.hubspotDealId)) {
+      try {
+        const reportDate = new Date(reportData.serviceCompletionDate || newReport.createdAt).toLocaleDateString();
+        const fileName = `Service_Report_${reportData.clientFacilityName.replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate.replace(/\//g, '-')}.html`;
+        const noteText = `Service Report Submitted\n\nClient: ${reportData.clientFacilityName}\nService Type: ${reportData.serviceType}\nTechnician: ${reportData.serviceProviderName || req.user.name}`;
+
+        // Generate HTML report if not already done
+        const htmlReportForDeal = newReport.htmlReport || `<!DOCTYPE html><html><body><h1>Service Report</h1><p>See company record for full report.</p></body></html>`;
+
+        await hubspot.uploadFileAndAttachToRecord(
+          reportData.hubspotDealId,
+          htmlReportForDeal,
+          fileName,
+          noteText,
+          {
+            recordType: 'deals',
+            folderPath: '/service-reports',
+            notePrefix: '[Service Portal]',
+            isBase64: false
+          }
+        );
+        console.log(`✅ Service report uploaded to HubSpot deal ${reportData.hubspotDealId}`);
+      } catch (dealError) {
+        console.error('HubSpot deal upload error (non-blocking):', dealError.message);
       }
     }
 

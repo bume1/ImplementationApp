@@ -588,9 +588,59 @@ async function getTicketsForCompany(companyId) {
       });
     });
 
-    const tickets = ticketsResponse.data?.results?.map(ticket => {
+    const tickets = await Promise.all(ticketsResponse.data?.results?.map(async ticket => {
       const props = ticket.properties;
       const stageInfo = stageMap[props.hs_pipeline_stage] || {};
+
+      // Fetch attachments (notes with files) for this ticket
+      let attachments = [];
+      try {
+        const notesResponse = await axios.get(
+          `https://api.hubapi.com/crm/v4/objects/tickets/${ticket.id}/associations/notes`,
+          {
+            headers: {
+              'Authorization': `Bearer ${privateAppToken}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        const noteIds = notesResponse.data?.results?.map(r => r.toObjectId) || [];
+        if (noteIds.length > 0) {
+          const notesDetailResponse = await axios.post(
+            'https://api.hubapi.com/crm/v3/objects/notes/batch/read',
+            {
+              inputs: noteIds.map(id => ({ id })),
+              properties: ['hs_note_body', 'hs_attachment_ids', 'hs_timestamp']
+            },
+            {
+              headers: {
+                'Authorization': `Bearer ${privateAppToken}`,
+                'Content-Type': 'application/json'
+              }
+            }
+          );
+
+          // Extract attachments from notes
+          for (const note of notesDetailResponse.data?.results || []) {
+            if (note.properties.hs_attachment_ids) {
+              const fileIds = note.properties.hs_attachment_ids.split(';');
+              for (const fileId of fileIds) {
+                if (fileId.trim()) {
+                  attachments.push({
+                    fileId: fileId.trim(),
+                    noteBody: note.properties.hs_note_body || '',
+                    timestamp: note.properties.hs_timestamp
+                  });
+                }
+              }
+            }
+          }
+        }
+      } catch (attachErr) {
+        console.log(`Could not fetch attachments for ticket ${ticket.id}:`, attachErr.message);
+      }
+
       return {
         id: ticket.id,
         subject: props.subject || 'No Subject',
@@ -601,9 +651,10 @@ async function getTicketsForCompany(companyId) {
         priority: props.hs_ticket_priority || 'MEDIUM',
         createdAt: props.createdate,
         updatedAt: props.hs_lastmodifieddate,
-        closedAt: props.closed_date
+        closedAt: props.closed_date,
+        attachments: attachments
       };
-    }) || [];
+    }) || []);
 
     // Sort by creation date, newest first
     tickets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -673,9 +724,58 @@ async function getTicketsForContact(contactId) {
       });
     });
 
-    const tickets = ticketsResponse.data?.results?.map(ticket => {
+    const tickets = await Promise.all(ticketsResponse.data?.results?.map(async ticket => {
       const props = ticket.properties;
       const stageInfo = stageMap[props.hs_pipeline_stage] || {};
+
+      // Fetch attachments (notes with files) for this ticket
+      let attachments = [];
+      try {
+        const notesResponse = await axios.get(
+          `https://api.hubapi.com/crm/v4/objects/tickets/${ticket.id}/associations/notes`,
+          {
+            headers: {
+              'Authorization': `Bearer ${privateAppToken}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        const noteIds = notesResponse.data?.results?.map(r => r.toObjectId) || [];
+        if (noteIds.length > 0) {
+          const notesDetailResponse = await axios.post(
+            'https://api.hubapi.com/crm/v3/objects/notes/batch/read',
+            {
+              inputs: noteIds.map(id => ({ id })),
+              properties: ['hs_note_body', 'hs_attachment_ids', 'hs_timestamp']
+            },
+            {
+              headers: {
+                'Authorization': `Bearer ${privateAppToken}`,
+                'Content-Type': 'application/json'
+              }
+            }
+          );
+
+          for (const note of notesDetailResponse.data?.results || []) {
+            if (note.properties.hs_attachment_ids) {
+              const fileIds = note.properties.hs_attachment_ids.split(';');
+              for (const fileId of fileIds) {
+                if (fileId.trim()) {
+                  attachments.push({
+                    fileId: fileId.trim(),
+                    noteBody: note.properties.hs_note_body || '',
+                    timestamp: note.properties.hs_timestamp
+                  });
+                }
+              }
+            }
+          }
+        }
+      } catch (attachErr) {
+        console.log(`Could not fetch attachments for ticket ${ticket.id}:`, attachErr.message);
+      }
+
       return {
         id: ticket.id,
         subject: props.subject || 'No Subject',
@@ -686,9 +786,10 @@ async function getTicketsForContact(contactId) {
         priority: props.hs_ticket_priority || 'MEDIUM',
         createdAt: props.createdate,
         updatedAt: props.hs_lastmodifieddate,
-        closedAt: props.closed_date
+        closedAt: props.closed_date,
+        attachments: attachments
       };
-    }) || [];
+    }) || []);
 
     tickets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
