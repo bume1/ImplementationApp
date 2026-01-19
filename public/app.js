@@ -7473,8 +7473,18 @@ const ClientDocumentsManager = ({ token, user, onBack, onLogout }) => {
 };
 
 const App = () => {
-  const [token, setToken] = useState(localStorage.getItem('token'));
-  const [user, setUser] = useState(JSON.parse(localStorage.getItem('user') || 'null'));
+  // Check multiple token sources - token, unified_token, or admin_token from Portal Hub
+  const [token, setToken] = useState(() => {
+    return localStorage.getItem('token') || localStorage.getItem('unified_token') || localStorage.getItem('admin_token');
+  });
+  const [user, setUser] = useState(() => {
+    try {
+      const userData = localStorage.getItem('user') || localStorage.getItem('unified_user') || localStorage.getItem('admin_user');
+      return userData ? JSON.parse(userData) : null;
+    } catch {
+      return null;
+    }
+  });
   const [selectedProject, setSelectedProject] = useState(null);
   const [scrollToTaskId, setScrollToTaskId] = useState(null);
   const [view, setView] = useState('list');
