@@ -1,4 +1,4 @@
-# Thrive 365 Labs - Implementation App Changelog
+# Thrive 365 Labs - App Changelog
 
 ## Release Notes & Update Log
 
