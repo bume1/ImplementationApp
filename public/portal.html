@@ -2147,14 +2147,16 @@
         }
       };
 
-      // Map common HubSpot stage IDs to readable names
+      // Map HubSpot stage IDs to readable names
       const getStageLabel = (stage) => {
         const stageStr = String(stage || '');
-        // Common HubSpot default ticket pipeline stage IDs
+        // Thrive 365 Labs custom ticket pipeline stages
         const stageMap = {
           '1': 'New',
-          '2': 'Waiting on Contact',
-          '3': 'Waiting on Us',
+          '2': 'In Progress',
+          '3': 'Assigned',
+          '1155252903': 'Vendor Escalation',
+          '1155252904': 'Resolved',
           '4': 'Closed'
         };
         // If it's a number, try to map it
@@ -2166,10 +2168,12 @@
 
       const getStageColor = (stage) => {
         const stageLabel = getStageLabel(stage).toLowerCase();
-        if (stageLabel.includes('closed') || stageLabel.includes('resolved')) return 'bg-green-100 text-green-700 border border-green-200';
-        if (stageLabel.includes('waiting on us') || stageLabel.includes('in progress')) return 'bg-purple-100 text-purple-700 border border-purple-200';
-        if (stageLabel.includes('waiting') || stageLabel.includes('pending')) return 'bg-yellow-100 text-yellow-700 border border-yellow-200';
-        if (stageLabel.includes('new') || stageLabel.includes('open')) return 'bg-blue-100 text-blue-700 border border-blue-200';
+        if (stageLabel.includes('closed')) return 'bg-gray-100 text-gray-700 border border-gray-300';
+        if (stageLabel.includes('resolved')) return 'bg-green-100 text-green-700 border border-green-200';
+        if (stageLabel.includes('assigned')) return 'bg-purple-100 text-purple-700 border border-purple-200';
+        if (stageLabel.includes('in progress')) return 'bg-blue-100 text-blue-700 border border-blue-200';
+        if (stageLabel.includes('escalation') || stageLabel.includes('vendor')) return 'bg-orange-100 text-orange-700 border border-orange-200';
+        if (stageLabel.includes('new')) return 'bg-sky-100 text-sky-700 border border-sky-200';
         return 'bg-gray-100 text-gray-700 border border-gray-200';
       };
 
