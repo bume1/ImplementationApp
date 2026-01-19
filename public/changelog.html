@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Changelog - Thrive 365 Labs Implementation App</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: { 500: '#045E9F', 600: '#0353a4', 700: '#00205A' },
+            accent: '#00205A'
+          },
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { font-family: 'Inter', system-ui, sans-serif; }
+    body { background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #f1f5f9 100%); }
+  </style>
+</head>
+<body class="min-h-screen py-8 px-4">
+  <div class="max-w-4xl mx-auto">
+    <!-- Header -->
+    <div class="bg-gradient-to-r from-primary-500 to-primary-700 text-white p-8 rounded-2xl shadow-lg mb-8">
+      <div class="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 class="text-3xl font-bold">Implementation App Changelog</h1>
+          <p class="mt-2 text-white/80">Complete update history & release notes</p>
+        </div>
+        <div class="flex gap-3">
+          <a href="/changelog.md" download class="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg font-medium text-sm transition flex items-center gap-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+            Download MD
+          </a>
+          <a href="/" class="bg-white text-primary-600 px-4 py-2 rounded-lg font-medium text-sm hover:bg-gray-100 transition">
+            Back to App
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Version 2.5.0 -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+      <div class="flex items-center gap-3 mb-4">
+        <span class="bg-green-100 text-green-700 px-3 py-1 rounded-full text-sm font-semibold">Current</span>
+        <h2 class="text-xl font-bold text-gray-900">Version 2.5.0 - January 2026</h2>
+      </div>
+
+      <div class="space-y-4">
+        <div>
+          <h3 class="font-semibold text-primary-600 mb-2">UI Modernization & Branding Update</h3>
+          <ul class="text-gray-600 text-sm space-y-1 ml-4">
+            <li>• Modern Design System with Inter font, refined color palette, glass-card effects</li>
+            <li>• Dynamic Banner Headers on Admin Hub, Service Portal, and Client Portal dashboards</li>
+            <li>• Streamlined Login Pages featuring only Thrive 365 Labs logo</li>
+            <li>• Consistent Heroicons v2 with 1.75 stroke weight across all portals</li>
+          </ul>
+        </div>
+
+        <div>
+          <h3 class="font-semibold text-primary-600 mb-2">Permission System Overhaul</h3>
+          <ul class="text-gray-600 text-sm space-y-1 ml-4">
+            <li>• Granular access flags: hasServicePortalAccess, hasAdminHubAccess, hasImplementationsAccess</li>
+            <li>• Client Portal admin flag: hasClientPortalAdminAccess</li>
+            <li>• Vendor role with assignedClients array for external service providers</li>
+          </ul>
+        </div>
+
+        <div>
+          <h3 class="font-semibold text-primary-600 mb-2">Unified Login Portal</h3>
+          <ul class="text-gray-600 text-sm space-y-1 ml-4">
+            <li>• Central authentication at /login route</li>
+            <li>• Portal Hub showing all accessible portals after login</li>
+            <li>• Role-based access automatically determines available portals</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Version 2.4.0 -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+      <h2 class="text-xl font-bold text-gray-900 mb-4">Version 2.4.0 - January 2026</h2>
+
+      <div class="space-y-4">
+        <div>
+          <h3 class="font-semibold text-primary-600 mb-2">Service Portal Updates</h3>
+          <ul class="text-gray-600 text-sm space-y-1 ml-4">
+            <li>• Support categories for service type classification</li>
+            <li>• HubSpot integration for service report syncing</li>
+            <li>• Enhanced report filtering and search capabilities</li>
+          </ul>
+        </div>
+
+        <div>
+          <h3 class="font-semibold text-primary-600 mb-2">Validation Reports</h3>
+          <ul class="text-gray-600 text-sm space-y-1 ml-4">
+            <li>• Phase 3 validation service report functionality</li>
+            <li>• Training report submissions for technical users</li>
+            <li>• Improved server-side signature verification</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Version 2.3.0 -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+      <h2 class="text-xl font-bold text-gray-900 mb-4">Version 2.3.0 - December 2025</h2>
+
+      <div class="space-y-4">
+        <div>
+          <h3 class="font-semibold text-primary-600 mb-2">Central Admin Hub</h3>
+          <ul class="text-gray-600 text-sm space-y-1 ml-4">
+            <li>• New dedicated admin interface at /admin-hub</li>
+            <li>• Dashboard with user counts, project stats, service reports overview</li>
+            <li>• Streamlined admin workflows with quick actions</li>
+          </ul>
+        </div>
+
+        <div>
+          <h3 class="font-semibold text-primary-600 mb-2">Service Portal Launch</h3>
+          <ul class="text-gray-600 text-sm space-y-1 ml-4">
+            <li>• Dedicated portal for Field Service Engineers</li>
+            <li>• Clinical Application Specialist workflow support</li>
+            <li>• Comprehensive service report forms with digital signatures</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Version 2.2.0 -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+      <h2 class="text-xl font-bold text-gray-900 mb-4">Version 2.2.0 - December 2025</h2>
+      <ul class="text-gray-600 text-sm space-y-1 ml-4">
+        <li>• Floating modal form for user creation/editing</li>
+        <li>• Client selection restricted to system clients only</li>
+        <li>• Implementation badge shows active for users with assigned projects</li>
+      </ul>
+    </div>
+
+    <!-- Version 2.0.0 -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+      <h2 class="text-xl font-bold text-gray-900 mb-4">Version 2.0.0 - Initial Release</h2>
+      <ul class="text-gray-600 text-sm space-y-1 ml-4">
+        <li>• Multi-project launch tracker with template system</li>
+        <li>• HubSpot CRM integration for projects and clients</li>
+        <li>• Google Drive integration for document management</li>
+        <li>• Individual client portals with unique slugs</li>
+        <li>• Task management with status tracking</li>
+        <li>• Client inventory submission system</li>
+      </ul>
+    </div>
+
+    <!-- Footer -->
+    <div class="text-center text-gray-500 text-sm py-4">
+      <p>Last Updated: January 19, 2026</p>
+      <p class="mt-1">Thrive 365 Labs - Precision Diagnostics Platform</p>
+    </div>
+  </div>
+</body>
+</html>
