@@ -45,19 +45,20 @@ app.use((req, res, next) => {
   next();
 });
 
+// ============== ROOT ROUTE - UNIFIED LOGIN ==============
+// Root serves the unified login page (MUST be before static middleware)
+app.get('/', (req, res) => {
+  res.sendFile(__dirname + '/public/login.html');
+});
+
 // Serve static files for the main app path
+// Note: index: false prevents serving index.html automatically for directory requests
 app.use('/launch', express.static('public', staticOptions));
 // Legacy paths - keep for backward compatibility
 app.use('/thrive365labsLAUNCH', express.static('public', staticOptions));
 app.use('/thrive365labslaunch', express.static('public', staticOptions));
-app.use(express.static('public', staticOptions));
+app.use(express.static('public', { ...staticOptions, index: false }));
 app.use('/uploads', express.static('uploads', staticOptions));
-
-// ============== ROOT ROUTE - UNIFIED LOGIN ==============
-// Root serves the unified login page
-app.get('/', (req, res) => {
-  res.sendFile(__dirname + '/public/login.html');
-});
 
 // ============== LAUNCH ROUTES (Implementations Portal) ==============
 // Main implementations dashboard
