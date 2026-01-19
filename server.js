@@ -2170,11 +2170,23 @@ app.put('/api/client-documents/:id', authenticateToken, requireAdmin, async (req
   }
 });
 
-// Delete a document (admin only)
+// Delete a document (admin only) - by ID only
 app.delete('/api/client-documents/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const documents = (await db.get('client_documents')) || [];
     const filtered = documents.filter(d => d.id !== req.params.id);
+    await db.set('client_documents', filtered);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete a document (admin only) - by slug and docId (for admin portal)
+app.delete('/api/client-documents/:slug/:docId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const documents = (await db.get('client_documents')) || [];
+    const filtered = documents.filter(d => d.id !== req.params.docId);
     await db.set('client_documents', filtered);
     res.json({ success: true });
   } catch (error) {

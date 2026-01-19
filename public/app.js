@@ -894,7 +894,7 @@ const AuthScreen = ({ onLogin }) => {
           </div>
         </div>
         <div className="mt-8 text-center text-sm text-gray-500">
-          <p>Powered by Thrive365Labs | Developed by Bianca G. C. Ume, MD, MBA, MS</p>
+          <p>&copy; 2026 Thrive 365 Labs. All rights reserved.</p>
         </div>
       </div>
     </div>
@@ -1306,7 +1306,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
                 )}
               </div>
               <div className="p-4 border-t bg-gray-50 text-center">
-                <p className="text-sm text-gray-500">Powered by Thrive365Labs | Developed by Bianca G. C. Ume, MD, MBA, MS</p>
+                <p className="text-sm text-gray-500">&copy; 2026 Thrive 365 Labs. All rights reserved.</p>
               </div>
             </div>
           </div>
@@ -2258,7 +2258,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
       </div>
       </div>
       <footer className="mt-8 py-4 text-center text-sm text-gray-500 border-t max-w-6xl mx-auto">
-        <p>Powered by Thrive365Labs | Developed by Bianca G. C. Ume, MD, MBA, MS</p>
+        <p>&copy; 2026 Thrive 365 Labs. All rights reserved.</p>
         {user.role === 'admin' && (
           <button 
             onClick={() => { setShowActivityLog(true); loadActivityLog(); }}
@@ -2934,7 +2934,7 @@ const SoftPilotChecklist = ({ token, project, tasks, teamMembers, onClose, onSub
   </div>
 
   <footer style="margin-top: 50px; text-align: center; color: #9ca3af; font-size: 12px;">
-    <p>Powered by Thrive365Labs | Developed by Bianca G. C. Ume, MD, MBA, MS</p>
+    <p>&copy; 2026 Thrive 365 Labs. All rights reserved.</p>
     <p>Thrive 365 Labs - Portal</p>
   </footer>
 </body>
