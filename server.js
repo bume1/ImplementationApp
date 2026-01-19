@@ -640,11 +640,46 @@ app.get('/api/debug/clients', async (req, res) => {
       name: u.name,
       practiceName: u.practiceName,
       slug: u.slug,
-      hasPassword: !!u.password
+      hasPassword: !!u.password,
+      passwordLength: u.password ? u.password.length : 0,
+      passwordIsHashed: u.password ? u.password.startsWith('$2') : false
     }));
     res.json({ totalUsers: users.length, clients });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Debug endpoint to test login (temporary)
+app.post('/api/debug/test-login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const users = await getUsers();
+    const user = users.find(u => u.email?.toLowerCase() === email?.toLowerCase());
+
+    if (!user) {
+      return res.json({ success: false, reason: 'User not found', emailSearched: email });
+    }
+
+    if (!user.password) {
+      return res.json({ success: false, reason: 'User has no password set', email: user.email });
+    }
+
+    const isHashed = user.password.startsWith('$2');
+    if (!isHashed) {
+      return res.json({ success: false, reason: 'Password not hashed (stored as plain text)', email: user.email });
+    }
+
+    const passwordMatch = await bcrypt.compare(password, user.password);
+    return res.json({
+      success: passwordMatch,
+      reason: passwordMatch ? 'Password matches' : 'Password does not match',
+      email: user.email,
+      role: user.role,
+      slug: user.slug
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
