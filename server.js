@@ -388,6 +388,8 @@ app.post('/api/users', authenticateToken, async (req, res) => {
     // Vendor-specific fields
     if (role === 'vendor') {
       newUser.assignedClients = assignedClients || [];
+      // Vendors automatically get service portal access
+      newUser.hasServicePortalAccess = true;
     }
 
     // User/team member fields
@@ -2151,6 +2153,35 @@ app.delete('/api/announcements/:id', authenticateToken, requireAdmin, async (req
   }
 });
 
+// Reset test data (admin only) - clears inventory submissions and announcements
+app.delete('/api/admin/reset-test-data', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { resetSubmissions, resetAnnouncements } = req.body || { resetSubmissions: true, resetAnnouncements: true };
+    const results = {};
+
+    if (resetSubmissions !== false) {
+      const oldSubmissions = (await db.get('inventory_submissions')) || [];
+      await db.set('inventory_submissions', []);
+      results.submissionsCleared = oldSubmissions.length;
+    }
+
+    if (resetAnnouncements !== false) {
+      const oldAnnouncements = (await db.get('announcements')) || [];
+      await db.set('announcements', []);
+      results.announcementsCleared = oldAnnouncements.length;
+    }
+
+    console.log(`[ADMIN] Test data reset by ${req.user.email}:`, results);
+    res.json({
+      message: 'Test data reset successfully',
+      ...results
+    });
+  } catch (error) {
+    console.error('Error resetting test data:', error);
+    res.status(500).json({ error: 'Failed to reset test data' });
+  }
+});
+
 // ============== CLIENT PORTAL API (Authenticated Clients) ==============
 // Get client portal data for authenticated client
 app.get('/api/client-portal/data', authenticateToken, async (req, res) => {
@@ -2686,7 +2717,70 @@ app.post('/api/client/hubspot/upload', authenticateToken, upload.single('file'),
 });
 
 // ============== CLIENT HUBSPOT TICKETS ==============
+
+// Webhook endpoint for HubSpot to register portal-created tickets
+// HubSpot workflow should call this when a ticket is created from the portal form
+app.post('/api/webhook/hubspot/ticket-created', async (req, res) => {
+  try {
+    const { ticketId, contactEmail, companyId, subject } = req.body;
+
+    if (!ticketId) {
+      return res.status(400).json({ error: 'ticketId is required' });
+    }
+
+    // Get or create portal_tickets collection
+    const portalTickets = (await db.get('portal_tickets')) || [];
+
+    // Check if already registered
+    if (portalTickets.find(t => t.ticketId === ticketId)) {
+      return res.json({ message: 'Ticket already registered', ticketId });
+    }
+
+    // Add the ticket to portal tracking
+    portalTickets.push({
+      ticketId: String(ticketId),
+      contactEmail: contactEmail || '',
+      companyId: companyId || '',
+      subject: subject || '',
+      registeredAt: new Date().toISOString()
+    });
+
+    // Keep only last 1000 portal tickets
+    if (portalTickets.length > 1000) portalTickets.length = 1000;
+
+    await db.set('portal_tickets', portalTickets);
+    console.log(`🎫 Portal ticket registered: ${ticketId} for ${contactEmail || companyId}`);
+
+    res.json({ success: true, ticketId, message: 'Ticket registered for portal display' });
+  } catch (error) {
+    console.error('Error registering portal ticket:', error);
+    res.status(500).json({ error: 'Failed to register ticket' });
+  }
+});
+
+// Admin endpoint to view/manage portal tickets
+app.get('/api/admin/portal-tickets', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const portalTickets = (await db.get('portal_tickets')) || [];
+    res.json({ tickets: portalTickets, count: portalTickets.length });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch portal tickets' });
+  }
+});
+
+// Admin endpoint to clear portal tickets (for testing)
+app.delete('/api/admin/portal-tickets', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const old = (await db.get('portal_tickets')) || [];
+    await db.set('portal_tickets', []);
+    res.json({ message: 'Portal tickets cleared', cleared: old.length });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to clear portal tickets' });
+  }
+});
+
 // Fetch support tickets from HubSpot for the logged-in client
+// Only shows tickets that were created through the portal (tracked in portal_tickets)
 app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
   try {
     // Only clients can use this endpoint
@@ -2717,6 +2811,11 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
       console.log(`🎫 No HubSpot IDs configured for ${clientUser.username}`);
       return res.json({ tickets: [], message: 'No HubSpot account linked' });
     }
+
+    // Get portal-tracked ticket IDs (only show tickets created through portal)
+    let portalTickets = (await db.get('portal_tickets')) || [];
+    let portalTicketIds = new Set(portalTickets.map(t => String(t.ticketId)));
+    console.log(`🎫 Portal has ${portalTicketIds.size} tracked tickets`);
 
     let tickets = [];
 
@@ -2759,6 +2858,42 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
         console.error('Error fetching contact tickets:', err.message);
       }
     }
+
+    // Auto-register form-submitted tickets that aren't already in portal_tickets
+    // This allows tickets created via HubSpot forms to appear without needing the automation webhook
+    const formSources = ['FORM', 'FORMS', 'Form submission'];
+    const unregisteredFormTickets = tickets.filter(t => {
+      const isFormSubmitted = formSources.includes(t.source) ||
+                              (t.sourceLabel && t.sourceLabel.toLowerCase().includes('form'));
+      const notRegistered = !portalTicketIds.has(String(t.id));
+      return isFormSubmitted && notRegistered;
+    });
+
+    if (unregisteredFormTickets.length > 0) {
+      console.log(`🎫 Auto-registering ${unregisteredFormTickets.length} form-submitted tickets`);
+      for (const ticket of unregisteredFormTickets) {
+        portalTickets.unshift({
+          ticketId: String(ticket.id),
+          companyId: hubspotCompanyId || null,
+          contactEmail: clientUser.email || clientUser.username,
+          registeredAt: new Date().toISOString(),
+          autoRegistered: true,
+          source: ticket.source || 'FORM'
+        });
+        console.log(`   - Registered ticket ${ticket.id} (source: ${ticket.source || ticket.sourceLabel})`);
+      }
+      // Keep only last 1000 portal tickets
+      if (portalTickets.length > 1000) portalTickets.length = 1000;
+      await db.set('portal_tickets', portalTickets);
+      // Update the set for filtering
+      portalTicketIds = new Set(portalTickets.map(t => String(t.ticketId)));
+    }
+
+    // Filter to only show tickets created through the portal
+    // (tickets must be registered via the webhook from HubSpot workflow OR auto-registered from form submissions)
+    const totalFetched = tickets.length;
+    tickets = tickets.filter(t => portalTicketIds.has(String(t.id)));
+    console.log(`🎫 Filtered ${totalFetched} -> ${tickets.length} portal-only tickets`);
 
     // Sort by creation date, newest first
     tickets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
