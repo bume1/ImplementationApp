@@ -7672,10 +7672,7 @@ const App = () => {
     setUser(null);
     setSelectedProject(null);
     setView('list');
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    localStorage.removeItem('unified_token');
-    localStorage.removeItem('unified_user');
+    localStorage.clear();
     window.location.href = '/';
   };
 
