@@ -5309,6 +5309,121 @@ app.get('/changelog', (req, res) => {
   res.sendFile(__dirname + '/public/changelog.html');
 });
 
+// ============== CHANGELOG API ==============
+
+// Get all changelog entries (public)
+app.get('/api/changelog', async (req, res) => {
+  try {
+    const changelog = (await db.get('changelog')) || [];
+    res.json(changelog);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Add new changelog version (admin only)
+app.post('/api/changelog', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { version, date, sections } = req.body;
+    if (!version || !sections) {
+      return res.status(400).json({ error: 'Version and sections are required' });
+    }
+
+    const changelog = (await db.get('changelog')) || [];
+
+    // Mark all existing as not current
+    changelog.forEach(entry => entry.isCurrent = false);
+
+    const newEntry = {
+      id: Date.now().toString(),
+      version,
+      date: date || new Date().toISOString().split('T')[0],
+      sections, // Array of { title, items: [], color?: 'primary'|'red' }
+      isCurrent: true,
+      createdAt: new Date().toISOString(),
+      createdBy: req.user.email
+    };
+
+    changelog.unshift(newEntry);
+    await db.set('changelog', changelog);
+
+    res.json({ message: 'Changelog entry added', entry: newEntry });
+  } catch (error) {
+    console.error('Changelog create error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update changelog entry (admin only)
+app.put('/api/changelog/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { version, date, sections, isCurrent } = req.body;
+
+    const changelog = (await db.get('changelog')) || [];
+    const idx = changelog.findIndex(c => c.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'Entry not found' });
+
+    // If marking as current, unmark others
+    if (isCurrent) {
+      changelog.forEach(entry => entry.isCurrent = false);
+    }
+
+    changelog[idx] = {
+      ...changelog[idx],
+      version: version || changelog[idx].version,
+      date: date || changelog[idx].date,
+      sections: sections || changelog[idx].sections,
+      isCurrent: isCurrent !== undefined ? isCurrent : changelog[idx].isCurrent,
+      updatedAt: new Date().toISOString(),
+      updatedBy: req.user.email
+    };
+
+    await db.set('changelog', changelog);
+    res.json({ message: 'Changelog updated' });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Add section to existing changelog version (admin only)
+app.post('/api/changelog/:id/section', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, items, color } = req.body;
+
+    if (!title || !items || !Array.isArray(items)) {
+      return res.status(400).json({ error: 'Title and items array required' });
+    }
+
+    const changelog = (await db.get('changelog')) || [];
+    const idx = changelog.findIndex(c => c.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'Entry not found' });
+
+    changelog[idx].sections.push({ title, items, color: color || 'primary' });
+    changelog[idx].updatedAt = new Date().toISOString();
+    changelog[idx].updatedBy = req.user.email;
+
+    await db.set('changelog', changelog);
+    res.json({ message: 'Section added' });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete changelog entry (admin only)
+app.delete('/api/changelog/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    let changelog = (await db.get('changelog')) || [];
+    changelog = changelog.filter(c => c.id !== id);
+    await db.set('changelog', changelog);
+    res.json({ message: 'Changelog deleted' });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ============== ADMIN HUB ROUTES ==============
 
 // Admin hub HTML route
