@@ -41,10 +41,30 @@
     // Static changelog entries (fallback and legacy)
     const staticChangelog = [
       {
+        id: 'static-261',
+        version: '2.6.1',
+        date: 'January 19, 2026',
+        isCurrent: true,
+        sections: [
+          { title: 'Navigation Improvements', color: 'primary', items: [
+            'Added "Portal Hub" navigation button to Admin Hub sidebar for quick access to main portal',
+            'Added "Portal Hub" navigation button to Service Portal sidebar',
+            'Added "Portal Hub" navigation button to Client Portal Admin sidebar (admin users only)',
+            'Added "Portal Hub" link to Launch Portal header'
+          ]},
+          { title: 'Bug Fixes', color: 'red', items: [
+            'Fixed sign-out button in Admin Hub not redirecting to universal login',
+            'Fixed sign-out button in Service Portal not redirecting to universal login',
+            'Fixed sign-out button in Client Portal not redirecting to universal login',
+            'Fixed sign-out button in Launch Portal not redirecting to universal login',
+            'Sign-out now properly clears all authentication tokens across portals'
+          ]}
+        ]
+      },
+      {
         id: 'static-260',
         version: '2.6.0',
         date: 'January 19, 2026',
-        isCurrent: true,
         sections: [
           { title: 'Customer Support Center', color: 'primary', items: [
             'HubSpot ticket history integration - clients can view their support tickets',
