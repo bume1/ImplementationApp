@@ -678,8 +678,8 @@
 
       const pathParts = window.location.pathname.split('/').filter(Boolean);
       const isClientRoute = pathParts[0] === 'client';
-      const isThrivePath = pathParts[0]?.toLowerCase() === 'thrive365labslaunch';
-      const linkId = isClientRoute || isThrivePath ? pathParts[1] : pathParts[0];
+      const isLaunchPath = pathParts[0]?.toLowerCase() === 'launch' || pathParts[0]?.toLowerCase() === 'thrive365labslaunch';
+      const linkId = isClientRoute || isLaunchPath ? pathParts[1] : pathParts[0];
 
       useEffect(() => {
         fetch(`/api/client/${linkId}`)
@@ -824,7 +824,7 @@
           </div>
           
           <div className="text-center py-6 text-sm text-gray-500">
-            <p>Powered by Thrive365Labs</p>
+            <p>&copy; 2026 Thrive 365 Labs. All rights reserved.</p>
           </div>
         </div>
       );

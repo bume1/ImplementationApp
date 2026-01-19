@@ -6,7 +6,7 @@
   <title>Thrive 365 Labs Client Portal</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -16,21 +16,36 @@
       theme: {
         extend: {
           colors: {
-            primary: '#045E9F',
-            accent: '#00205A'
+            primary: { DEFAULT: '#045E9F', 50: '#eff6ff', 100: '#dbeafe', 200: '#bfdbfe', 300: '#93c5fd', 400: '#60a5fa', 500: '#045E9F', 600: '#0353a4', 700: '#00205A', 800: '#001d51', 900: '#001233' },
+            accent: '#00205A',
+            surface: { 50: '#fafafa', 100: '#f4f4f5', 200: '#e4e4e7' },
+            success: { DEFAULT: '#10b981', 50: '#ecfdf5', 500: '#10b981', 600: '#059669' },
+            warning: { DEFAULT: '#f59e0b', 50: '#fffbeb', 500: '#f59e0b', 600: '#d97706' },
+            danger: { DEFAULT: '#ef4444', 50: '#fef2f2', 500: '#ef4444', 600: '#dc2626' }
           },
           fontFamily: {
-            sans: ['Open Sans', 'sans-serif']
+            sans: ['Inter', 'system-ui', 'sans-serif']
           }
         }
       }
     }
   </script>
   <style>
-    body { font-family: 'Open Sans', sans-serif; }
-    .sidebar-link { transition: all 0.2s; }
-    .sidebar-link:hover { background-color: rgba(4, 94, 159, 0.1); }
-    .sidebar-link.active { background-color: #045E9F; color: white; }
+    * { font-family: 'Inter', system-ui, sans-serif; }
+    body { background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #f1f5f9 100%); min-height: 100vh; }
+    .sidebar-link { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); border-radius: 0.75rem; }
+    .sidebar-link:hover { background: linear-gradient(135deg, rgba(4, 94, 159, 0.08) 0%, rgba(4, 94, 159, 0.12) 100%); }
+    .sidebar-link.active { background: linear-gradient(135deg, #045E9F 0%, #0353a4 100%); color: white; box-shadow: 0 4px 14px -3px rgba(4, 94, 159, 0.4); }
+    .card-modern { background: white; border-radius: 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.1); border: 1px solid rgba(0,0,0,0.04); }
+    .card-modern:hover { box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1); }
+    .btn-primary { background: linear-gradient(135deg, #045E9F 0%, #0353a4 100%); transition: all 0.2s; }
+    .btn-primary:hover { background: linear-gradient(135deg, #0353a4 0%, #00205A 100%); box-shadow: 0 4px 14px -3px rgba(4, 94, 159, 0.5); transform: translateY(-1px); }
+    .input-modern { border: 1.5px solid #e4e4e7; border-radius: 0.75rem; transition: all 0.2s; background: white; }
+    .input-modern:focus { border-color: #045E9F; box-shadow: 0 0 0 3px rgba(4, 94, 159, 0.1); outline: none; }
+    .gradient-header { background: linear-gradient(135deg, #045E9F 0%, #00205A 100%); }
+    .glass-card { backdrop-filter: blur(10px); background: rgba(255,255,255,0.95); }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
   </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -64,11 +79,17 @@
 
     const api = {
       clientLogin: (email, password, slug) =>
-        fetch(`${API_URL}/api/auth/client-login`, {
+        fetch(`${API_URL}/api/auth/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password, slug })
-        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+          body: JSON.stringify({ email, password })
+        }).then(handleResponse).then(result => {
+          // Verify slug matches for client users if a slug was specified in URL
+          if (result.user && result.user.role === 'client' && slug && result.user.slug !== slug) {
+            return { error: 'This account is not associated with this portal' };
+          }
+          return result;
+        }).catch(err => ({ error: err.message || 'Network error' })),
 
       getPortalData: (token) =>
         fetch(`${API_URL}/api/client-portal/data`, {
@@ -117,58 +138,68 @@
       };
       
       return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-gray-100">
-          <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
-            <div className="text-center mb-6">
-              <img 
-                src="/thrive365-logo.webp" 
-                alt="Thrive 365 Labs" 
-                className="h-16 mx-auto mb-4"
-              />
-              <h1 className="text-2xl font-bold text-accent">Client Portal</h1>
-              <p className="text-gray-600 mt-1">Sign in to access your portal</p>
+        <div className="min-h-screen flex items-center justify-center p-4 relative">
+          {/* Decorative background elements */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            <div className="absolute -top-40 -right-40 w-80 h-80 rounded-full opacity-20" style={{background: 'radial-gradient(circle, #045E9F 0%, transparent 70%)'}}></div>
+            <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full opacity-10" style={{background: 'radial-gradient(circle, #00205A 0%, transparent 70%)'}}></div>
+          </div>
+
+          <div className="glass-card p-8 rounded-2xl shadow-xl w-full max-w-md animate-fade-in relative border border-white/50">
+            <div className="text-center mb-8">
+              <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-12 mx-auto mb-4" />
+              <h1 className="text-xl font-semibold text-gray-900">Client Portal</h1>
+              <p className="text-gray-500 mt-1 text-sm">Sign in to access your portal</p>
             </div>
-            
-            <form onSubmit={handleLogin} className="space-y-4">
+
+            <form onSubmit={handleLogin} className="space-y-5">
               {error && (
-                <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm">
-                  {error}
+                <div className="flex items-center gap-3 bg-danger-50 text-danger-600 p-4 rounded-xl text-sm border border-red-100">
+                  <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                  <span>{error}</span>
                 </div>
               )}
-              
+
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                  className="input-modern w-full px-4 py-3 text-gray-900 placeholder-gray-400"
+                  placeholder="you@example.com"
                   required
                 />
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                  className="input-modern w-full px-4 py-3 text-gray-900 placeholder-gray-400"
+                  placeholder="Enter your password"
                   required
                 />
               </div>
-              
+
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-primary text-white py-3 rounded-lg font-medium hover:bg-accent transition-colors disabled:opacity-50"
+                className="btn-primary w-full text-white py-3.5 rounded-xl font-semibold text-sm disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {loading ? 'Signing in...' : 'Sign In'}
+                {loading ? (
+                  <>
+                    <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                    <span>Signing in...</span>
+                  </>
+                ) : 'Sign In'}
               </button>
             </form>
             
-            <div className="mt-6 text-center text-sm text-gray-500">
-              <p>Powered by Thrive365Labs</p>
+            <div className="mt-8 pt-6 border-t border-gray-100 text-center">
+              <p className="text-xs text-gray-400">Precision Diagnostics Platform</p>
             </div>
           </div>
         </div>
@@ -193,7 +224,10 @@
       menu: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"/></svg>,
       close: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>,
       upload: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>,
-      download: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+      download: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>,
+      plus: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"/></svg>,
+      refresh: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>,
+      check: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>
     };
     
     // Additional icons for admin portal
@@ -204,17 +238,18 @@
       back: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
     };
     
-    const Sidebar = ({ activePage, onNavigate, user, isMobileOpen, onClose }) => {
+    const Sidebar = ({ activePage, onNavigate, user, isMobileOpen, onClose, projects }) => {
       const [inventoryExpanded, setInventoryExpanded] = useState(activePage === 'inventory' || activePage === 'reports' || activePage === 'submission_history');
       const [adminExpanded, setAdminExpanded] = useState(activePage.startsWith('admin_'));
       const isAdmin = user?.role === 'admin';
-      
+
       const mainItems = [
         { id: 'home', label: isAdmin ? 'Admin Dashboard' : 'Home', icon: Icons.home }
       ];
-      
-      // Show Launch Milestones for clients with assigned projects
-      if (user?.assignedProjects?.length > 0 && !isAdmin) {
+
+      // Show Launch Milestones for clients with assigned projects that are NOT complete
+      const activeProjects = (projects || []).filter(p => p.status !== 'Complete' && p.status !== 'Completed');
+      if (activeProjects.length > 0 && !isAdmin) {
         mainItems.push({ id: 'milestones', label: 'Launch Milestones', icon: Icons.target });
       }
       
@@ -249,8 +284,8 @@
             
             <div className="p-4 border-b bg-gray-50">
               <p className="text-sm text-gray-500">Welcome,</p>
-              <p className="font-semibold text-accent">{user?.name || 'Client'}</p>
-              <p className="text-xs text-gray-500">{user?.practiceName}</p>
+              <p className="font-semibold text-accent">{user?.practiceName || user?.name || 'Client'}</p>
+              {user?.practiceName && user?.name && <p className="text-xs text-gray-500">{user?.name}</p>}
             </div>
             
             <nav className="p-2">
@@ -391,50 +426,85 @@
     const HomePage = ({ data, announcements, onNavigate }) => {
       return (
         <div className="space-y-6">
-          <div className="bg-gradient-to-r from-primary to-accent text-white p-6 rounded-xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-2xl font-bold">Welcome to Your Portal</h1>
-                <p className="mt-2 opacity-90">
-                  {data?.user?.practiceName || 'Your Practice'}
-                </p>
+          {/* Dynamic Banner Header */}
+          <div className="relative rounded-2xl overflow-hidden shadow-lg" style={{minHeight: '160px'}}>
+            <div className="absolute inset-0 bg-cover bg-center" style={{backgroundImage: 'url(/banners/banner-client.jpg)', backgroundColor: '#00205A'}}></div>
+            <div className="absolute inset-0" style={{background: 'linear-gradient(to right, rgba(0,32,90,0.95) 0%, rgba(4,94,159,0.8) 50%, rgba(4,94,159,0.4) 100%)'}}></div>
+            <div className="relative p-6 md:p-8 flex items-center justify-between min-h-[160px]">
+              <div className="text-white">
+                <h1 className="text-2xl md:text-3xl font-bold drop-shadow-sm">Welcome to Your Portal</h1>
+                <p className="mt-2 text-white/90">{data?.user?.practiceName || 'Your Practice'}</p>
               </div>
               {data?.user?.logo && (
-                <img src={data.user.logo} alt={data?.user?.practiceName || 'Practice Logo'} className="h-16 max-w-[200px] object-contain bg-white/20 rounded-lg p-2" />
+                <img src={data.user.logo} alt={data?.user?.practiceName || 'Practice Logo'} className="h-16 md:h-20 max-w-[200px] object-contain bg-white/90 rounded-xl p-3 shadow-lg" />
               )}
             </div>
           </div>
           
-          <div className="grid md:grid-cols-2 gap-6">
-            <div className="bg-white p-6 rounded-xl shadow-sm">
-              <h2 className="text-lg font-bold text-accent mb-4 flex items-center gap-2">
-                <span className="text-primary">{Icons.megaphone}</span> Announcements
-              </h2>
-              {announcements && announcements.length > 0 ? (
-                <div className="space-y-3 max-h-64 overflow-y-auto">
-                  {announcements.map(ann => (
-                    <div key={ann.id} className={`p-3 rounded-lg border-l-4 ${
-                      ann.type === 'warning' ? 'border-yellow-500 bg-yellow-50' :
-                      ann.type === 'success' ? 'border-green-500 bg-green-50' :
-                      'border-blue-500 bg-blue-50'
-                    }`}>
-                      <h3 className="font-semibold text-gray-800">{ann.title}</h3>
-                      <p className="text-sm text-gray-600 mt-1">{ann.content}</p>
-                      <p className="text-xs text-gray-400 mt-2">
-                        {new Date(ann.createdAt).toLocaleDateString()}
-                      </p>
+          {/* Full-width Announcements Section */}
+          <div className="bg-white p-6 rounded-xl shadow-sm">
+            <h2 className="text-lg font-bold text-accent mb-4 flex items-center gap-2">
+              <span className="text-primary">{Icons.megaphone}</span> Announcements
+            </h2>
+            {announcements && announcements.length > 0 ? (
+              <div className="space-y-4">
+                {/* Sort: pinned first, then priority, then by date */}
+                {[...announcements].sort((a, b) => {
+                  if (a.pinned && !b.pinned) return -1;
+                  if (!a.pinned && b.pinned) return 1;
+                  if (a.priority && !b.priority) return -1;
+                  if (!a.priority && b.priority) return 1;
+                  return new Date(b.createdAt) - new Date(a.createdAt);
+                }).map(ann => (
+                  <div key={ann.id} className={`p-4 rounded-lg border-l-4 ${
+                    ann.priority ? 'border-red-500 bg-red-50' :
+                    ann.pinned ? 'border-primary bg-primary/5' :
+                    ann.type === 'warning' ? 'border-yellow-500 bg-yellow-50' :
+                    ann.type === 'success' ? 'border-green-500 bg-green-50' :
+                    'border-blue-500 bg-blue-50'
+                  }`}>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 flex-wrap mb-2">
+                          {ann.pinned && (
+                            <span className="text-xs font-semibold text-blue-700 bg-blue-100 px-2 py-0.5 rounded">📌 PINNED</span>
+                          )}
+                          {ann.priority && (
+                            <span className="text-xs font-semibold text-red-700 bg-red-100 px-2 py-0.5 rounded">⚠️ PRIORITY</span>
+                          )}
+                        </div>
+                        <h3 className="font-semibold text-gray-800 text-lg">{ann.title}</h3>
+                        {ann.priority && (
+                          <p className="text-xs text-red-600 mt-1 italic">This is a priority announcement. Please review carefully.</p>
+                        )}
+                        <p className="text-gray-600 mt-2 whitespace-pre-wrap">{ann.content}</p>
+                        {ann.attachmentUrl && (
+                          <a
+                            href={ann.attachmentUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 mt-3 text-sm text-primary hover:text-accent font-medium"
+                          >
+                            📎 {ann.attachmentName || 'Download Attachment'}
+                          </a>
+                        )}
+                        <p className="text-xs text-gray-400 mt-3">
+                          Posted: {new Date(ann.createdAt).toLocaleDateString()}
+                        </p>
+                      </div>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-gray-500 text-sm">No announcements at this time.</p>
-              )}
-            </div>
-            
-            <div className="bg-white p-6 rounded-xl shadow-sm">
-              <h2 className="text-lg font-bold text-accent mb-4 flex items-center gap-2">
-                <span className="text-primary">{Icons.activity}</span> Recent Activity
-              </h2>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-gray-500 text-sm">No announcements at this time.</p>
+            )}
+          </div>
+
+          <div className="bg-white p-6 rounded-xl shadow-sm">
+            <h2 className="text-lg font-bold text-accent mb-4 flex items-center gap-2">
+              <span className="text-primary">{Icons.activity}</span> Recent Activity
+            </h2>
               {data?.activities && data.activities.length > 0 ? (
                 <div className="space-y-2">
                   {data.activities.slice(0, 5).map((act, idx) => {
@@ -472,12 +542,11 @@
                     );
                   })}
                 </div>
-              ) : (
-                <p className="text-gray-500 text-sm">No recent activity.</p>
-              )}
-            </div>
+            ) : (
+              <p className="text-gray-500 text-sm">No recent activity.</p>
+            )}
           </div>
-          
+
           <div className="grid md:grid-cols-3 gap-4">
             <button onClick={() => onNavigate('inventory')} className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center cursor-pointer w-full">
               <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.package, { className: 'w-10 h-10' })}</div>
@@ -499,7 +568,7 @@
       );
     };
     
-    const MilestonesPage = ({ data }) => {
+    const MilestonesPage = ({ data, onNavigate }) => {
       const project = data?.projects?.[0];
       const allTasks = project?.tasks || [];
       const tasks = allTasks.filter(t => t.showToClient !== false);
@@ -541,7 +610,7 @@
       };
       
       const getPhaseGradient = (phase) => {
-        const gradients = { 'Phase 0': 'bg-gradient-to-r from-purple-600 to-purple-700', 'Phase 1': 'bg-gradient-to-r from-primary to-accent', 'Phase 2': 'bg-gradient-to-r from-green-600 to-green-700', 'Phase 3': 'bg-gradient-to-r from-orange-600 to-orange-700', 'Phase 4': 'bg-gradient-to-r from-pink-600 to-pink-700' };
+        const gradients = { 'Phase 0': 'bg-gradient-to-r from-purple-600 to-purple-700', 'Phase 1': 'bg-gradient-to-r from-blue-600 to-blue-800', 'Phase 2': 'bg-gradient-to-r from-green-600 to-green-700', 'Phase 3': 'bg-gradient-to-r from-orange-600 to-orange-700', 'Phase 4': 'bg-gradient-to-r from-pink-600 to-pink-700' };
         return gradients[phase] || 'bg-gradient-to-r from-gray-600 to-gray-700';
       };
       
@@ -577,13 +646,32 @@
       
       const ListView = () => (
         <div className="space-y-8">
-          {PHASE_ORDER.map(phase => (
+          {PHASE_ORDER.map(phase => {
+            const phaseTasks = Object.values(groupedByPhase[phase] || {}).flat();
+            const phaseCompleted = phaseTasks.filter(t => t.completed).length;
+            const phaseTotal = phaseTasks.length;
+            const phasePercent = phaseTotal > 0 ? Math.round((phaseCompleted / phaseTotal) * 100) : 0;
+            return (
             <div key={phase} className="space-y-4">
-              <div className={`${getPhaseGradient(phase)} p-3 rounded-lg text-white`}>
-                <h2 className="text-lg font-bold">{STANDARD_PHASES[phase]?.name || phase}</h2>
-                <p className="text-sm opacity-80">
-                  {Object.values(groupedByPhase[phase] || {}).flat().filter(t => t.completed).length} of {Object.values(groupedByPhase[phase] || {}).flat().length} complete
-                </p>
+              <div className={`${getPhaseGradient(phase)} p-4 rounded-lg text-white shadow-md`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-lg font-bold">{STANDARD_PHASES[phase]?.name || phase}</h2>
+                    <p className="text-sm opacity-90 mt-1">
+                      {phaseTotal > 0 ? `${phaseCompleted} of ${phaseTotal} complete` : 'No tasks assigned yet'}
+                    </p>
+                  </div>
+                  {phaseTotal > 0 && (
+                    <div className="text-right">
+                      <div className="text-2xl font-bold">{phasePercent}%</div>
+                    </div>
+                  )}
+                </div>
+                {phaseTotal > 0 && (
+                  <div className="mt-3 w-full bg-white/20 rounded-full h-2 overflow-hidden">
+                    <div className="h-full bg-white rounded-full transition-all duration-500" style={{ width: `${phasePercent}%` }} />
+                  </div>
+                )}
               </div>
               {Object.entries(groupedByPhase[phase] || {}).map(([stageName, stageTasks]) => {
                 const dueDates = stageTasks.filter(t => t.dueDate).map(t => t.dueDate).sort();
@@ -594,6 +682,11 @@
                       <div>
                         <h3 className="font-semibold text-gray-700">{stageName}</h3>
                         <p className="text-xs text-gray-500">{stageTasks.filter(t => t.completed).length} of {stageTasks.length} complete</p>
+                        {phase === 'Phase 3' && stageName === 'Training/Validation' && onNavigate && (
+                          <button onClick={() => onNavigate('files')} className="text-xs text-primary hover:underline mt-1 inline-block">
+                            View Validation Reports in Files →
+                          </button>
+                        )}
                       </div>
                       {targetDate && (
                         <span className="text-xs bg-blue-100 text-primary px-2 py-1 rounded">
@@ -672,10 +765,11 @@
                 );
               })}
             </div>
-          ))}
+            );
+          })}
         </div>
       );
-      
+
       const TimelineView = () => (
         <div className="bg-white rounded-lg shadow-sm p-6">
           <h2 className="text-2xl font-bold mb-6 text-accent">Project Timeline</h2>
@@ -697,7 +791,14 @@
                       return (
                         <div key={stage} className="bg-gray-50 rounded-lg p-4">
                           <div className="flex justify-between items-start mb-3">
-                            <h4 className="font-semibold text-gray-800">{stage}</h4>
+                            <div>
+                              <h4 className="font-semibold text-gray-800">{stage}</h4>
+                              {phase === 'Phase 3' && stage === 'Training/Validation' && onNavigate && (
+                                <button onClick={() => onNavigate('files')} className="text-xs text-primary hover:underline mt-1 inline-block">
+                                  View Validation Reports in Files →
+                                </button>
+                              )}
+                            </div>
                             {targetDate && <span className="text-xs bg-blue-100 text-primary px-2 py-1 rounded">Target Due Date: {targetDate}</span>}
                           </div>
                           <div className="space-y-2">
@@ -873,10 +974,25 @@
             </div>
           </div>
           
-          <div className="flex gap-2">
-            <button onClick={() => setViewType('list')} className={`px-4 py-2 rounded-md ${viewType === 'list' ? 'bg-primary text-white' : 'bg-gray-200 text-gray-700'}`}>List View</button>
-            <button onClick={() => setViewType('timeline')} className={`px-4 py-2 rounded-md ${viewType === 'timeline' ? 'bg-primary text-white' : 'bg-gray-200 text-gray-700'}`}>Timeline</button>
-            <button onClick={() => setViewType('calendar')} className={`px-4 py-2 rounded-md ${viewType === 'calendar' ? 'bg-primary text-white' : 'bg-gray-200 text-gray-700'}`}>Calendar</button>
+          <div className="flex gap-2 bg-white p-2 rounded-lg shadow-sm">
+            <button onClick={() => setViewType('list')} style={viewType === 'list' ? {backgroundColor: '#045E9F', color: 'white'} : {}} className={`px-4 py-2 rounded-md font-medium transition-all ${viewType === 'list' ? 'shadow-md' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+              <span className="flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
+                List View
+              </span>
+            </button>
+            <button onClick={() => setViewType('timeline')} style={viewType === 'timeline' ? {backgroundColor: '#045E9F', color: 'white'} : {}} className={`px-4 py-2 rounded-md font-medium transition-all ${viewType === 'timeline' ? 'shadow-md' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+              <span className="flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                Timeline
+              </span>
+            </button>
+            <button onClick={() => setViewType('calendar')} style={viewType === 'calendar' ? {backgroundColor: '#045E9F', color: 'white'} : {}} className={`px-4 py-2 rounded-md font-medium transition-all ${viewType === 'calendar' ? 'shadow-md' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+              <span className="flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                Calendar
+              </span>
+            </button>
           </div>
           
           {viewType === 'list' && <ListView />}
@@ -1152,11 +1268,8 @@
       const [report, setReport] = useState(null);
       const [loading, setLoading] = useState(true);
       const [showGuide, setShowGuide] = useState(false);
-      const [selectedItems, setSelectedItems] = useState([]);
       const [itemSearch, setItemSearch] = useState('');
       const [categoryFilter, setCategoryFilter] = useState('All');
-      
-      const CHART_COLORS = ['#045E9F', '#00205A', '#10B981', '#F59E0B', '#EF4444'];
 
       useEffect(() => {
         fetch(`${API_URL}/api/inventory/report/${slug}`, { headers: { 'Authorization': `Bearer ${token}` } })
@@ -1173,24 +1286,71 @@
       const lowStock = alerts?.lowStock || [];
       const expiring = alerts?.expiringSoon || [];
 
+      // Check if client hasn't submitted this week
+      const hasSubmittedThisWeek = () => {
+        if (!submissions || submissions.length === 0) return false;
+        const lastSubmission = new Date(submissions[0].submittedAt);
+        const today = new Date();
+        const daysSinceSubmission = Math.floor((today - lastSubmission) / (1000 * 60 * 60 * 24));
+        return daysSinceSubmission < 7;
+      };
+
+      // Get current stock items from most recent submission
+      const getCurrentStock = () => {
+        if (!submissions || submissions.length === 0) return [];
+        const latestSubmission = submissions[0];
+        const items = [];
+        if (latestSubmission.data) {
+          Object.entries(latestSubmission.data).forEach(([key, item]) => {
+            const totalQty = (item.openQty || 0) + (item.closedQty || 0);
+            if (totalQty > 0) {
+              items.push({
+                key,
+                itemName: item.itemName || key,
+                category: item.category || 'Other',
+                quantity: totalQty,
+                openQty: item.openQty || 0,
+                closedQty: item.closedQty || 0
+              });
+            }
+          });
+        }
+        return items.sort((a, b) => a.itemName.localeCompare(b.itemName));
+      };
+
+      const currentStock = getCurrentStock();
+      const categories = ['All', ...new Set(currentStock.map(i => i.category))];
+      const filteredStock = currentStock.filter(item =>
+        (categoryFilter === 'All' || item.category === categoryFilter) &&
+        item.itemName.toLowerCase().includes(itemSearch.toLowerCase())
+      );
+
       const handleDownload = () => {
         window.open(`${API_URL}/api/inventory/export/${slug}?token=${token}`, '_blank');
       };
 
       return (
         <div className="space-y-6">
+          {/* Submission Warning Flag */}
+          {!hasSubmittedThisWeek() && (
+            <div className="bg-yellow-50 border border-yellow-300 p-4 rounded-xl flex items-center gap-3">
+              <span className="text-2xl">⚠️</span>
+              <div>
+                <p className="font-semibold text-yellow-800">Inventory Update Needed</p>
+                <p className="text-sm text-yellow-700">You haven't submitted your inventory this week. Please update your inventory to keep records current.</p>
+              </div>
+            </div>
+          )}
+
           <div className="bg-white p-6 rounded-xl shadow-sm">
             <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
               <div>
                 <h1 className="text-2xl font-bold text-accent">Inventory Reports</h1>
-                <p className="text-gray-600 mt-1">View alerts and usage trends for your inventory</p>
+                <p className="text-gray-600 mt-1">View alerts and current stock levels</p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button onClick={handleDownload} className="bg-primary text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-accent transition-colors flex items-center gap-1">
                   {Icons.download} Download CSV
-                </button>
-                <button onClick={() => onNavigate('submission_history')} className="border border-primary text-primary px-3 py-2 rounded-lg text-sm font-medium hover:bg-primary/10 transition-colors flex items-center gap-1">
-                  {Icons.list} View History
                 </button>
                 <button onClick={() => setShowGuide(!showGuide)} className="text-primary hover:text-accent text-sm flex items-center gap-1">
                   <span>ℹ️</span> {showGuide ? 'Hide Guide' : 'How to Use'}
@@ -1214,25 +1374,19 @@
                   <p className="text-xs text-gray-500">Action: Prioritize using expiring items; plan replacement orders.</p>
                 </div>
                 <div>
-                  <h4 className="font-semibold text-purple-600 mb-2">Top Consumed Items (Rolling Average)</h4>
-                  <p className="mb-2">Shows your highest-consumption items with accurate usage rates calculated across up to 12 submissions:</p>
+                  <h4 className="font-semibold text-blue-600 mb-2">Current Stock Levels</h4>
+                  <p className="mb-2">Shows all items currently in stock based on your most recent inventory submission.</p>
                   <ul className="list-disc list-inside text-xs space-y-1 mt-1">
-                    <li><strong>Total Used:</strong> Sum of all consumption across analyzed periods</li>
-                    <li><strong>Avg Weekly:</strong> Average usage per week based on total consumed divided by total days, smoothed across multiple submissions</li>
-                    <li><strong>Weeks Left:</strong> Estimated time until depletion at the average rate</li>
-                    <li><strong>Periods:</strong> Number of submission intervals used in the calculation</li>
+                    <li>Filter by category to find specific item types</li>
+                    <li>Search to quickly locate items</li>
+                    <li>See breakdown of open vs closed quantities</li>
                   </ul>
-                  <p className="text-xs text-gray-500 mt-2">More submissions = more accurate predictions. Color codes: Red = 2 weeks or less | Orange = 2-4 weeks | Green = 4+ weeks</p>
+                  <p className="text-xs text-gray-500 mt-2">Submit weekly updates to keep this data accurate.</p>
                 </div>
                 <div>
-                  <h4 className="font-semibold text-blue-600 mb-2">Item Quantities Over Time</h4>
-                  <p className="mb-2">Select individual items to see their quantity trends across submissions. Compare up to 5 items at once to spot patterns.</p>
-                  <ul className="list-disc list-inside text-xs space-y-1 mt-1">
-                    <li>Use category chips to filter by item type</li>
-                    <li>Search to find specific items quickly</li>
-                    <li>Color-coded lines show each item's trend</li>
-                  </ul>
-                  <p className="text-xs text-gray-500 mt-2">Tip: Compare similar items to identify usage patterns.</p>
+                  <h4 className="font-semibold text-yellow-600 mb-2">Weekly Submission Reminder</h4>
+                  <p className="mb-2">A warning appears at the top if you haven't submitted inventory in the past 7 days.</p>
+                  <p className="text-xs text-gray-500">Action: Submit your inventory weekly to maintain accurate stock visibility.</p>
                 </div>
               </div>
             </div>
@@ -1291,147 +1445,59 @@
             </div>
           </div>
 
-          {usageTrends?.consumptionRate?.length > 0 && (
-            <div className="bg-white p-6 rounded-xl shadow-sm">
-              <h2 className="text-lg font-bold text-purple-600 mb-4 flex items-center gap-2">
-                <span className="text-purple-600">{Icons.chart}</span> Top Consumed Items (Rolling Average)
-              </h2>
-              <p className="text-xs text-gray-500 mb-3">Average weekly usage calculated across up to 12 submissions for accuracy</p>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left py-2 font-medium text-gray-600">Item</th>
-                      <th className="text-right py-2 font-medium text-gray-600">Current Stock</th>
-                      <th className="text-right py-2 font-medium text-gray-600">Total Used</th>
-                      <th className="text-right py-2 font-medium text-gray-600">Avg Weekly</th>
-                      <th className="text-right py-2 font-medium text-gray-600">Weeks Left</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {usageTrends.consumptionRate.map((item, idx) => (
-                      <tr key={idx} className="border-b hover:bg-gray-50">
-                        <td className="py-2">
-                          <p className="font-medium text-gray-800">{item.itemName}</p>
-                          <p className="text-xs text-gray-500">{item.category} {item.dataPoints && `(${item.dataPoints} periods)`}</p>
-                        </td>
-                        <td className="text-right text-gray-600">{item.currentQty}</td>
-                        <td className="text-right text-red-600 font-medium">{item.totalConsumed}</td>
-                        <td className="text-right text-gray-600">{item.weeklyRate}/wk</td>
-                        <td className="text-right">
-                          <span className={`font-medium ${item.weeksRemaining <= 2 ? 'text-red-600' : item.weeksRemaining <= 4 ? 'text-orange-600' : 'text-green-600'}`}>
-                            {item.weeksRemaining > 0 ? `${item.weeksRemaining} wks` : 'Empty'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
 
-          {usageTrends?.itemTimeSeries?.length > 0 && (
-            <div className="bg-white p-6 rounded-xl shadow-sm">
-              <h2 className="text-lg font-bold text-blue-600 mb-4 flex items-center gap-2">
-                <span>📈</span> Item Quantities Over Time
-              </h2>
-              <p className="text-xs text-gray-500 mb-3">Select up to 5 items to compare their quantity trends across submissions</p>
-              
-              {/* Category filter chips */}
-              <div className="flex flex-wrap gap-2 mb-3">
-                {['All', ...new Set(usageTrends.itemTimeSeries.map(i => i.category))].map(cat => (
-                  <button key={cat} onClick={() => setCategoryFilter(cat)} className={`px-3 py-1 rounded-full text-xs font-medium transition ${categoryFilter === cat ? 'bg-primary text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{cat}</button>
-                ))}
-              </div>
-              
-              {/* Item search and selector */}
-              <div className="mb-4">
-                <input type="text" placeholder="Search items..." value={itemSearch} onChange={e => setItemSearch(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm mb-2" />
-                <div className="max-h-32 overflow-y-auto border rounded-lg p-2 bg-gray-50">
-                  {usageTrends.itemTimeSeries
-                    .filter(item => (categoryFilter === 'All' || item.category === categoryFilter) && item.itemName.toLowerCase().includes(itemSearch.toLowerCase()))
-                    .map(item => {
-                      const isSelected = selectedItems.includes(item.key);
-                      return (
-                        <label key={item.key} className={`flex items-center gap-2 p-1 rounded cursor-pointer hover:bg-gray-100 ${isSelected ? 'bg-blue-50' : ''}`}>
-                          <input type="checkbox" checked={isSelected} disabled={!isSelected && selectedItems.length >= 5} onChange={() => {
-                            if (isSelected) setSelectedItems(selectedItems.filter(k => k !== item.key));
-                            else if (selectedItems.length < 5) setSelectedItems([...selectedItems, item.key]);
-                          }} className="rounded" />
-                          <span className="text-sm text-gray-700">{item.itemName}</span>
-                          <span className="text-xs text-gray-400">({item.category})</span>
-                        </label>
-                      );
-                    })}
-                </div>
-              </div>
-              
-              {/* Selected items legend */}
-              {selectedItems.length > 0 && (
+          {/* Current Stock Levels */}
+          <div className="bg-white p-6 rounded-xl shadow-sm">
+            <h2 className="text-lg font-bold text-blue-600 mb-4 flex items-center gap-2">
+              <span className="text-blue-600">{Icons.list}</span> Current Stock Levels
+            </h2>
+            <p className="text-xs text-gray-500 mb-3">Items currently in stock based on your most recent inventory submission</p>
+
+            {currentStock.length > 0 ? (
+              <>
+                {/* Category filter chips */}
                 <div className="flex flex-wrap gap-2 mb-3">
-                  {selectedItems.map((key, idx) => {
-                    const item = usageTrends.itemTimeSeries.find(i => i.key === key);
-                    return (
-                      <span key={key} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs text-white" style={{ backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] }}>
-                        {item?.itemName}
-                        <button onClick={() => setSelectedItems(selectedItems.filter(k => k !== key))} className="ml-1 hover:opacity-75">×</button>
-                      </span>
-                    );
-                  })}
+                  {categories.map(cat => (
+                    <button key={cat} onClick={() => setCategoryFilter(cat)} className={`px-3 py-1 rounded-full text-xs font-medium transition ${categoryFilter === cat ? 'bg-primary text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{cat}</button>
+                  ))}
                 </div>
-              )}
-              
-              {/* Line chart */}
-              {selectedItems.length > 0 ? (
-                <div className="relative h-80 border rounded-lg p-4 bg-gray-50">
-                  {(() => {
-                    const selectedData = selectedItems.map(key => usageTrends.itemTimeSeries.find(i => i.key === key)).filter(Boolean);
-                    const allDates = [...new Set(selectedData.flatMap(item => item.dataPoints.map(dp => dp.date)))].sort();
-                    const maxQty = Math.max(...selectedData.flatMap(item => item.dataPoints.map(dp => dp.quantity)), 1);
-                    const chartWidth = 300;
-                    const chartHeight = 200;
-                    
-                    return (
-                      <svg viewBox={`0 0 ${chartWidth + 50} ${chartHeight + 40}`} className="w-full h-full" preserveAspectRatio="xMidYMid meet">
-                        {/* Y-axis labels */}
-                        <text x="5" y="20" fontSize="10" fill="#6b7280">{maxQty}</text>
-                        <text x="5" y={chartHeight / 2 + 15} fontSize="10" fill="#6b7280">{Math.round(maxQty / 2)}</text>
-                        <text x="5" y={chartHeight + 5} fontSize="10" fill="#6b7280">0</text>
-                        
-                        {/* Grid lines */}
-                        {[0, 0.25, 0.5, 0.75, 1].map((pct, idx) => (
-                          <line key={idx} x1="35" y1={chartHeight * pct + 10} x2={chartWidth + 35} y2={chartHeight * pct + 10} stroke="#e5e7eb" strokeWidth="1" />
-                        ))}
-                        
-                        {/* Lines for each selected item */}
-                        {selectedData.map((item, itemIdx) => {
-                          const points = allDates.map((date, dateIdx) => {
-                            const dp = item.dataPoints.find(p => p.date === date);
-                            const x = 35 + (dateIdx / Math.max(allDates.length - 1, 1)) * chartWidth;
-                            const y = 10 + chartHeight - (dp ? (dp.quantity / maxQty) * chartHeight : 0);
-                            return `${x},${y}`;
-                          }).join(' ');
-                          return <polyline key={item.key} points={points} fill="none" stroke={CHART_COLORS[itemIdx % CHART_COLORS.length]} strokeWidth="2" />;
-                        })}
-                        
-                        {/* X-axis date labels */}
-                        {allDates.map((date, idx) => (
-                          <text key={idx} x={35 + (idx / Math.max(allDates.length - 1, 1)) * chartWidth} y={chartHeight + 25} textAnchor="middle" fontSize="9" fill="#6b7280">
-                            {new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                          </text>
-                        ))}
-                      </svg>
-                    );
-                  })()}
+
+                {/* Search */}
+                <input type="text" placeholder="Search items..." value={itemSearch} onChange={e => setItemSearch(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm mb-4" />
+
+                {/* Stock table */}
+                <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-white">
+                      <tr className="border-b">
+                        <th className="text-left py-2 font-medium text-gray-600">Item</th>
+                        <th className="text-left py-2 font-medium text-gray-600">Category</th>
+                        <th className="text-right py-2 font-medium text-gray-600">Open</th>
+                        <th className="text-right py-2 font-medium text-gray-600">Closed</th>
+                        <th className="text-right py-2 font-medium text-gray-600">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredStock.map((item, idx) => (
+                        <tr key={idx} className="border-b hover:bg-gray-50">
+                          <td className="py-2 font-medium text-gray-800">{item.itemName}</td>
+                          <td className="py-2 text-gray-500">{item.category}</td>
+                          <td className="text-right text-gray-600">{item.openQty}</td>
+                          <td className="text-right text-gray-600">{item.closedQty}</td>
+                          <td className="text-right font-semibold text-blue-600">{item.quantity}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              ) : (
-                <div className="text-center py-8 text-gray-400 border rounded-lg bg-gray-50">
-                  <p>Select items above to see their quantity trends</p>
-                </div>
-              )}
-            </div>
-          )}
+                <p className="text-xs text-gray-400 mt-3">Showing {filteredStock.length} of {currentStock.length} items</p>
+              </>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <p>No stock data available - submit your inventory to see current stock levels</p>
+              </div>
+            )}
+          </div>
 
           <div className="bg-white p-6 rounded-xl shadow-sm">
             <h2 className="text-lg font-bold text-accent mb-4 flex items-center gap-2">
@@ -1800,13 +1866,68 @@
         return (<div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent"></div></div>);
       }
 
+      // Client view - show simplified summary (not item-level details)
+      if (!isAdmin) {
+        return (
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-xl shadow-sm">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                  <h1 className="text-2xl font-bold text-accent">Submission History</h1>
+                  <p className="text-gray-600 mt-1">Overview of your inventory submissions</p>
+                </div>
+                <button
+                  onClick={() => onNavigate('reports')}
+                  className="text-primary hover:text-accent text-sm flex items-center gap-1"
+                >
+                  {Icons.chart} View Reports & Alerts
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-xl shadow-sm">
+              {submissions.length > 0 ? (
+                <div className="space-y-3">
+                  {submissions.map((sub, idx) => {
+                    const itemCount = Object.keys(sub.data || {}).length;
+                    const totalQuantity = Object.values(sub.data || {}).reduce((sum, item) => {
+                      const batches = Array.isArray(item?.batches) ? item.batches : [item || {}];
+                      return sum + batches.reduce((batchSum, b) => batchSum + (parseInt(b.openQty) || 0) + (parseInt(b.closedQty) || 0), 0);
+                    }, 0);
+                    return (
+                      <div key={sub.id || idx} className="flex justify-between items-center p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition">
+                        <div>
+                          <p className="font-semibold text-gray-800">{new Date(sub.submittedAt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                          <p className="text-sm text-gray-500">Submitted by {sub.submittedBy}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-medium text-gray-700">{itemCount} items tracked</p>
+                          <p className="text-sm text-gray-500">{totalQuantity} total units</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <div className="flex justify-center mb-4 text-gray-400">{React.cloneElement(Icons.list, { className: 'w-16 h-16' })}</div>
+                  <p className="text-gray-500">No submissions yet</p>
+                  <p className="text-sm text-gray-400 mt-1">Submit your first inventory to see your history here</p>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      // Admin view - detailed spreadsheet
       return (
         <div className="space-y-6">
           <div className="bg-white p-6 rounded-xl shadow-sm">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
                 <h1 className="text-2xl font-bold text-accent">Submission History</h1>
-                <p className="text-gray-600 mt-1">{isAdmin ? 'Detailed inventory submission records from all clients' : 'Detailed view of your inventory submissions'}</p>
+                <p className="text-gray-600 mt-1">Detailed inventory submission records from all clients</p>
               </div>
             </div>
           </div>
@@ -1992,30 +2113,339 @@
       );
     };
 
-    const SupportPage = ({ settings }) => {
-      const supportUrl = settings?.supportUrl || 'https://thrive365labs-49020024.hs-sites.com/support';
-      
+    const SupportPage = ({ settings, token, userData, activeTab: propActiveTab, onTabChange }) => {
+      const [tickets, setTickets] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState(null);
+      const [localActiveTab, setLocalActiveTab] = useState(propActiveTab || 'tickets');
+      const [expandedTicket, setExpandedTicket] = useState(null);
+
+      // Use prop tab if provided (for URL routing), otherwise use local state
+      const activeTab = propActiveTab || localActiveTab;
+      const setActiveTab = (tab) => {
+        if (onTabChange) {
+          onTabChange(tab);
+        } else {
+          setLocalActiveTab(tab);
+        }
+      };
+
+      const hasHubSpotConfig = userData?.hubspotCompanyId || userData?.hubspotContactId;
+
+      useEffect(() => {
+        if (hasHubSpotConfig && token) {
+          fetchTickets();
+        } else {
+          setLoading(false);
+        }
+      }, [token]);
+
+      const fetchTickets = async () => {
+        try {
+          const response = await fetch(`${API_URL}/api/client/hubspot/tickets`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await response.json();
+          if (data.tickets) {
+            setTickets(data.tickets);
+          }
+        } catch (err) {
+          console.error('Error fetching tickets:', err);
+          setError('Unable to load ticket history');
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      // Map HubSpot stage IDs to readable names
+      const getStageLabel = (stage) => {
+        const stageStr = String(stage || '');
+        // Thrive 365 Labs custom ticket pipeline stages
+        const stageMap = {
+          '1': 'New',
+          '2': 'In Progress',
+          '3': 'Assigned',
+          '1155252903': 'Vendor Escalation',
+          '1155252904': 'Resolved',
+          '4': 'Closed'
+        };
+        // If it's a number, try to map it
+        if (/^\d+$/.test(stageStr)) {
+          return stageMap[stageStr] || `Stage ${stageStr}`;
+        }
+        return stageStr;
+      };
+
+      const getStageColor = (stage) => {
+        const stageLabel = getStageLabel(stage).toLowerCase();
+        if (stageLabel.includes('closed')) return 'bg-gray-100 text-gray-700 border border-gray-300';
+        if (stageLabel.includes('resolved')) return 'bg-green-100 text-green-700 border border-green-200';
+        if (stageLabel.includes('assigned')) return 'bg-purple-100 text-purple-700 border border-purple-200';
+        if (stageLabel.includes('in progress')) return 'bg-blue-100 text-blue-700 border border-blue-200';
+        if (stageLabel.includes('escalation') || stageLabel.includes('vendor')) return 'bg-orange-100 text-orange-700 border border-orange-200';
+        if (stageLabel.includes('new')) return 'bg-sky-100 text-sky-700 border border-sky-200';
+        return 'bg-gray-100 text-gray-700 border border-gray-200';
+      };
+
+      const formatDate = (dateStr) => {
+        if (!dateStr) return '-';
+        return new Date(dateStr).toLocaleDateString('en-US', {
+          year: 'numeric', month: 'short', day: 'numeric'
+        });
+      };
+
       return (
         <div className="space-y-6">
-          <div className="bg-white p-6 rounded-xl shadow-sm">
-            <h1 className="text-2xl font-bold text-accent">Customer Support</h1>
-            <p className="text-gray-600 mt-1">Get help from our support team</p>
+          {/* Hero Banner */}
+          <div className="relative rounded-2xl overflow-hidden shadow-lg">
+            <div className="absolute inset-0 bg-gradient-to-r from-blue-900/80 to-blue-700/60 z-10"></div>
+            <img
+              src="https://images.unsplash.com/photo-1579154204601-01588f351e67?w=1200&h=400&fit=crop"
+              alt="Laboratory Equipment"
+              className="w-full h-48 object-cover"
+            />
+            <div className="absolute inset-0 z-20 flex flex-col justify-center items-center text-white text-center px-6">
+              <h1 className="text-3xl md:text-4xl font-bold drop-shadow-lg">Customer Support Center</h1>
+              <p className="text-lg mt-2 opacity-90 drop-shadow">Thrive 365 Labs Client Portal</p>
+            </div>
           </div>
-          
-          <div className="bg-white p-6 rounded-xl shadow-sm text-center">
-            <div className="flex justify-center mb-4 text-primary">{React.cloneElement(Icons.chat, { className: 'w-16 h-16' })}</div>
-            <h2 className="text-xl font-semibold text-gray-800 mb-2">Need Assistance?</h2>
-            <p className="text-gray-600 mb-6">
-              Our support team is ready to help you with any questions or issues.
-            </p>
-            <a
-              href={supportUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-block bg-primary text-white px-8 py-3 rounded-lg font-medium hover:bg-accent transition-colors"
-            >
-              Open Support Center
-            </a>
+
+          {/* Tab Navigation */}
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+            <div className="grid grid-cols-3 border-b">
+              <button
+                onClick={() => setActiveTab('tickets')}
+                style={activeTab === 'tickets' ? {backgroundColor: '#045E9F', color: 'white'} : {}}
+                className={`py-4 px-4 font-medium transition flex items-center justify-center gap-2 ${activeTab === 'tickets' ? '' : 'text-gray-600 hover:bg-gray-50 border-r'}`}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+                <span>Ticket History</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('submit')}
+                style={activeTab === 'submit' ? {backgroundColor: '#045E9F', color: 'white'} : {}}
+                className={`py-4 px-4 font-medium transition flex items-center justify-center gap-2 ${activeTab === 'submit' ? '' : 'text-gray-600 hover:bg-gray-50 border-r'}`}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                <span>Submit a Ticket</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('chat')}
+                style={activeTab === 'chat' ? {backgroundColor: '#045E9F', color: 'white'} : {}}
+                className={`py-4 px-4 font-medium transition flex items-center justify-center gap-2 ${activeTab === 'chat' ? '' : 'text-gray-600 hover:bg-gray-50'}`}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+                <span>Live Chat</span>
+              </button>
+            </div>
+
+            <div className="p-6">
+              {/* Ticket History Tab */}
+              {activeTab === 'tickets' && (
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg font-semibold text-gray-800">Your Support Tickets</h2>
+                    <button onClick={fetchTickets} className="text-primary hover:text-accent text-sm flex items-center gap-1">
+                      {Icons.refresh || '↻'} Refresh
+                    </button>
+                  </div>
+
+                  {loading ? (
+                    <div className="flex justify-center py-12">
+                      <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent"></div>
+                    </div>
+                  ) : !hasHubSpotConfig ? (
+                    <div className="text-center py-12 text-gray-500">
+                      <div className="flex justify-center mb-4 text-gray-300">{React.cloneElement(Icons.folder, { className: 'w-16 h-16' })}</div>
+                      <p>Ticket history is not available for your account.</p>
+                      <p className="text-sm mt-2">Please contact support using the form or chat options.</p>
+                    </div>
+                  ) : error ? (
+                    <div className="text-center py-12 text-red-500">
+                      <p>{error}</p>
+                      <button onClick={fetchTickets} className="mt-4 text-primary hover:underline">Try again</button>
+                    </div>
+                  ) : tickets.length === 0 ? (
+                    <div className="text-center py-12 text-gray-500">
+                      <div className="flex justify-center mb-4 text-green-400">{React.cloneElement(Icons.check, { className: 'w-16 h-16' })}</div>
+                      <p className="font-medium">No support tickets</p>
+                      <p className="text-sm mt-2">You haven't submitted any support tickets yet.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {tickets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(ticket => (
+                        <div key={ticket.id} className="border rounded-lg overflow-hidden">
+                          <button
+                            onClick={() => setExpandedTicket(expandedTicket === ticket.id ? null : ticket.id)}
+                            className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition text-left"
+                          >
+                            <div className="flex-1">
+                              <p className="font-medium text-gray-800">{ticket.subject}</p>
+                              <div className="flex flex-wrap items-center gap-3 mt-1 text-sm text-gray-500">
+                                <span>Created: {formatDate(ticket.createdAt)}</span>
+                                {ticket.closedAt && (
+                                  <span className="text-green-600">Closed: {formatDate(ticket.closedAt)}</span>
+                                )}
+                              </div>
+                            </div>
+                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStageColor(ticket.stage)}`}>
+                              {getStageLabel(ticket.stage)}
+                            </span>
+                          </button>
+                          {expandedTicket === ticket.id && (
+                            <div className="px-4 pb-4 border-t bg-gray-50">
+                              {ticket.content && (
+                                <div className="pt-3">
+                                  <p className="text-xs font-medium text-gray-500 mb-1">Description:</p>
+                                  <p className="text-sm text-gray-600 whitespace-pre-wrap">{ticket.content}</p>
+                                </div>
+                              )}
+                              {ticket.resolution && (
+                                <div className="mt-3 pt-3 border-t border-gray-200">
+                                  <p className="text-xs font-medium text-green-600 mb-1">Resolution Notes:</p>
+                                  <p className="text-sm text-gray-600 whitespace-pre-wrap bg-green-50 p-3 rounded-lg border border-green-100">{ticket.resolution}</p>
+                                </div>
+                              )}
+                              {ticket.attachments && ticket.attachments.length > 0 && (
+                                <div className="mt-3 pt-3 border-t border-gray-200">
+                                  <p className="text-sm font-medium text-gray-700 mb-2">Attachments:</p>
+                                  <div className="space-y-2">
+                                    {ticket.attachments.map((att, idx) => (
+                                      <button
+                                        key={idx}
+                                        onClick={async (e) => {
+                                          e.stopPropagation();
+                                          try {
+                                            const response = await fetch(`${API_URL}/api/client/hubspot/file/${att.fileId}`, {
+                                              headers: { 'Authorization': `Bearer ${token}` }
+                                            });
+                                            const data = await response.json();
+                                            if (data.downloadUrl) {
+                                              window.open(data.downloadUrl, '_blank');
+                                            }
+                                          } catch (err) {
+                                            console.error('Error downloading file:', err);
+                                          }
+                                        }}
+                                        className="flex items-center gap-2 text-sm text-primary hover:text-accent hover:underline"
+                                      >
+                                        {Icons.download} Service Report (Click to Download)
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {!ticket.content && !ticket.resolution && (!ticket.attachments || ticket.attachments.length === 0) && (
+                                <p className="text-sm text-gray-400 pt-3 italic">No additional details available</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Submit Ticket Tab */}
+              {activeTab === 'submit' && (
+                <div className="grid md:grid-cols-2 gap-8 items-stretch min-h-[500px]">
+                  {/* Left Side - Header */}
+                  <div className="bg-white rounded-xl flex flex-col justify-center items-center text-center p-8">
+                    <h2 className="text-4xl font-bold text-gray-800 mb-6">Submit a Ticket</h2>
+                    <p className="text-gray-500 text-lg">
+                      <span className="italic">or</span> email us at{' '}
+                      <a href="mailto:support@thrive365labs.com" className="text-primary hover:text-accent font-semibold">
+                        support@thrive365labs.com
+                      </a>
+                    </p>
+                  </div>
+
+                  {/* Right Side - Form */}
+                  <div className="bg-white rounded-xl shadow-sm border p-6">
+                    <p className="text-gray-500 text-sm text-center mb-4">Agent response within 24-48 hours</p>
+                    <div
+                      className="hs-form-frame"
+                      data-region="na1"
+                      data-form-id="089d904f-4acb-4ff7-8c61-53ee99e12345"
+                      data-portal-id="49020024"
+                      ref={(el) => {
+                        if (el && !document.getElementById('hs-form-script')) {
+                          const script = document.createElement('script');
+                          script.id = 'hs-form-script';
+                          script.src = 'https://js.hsforms.net/forms/embed/49020024.js';
+                          script.defer = true;
+                          document.body.appendChild(script);
+                        }
+                      }}
+                    ></div>
+                  </div>
+                </div>
+              )}
+
+              {/* Live Chat Tab */}
+              {activeTab === 'chat' && (
+                <div
+                  ref={(el) => {
+                    if (el && !document.getElementById('hs-chat-script')) {
+                      const script = document.createElement('script');
+                      script.id = 'hs-chat-script';
+                      script.type = 'text/javascript';
+                      script.async = true;
+                      script.defer = true;
+                      script.src = '//js-na1.hs-scripts.com/49020024.js';
+                      document.body.appendChild(script);
+                    }
+                  }}
+                >
+                  <div className="grid md:grid-cols-2 gap-8 items-stretch min-h-[400px]">
+                    {/* Left Side - Info */}
+                    <div className="bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl p-8 flex flex-col justify-center items-center text-center text-white">
+                      <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mb-6">
+                        <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                        </svg>
+                      </div>
+                      <h2 className="text-3xl font-bold mb-3">Live Chat Support</h2>
+                      <p className="text-blue-100 mb-6">
+                        Need immediate help? Chat with our support team in real time.
+                      </p>
+                      <div className="flex items-center gap-2 text-sm bg-white/20 px-4 py-2 rounded-full">
+                        <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                        Support agents available
+                      </div>
+                    </div>
+
+                    {/* Right Side - Start Chat */}
+                    <div className="bg-white rounded-xl shadow-sm border p-8 flex flex-col justify-center items-center text-center">
+                      <h3 className="text-xl font-semibold text-gray-800 mb-4">Start a Conversation</h3>
+                      <p className="text-gray-500 mb-6 max-w-sm">
+                        Click the button below to open the chat window and connect with our support team.
+                      </p>
+                      <button
+                        onClick={() => {
+                          if (window.HubSpotConversations && window.HubSpotConversations.widget) {
+                            window.HubSpotConversations.widget.open();
+                          } else {
+                            alert('Chat is loading... Please try again in a moment or click the chat icon in the bottom-right corner.');
+                          }
+                        }}
+                        style={{backgroundColor: '#045E9F'}}
+                        className="text-white font-semibold px-8 py-4 rounded-lg shadow-lg hover:shadow-xl transition-all flex items-center gap-3"
+                      >
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                        </svg>
+                        Start Chat Now
+                      </button>
+                      <p className="text-gray-400 text-sm mt-4">
+                        Or click the chat icon in the bottom-right corner
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       );
@@ -2055,7 +2485,7 @@
         return acc;
       }, {});
       
-      const categories = ['Contracts', 'Onboarding', 'Inserts', 'Certificates of Analysis', 'SOP Templates', 'Other'];
+      const categories = ['Contracts', 'Onboarding', 'Inserts', 'Certificates of Analysis', 'Analyzer', 'Other'];
       
       const handleFileUpload = async (e) => {
         e.preventDefault();
@@ -2288,9 +2718,16 @@
       
       return (
         <div className="space-y-6">
-          <div className="bg-gradient-to-r from-accent to-primary text-white p-6 md:p-8 rounded-xl">
-            <h1 className="text-2xl md:text-3xl font-bold">Admin Portal Dashboard</h1>
-            <p className="mt-2 opacity-90">Manage your client portal settings and content</p>
+          {/* Dynamic Banner Header */}
+          <div className="relative rounded-2xl overflow-hidden shadow-lg" style={{minHeight: '180px'}}>
+            <div className="absolute inset-0 bg-cover bg-center" style={{backgroundImage: 'url(/banners/banner-client.jpg)'}}></div>
+            <div className="absolute inset-0 bg-gradient-to-r from-accent/90 via-primary/70 to-transparent"></div>
+            <div className="relative p-6 md:p-8 flex items-center min-h-[180px]">
+              <div className="text-white">
+                <h1 className="text-2xl md:text-3xl font-bold drop-shadow-sm">Admin Portal Dashboard</h1>
+                <p className="mt-2 text-white/90 text-sm max-w-md">Manage your client portal settings and content</p>
+              </div>
+            </div>
           </div>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
@@ -2326,9 +2763,17 @@
           <div className="bg-white p-6 rounded-xl shadow-sm">
             <h2 className="text-lg font-bold text-accent mb-4">Quick Actions</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <a href="/" className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg hover:bg-primary/10 transition group">
+              <a href="/admin" className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg hover:bg-primary/10 transition group">
+                <span className="text-primary">{AdminIcons.settings}</span>
+                <span className="font-medium text-gray-700 group-hover:text-primary">Admin Hub</span>
+              </a>
+              <a href="/launch" className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg hover:bg-primary/10 transition group">
                 <span className="text-primary">{AdminIcons.back}</span>
-                <span className="font-medium text-gray-700 group-hover:text-primary">Implementation App</span>
+                <span className="font-medium text-gray-700 group-hover:text-primary">Launch App</span>
+              </a>
+              <a href="/login" className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg hover:bg-primary/10 transition group">
+                <span className="text-primary">{Icons.home}</span>
+                <span className="font-medium text-gray-700 group-hover:text-primary">Portal Hub</span>
               </a>
             </div>
           </div>
@@ -2338,7 +2783,6 @@
     
     const AdminSettingsPage = ({ token, settings, onSettingsChange }) => {
       const [formData, setFormData] = useState({
-        inventoryFormEmbed: settings?.inventoryFormEmbed || '',
         filesFormEmbed: settings?.filesFormEmbed || '',
         supportUrl: settings?.supportUrl || ''
       });
@@ -2381,17 +2825,7 @@
                 {message}
               </div>
             )}
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Inventory Form Embed Code (HubSpot)</label>
-              <textarea
-                value={formData.inventoryFormEmbed}
-                onChange={(e) => setFormData({ ...formData, inventoryFormEmbed: e.target.value })}
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary h-32 font-mono text-sm"
-                placeholder="Paste HubSpot embed code here..."
-              />
-            </div>
-            
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Files Upload Form Embed Code (HubSpot)</label>
               <textarea
@@ -2427,11 +2861,22 @@
     
     const AdminAnnouncementsPage = ({ token }) => {
       const [announcements, setAnnouncements] = useState([]);
+      const [clients, setClients] = useState([]);
       const [loading, setLoading] = useState(true);
       const [showForm, setShowForm] = useState(false);
       const [editingId, setEditingId] = useState(null);
-      const [formData, setFormData] = useState({ title: '', content: '', type: 'info' });
-      
+      const [formData, setFormData] = useState({
+        title: '',
+        content: '',
+        type: 'info',
+        priority: false,
+        pinned: false,
+        targetAll: true,
+        targetClients: [],
+        attachmentUrl: '',
+        attachmentName: ''
+      });
+
       const loadAnnouncements = async () => {
         try {
           const res = await fetch(`${API_URL}/api/announcements`);
@@ -2443,9 +2888,22 @@
           setLoading(false);
         }
       };
-      
-      useEffect(() => { loadAnnouncements(); }, []);
-      
+
+      const loadClients = async () => {
+        try {
+          const res = await fetch(`${API_URL}/api/users`, { headers: { 'Authorization': `Bearer ${token}` } });
+          const data = await res.json();
+          setClients(Array.isArray(data) ? data.filter(u => u.role === 'client') : []);
+        } catch (err) {
+          console.error('Failed to load clients:', err);
+        }
+      };
+
+      useEffect(() => {
+        loadAnnouncements();
+        loadClients();
+      }, []);
+
       const handleSave = async () => {
         try {
           const method = editingId ? 'PUT' : 'POST';
@@ -2458,14 +2916,14 @@
           if (res.ok) {
             setShowForm(false);
             setEditingId(null);
-            setFormData({ title: '', content: '', type: 'info' });
+            setFormData({ title: '', content: '', type: 'info', priority: false, pinned: false, targetAll: true, targetClients: [], attachmentUrl: '', attachmentName: '' });
             loadAnnouncements();
           }
         } catch (err) {
           console.error('Failed to save:', err);
         }
       };
-      
+
       const handleDelete = async (id) => {
         if (!confirm('Delete this announcement?')) return;
         try {
@@ -2478,13 +2936,32 @@
           console.error('Failed to delete:', err);
         }
       };
-      
+
       const startEdit = (ann) => {
-        setFormData({ title: ann.title, content: ann.content, type: ann.type || 'info' });
+        setFormData({
+          title: ann.title,
+          content: ann.content,
+          type: ann.type || 'info',
+          priority: ann.priority || false,
+          pinned: ann.pinned || false,
+          targetAll: ann.targetAll !== false,
+          targetClients: ann.targetClients || [],
+          attachmentUrl: ann.attachmentUrl || '',
+          attachmentName: ann.attachmentName || ''
+        });
         setEditingId(ann.id);
         setShowForm(true);
       };
-      
+
+      const toggleClientSelection = (slug) => {
+        const current = formData.targetClients || [];
+        if (current.includes(slug)) {
+          setFormData({ ...formData, targetClients: current.filter(s => s !== slug) });
+        } else {
+          setFormData({ ...formData, targetClients: [...current, slug] });
+        }
+      };
+
       return (
         <div className="space-y-6">
           <div className="bg-white p-6 rounded-xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -2493,13 +2970,13 @@
               <p className="text-gray-600">Create and manage portal announcements</p>
             </div>
             <button
-              onClick={() => { setShowForm(true); setEditingId(null); setFormData({ title: '', content: '', type: 'info' }); }}
+              onClick={() => { setShowForm(true); setEditingId(null); setFormData({ title: '', content: '', type: 'info', priority: false, pinned: false, targetAll: true, targetClients: [], attachmentUrl: '', attachmentName: '' }); }}
               className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-accent transition flex items-center gap-2"
             >
               <span>+</span> New Announcement
             </button>
           </div>
-          
+
           {showForm && (
             <div className="bg-white p-6 rounded-xl shadow-sm border-2 border-primary/20">
               <h2 className="text-lg font-bold mb-4">{editingId ? 'Edit Announcement' : 'New Announcement'}</h2>
@@ -2518,22 +2995,127 @@
                   <textarea
                     value={formData.content}
                     onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary h-24"
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary h-32"
+                    placeholder="Write your full announcement content here..."
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                  <select
-                    value={formData.type}
-                    onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
-                  >
-                    <option value="info">Info (Blue)</option>
-                    <option value="success">Success (Green)</option>
-                    <option value="warning">Warning (Yellow)</option>
-                  </select>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                    <select
+                      value={formData.type}
+                      onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="info">Info (Blue)</option>
+                      <option value="success">Success (Green)</option>
+                      <option value="warning">Warning (Yellow)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">Options</label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.priority}
+                        onChange={(e) => setFormData({ ...formData, priority: e.target.checked })}
+                        className="rounded text-primary focus:ring-primary"
+                      />
+                      <span className="text-sm text-gray-700">Mark as Priority</span>
+                      <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded">Shows disclaimer</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.pinned}
+                        onChange={(e) => setFormData({ ...formData, pinned: e.target.checked })}
+                        className="rounded text-primary focus:ring-primary"
+                      />
+                      <span className="text-sm text-gray-700">Pin to Top</span>
+                      <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded">Always visible first</span>
+                    </label>
+                  </div>
                 </div>
-                <div className="flex gap-2">
+
+                <div className="border-t pt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Target Audience</label>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="targetAudience"
+                        checked={formData.targetAll}
+                        onChange={() => setFormData({ ...formData, targetAll: true, targetClients: [] })}
+                        className="text-primary focus:ring-primary"
+                      />
+                      <span className="text-sm text-gray-700">Send to All Clients</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="targetAudience"
+                        checked={!formData.targetAll}
+                        onChange={() => setFormData({ ...formData, targetAll: false })}
+                        className="text-primary focus:ring-primary"
+                      />
+                      <span className="text-sm text-gray-700">Send to Specific Clients</span>
+                    </label>
+
+                    {!formData.targetAll && (
+                      <div className="ml-6 mt-2 p-3 bg-gray-50 rounded-lg max-h-48 overflow-y-auto">
+                        {clients.length === 0 ? (
+                          <p className="text-sm text-gray-500">No clients found</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {clients.map(client => (
+                              <label key={client.id} className="flex items-center gap-2 cursor-pointer hover:bg-gray-100 p-1 rounded">
+                                <input
+                                  type="checkbox"
+                                  checked={(formData.targetClients || []).includes(client.slug)}
+                                  onChange={() => toggleClientSelection(client.slug)}
+                                  className="rounded text-primary focus:ring-primary"
+                                />
+                                <span className="text-sm text-gray-700">{client.practiceName || client.name}</span>
+                                <span className="text-xs text-gray-400">({client.email})</span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="border-t pt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Attachment (Optional)</label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">File Name</label>
+                      <input
+                        type="text"
+                        value={formData.attachmentName}
+                        onChange={(e) => setFormData({ ...formData, attachmentName: e.target.value })}
+                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary text-sm"
+                        placeholder="e.g., Product Update Guide.pdf"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">File URL</label>
+                      <input
+                        type="url"
+                        value={formData.attachmentUrl}
+                        onChange={(e) => setFormData({ ...formData, attachmentUrl: e.target.value })}
+                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary text-sm"
+                        placeholder="https://drive.google.com/..."
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">Add a link to a downloadable file (Google Drive, Dropbox, etc.)</p>
+                </div>
+
+                <div className="flex gap-2 pt-2">
                   <button onClick={handleSave} className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-accent">
                     {editingId ? 'Update' : 'Create'}
                   </button>
@@ -2552,10 +3134,17 @@
               <div className="p-8 text-center text-gray-500">No announcements yet</div>
             ) : (
               <div className="divide-y">
-                {announcements.map(ann => (
-                  <div key={ann.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                {/* Sort: pinned first, then by date */}
+                {[...announcements].sort((a, b) => {
+                  if (a.pinned && !b.pinned) return -1;
+                  if (!a.pinned && b.pinned) return 1;
+                  return new Date(b.createdAt) - new Date(a.createdAt);
+                }).map(ann => (
+                  <div key={ann.id} className={`p-4 flex flex-col sm:flex-row sm:items-start justify-between gap-4 ${ann.pinned ? 'bg-blue-50/50' : ''} ${ann.priority ? 'border-l-4 border-red-500' : ''}`}>
                     <div className="flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
+                        {ann.pinned && <span className="text-blue-600 text-xs font-medium">📌 PINNED</span>}
+                        {ann.priority && <span className="text-red-600 text-xs font-medium bg-red-100 px-2 py-0.5 rounded">PRIORITY</span>}
                         <h3 className="font-semibold text-gray-800">{ann.title}</h3>
                         <span className={`px-2 py-0.5 text-xs rounded ${
                           ann.type === 'warning' ? 'bg-yellow-100 text-yellow-700' :
@@ -2563,8 +3152,20 @@
                           'bg-blue-100 text-blue-700'
                         }`}>{ann.type || 'info'}</span>
                       </div>
-                      <p className="text-sm text-gray-600 mt-1">{ann.content}</p>
-                      <p className="text-xs text-gray-400 mt-1">{new Date(ann.createdAt).toLocaleDateString()}</p>
+                      <p className="text-sm text-gray-600 mt-1 line-clamp-2">{ann.content}</p>
+                      <div className="flex items-center gap-3 mt-2 flex-wrap">
+                        <span className="text-xs text-gray-400">{new Date(ann.createdAt).toLocaleDateString()}</span>
+                        {ann.targetAll === false && ann.targetClients?.length > 0 && (
+                          <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">
+                            {ann.targetClients.length} client{ann.targetClients.length !== 1 ? 's' : ''} targeted
+                          </span>
+                        )}
+                        {ann.attachmentUrl && (
+                          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded flex items-center gap-1">
+                            📎 {ann.attachmentName || 'Attachment'}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="flex gap-2">
                       <button onClick={() => startEdit(ann)} className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">Edit</button>
@@ -2785,6 +3386,8 @@
                         <option value="Inserts">Inserts</option>
                         <option value="Certificates of Analysis">Certificates of Analysis</option>
                         <option value="SOP Templates">SOP Templates</option>
+                        <option value="Analyzer">Analyzer</option>
+                        <option value="Service Reports">Service Reports</option>
                       </select>
                     </div>
                     <div>
@@ -2911,7 +3514,7 @@
           </div>
           
           <div className="bg-blue-50 p-4 rounded-lg text-sm text-blue-700">
-            <p><strong>Note:</strong> To add or edit client users, use the <a href="/" className="underline">Implementation App</a>.</p>
+            <p><strong>Note:</strong> To add or edit client users, use the <a href="/admin" className="underline font-medium hover:text-blue-900">Admin Hub</a> &rarr; User Management.</p>
           </div>
         </div>
       );
@@ -2919,18 +3522,60 @@
     
     
     const Portal = ({ token, user }) => {
-      const [activePage, setActivePage] = useState('home');
+      const urlSlug = getSlugFromUrl();
+      const isAdmin = user?.role === 'admin';
+      const slug = user?.slug || urlSlug;
+
+      // URL routing helper functions
+      const getPageFromUrl = () => {
+        const path = window.location.pathname;
+        const hash = window.location.hash;
+        // Parse path like /portal/slug/page or /portal/slug/page/tab
+        const match = path.match(/\/portal\/[^\/]+\/([^\/]+)(?:\/([^\/]+))?/);
+        const page = match ? match[1] : 'home';
+        const tab = match ? match[2] : null;
+        return { page, tab };
+      };
+
+      const updateUrl = (page, tab = null) => {
+        const basePath = `/portal/${slug}`;
+        let newPath = basePath;
+        if (page && page !== 'home') {
+          newPath += `/${page}`;
+          if (tab) newPath += `/${tab}`;
+        }
+        if (window.location.pathname !== newPath) {
+          window.history.pushState({ page, tab }, '', newPath);
+        }
+      };
+
+      const initialRoute = getPageFromUrl();
+      const [activePage, setActivePage] = useState(initialRoute.page || 'home');
+      const [activeSubTab, setActiveSubTab] = useState(initialRoute.tab || null);
       const [data, setData] = useState(null);
       const [settings, setSettings] = useState(null);
       const [announcements, setAnnouncements] = useState([]);
       const [documents, setDocuments] = useState([]);
       const [loading, setLoading] = useState(true);
       const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-      
-      const urlSlug = getSlugFromUrl();
-      const isAdmin = user?.role === 'admin';
-      // Use user's slug if available, fallback to URL slug
-      const slug = user?.slug || urlSlug;
+
+      // Navigate with URL update
+      const navigateTo = (page, tab = null) => {
+        setActivePage(page);
+        setActiveSubTab(tab);
+        updateUrl(page, tab);
+      };
+
+      // Handle browser back/forward
+      useEffect(() => {
+        const handlePopState = (event) => {
+          const route = getPageFromUrl();
+          setActivePage(route.page || 'home');
+          setActiveSubTab(route.tab || null);
+        };
+        window.addEventListener('popstate', handlePopState);
+        return () => window.removeEventListener('popstate', handlePopState);
+      }, []);
       
       useEffect(() => {
         const loadData = async () => {
@@ -2986,17 +3631,17 @@
           if (activePage === 'admin_documents') return <AdminDocumentsPage token={token} />;
           if (activePage === 'admin_clients') return <AdminClientsPage token={token} />;
           // Admin views aggregate inventory reports across all clients
-          if (activePage === 'reports') return <AdminReportsPage token={token} onNavigate={setActivePage} />;
-          if (activePage === 'submission_history') return <SubmissionHistoryPage token={token} slug={slug} isAdmin={true} onNavigate={setActivePage} />;
+          if (activePage === 'reports') return <AdminReportsPage token={token} onNavigate={navigateTo} />;
+          if (activePage === 'submission_history') return <SubmissionHistoryPage token={token} slug={slug} isAdmin={true} onNavigate={navigateTo} />;
         }
-        
+
         // Client pages
-        if (activePage === 'home') return <HomePage data={data} announcements={announcements} onNavigate={setActivePage} />;
-        if (activePage === 'milestones') return <MilestonesPage data={data} />;
+        if (activePage === 'home') return <HomePage data={data} announcements={announcements} onNavigate={navigateTo} />;
+        if (activePage === 'milestones') return <MilestonesPage data={data} onNavigate={navigateTo} />;
         if (activePage === 'inventory') return <InventoryPage token={token} slug={slug} />;
-        if (activePage === 'reports') return <ReportsPage token={token} slug={slug} onNavigate={setActivePage} />;
-        if (activePage === 'submission_history') return <SubmissionHistoryPage token={token} slug={slug} isAdmin={false} onNavigate={setActivePage} />;
-        if (activePage === 'support') return <SupportPage settings={settings} />;
+        if (activePage === 'reports') return <ReportsPage token={token} slug={slug} onNavigate={navigateTo} />;
+        if (activePage === 'submission_history') return <SubmissionHistoryPage token={token} slug={slug} isAdmin={false} onNavigate={navigateTo} />;
+        if (activePage === 'support') return <SupportPage settings={settings} token={token} userData={data?.user} activeTab={activeSubTab} onTabChange={(tab) => navigateTo('support', tab)} />;
         if (activePage === 'files') return <FilesPage settings={settings} documents={documents} token={token} projects={data?.projects || []} userData={data?.user} />;
         
         return null;
@@ -3013,10 +3658,11 @@
             <div className="w-6"></div>
           </div>
           
-          <Sidebar 
-            activePage={activePage} 
-            onNavigate={setActivePage} 
+          <Sidebar
+            activePage={activePage}
+            onNavigate={navigateTo}
             user={data?.user || user}
+            projects={data?.projects || []}
             isMobileOpen={mobileMenuOpen}
             onClose={() => setMobileMenuOpen(false)}
           />
@@ -3025,7 +3671,10 @@
             {renderPage()}
             
             <footer className="mt-12 text-center text-sm text-gray-500">
-              <p>Powered by Thrive365Labs</p>
+              <p>&copy; 2026 Thrive 365 Labs. All rights reserved.</p>
+              {isAdmin && (
+                <a href="/changelog" className="text-primary hover:underline text-xs mt-1 inline-block">View Changelog</a>
+              )}
             </footer>
           </main>
         </div>
@@ -3033,10 +3682,17 @@
     };
     
     const App = () => {
-      const [token, setToken] = useState(localStorage.getItem('portal_token'));
+      // Check multiple token sources - portal_token, unified_token, or admin_token from Portal Hub
+      const [token, setToken] = useState(() => {
+        return localStorage.getItem('portal_token') || localStorage.getItem('unified_token') || localStorage.getItem('admin_token');
+      });
       const [user, setUser] = useState(() => {
-        const saved = localStorage.getItem('portal_user');
-        return saved ? JSON.parse(saved) : null;
+        try {
+          const userData = localStorage.getItem('portal_user') || localStorage.getItem('unified_user') || localStorage.getItem('admin_user');
+          return userData ? JSON.parse(userData) : null;
+        } catch {
+          return null;
+        }
       });
       const slug = getSlugFromUrl();
       
@@ -3045,12 +3701,16 @@
         setUser(newUser);
       };
       
-      // Handle central /portal login (no slug) - show login page
+      // Handle central /portal login (no slug) - show login page or admin view
       if (!slug) {
         if (!token || !user) {
           return <LoginPage slug={null} onLogin={handleLogin} />;
         }
-        // User logged in from central portal but has no slug in URL - redirect
+        // Admin users get the admin portal view directly at /portal
+        if (user.role === 'admin') {
+          return <Portal token={token} user={user} />;
+        }
+        // Client users logged in from central portal - redirect to their portal
         if (user.slug) {
           window.location.href = `/portal/${user.slug}`;
           return null;

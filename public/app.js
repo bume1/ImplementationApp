@@ -894,7 +894,8 @@ const AuthScreen = ({ onLogin }) => {
           </div>
         </div>
         <div className="mt-8 text-center text-sm text-gray-500">
-          <p>Powered by Thrive365Labs | Developed by Bianca G. C. Ume, MD, MBA, MS</p>
+          <p>&copy; 2026 Thrive 365 Labs. All rights reserved.</p>
+          <a href="/changelog" className="text-primary hover:underline text-xs mt-1 inline-block">View Changelog</a>
         </div>
       </div>
     </div>
@@ -918,7 +919,7 @@ const StatusBadge = ({ status }) => {
 };
 
 // ============== PROJECT LIST COMPONENT ==============
-const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, onManageTemplates, onManageHubSpot, onViewReporting }) => {
+const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates, onManageHubSpot, onViewReporting }) => {
   const [projects, setProjects] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -1062,7 +1063,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
   const copyClientLink = (project) => {
     const baseUrl = getBaseUrl(project.clientPortalDomain || clientPortalDomain);
     const linkId = project.clientLinkSlug || project.clientLinkId;
-    const link = `${baseUrl}/thrive365labslaunch/${linkId}`;
+    const link = `${baseUrl}/launch/${linkId}`;
     navigator.clipboard.writeText(link);
     alert(`Link copied!\n\n${link}`);
   };
@@ -1070,7 +1071,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
   const getClientLinkDisplay = (project) => {
     const baseUrl = getBaseUrl(project.clientPortalDomain || clientPortalDomain);
     const linkId = project.clientLinkSlug || project.clientLinkId;
-    return `${baseUrl}/thrive365labslaunch/${linkId}`;
+    return `${baseUrl}/launch/${linkId}`;
   };
 
   const handleEditProject = async () => {
@@ -1163,14 +1164,6 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
             </button>
             {showSettingsMenu && (
               <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border z-50">
-                {onManageUsers && (
-                  <button
-                    onClick={() => { onManageUsers(); setShowSettingsMenu(false); }}
-                    className="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 border-b text-sm"
-                  >
-                    Manage Users
-                  </button>
-                )}
                 {onManageHubSpot && (
                   <button
                     onClick={() => { onManageHubSpot(); setShowSettingsMenu(false); }}
@@ -1180,12 +1173,12 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                   </button>
                 )}
                 <a
-                  href="/portal/admin"
+                  href="/admin"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="block w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 text-sm"
+                  className="block w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 text-sm border-t"
                 >
-                  Admin Portal
+                  Admin Hub
                 </a>
               </div>
             )}
@@ -1258,7 +1251,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                   <h3 className="text-lg font-bold text-primary mb-3">Client Portal</h3>
                   <ul className="list-disc ml-5 text-gray-600 space-y-1">
                     <li>Each project has a shareable client link for external stakeholders</li>
-                    <li>Client portal URL format: <code className="bg-gray-100 px-1 rounded">https://deapps.pro/thrive365labslaunch/client-name</code></li>
+                    <li>Client portal URL format: <code className="bg-gray-100 px-1 rounded">https://deapps.pro/launch/client-name</code></li>
                     <li>Click "Copy Client Link" on project cards to share with clients</li>
                     <li>Clients can view progress without logging in</li>
                   </ul>
@@ -1305,16 +1298,16 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
                   <section>
                     <h3 className="text-lg font-bold text-primary mb-3">Admin Features</h3>
                     <ul className="list-disc ml-5 text-gray-600 space-y-1">
-                      <li><strong>Manage Users:</strong> Add, edit, and remove team members</li>
                       <li><strong>Templates:</strong> Create and manage project templates</li>
                       <li><strong>HubSpot Settings:</strong> Configure pipeline stage mappings</li>
                       <li><strong>Portal Domain:</strong> Set per-project custom domain in project settings</li>
+                      <li><strong>Admin Hub:</strong> User management is now centralized in the Admin Hub</li>
                     </ul>
                   </section>
                 )}
               </div>
               <div className="p-4 border-t bg-gray-50 text-center">
-                <p className="text-sm text-gray-500">Powered by Thrive365Labs | Developed by Bianca G. C. Ume, MD, MBA, MS</p>
+                <p className="text-sm text-gray-500">&copy; 2026 Thrive 365 Labs. All rights reserved.</p>
               </div>
             </div>
           </div>
@@ -2266,15 +2259,18 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageUsers, on
       </div>
       </div>
       <footer className="mt-8 py-4 text-center text-sm text-gray-500 border-t max-w-6xl mx-auto">
-        <p>Powered by Thrive365Labs | Developed by Bianca G. C. Ume, MD, MBA, MS</p>
-        {user.role === 'admin' && (
-          <button 
-            onClick={() => { setShowActivityLog(true); loadActivityLog(); }}
-            className="mt-2 text-primary hover:text-accent text-xs underline"
-          >
-            View Activity Log
-          </button>
-        )}
+        <p>&copy; 2026 Thrive 365 Labs. All rights reserved.</p>
+        <div className="flex items-center justify-center gap-4 mt-2">
+          <a href="/changelog" className="text-primary hover:text-accent text-xs underline">View Changelog</a>
+          {user.role === 'admin' && (
+            <button
+              onClick={() => { setShowActivityLog(true); loadActivityLog(); }}
+              className="text-primary hover:text-accent text-xs underline"
+            >
+              View Activity Log
+            </button>
+          )}
+        </div>
       </footer>
 
       {showActivityLog && (
@@ -2942,7 +2938,7 @@ const SoftPilotChecklist = ({ token, project, tasks, teamMembers, onClose, onSub
   </div>
 
   <footer style="margin-top: 50px; text-align: center; color: #9ca3af; font-size: 12px;">
-    <p>Powered by Thrive365Labs | Developed by Bianca G. C. Ume, MD, MBA, MS</p>
+    <p>&copy; 2026 Thrive 365 Labs. All rights reserved.</p>
     <p>Thrive 365 Labs - Portal</p>
   </footer>
 </body>
@@ -3914,14 +3910,14 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
 
   const copyClientLink = () => {
     const baseUrl = getBaseUrlForProject(project.clientPortalDomain || clientPortalDomain);
-    const link = `${baseUrl}/thrive365labslaunch/${project.clientLinkSlug || project.clientLinkId}`;
+    const link = `${baseUrl}/launch/${project.clientLinkSlug || project.clientLinkId}`;
     navigator.clipboard.writeText(link);
     alert(`Link copied!\n\n${link}`);
   };
 
   const getClientLinkDisplay = () => {
     const baseUrl = getBaseUrlForProject(project.clientPortalDomain || clientPortalDomain);
-    return `${baseUrl}/thrive365labslaunch/${project.clientLinkSlug || project.clientLinkId}`;
+    return `${baseUrl}/launch/${project.clientLinkSlug || project.clientLinkId}`;
   };
 
   const getPhaseColor = (phase) => {
@@ -5855,688 +5851,6 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
   );
 };
 
-// ============== USER MANAGEMENT COMPONENT (Admin Only) ==============
-const UserManagement = ({ token, user, onBack, onLogout }) => {
-  const [users, setUsers] = useState([]);
-  const [projects, setProjects] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [editingUser, setEditingUser] = useState(null);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [showAddUser, setShowAddUser] = useState(false);
-  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'user', practiceName: '', isNewClient: false, assignedProjects: [], logo: '', hubspotCompanyId: '', hubspotDealId: '', hubspotContactId: '' });
-  const [addError, setAddError] = useState('');
-  const [passwordResetRequests, setPasswordResetRequests] = useState([]);
-
-  useEffect(() => {
-    loadUsers();
-    loadProjects();
-    loadPasswordResetRequests();
-  }, []);
-
-  const loadUsers = async () => {
-    setLoading(true);
-    try {
-      const data = await api.getUsers(token);
-      setUsers(data);
-    } catch (err) {
-      console.error('Failed to load users:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadProjects = async () => {
-    try {
-      const data = await api.getProjects(token);
-      setProjects(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error('Failed to load projects:', err);
-      setProjects([]);
-    }
-  };
-
-  const loadPasswordResetRequests = async () => {
-    try {
-      const data = await api.getPasswordResetRequests(token);
-      setPasswordResetRequests(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error('Failed to load password reset requests:', err);
-    }
-  };
-
-  const handleResetRequest = async (requestId, userToReset) => {
-    // Open edit modal for this user so admin can reset their password
-    const userRecord = users.find(u => u.id === userToReset.userId);
-    if (userRecord) {
-      // Store the pending request ID to mark as completed when password is actually saved
-      setEditingUser({ ...userRecord, newPassword: '', assignedProjects: userRecord.assignedProjects || [], pendingResetRequestId: requestId });
-      setShowEditModal(true);
-    }
-  };
-
-  const dismissResetRequest = async (requestId) => {
-    try {
-      await api.handlePasswordResetRequest(token, requestId, 'dismissed');
-      await loadPasswordResetRequests();
-    } catch (err) {
-      console.error('Failed to dismiss request:', err);
-    }
-  };
-
-  const toggleProjectAssignment = (projectId) => {
-    if (!editingUser) return;
-    const current = editingUser.assignedProjects || [];
-    const currentAccessLevels = editingUser.projectAccessLevels || {};
-    if (current.includes(projectId)) {
-      const updated = current.filter(id => id !== projectId);
-      const { [projectId]: removed, ...remainingLevels } = currentAccessLevels;
-      setEditingUser({ ...editingUser, assignedProjects: updated, projectAccessLevels: remainingLevels });
-    } else {
-      const updated = [...current, projectId];
-      setEditingUser({ 
-        ...editingUser, 
-        assignedProjects: updated, 
-        projectAccessLevels: { ...currentAccessLevels, [projectId]: 'edit' }
-      });
-    }
-  };
-
-  const setProjectAccessLevel = (projectId, level) => {
-    if (!editingUser) return;
-    const currentAccessLevels = editingUser.projectAccessLevels || {};
-    setEditingUser({
-      ...editingUser,
-      projectAccessLevels: { ...currentAccessLevels, [projectId]: level }
-    });
-  };
-
-  const openEditModal = (u) => {
-    setEditingUser({ ...u, newPassword: '', assignedProjects: u.assignedProjects || [], projectAccessLevels: u.projectAccessLevels || {} });
-    setShowEditModal(true);
-  };
-
-  const handleCreateUser = async () => {
-    if (!newUser.name.trim() || !newUser.email.trim() || !newUser.password.trim()) {
-      setAddError('Name, email, and password are required');
-      return;
-    }
-    if (newUser.password.length < 8) {
-      setAddError('Password must be at least 8 characters');
-      return;
-    }
-    if (newUser.role === 'client' && !newUser.practiceName.trim()) {
-      setAddError('Practice name is required for client accounts');
-      return;
-    }
-    try {
-      const result = await api.createUser(token, newUser);
-      if (result.error) {
-        setAddError(result.error);
-        return;
-      }
-      await loadUsers();
-      setNewUser({ name: '', email: '', password: '', role: 'user', practiceName: '', isNewClient: false, assignedProjects: [], logo: '', hubspotCompanyId: '', hubspotDealId: '', hubspotContactId: '' });
-      setShowAddUser(false);
-      setAddError('');
-    } catch (err) {
-      console.error('Failed to create user:', err);
-      setAddError('Failed to create user');
-    }
-  };
-
-  const handleSaveUser = async () => {
-    try {
-      const updates = {
-        name: editingUser.name,
-        email: editingUser.email,
-        role: editingUser.role,
-        assignedProjects: editingUser.assignedProjects || [],
-        projectAccessLevels: editingUser.projectAccessLevels || {},
-        practiceName: editingUser.practiceName || '',
-        isNewClient: editingUser.isNewClient || false,
-        logo: editingUser.logo || '',
-        hubspotCompanyId: editingUser.hubspotCompanyId || '',
-        hubspotDealId: editingUser.hubspotDealId || '',
-        hubspotContactId: editingUser.hubspotContactId || ''
-      };
-      if (editingUser.newPassword) {
-        updates.password = editingUser.newPassword;
-      }
-      await api.updateUser(token, editingUser.id, updates);
-      
-      // If this was a password reset request and password was updated, mark request as completed
-      if (editingUser.pendingResetRequestId && editingUser.newPassword) {
-        try {
-          await api.handlePasswordResetRequest(token, editingUser.pendingResetRequestId, 'completed');
-          await loadPasswordResetRequests();
-        } catch (err) {
-          console.error('Failed to mark reset request as completed:', err);
-        }
-      }
-      
-      await loadUsers();
-      setEditingUser(null);
-      setShowEditModal(false);
-    } catch (err) {
-      console.error('Failed to update user:', err);
-    }
-  };
-
-  const handleDeleteUser = async (userId) => {
-    if (!confirm('Are you sure you want to delete this user?')) return;
-    try {
-      await api.deleteUser(token, userId);
-      await loadUsers();
-    } catch (err) {
-      console.error('Failed to delete user:', err);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-xl">Loading users...</div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <AppHeader user={user} onLogout={onLogout}>
-        <button onClick={onBack} className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide">
-          ← Back
-        </button>
-        <button
-          onClick={() => setShowAddUser(true)}
-          className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide"
-        >
-          + Add User
-        </button>
-      </AppHeader>
-
-      <div className="p-6">
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
-          <p className="text-gray-600">Manage team member accounts</p>
-        </div>
-
-        {passwordResetRequests.length > 0 && (
-          <div className="bg-amber-50 border border-amber-200 rounded-lg shadow-sm p-6 mb-6">
-            <h2 className="text-lg font-bold text-amber-800 mb-3 flex items-center gap-2">
-              <span className="w-3 h-3 bg-amber-500 rounded-full animate-pulse"></span>
-              Password Reset Requests ({passwordResetRequests.length})
-            </h2>
-            <p className="text-amber-700 text-sm mb-4">
-              The following users have requested password resets. Click "Reset Password" to set a new password for them, then contact them with the new password.
-            </p>
-            <div className="space-y-3">
-              {passwordResetRequests.map(req => (
-                <div key={req.id} className="bg-white border border-amber-200 rounded-lg p-4 flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-gray-900">{req.name}</p>
-                    <p className="text-sm text-gray-600">{req.email}</p>
-                    <p className="text-xs text-gray-400">Requested: {new Date(req.requestedAt).toLocaleString()}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleResetRequest(req.id, req)}
-                      className="px-3 py-1.5 bg-primary text-white text-sm rounded hover:bg-accent"
-                    >
-                      Reset Password
-                    </button>
-                    <button
-                      onClick={() => dismissResetRequest(req.id)}
-                      className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300"
-                    >
-                      Dismiss
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {showAddUser && (
-          <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-            <h2 className="text-xl font-bold mb-4">Add New User</h2>
-            {addError && (
-              <div className="bg-red-50 text-red-600 p-3 rounded mb-4">{addError}</div>
-            )}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Name *</label>
-                <input
-                  value={newUser.name}
-                  onChange={(e) => setNewUser({...newUser, name: e.target.value})}
-                  className="w-full px-3 py-2 border rounded-md"
-                  placeholder="Full name"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Email *</label>
-                <input
-                  type="email"
-                  value={newUser.email}
-                  onChange={(e) => setNewUser({...newUser, email: e.target.value})}
-                  className="w-full px-3 py-2 border rounded-md"
-                  placeholder="email@example.com"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Password *</label>
-                <input
-                  type="password"
-                  value={newUser.password}
-                  onChange={(e) => setNewUser({...newUser, password: e.target.value})}
-                  className="w-full px-3 py-2 border rounded-md"
-                  placeholder="Password"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Role</label>
-                <select
-                  value={newUser.role}
-                  onChange={(e) => setNewUser({...newUser, role: e.target.value})}
-                  className="w-full px-3 py-2 border rounded-md"
-                >
-                  <option value="user">Team Member</option>
-                  <option value="admin">Admin</option>
-                  <option value="client">Client</option>
-                </select>
-              </div>
-              {newUser.role === 'client' && (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Practice Name *</label>
-                    <input
-                      value={newUser.practiceName}
-                      onChange={(e) => setNewUser({...newUser, practiceName: e.target.value})}
-                      className="w-full px-3 py-2 border rounded-md"
-                      placeholder="e.g., Dallas Medical Center"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Practice Logo</label>
-                    <div className="space-y-2">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => {
-                          const file = e.target.files[0];
-                          if (file) {
-                            if (file.size > 2 * 1024 * 1024) {
-                              setAddError('Logo must be under 2MB');
-                              return;
-                            }
-                            const reader = new FileReader();
-                            reader.onload = (ev) => setNewUser({...newUser, logo: ev.target.result});
-                            reader.readAsDataURL(file);
-                          }
-                        }}
-                        className="w-full text-sm"
-                      />
-                      {newUser.logo && (
-                        <div className="flex items-center gap-2">
-                          <img src={newUser.logo} alt="Preview" className="h-10 object-contain border rounded" />
-                          <button type="button" onClick={() => setNewUser({...newUser, logo: ''})} className="text-red-600 text-xs hover:underline">Remove</button>
-                        </div>
-                      )}
-                      <p className="text-xs text-gray-500">Max 2MB. PNG or JPG recommended. Shows in client portal header.</p>
-                    </div>
-                  </div>
-                  <div className="md:col-span-2 border-t pt-4 mt-2">
-                    <h4 className="text-sm font-semibold text-gray-700 mb-3">HubSpot Record IDs (for file uploads)</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium mb-1">Company ID</label>
-                        <input
-                          value={newUser.hubspotCompanyId || ''}
-                          onChange={(e) => setNewUser({...newUser, hubspotCompanyId: e.target.value})}
-                          className="w-full px-3 py-2 border rounded-md text-sm"
-                          placeholder="e.g., 12345678"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium mb-1">Deal ID</label>
-                        <input
-                          value={newUser.hubspotDealId || ''}
-                          onChange={(e) => setNewUser({...newUser, hubspotDealId: e.target.value})}
-                          className="w-full px-3 py-2 border rounded-md text-sm"
-                          placeholder="e.g., 87654321"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium mb-1">Contact ID</label>
-                        <input
-                          value={newUser.hubspotContactId || ''}
-                          onChange={(e) => setNewUser({...newUser, hubspotContactId: e.target.value})}
-                          className="w-full px-3 py-2 border rounded-md text-sm"
-                          placeholder="e.g., 11223344"
-                        />
-                      </div>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-2">Files uploaded by this client will be attached to these HubSpot records.</p>
-                  </div>
-                </>
-              )}
-            </div>
-            {newUser.role === 'client' && (
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-2">Assign to Project</label>
-                <div className="max-h-40 overflow-y-auto border rounded-md p-2 space-y-1">
-                  {projects.map(p => (
-                    <label key={p.id} className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={(newUser.assignedProjects || []).includes(p.id)}
-                        onChange={(e) => {
-                          const current = newUser.assignedProjects || [];
-                          const updated = e.target.checked
-                            ? [...current, p.id]
-                            : current.filter(id => id !== p.id);
-                          setNewUser({...newUser, assignedProjects: updated});
-                        }}
-                      />
-                      {p.name} ({p.clientName})
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div className="flex gap-2">
-              <button
-                onClick={handleCreateUser}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
-              >
-                Create User
-              </button>
-              <button
-                onClick={() => { setShowAddUser(false); setAddError(''); setNewUser({ name: '', email: '', password: '', role: 'user', practiceName: '', isNewClient: false, assignedProjects: [], logo: '', hubspotCompanyId: '', hubspotDealId: '', hubspotContactId: '' }); }}
-                className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-
-        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Projects</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {users.map(u => (
-                <tr key={u.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 font-medium text-gray-900">{u.name}</td>
-                  <td className="px-6 py-4 text-gray-600">{u.email}</td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${
-                      u.role === 'admin' ? 'bg-purple-100 text-purple-800' : 
-                      u.role === 'client' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'
-                    }`}>
-                      {u.role === 'client' ? 'Client' : u.role === 'admin' ? 'Admin' : 'Team'}
-                    </span>
-                    {u.role === 'client' && u.practiceName && (
-                      <div className="text-xs text-gray-500 mt-1">{u.practiceName}</div>
-                    )}
-                    {u.role === 'client' && u.assignedProjects?.length > 0 && (
-                      <span className="ml-1 px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded">{u.assignedProjects.length} project{u.assignedProjects.length > 1 ? 's' : ''}</span>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 text-gray-600 text-sm">
-                    {u.role === 'admin' ? (
-                      <span className="text-green-600 font-medium">All Projects</span>
-                    ) : (
-                      <span>{(u.assignedProjects || []).length} assigned</span>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 text-gray-500 text-sm">
-                    {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'N/A'}
-                  </td>
-                  <td className="px-6 py-4 text-right space-x-2">
-                    <button
-                      onClick={() => openEditModal(u)}
-                      className="text-primary hover:underline text-sm"
-                    >
-                      Edit
-                    </button>
-                    {u.id !== user.id && (
-                      <button
-                        onClick={() => handleDeleteUser(u.id)}
-                        className="text-red-600 hover:underline text-sm"
-                      >
-                        Delete
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      </div>
-
-      {showEditModal && editingUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <h2 className="text-xl font-bold mb-4">Edit User: {editingUser.name}</h2>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Name</label>
-                  <input
-                    value={editingUser.name}
-                    onChange={(e) => setEditingUser({...editingUser, name: e.target.value})}
-                    className="w-full px-3 py-2 border rounded-md"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Email</label>
-                  <input
-                    type="email"
-                    value={editingUser.email}
-                    onChange={(e) => setEditingUser({...editingUser, email: e.target.value})}
-                    className="w-full px-3 py-2 border rounded-md"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Role</label>
-                  <select
-                    value={editingUser.role}
-                    onChange={(e) => setEditingUser({...editingUser, role: e.target.value})}
-                    className="w-full px-3 py-2 border rounded-md"
-                  >
-                    <option value="user">Team Member</option>
-                    <option value="admin">Admin</option>
-                    <option value="client">Client</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">New Password (optional)</label>
-                  <input
-                    type="password"
-                    value={editingUser.newPassword || ''}
-                    onChange={(e) => setEditingUser({...editingUser, newPassword: e.target.value})}
-                    className="w-full px-3 py-2 border rounded-md"
-                    placeholder="Leave blank to keep current"
-                  />
-                </div>
-                {editingUser.role === 'client' && (
-                  <>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Practice Name</label>
-                      <input
-                        value={editingUser.practiceName || ''}
-                        onChange={(e) => setEditingUser({...editingUser, practiceName: e.target.value})}
-                        className="w-full px-3 py-2 border rounded-md"
-                        placeholder="e.g., Dallas Medical Center"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Practice Logo</label>
-                      <div className="space-y-2">
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => {
-                            const file = e.target.files[0];
-                            if (file) {
-                              if (file.size > 2 * 1024 * 1024) {
-                                alert('Logo must be under 2MB');
-                                return;
-                              }
-                              const reader = new FileReader();
-                              reader.onload = (ev) => setEditingUser({...editingUser, logo: ev.target.result});
-                              reader.readAsDataURL(file);
-                            }
-                          }}
-                          className="w-full text-sm"
-                        />
-                        {editingUser.logo && (
-                          <div className="flex items-center gap-2">
-                            <img src={editingUser.logo} alt="Preview" className="h-10 object-contain border rounded" />
-                            <button type="button" onClick={() => setEditingUser({...editingUser, logo: ''})} className="text-red-600 text-xs hover:underline">Remove</button>
-                          </div>
-                        )}
-                        <p className="text-xs text-gray-500">Max 2MB. PNG or JPG recommended. Shows in client portal header.</p>
-                      </div>
-                    </div>
-                    <div className="md:col-span-2 border-t pt-4 mt-2">
-                      <h4 className="text-sm font-semibold text-gray-700 mb-3">HubSpot Record IDs (for file uploads)</h4>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium mb-1">Company ID</label>
-                          <input
-                            value={editingUser.hubspotCompanyId || ''}
-                            onChange={(e) => setEditingUser({...editingUser, hubspotCompanyId: e.target.value})}
-                            className="w-full px-3 py-2 border rounded-md text-sm"
-                            placeholder="e.g., 12345678"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">Deal ID</label>
-                          <input
-                            value={editingUser.hubspotDealId || ''}
-                            onChange={(e) => setEditingUser({...editingUser, hubspotDealId: e.target.value})}
-                            className="w-full px-3 py-2 border rounded-md text-sm"
-                            placeholder="e.g., 87654321"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">Contact ID</label>
-                          <input
-                            value={editingUser.hubspotContactId || ''}
-                            onChange={(e) => setEditingUser({...editingUser, hubspotContactId: e.target.value})}
-                            className="w-full px-3 py-2 border rounded-md text-sm"
-                            placeholder="e.g., 11223344"
-                          />
-                        </div>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-2">Files uploaded by this client will be attached to these HubSpot records.</p>
-                    </div>
-                  </>
-                )}
-              </div>
-              
-              {editingUser.role === 'client' && editingUser.slug && (
-                <div className="mb-4 p-4 bg-blue-50 rounded-md">
-                  <p className="text-sm font-medium text-blue-800">Client Portal URL:</p>
-                  <p className="text-blue-600 font-mono text-sm break-all mt-1">
-                    https://deapps.pro/portal/{editingUser.slug}
-                  </p>
-                </div>
-              )}
-
-              {editingUser.role !== 'admin' && (
-                <div className="mb-6">
-                  <label className="block text-sm font-medium mb-2">Assigned Projects</label>
-                  <p className="text-xs text-gray-500 mb-3">
-                    {editingUser.role === 'user' 
-                      ? 'Select which projects this user can access and set their access level (Edit = full access, View Only = read-only).'
-                      : 'Select which projects this user can access. Admins can access all projects automatically.'}
-                  </p>
-                  <div className="border rounded-md max-h-60 overflow-y-auto">
-                    {projects.length === 0 ? (
-                      <div className="p-4 text-gray-500 text-center">No projects available</div>
-                    ) : (
-                      projects.map(p => {
-                        const isAssigned = (editingUser.assignedProjects || []).includes(p.id);
-                        const accessLevel = (editingUser.projectAccessLevels || {})[p.id] || 'edit';
-                        return (
-                          <div key={p.id} className="flex items-center justify-between gap-3 p-3 hover:bg-gray-50 border-b last:border-b-0">
-                            <label className="flex items-center gap-3 cursor-pointer flex-1">
-                              <input
-                                type="checkbox"
-                                checked={isAssigned}
-                                onChange={() => toggleProjectAssignment(p.id)}
-                                className="w-4 h-4 text-primary rounded"
-                              />
-                              <div>
-                                <div className="font-medium text-gray-900">{p.name}</div>
-                                <div className="text-sm text-gray-500">{p.clientName}</div>
-                              </div>
-                            </label>
-                            {isAssigned && editingUser.role === 'user' && (
-                              <select
-                                value={accessLevel}
-                                onChange={(e) => setProjectAccessLevel(p.id, e.target.value)}
-                                className={`text-xs px-2 py-1 border rounded ${
-                                  accessLevel === 'view' ? 'bg-gray-100 text-gray-700' : 'bg-green-100 text-green-700'
-                                }`}
-                              >
-                                <option value="edit">Edit</option>
-                                <option value="view">View Only</option>
-                              </select>
-                            )}
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {editingUser.role === 'admin' && (
-                <div className="mb-6 p-4 bg-purple-50 rounded-md">
-                  <p className="text-purple-800 font-medium">Admins have access to all projects</p>
-                  <p className="text-purple-600 text-sm">This user can view and manage all projects in the system.</p>
-                </div>
-              )}
-
-              <div className="flex gap-2 justify-end">
-                <button
-                  onClick={() => { setShowEditModal(false); setEditingUser(null); }}
-                  className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSaveUser}
-                  className="px-4 py-2 bg-primary text-white rounded-md hover:bg-blue-700"
-                >
-                  Save Changes
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
 // ============== TEMPLATE MANAGEMENT COMPONENT ==============
 const TemplateManagement = ({ token, user, onBack, onLogout }) => {
   const [templates, setTemplates] = useState([]);
@@ -7383,6 +6697,7 @@ const HubSpotSettings = ({ token, user, onBack, onLogout }) => {
 // ============== REPORTING COMPONENT ==============
 const Reporting = ({ token, user, onBack, onLogout }) => {
   const [reportData, setReportData] = useState([]);
+  const [validationData, setValidationData] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -7391,13 +6706,57 @@ const Reporting = ({ token, user, onBack, onLogout }) => {
 
   const loadReportData = async () => {
     try {
-      const data = await api.getReportingData(token);
-      setReportData(data);
+      const [projectData, serviceReportsRes] = await Promise.all([
+        api.getReportingData(token),
+        fetch(`${API_URL}/api/service-reports`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(r => r.json()).catch(() => [])
+      ]);
+      setReportData(projectData);
+      // Filter validation service reports
+      const validations = (serviceReportsRes || []).filter(r => r.serviceType === 'Validations');
+      setValidationData(validations);
     } catch (error) {
       console.error('Failed to load reporting data:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  // Validation metrics
+  const getValidationMetrics = () => {
+    const totalValidations = validationData.length;
+    let totalDaysOnSite = 0;
+    let totalAnalyzers = 0;
+    const statusCounts = { Passed: 0, Failed: 0, Pending: 0 };
+    const clientValidations = {};
+
+    validationData.forEach(v => {
+      // Calculate days on-site
+      if (v.validationStartDate && v.validationEndDate) {
+        const days = Math.ceil(Math.abs(new Date(v.validationEndDate) - new Date(v.validationStartDate)) / (1000 * 60 * 60 * 24)) + 1;
+        totalDaysOnSite += days;
+      }
+      // Count analyzers and statuses
+      if (v.analyzersValidated && Array.isArray(v.analyzersValidated)) {
+        totalAnalyzers += v.analyzersValidated.length;
+        v.analyzersValidated.forEach(a => {
+          const status = a.status || 'Pending';
+          statusCounts[status] = (statusCounts[status] || 0) + 1;
+        });
+      }
+      // Count by client
+      const clientName = v.clientFacilityName || 'Unknown';
+      clientValidations[clientName] = (clientValidations[clientName] || 0) + 1;
+    });
+
+    return {
+      total: totalValidations,
+      avgDaysOnSite: totalValidations > 0 ? Math.round(totalDaysOnSite / totalValidations) : 0,
+      totalAnalyzers,
+      statusCounts,
+      clientValidations
+    };
   };
 
   // Chart 1: Completed vs In Progress by client
@@ -7576,6 +6935,89 @@ const Reporting = ({ token, user, onBack, onLogout }) => {
               </div>
             </div>
           </div>
+
+          {/* Validation Metrics */}
+          {validationData.length > 0 && (() => {
+            const metrics = getValidationMetrics();
+            return (
+              <div className="mt-8">
+                <h2 className="text-xl font-bold mb-4">Validation Reports</h2>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                  <div className="bg-purple-50 p-4 rounded-lg text-center">
+                    <div className="text-3xl font-bold text-purple-600">{metrics.total}</div>
+                    <div className="text-sm text-purple-800">Total Validations</div>
+                  </div>
+                  <div className="bg-indigo-50 p-4 rounded-lg text-center">
+                    <div className="text-3xl font-bold text-indigo-600">{metrics.avgDaysOnSite}</div>
+                    <div className="text-sm text-indigo-800">Avg Days On-Site</div>
+                  </div>
+                  <div className="bg-cyan-50 p-4 rounded-lg text-center">
+                    <div className="text-3xl font-bold text-cyan-600">{metrics.totalAnalyzers}</div>
+                    <div className="text-sm text-cyan-800">Analyzers Validated</div>
+                  </div>
+                  <div className="bg-green-50 p-4 rounded-lg text-center">
+                    <div className="text-3xl font-bold text-green-600">{metrics.statusCounts.Passed || 0}</div>
+                    <div className="text-sm text-green-800">Passed</div>
+                  </div>
+                </div>
+
+                {/* Validations by Client */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h3 className="font-semibold text-gray-800 mb-3">Validations by Client</h3>
+                  <div className="space-y-2">
+                    {Object.entries(metrics.clientValidations)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([client, count]) => (
+                        <div key={client} className="flex items-center gap-3">
+                          <div className="w-40 text-sm font-medium truncate">{client}</div>
+                          <div className="flex-1 bg-gray-200 rounded h-6 overflow-hidden">
+                            <div
+                              className="bg-gradient-to-r from-purple-500 to-indigo-500 h-full flex items-center justify-end pr-2"
+                              style={{ width: `${(count / metrics.total) * 100}%`, minWidth: '30px' }}
+                            >
+                              <span className="text-white text-xs font-bold">{count}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+
+                {/* Analyzer Status Breakdown */}
+                {metrics.totalAnalyzers > 0 && (
+                  <div className="mt-4 bg-gray-50 rounded-lg p-4">
+                    <h3 className="font-semibold text-gray-800 mb-3">Analyzer Validation Status</h3>
+                    <div className="flex h-8 rounded overflow-hidden">
+                      {metrics.statusCounts.Passed > 0 && (
+                        <div
+                          className="bg-green-500 flex items-center justify-center text-white text-xs font-medium"
+                          style={{ width: `${(metrics.statusCounts.Passed / metrics.totalAnalyzers) * 100}%` }}
+                        >
+                          {metrics.statusCounts.Passed} Passed
+                        </div>
+                      )}
+                      {metrics.statusCounts.Failed > 0 && (
+                        <div
+                          className="bg-red-500 flex items-center justify-center text-white text-xs font-medium"
+                          style={{ width: `${(metrics.statusCounts.Failed / metrics.totalAnalyzers) * 100}%` }}
+                        >
+                          {metrics.statusCounts.Failed} Failed
+                        </div>
+                      )}
+                      {metrics.statusCounts.Pending > 0 && (
+                        <div
+                          className="bg-yellow-500 flex items-center justify-center text-white text-xs font-medium"
+                          style={{ width: `${(metrics.statusCounts.Pending / metrics.totalAnalyzers) * 100}%` }}
+                        >
+                          {metrics.statusCounts.Pending} Pending
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Detailed Table */}
           <div className="mt-8">
@@ -8163,8 +7605,18 @@ const ClientDocumentsManager = ({ token, user, onBack, onLogout }) => {
 };
 
 const App = () => {
-  const [token, setToken] = useState(localStorage.getItem('token'));
-  const [user, setUser] = useState(JSON.parse(localStorage.getItem('user') || 'null'));
+  // Check multiple token sources - token, unified_token, or admin_token from Portal Hub
+  const [token, setToken] = useState(() => {
+    return localStorage.getItem('token') || localStorage.getItem('unified_token') || localStorage.getItem('admin_token');
+  });
+  const [user, setUser] = useState(() => {
+    try {
+      const userData = localStorage.getItem('user') || localStorage.getItem('unified_user') || localStorage.getItem('admin_user');
+      return userData ? JSON.parse(userData) : null;
+    } catch {
+      return null;
+    }
+  });
   const [selectedProject, setSelectedProject] = useState(null);
   const [scrollToTaskId, setScrollToTaskId] = useState(null);
   const [view, setView] = useState('list');
@@ -8172,7 +7624,8 @@ const App = () => {
 
   useEffect(() => {
     const path = window.location.pathname;
-    const match = path.match(/\/thrive365labslaunch\/(.+)-internal$/i);
+    // Support both new /launch and legacy /thrive365labslaunch paths
+    const match = path.match(/\/(?:launch|thrive365labslaunch)\/(.+)-internal$/i);
     if (match) {
       setPendingInternalSlug(match[1]);
     }
@@ -8215,7 +7668,7 @@ const App = () => {
     setView('list');
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    window.history.pushState({}, '', '/thrive365labslaunch/login');
+    window.history.pushState({}, '', '/launch/login');
   };
 
   const handleSelectProject = (project, taskId = null) => {
@@ -8223,13 +7676,13 @@ const App = () => {
     setScrollToTaskId(taskId);
     setView('tracker');
     const slug = project.clientLinkSlug || project.clientLinkId;
-    window.history.pushState({}, '', `/thrive365labslaunch/${slug}-internal`);
+    window.history.pushState({}, '', `/launch/${slug}-internal`);
   };
 
   const handleBackToList = () => {
     setSelectedProject(null);
     setView('list');
-    window.history.pushState({}, '', '/thrive365labslaunch/home');
+    window.history.pushState({}, '', '/launch/home');
   };
 
   if (!token) {
@@ -8243,17 +7696,6 @@ const App = () => {
         user={user}
         project={selectedProject}
         scrollToTaskId={scrollToTaskId}
-        onBack={handleBackToList}
-        onLogout={handleLogout}
-      />
-    );
-  }
-
-  if (view === 'users' && user.role === 'admin') {
-    return (
-      <UserManagement
-        token={token}
-        user={user}
         onBack={handleBackToList}
         onLogout={handleLogout}
       />
@@ -8299,7 +7741,6 @@ const App = () => {
       user={user}
       onSelectProject={handleSelectProject}
       onLogout={handleLogout}
-      onManageUsers={() => setView('users')}
       onManageTemplates={() => setView('templates')}
       onManageHubSpot={() => setView('hubspot')}
       onViewReporting={() => setView('reporting')}

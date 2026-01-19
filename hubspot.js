@@ -511,6 +511,569 @@ async function createTask(dealId, taskSubject, taskBody, ownerId = null) {
   return createOrUpdateTask(dealId, taskSubject, taskBody, ownerId, null);
 }
 
+async function getTicketPipelines() {
+  try {
+    const client = await getHubSpotClient();
+    const response = await client.crm.pipelines.pipelinesApi.getAll('tickets');
+    return response.results.map(pipeline => ({
+      id: pipeline.id,
+      label: pipeline.label,
+      stages: pipeline.stages.map(stage => ({
+        id: stage.id,
+        label: stage.label,
+        displayOrder: stage.displayOrder
+      })).sort((a, b) => a.displayOrder - b.displayOrder)
+    }));
+  } catch (error) {
+    console.error('Error fetching HubSpot ticket pipelines:', error.message);
+    throw error;
+  }
+}
+
+async function getTicketsForCompany(companyId) {
+  if (!companyId || !isValidRecordId(companyId)) {
+    console.log(`📋 Ticket fetch skipped: Invalid Company ID "${companyId}"`);
+    return [];
+  }
+
+  const privateAppToken = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
+  if (!privateAppToken) {
+    throw new Error('HubSpot Private App token not configured');
+  }
+
+  try {
+    const axios = require('axios');
+
+    // First get ticket IDs associated with the company
+    const assocResponse = await axios.get(
+      `https://api.hubapi.com/crm/v4/objects/companies/${companyId}/associations/tickets`,
+      {
+        headers: {
+          'Authorization': `Bearer ${privateAppToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const ticketIds = assocResponse.data?.results?.map(r => r.toObjectId) || [];
+
+    if (ticketIds.length === 0) {
+      console.log(`📋 No tickets found for company ${companyId}`);
+      return [];
+    }
+
+    console.log(`📋 Found ${ticketIds.length} tickets for company ${companyId}`);
+
+    // Fetch ticket details with pipeline info
+    const ticketsResponse = await axios.post(
+      'https://api.hubapi.com/crm/v3/objects/tickets/batch/read',
+      {
+        inputs: ticketIds.map(id => ({ id })),
+        properties: ['subject', 'content', 'hs_pipeline', 'hs_pipeline_stage', 'hs_ticket_priority', 'createdate', 'hs_lastmodifieddate', 'closed_date', 'hs_resolution']
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${privateAppToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    // Get pipeline info for stage labels (optional - may fail without tickets scope)
+    let stageMap = {};
+    try {
+      const pipelines = await getTicketPipelines();
+      pipelines.forEach(p => {
+        p.stages.forEach(s => {
+          stageMap[s.id] = { label: s.label, pipelineName: p.label };
+        });
+      });
+    } catch (pipelineErr) {
+      console.log('📋 Could not fetch pipeline info, using raw stage IDs');
+    }
+
+    const tickets = await Promise.all(ticketsResponse.data?.results?.map(async ticket => {
+      const props = ticket.properties;
+      const stageInfo = stageMap[props.hs_pipeline_stage] || {};
+
+      // Fetch attachments (notes with files) for this ticket
+      let attachments = [];
+      try {
+        const notesResponse = await axios.get(
+          `https://api.hubapi.com/crm/v4/objects/tickets/${ticket.id}/associations/notes`,
+          {
+            headers: {
+              'Authorization': `Bearer ${privateAppToken}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        const noteIds = notesResponse.data?.results?.map(r => r.toObjectId) || [];
+        if (noteIds.length > 0) {
+          const notesDetailResponse = await axios.post(
+            'https://api.hubapi.com/crm/v3/objects/notes/batch/read',
+            {
+              inputs: noteIds.map(id => ({ id })),
+              properties: ['hs_note_body', 'hs_attachment_ids', 'hs_timestamp']
+            },
+            {
+              headers: {
+                'Authorization': `Bearer ${privateAppToken}`,
+                'Content-Type': 'application/json'
+              }
+            }
+          );
+
+          // Extract attachments from notes
+          for (const note of notesDetailResponse.data?.results || []) {
+            if (note.properties.hs_attachment_ids) {
+              const fileIds = note.properties.hs_attachment_ids.split(';');
+              for (const fileId of fileIds) {
+                if (fileId.trim()) {
+                  attachments.push({
+                    fileId: fileId.trim(),
+                    noteBody: note.properties.hs_note_body || '',
+                    timestamp: note.properties.hs_timestamp
+                  });
+                }
+              }
+            }
+          }
+        }
+      } catch (attachErr) {
+        console.log(`Could not fetch attachments for ticket ${ticket.id}:`, attachErr.message);
+      }
+
+      return {
+        id: ticket.id,
+        subject: props.subject || 'No Subject',
+        content: props.content || '',
+        pipeline: stageInfo.pipelineName || props.hs_pipeline || 'Support',
+        stage: stageInfo.label || props.hs_pipeline_stage || 'Unknown',
+        stageId: props.hs_pipeline_stage,
+        priority: props.hs_ticket_priority || 'MEDIUM',
+        createdAt: props.createdate,
+        updatedAt: props.hs_lastmodifieddate,
+        closedAt: props.closed_date,
+        resolution: props.hs_resolution || '',
+        attachments: attachments
+      };
+    }) || []);
+
+    // Sort by creation date, newest first
+    tickets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    return tickets;
+  } catch (error) {
+    console.error('Error fetching tickets for company:', error.response?.data || error.message);
+    throw error;
+  }
+}
+
+async function getTicketsForContact(contactId) {
+  if (!contactId || !isValidRecordId(contactId)) {
+    console.log(`📋 Ticket fetch skipped: Invalid Contact ID "${contactId}"`);
+    return [];
+  }
+
+  const privateAppToken = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
+  if (!privateAppToken) {
+    throw new Error('HubSpot Private App token not configured');
+  }
+
+  try {
+    const axios = require('axios');
+
+    // Get ticket IDs associated with the contact
+    const assocResponse = await axios.get(
+      `https://api.hubapi.com/crm/v4/objects/contacts/${contactId}/associations/tickets`,
+      {
+        headers: {
+          'Authorization': `Bearer ${privateAppToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const ticketIds = assocResponse.data?.results?.map(r => r.toObjectId) || [];
+
+    if (ticketIds.length === 0) {
+      console.log(`📋 No tickets found for contact ${contactId}`);
+      return [];
+    }
+
+    console.log(`📋 Found ${ticketIds.length} tickets for contact ${contactId}`);
+
+    // Fetch ticket details
+    const ticketsResponse = await axios.post(
+      'https://api.hubapi.com/crm/v3/objects/tickets/batch/read',
+      {
+        inputs: ticketIds.map(id => ({ id })),
+        properties: ['subject', 'content', 'hs_pipeline', 'hs_pipeline_stage', 'hs_ticket_priority', 'createdate', 'hs_lastmodifieddate', 'closed_date', 'hs_resolution']
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${privateAppToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    // Get pipeline info for stage labels (optional - may fail without tickets scope)
+    let stageMap = {};
+    try {
+      const pipelines = await getTicketPipelines();
+      pipelines.forEach(p => {
+        p.stages.forEach(s => {
+          stageMap[s.id] = { label: s.label, pipelineName: p.label };
+        });
+      });
+    } catch (pipelineErr) {
+      console.log('📋 Could not fetch pipeline info, using raw stage IDs');
+    }
+
+    const tickets = await Promise.all(ticketsResponse.data?.results?.map(async ticket => {
+      const props = ticket.properties;
+      const stageInfo = stageMap[props.hs_pipeline_stage] || {};
+
+      // Fetch attachments (notes with files) for this ticket
+      let attachments = [];
+      try {
+        const notesResponse = await axios.get(
+          `https://api.hubapi.com/crm/v4/objects/tickets/${ticket.id}/associations/notes`,
+          {
+            headers: {
+              'Authorization': `Bearer ${privateAppToken}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        const noteIds = notesResponse.data?.results?.map(r => r.toObjectId) || [];
+        if (noteIds.length > 0) {
+          const notesDetailResponse = await axios.post(
+            'https://api.hubapi.com/crm/v3/objects/notes/batch/read',
+            {
+              inputs: noteIds.map(id => ({ id })),
+              properties: ['hs_note_body', 'hs_attachment_ids', 'hs_timestamp']
+            },
+            {
+              headers: {
+                'Authorization': `Bearer ${privateAppToken}`,
+                'Content-Type': 'application/json'
+              }
+            }
+          );
+
+          for (const note of notesDetailResponse.data?.results || []) {
+            if (note.properties.hs_attachment_ids) {
+              const fileIds = note.properties.hs_attachment_ids.split(';');
+              for (const fileId of fileIds) {
+                if (fileId.trim()) {
+                  attachments.push({
+                    fileId: fileId.trim(),
+                    noteBody: note.properties.hs_note_body || '',
+                    timestamp: note.properties.hs_timestamp
+                  });
+                }
+              }
+            }
+          }
+        }
+      } catch (attachErr) {
+        console.log(`Could not fetch attachments for ticket ${ticket.id}:`, attachErr.message);
+      }
+
+      return {
+        id: ticket.id,
+        subject: props.subject || 'No Subject',
+        content: props.content || '',
+        pipeline: stageInfo.pipelineName || props.hs_pipeline || 'Support',
+        stage: stageInfo.label || props.hs_pipeline_stage || 'Unknown',
+        stageId: props.hs_pipeline_stage,
+        priority: props.hs_ticket_priority || 'MEDIUM',
+        createdAt: props.createdate,
+        updatedAt: props.hs_lastmodifieddate,
+        closedAt: props.closed_date,
+        attachments: attachments
+      };
+    }) || []);
+
+    tickets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    return tickets;
+  } catch (error) {
+    console.error('Error fetching tickets for contact:', error.response?.data || error.message);
+    throw error;
+  }
+}
+
+async function getTicketsForDeal(dealId) {
+  if (!dealId || !isValidRecordId(dealId)) {
+    console.log(`📋 Ticket fetch skipped: Invalid Deal ID "${dealId}"`);
+    return [];
+  }
+
+  const privateAppToken = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
+  if (!privateAppToken) {
+    throw new Error('HubSpot Private App token not configured');
+  }
+
+  try {
+    const axios = require('axios');
+
+    // Get ticket IDs associated with the deal
+    const assocResponse = await axios.get(
+      `https://api.hubapi.com/crm/v4/objects/deals/${dealId}/associations/tickets`,
+      {
+        headers: {
+          'Authorization': `Bearer ${privateAppToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const ticketIds = assocResponse.data?.results?.map(r => r.toObjectId) || [];
+
+    if (ticketIds.length === 0) {
+      console.log(`📋 No tickets found for deal ${dealId}`);
+      return [];
+    }
+
+    console.log(`📋 Found ${ticketIds.length} tickets for deal ${dealId}`);
+
+    // Fetch ticket details
+    const ticketsResponse = await axios.post(
+      'https://api.hubapi.com/crm/v3/objects/tickets/batch/read',
+      {
+        inputs: ticketIds.map(id => ({ id })),
+        properties: ['subject', 'content', 'hs_pipeline', 'hs_pipeline_stage', 'hs_ticket_priority', 'createdate', 'hs_lastmodifieddate', 'closed_date', 'hs_resolution']
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${privateAppToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    // Get pipeline info for stage labels (optional - may fail without tickets scope)
+    let stageMap = {};
+    try {
+      const pipelines = await getTicketPipelines();
+      pipelines.forEach(p => {
+        p.stages.forEach(s => {
+          stageMap[s.id] = { label: s.label, pipelineName: p.label };
+        });
+      });
+    } catch (pipelineErr) {
+      console.log('📋 Could not fetch pipeline info, using raw stage IDs');
+    }
+
+    const tickets = await Promise.all(ticketsResponse.data?.results?.map(async ticket => {
+      const props = ticket.properties;
+      const stageInfo = stageMap[props.hs_pipeline_stage] || {};
+
+      // Fetch attachments (notes with files) for this ticket
+      let attachments = [];
+      try {
+        const notesResponse = await axios.get(
+          `https://api.hubapi.com/crm/v4/objects/tickets/${ticket.id}/associations/notes`,
+          {
+            headers: {
+              'Authorization': `Bearer ${privateAppToken}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        const noteIds = notesResponse.data?.results?.map(r => r.toObjectId) || [];
+        if (noteIds.length > 0) {
+          const notesDetailResponse = await axios.post(
+            'https://api.hubapi.com/crm/v3/objects/notes/batch/read',
+            {
+              inputs: noteIds.map(id => ({ id })),
+              properties: ['hs_note_body', 'hs_attachment_ids', 'hs_timestamp']
+            },
+            {
+              headers: {
+                'Authorization': `Bearer ${privateAppToken}`,
+                'Content-Type': 'application/json'
+              }
+            }
+          );
+
+          notesDetailResponse.data?.results?.forEach(note => {
+            if (note.properties.hs_attachment_ids) {
+              const fileIds = note.properties.hs_attachment_ids.split(';').filter(id => id);
+              fileIds.forEach(fileId => {
+                attachments.push({ fileId, noteBody: note.properties.hs_note_body });
+              });
+            }
+          });
+        }
+      } catch (noteErr) {
+        console.log(`📋 Could not fetch attachments for ticket ${ticket.id}`);
+      }
+
+      return {
+        id: ticket.id,
+        subject: props.subject || 'No Subject',
+        content: props.content || '',
+        stage: stageInfo.label || props.hs_pipeline_stage || 'Unknown',
+        pipeline: stageInfo.pipelineName || props.hs_pipeline || 'Default',
+        priority: props.hs_ticket_priority || 'Normal',
+        createdAt: props.createdate,
+        updatedAt: props.hs_lastmodifieddate,
+        closedAt: props.closed_date,
+        attachments: attachments
+      };
+    }) || []);
+
+    tickets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    return tickets;
+  } catch (error) {
+    console.error('Error fetching tickets for deal:', error.response?.data || error.message);
+    throw error;
+  }
+}
+
+async function createTicketWithFile(ticketData, fileContent, fileName, companyId = null) {
+  const privateAppToken = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
+  if (!privateAppToken) {
+    throw new Error('HubSpot Private App token not configured');
+  }
+
+  try {
+    const axios = require('axios');
+    const FormData = require('form-data');
+
+    // 1. Upload the file first
+    const formData = new FormData();
+    const isBase64 = ticketData.isBase64 || false;
+    const fileBuffer = isBase64 ? Buffer.from(fileContent, 'base64') : Buffer.from(fileContent, 'utf8');
+
+    const ext = fileName.split('.').pop().toLowerCase();
+    const mimeTypes = {
+      'pdf': 'application/pdf',
+      'html': 'text/html',
+      'doc': 'application/msword',
+      'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'txt': 'text/plain'
+    };
+    const contentType = mimeTypes[ext] || 'application/octet-stream';
+
+    formData.append('file', fileBuffer, { filename: fileName, contentType: contentType });
+    formData.append('folderPath', '/service-reports');
+    formData.append('options', JSON.stringify({
+      access: 'PRIVATE',
+      overwrite: false,
+      duplicateValidationStrategy: 'NONE',
+      duplicateValidationScope: 'ENTIRE_PORTAL'
+    }));
+
+    console.log(`📤 Uploading file for ticket: ${fileName}`);
+
+    const uploadResponse = await axios.post(
+      'https://api.hubapi.com/files/v3/files',
+      formData,
+      {
+        headers: {
+          'Authorization': `Bearer ${privateAppToken}`,
+          ...formData.getHeaders()
+        },
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity
+      }
+    );
+
+    const fileId = uploadResponse.data.id;
+    console.log(`✅ File uploaded: ${fileId}`);
+
+    // 2. Create the ticket
+    const ticketProperties = {
+      subject: ticketData.subject || 'Service Report',
+      content: ticketData.content || 'Service report attached',
+      hs_pipeline: ticketData.pipelineId || '0', // Default pipeline
+      hs_pipeline_stage: ticketData.stageId || '1', // First stage
+      hs_ticket_priority: ticketData.priority || 'LOW'
+    };
+
+    const ticketInput = { properties: ticketProperties };
+
+    // Add associations if company ID provided
+    if (companyId && isValidRecordId(companyId)) {
+      ticketInput.associations = [{
+        to: { id: companyId },
+        types: [{
+          associationCategory: 'HUBSPOT_DEFINED',
+          associationTypeId: 26 // Ticket to Company
+        }]
+      }];
+    }
+
+    const ticketResponse = await axios.post(
+      'https://api.hubapi.com/crm/v3/objects/tickets',
+      ticketInput,
+      {
+        headers: {
+          'Authorization': `Bearer ${privateAppToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const ticketId = ticketResponse.data.id;
+    console.log(`✅ Ticket created: ${ticketId}`);
+
+    // 3. Create a note with the file attachment and associate with ticket
+    const noteProperties = {
+      hs_timestamp: Date.now().toString(),
+      hs_note_body: `Service Report Attached\n\nFile: ${fileName}`,
+      hs_attachment_ids: fileId.toString()
+    };
+
+    const noteResponse = await axios.post(
+      'https://api.hubapi.com/crm/v3/objects/notes',
+      { properties: noteProperties },
+      {
+        headers: {
+          'Authorization': `Bearer ${privateAppToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const noteId = noteResponse.data.id;
+
+    // Associate note with ticket
+    await axios.put(
+      `https://api.hubapi.com/crm/v4/objects/notes/${noteId}/associations/tickets/${ticketId}`,
+      [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 18 }], // Note to Ticket
+      {
+        headers: {
+          'Authorization': `Bearer ${privateAppToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    console.log(`✅ Note ${noteId} associated with ticket ${ticketId}`);
+
+    return {
+      ticketId,
+      fileId,
+      noteId,
+      ticketUrl: `https://app.hubspot.com/contacts/tickets/${ticketId}`
+    };
+  } catch (error) {
+    console.error('Error creating ticket with file:', error.response?.data || error.message);
+    throw error;
+  }
+}
+
 module.exports = {
   getHubSpotClient,
   getPipelines,
@@ -525,5 +1088,10 @@ module.exports = {
   createOrUpdateTask,
   uploadFileAndAttachToRecord,
   syncTaskNoteToRecord,
-  isValidRecordId
+  isValidRecordId,
+  getTicketPipelines,
+  getTicketsForCompany,
+  getTicketsForContact,
+  getTicketsForDeal,
+  createTicketWithFile
 };
