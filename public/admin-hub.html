@@ -11,6 +11,7 @@
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
   <script>
     tailwind.config = {
       theme: {
@@ -233,7 +234,8 @@
       chat: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>,
       message: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/></svg>,
       inbox: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 13.5h3.86a2.25 2.25 0 012.012 1.244l.256.512a2.25 2.25 0 002.013 1.244h3.218a2.25 2.25 0 002.013-1.244l.256-.512a2.25 2.25 0 012.013-1.244h3.859m-17.5 0a2.25 2.25 0 00-1.883 1.013A11.945 11.945 0 003 19.5h18c.844 0 1.654-.178 2.383-.5a2.25 2.25 0 00-1.883-1.013M2.25 13.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0115.686 0c1.1.128 1.907 1.077 1.907 2.185V13.5"/></svg>,
-      bug: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 12.75c1.148 0 2.278.08 3.383.237 1.037.146 1.866.966 1.866 2.013 0 3.728-2.35 6.75-5.25 6.75S6.75 18.728 6.75 15c0-1.046.83-1.867 1.866-2.013A24.204 24.204 0 0112 12.75zm0 0c2.883 0 5.647.508 8.207 1.44a23.91 23.91 0 01-1.152 6.06M12 12.75c-2.883 0-5.647.508-8.208 1.44.125 2.104.52 4.136 1.153 6.06M12 12.75V8.25m0 0c1.086 0 2.152-.14 3.181-.406a1.128 1.128 0 01-.664-.814 2.999 2.999 0 00-5.034 0 1.128 1.128 0 01-.664.814A10.988 10.988 0 0012 8.25zM12 21c-.17.001-.34 0-.508-.004A23.91 23.91 0 015.793 14.69M12 21c.17.001.34 0 .508-.004a23.91 23.91 0 005.699-6.306M9 9.75h6m-3-6.75a2.25 2.25 0 012.25 2.25v.407a2.25 2.25 0 01-.664 1.591L15 9.75"/></svg>
+      bug: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 12.75c1.148 0 2.278.08 3.383.237 1.037.146 1.866.966 1.866 2.013 0 3.728-2.35 6.75-5.25 6.75S6.75 18.728 6.75 15c0-1.046.83-1.867 1.866-2.013A24.204 24.204 0 0112 12.75zm0 0c2.883 0 5.647.508 8.207 1.44a23.91 23.91 0 01-1.152 6.06M12 12.75c-2.883 0-5.647.508-8.208 1.44.125 2.104.52 4.136 1.153 6.06M12 12.75V8.25m0 0c1.086 0 2.152-.14 3.181-.406a1.128 1.128 0 01-.664-.814 2.999 2.999 0 00-5.034 0 1.128 1.128 0 01-.664.814A10.988 10.988 0 0012 8.25zM12 21c-.17.001-.34 0-.508-.004A23.91 23.91 0 015.793 14.69M12 21c.17.001.34 0 .508-.004a23.91 23.91 0 005.699-6.306M9 9.75h6m-3-6.75a2.25 2.25 0 012.25 2.25v.407a2.25 2.25 0 01-.664 1.591L15 9.75"/></svg>,
+      download: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
     };
 
     // Login Page - Modern sleek design
@@ -922,6 +924,58 @@
         loadData();
       };
 
+      // Export users to xlsx
+      const exportUsersToXlsx = () => {
+        // Prepare data for export
+        const exportData = users.map(user => ({
+          'Name': user.name || '',
+          'Email': user.email || '',
+          'Role': user.role === 'user' ? 'Team Member' : user.role === 'admin' ? 'Admin' : user.role === 'client' ? 'Client' : user.role === 'vendor' ? 'Vendor' : user.role || '',
+          'Practice/Company': user.practiceName || '',
+          'Service Portal Access': user.hasServicePortalAccess ? 'Yes' : 'No',
+          'Admin Hub Access': user.hasAdminHubAccess ? 'Yes' : 'No',
+          'Implementations Access': user.hasImplementationsAccess ? 'Yes' : 'No',
+          'Client Portal Admin': user.hasClientPortalAdminAccess ? 'Yes' : 'No',
+          'HubSpot Company ID': user.hubspotCompanyId || '',
+          'HubSpot Deal ID': user.hubspotDealId || '',
+          'HubSpot Contact ID': user.hubspotContactId || '',
+          'Assigned Clients': Array.isArray(user.assignedClients) ? user.assignedClients.join(', ') : '',
+          'Created At': user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '',
+          'User ID': user.id || ''
+        }));
+
+        // Create workbook and worksheet
+        const ws = XLSX.utils.json_to_sheet(exportData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Users');
+
+        // Set column widths
+        const colWidths = [
+          { wch: 25 }, // Name
+          { wch: 30 }, // Email
+          { wch: 15 }, // Role
+          { wch: 25 }, // Practice/Company
+          { wch: 12 }, // Service Portal
+          { wch: 12 }, // Admin Hub
+          { wch: 15 }, // Implementations
+          { wch: 15 }, // Client Portal Admin
+          { wch: 18 }, // HubSpot Company ID
+          { wch: 18 }, // HubSpot Deal ID
+          { wch: 18 }, // HubSpot Contact ID
+          { wch: 30 }, // Assigned Clients
+          { wch: 12 }, // Created At
+          { wch: 38 }  // User ID
+        ];
+        ws['!cols'] = colWidths;
+
+        // Generate filename with date
+        const date = new Date().toISOString().split('T')[0];
+        const filename = `thrive365-users-${date}.xlsx`;
+
+        // Download file
+        XLSX.writeFile(wb, filename);
+      };
+
       const filteredUsers = users.filter(user => {
         const matchesSearch = user.name?.toLowerCase().includes(searchTerm.toLowerCase()) || user.email?.toLowerCase().includes(searchTerm.toLowerCase());
         const matchesRole = roleFilter === 'all' || user.role === roleFilter || (roleFilter === 'service' && user.hasServicePortalAccess);
@@ -936,11 +990,17 @@
                 <h1 className="text-2xl font-bold text-accent">User Management</h1>
                 <p className="text-gray-600 mt-1">Manage all users, roles, and portal access</p>
               </div>
-              <button onClick={() => { setShowForm(true); setEditingUser(null); setFormData(defaultFormData); }}
-                className="px-4 py-2 rounded-lg font-medium flex items-center gap-2 shadow-sm hover:shadow-md transition-all"
-                style={{backgroundColor: '#045E9F', color: 'white'}}>
-                {Icons.plus} Add User
-              </button>
+              <div className="flex gap-2">
+                <button onClick={exportUsersToXlsx}
+                  className="px-4 py-2 rounded-lg font-medium flex items-center gap-2 shadow-sm hover:shadow-md transition-all border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
+                  {Icons.download} Export
+                </button>
+                <button onClick={() => { setShowForm(true); setEditingUser(null); setFormData(defaultFormData); }}
+                  className="px-4 py-2 rounded-lg font-medium flex items-center gap-2 shadow-sm hover:shadow-md transition-all"
+                  style={{backgroundColor: '#045E9F', color: 'white'}}>
+                  {Icons.plus} Add User
+                </button>
+              </div>
             </div>
 
             {/* Tabs */}
