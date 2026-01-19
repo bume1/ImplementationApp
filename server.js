@@ -2901,8 +2901,10 @@ app.get('/api/inventory/report/:slug', authenticateToken, async (req, res) => {
       .sort((a, b) => a.category.localeCompare(b.category) || a.itemName.localeCompare(b.itemName));
     
     const consumptionRate = [];
-    const submissionsToAnalyze = clientSubmissions.slice(0, 12);
-    
+    // Only analyze submissions from the last 30 days for rolling average
+    const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const submissionsToAnalyze = clientSubmissions.filter(s => new Date(s.submittedAt) >= thirtyDaysAgo);
+
     if (submissionsToAnalyze.length >= 2) {
       const itemConsumption = {};
       
