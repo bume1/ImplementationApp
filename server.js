@@ -433,7 +433,9 @@ app.post('/api/auth/login', async (req, res) => {
       hasImplementationsAccess: user.hasImplementationsAccess || false,
       hasClientPortalAdminAccess: user.hasClientPortalAdminAccess || false,
       assignedProjects: user.assignedProjects || [],
-      assignedClients: user.assignedClients || []
+      assignedClients: user.assignedClients || [],
+      // Password reset flag
+      requirePasswordChange: user.requirePasswordChange || false
     };
     // Include client-specific fields
     if (user.role === 'client') {
@@ -5378,6 +5380,176 @@ app.delete('/api/changelog/:id', authenticateToken, requireAdmin, async (req, re
     await db.set('changelog', changelog);
     res.json({ message: 'Changelog deleted' });
   } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============== PASSWORD MANAGEMENT ==============
+
+// Generate temp password based on user type
+function generateTempPassword(user) {
+  // For clients: ClientName2026!
+  // For users: FirstLastName2026!
+  if (user.role === 'client') {
+    const clientName = (user.practiceName || user.name || 'Client').replace(/[^a-zA-Z0-9]/g, '');
+    return `${clientName}2026!`;
+  } else {
+    const nameParts = (user.name || 'User').split(' ');
+    const firstName = (nameParts[0] || '').replace(/[^a-zA-Z0-9]/g, '');
+    const lastName = (nameParts[nameParts.length - 1] || '').replace(/[^a-zA-Z0-9]/g, '');
+    return `${firstName}${lastName}2026!`;
+  }
+}
+
+// Bulk password reset for all users (admin only)
+app.post('/api/admin/bulk-password-reset', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { userType, specificUserIds } = req.body; // userType: 'all' | 'clients' | 'users' | 'specific'
+
+    const users = await getUsers();
+    const results = {
+      total: 0,
+      reset: [],
+      skipped: []
+    };
+
+    for (let i = 0; i < users.length; i++) {
+      const user = users[i];
+
+      // Skip admin users from bulk reset
+      if (user.role === 'admin') {
+        results.skipped.push({ email: user.email, reason: 'Admin accounts excluded' });
+        continue;
+      }
+
+      // Filter by userType
+      if (userType === 'clients' && user.role !== 'client') {
+        continue;
+      }
+      if (userType === 'users' && user.role === 'client') {
+        continue;
+      }
+      if (userType === 'specific' && (!specificUserIds || !specificUserIds.includes(user.id))) {
+        continue;
+      }
+
+      // Generate temp password
+      const tempPassword = generateTempPassword(user);
+      const hashedPassword = await bcrypt.hash(tempPassword, 10);
+
+      // Update user
+      users[i].password = hashedPassword;
+      users[i].requirePasswordChange = true;
+      users[i].lastPasswordReset = new Date().toISOString();
+
+      results.reset.push({
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        tempPassword: tempPassword // Include for admin reference
+      });
+      results.total++;
+    }
+
+    await db.set('users', users);
+
+    // Log activity
+    await logActivity(
+      req.user.id,
+      req.user.name,
+      'bulk_password_reset',
+      'users',
+      null,
+      { userType, resetCount: results.total }
+    );
+
+    res.json({
+      message: `Successfully reset passwords for ${results.total} users`,
+      results
+    });
+  } catch (error) {
+    console.error('Bulk password reset error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Reset single user password (admin only)
+app.post('/api/admin/reset-user-password/:userId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { customPassword } = req.body;
+
+    const users = await getUsers();
+    const userIndex = users.findIndex(u => u.id === userId);
+
+    if (userIndex === -1) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const user = users[userIndex];
+
+    // Use custom password or generate temp password
+    const newPassword = customPassword || generateTempPassword(user);
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    users[userIndex].password = hashedPassword;
+    users[userIndex].requirePasswordChange = !customPassword; // Only require change for temp passwords
+    users[userIndex].lastPasswordReset = new Date().toISOString();
+
+    await db.set('users', users);
+
+    res.json({
+      message: 'Password reset successfully',
+      tempPassword: customPassword ? undefined : newPassword,
+      requirePasswordChange: users[userIndex].requirePasswordChange
+    });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Change password (authenticated user)
+app.post('/api/auth/change-password', authenticateToken, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!newPassword || newPassword.length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters' });
+    }
+
+    const users = await getUsers();
+    const userIndex = users.findIndex(u => u.id === req.user.id);
+
+    if (userIndex === -1) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const user = users[userIndex];
+
+    // If not a forced password change, verify current password
+    if (!user.requirePasswordChange) {
+      if (!currentPassword) {
+        return res.status(400).json({ error: 'Current password is required' });
+      }
+      const passwordMatch = await bcrypt.compare(currentPassword, user.password);
+      if (!passwordMatch) {
+        return res.status(400).json({ error: 'Current password is incorrect' });
+      }
+    }
+
+    // Hash and save new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    users[userIndex].password = hashedPassword;
+    users[userIndex].requirePasswordChange = false;
+    users[userIndex].lastPasswordChange = new Date().toISOString();
+
+    await db.set('users', users);
+
+    res.json({ message: 'Password changed successfully' });
+  } catch (error) {
+    console.error('Change password error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
