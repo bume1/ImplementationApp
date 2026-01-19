@@ -569,7 +569,7 @@ async function getTicketsForCompany(companyId) {
       'https://api.hubapi.com/crm/v3/objects/tickets/batch/read',
       {
         inputs: ticketIds.map(id => ({ id })),
-        properties: ['subject', 'content', 'hs_pipeline', 'hs_pipeline_stage', 'hs_ticket_priority', 'createdate', 'hs_lastmodifieddate', 'closed_date', 'hs_resolution']
+        properties: ['subject', 'content', 'hs_pipeline', 'hs_pipeline_stage', 'hs_ticket_priority', 'createdate', 'hs_lastmodifieddate', 'closed_date', 'hs_resolution', 'hs_object_source', 'hs_object_source_label']
       },
       {
         headers: {
@@ -657,7 +657,9 @@ async function getTicketsForCompany(companyId) {
         updatedAt: props.hs_lastmodifieddate,
         closedAt: props.closed_date,
         resolution: props.hs_resolution || '',
-        attachments: attachments
+        attachments: attachments,
+        source: props.hs_object_source || '',
+        sourceLabel: props.hs_object_source_label || ''
       };
     }) || []);
 
@@ -710,7 +712,7 @@ async function getTicketsForContact(contactId) {
       'https://api.hubapi.com/crm/v3/objects/tickets/batch/read',
       {
         inputs: ticketIds.map(id => ({ id })),
-        properties: ['subject', 'content', 'hs_pipeline', 'hs_pipeline_stage', 'hs_ticket_priority', 'createdate', 'hs_lastmodifieddate', 'closed_date', 'hs_resolution']
+        properties: ['subject', 'content', 'hs_pipeline', 'hs_pipeline_stage', 'hs_ticket_priority', 'createdate', 'hs_lastmodifieddate', 'closed_date', 'hs_resolution', 'hs_object_source', 'hs_object_source_label']
       },
       {
         headers: {
@@ -796,7 +798,9 @@ async function getTicketsForContact(contactId) {
         createdAt: props.createdate,
         updatedAt: props.hs_lastmodifieddate,
         closedAt: props.closed_date,
-        attachments: attachments
+        attachments: attachments,
+        source: props.hs_object_source || '',
+        sourceLabel: props.hs_object_source_label || ''
       };
     }) || []);
 
@@ -848,7 +852,7 @@ async function getTicketsForDeal(dealId) {
       'https://api.hubapi.com/crm/v3/objects/tickets/batch/read',
       {
         inputs: ticketIds.map(id => ({ id })),
-        properties: ['subject', 'content', 'hs_pipeline', 'hs_pipeline_stage', 'hs_ticket_priority', 'createdate', 'hs_lastmodifieddate', 'closed_date', 'hs_resolution']
+        properties: ['subject', 'content', 'hs_pipeline', 'hs_pipeline_stage', 'hs_ticket_priority', 'createdate', 'hs_lastmodifieddate', 'closed_date', 'hs_resolution', 'hs_object_source', 'hs_object_source_label']
       },
       {
         headers: {
@@ -927,7 +931,9 @@ async function getTicketsForDeal(dealId) {
         createdAt: props.createdate,
         updatedAt: props.hs_lastmodifieddate,
         closedAt: props.closed_date,
-        attachments: attachments
+        attachments: attachments,
+        source: props.hs_object_source || '',
+        sourceLabel: props.hs_object_source_label || ''
       };
     }) || []);
 

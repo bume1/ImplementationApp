@@ -2813,8 +2813,8 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
     }
 
     // Get portal-tracked ticket IDs (only show tickets created through portal)
-    const portalTickets = (await db.get('portal_tickets')) || [];
-    const portalTicketIds = new Set(portalTickets.map(t => String(t.ticketId)));
+    let portalTickets = (await db.get('portal_tickets')) || [];
+    let portalTicketIds = new Set(portalTickets.map(t => String(t.ticketId)));
     console.log(`🎫 Portal has ${portalTicketIds.size} tracked tickets`);
 
     let tickets = [];
@@ -2859,8 +2859,38 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
       }
     }
 
+    // Auto-register form-submitted tickets that aren't already in portal_tickets
+    // This allows tickets created via HubSpot forms to appear without needing the automation webhook
+    const formSources = ['FORM', 'FORMS', 'Form submission'];
+    const unregisteredFormTickets = tickets.filter(t => {
+      const isFormSubmitted = formSources.includes(t.source) ||
+                              (t.sourceLabel && t.sourceLabel.toLowerCase().includes('form'));
+      const notRegistered = !portalTicketIds.has(String(t.id));
+      return isFormSubmitted && notRegistered;
+    });
+
+    if (unregisteredFormTickets.length > 0) {
+      console.log(`🎫 Auto-registering ${unregisteredFormTickets.length} form-submitted tickets`);
+      for (const ticket of unregisteredFormTickets) {
+        portalTickets.unshift({
+          ticketId: String(ticket.id),
+          companyId: hubspotCompanyId || null,
+          contactEmail: clientUser.email || clientUser.username,
+          registeredAt: new Date().toISOString(),
+          autoRegistered: true,
+          source: ticket.source || 'FORM'
+        });
+        console.log(`   - Registered ticket ${ticket.id} (source: ${ticket.source || ticket.sourceLabel})`);
+      }
+      // Keep only last 1000 portal tickets
+      if (portalTickets.length > 1000) portalTickets.length = 1000;
+      await db.set('portal_tickets', portalTickets);
+      // Update the set for filtering
+      portalTicketIds = new Set(portalTickets.map(t => String(t.ticketId)));
+    }
+
     // Filter to only show tickets created through the portal
-    // (tickets must be registered via the webhook from HubSpot workflow)
+    // (tickets must be registered via the webhook from HubSpot workflow OR auto-registered from form submissions)
     const totalFetched = tickets.length;
     tickets = tickets.filter(t => portalTicketIds.has(String(t.id)));
     console.log(`🎫 Filtered ${totalFetched} -> ${tickets.length} portal-only tickets`);
