@@ -521,6 +521,150 @@
       );
     };
 
+    // Password Change Modal Component
+    const PasswordChangeModal = ({ isOpen, isRequired, token, user, onPasswordChanged, onCancel }) => {
+      const [currentPassword, setCurrentPassword] = useState('');
+      const [newPassword, setNewPassword] = useState('');
+      const [confirmPassword, setConfirmPassword] = useState('');
+      const [error, setError] = useState('');
+      const [success, setSuccess] = useState(false);
+      const [loading, setLoading] = useState(false);
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        setError('');
+
+        if (newPassword !== confirmPassword) {
+          setError('Passwords do not match');
+          return;
+        }
+        if (newPassword.length < 8) {
+          setError('Password must be at least 8 characters');
+          return;
+        }
+
+        setLoading(true);
+        try {
+          const response = await fetch('/api/auth/change-password', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              currentPassword: isRequired ? undefined : currentPassword,
+              newPassword
+            })
+          });
+          const result = await response.json();
+
+          if (result.error) {
+            setError(result.error);
+          } else {
+            setSuccess(true);
+            setTimeout(() => {
+              // Update local user to remove requirePasswordChange
+              const updatedUser = { ...user, requirePasswordChange: false };
+              localStorage.setItem('unified_user', JSON.stringify(updatedUser));
+              localStorage.setItem('admin_user', JSON.stringify(updatedUser));
+              localStorage.setItem('portal_user', JSON.stringify(updatedUser));
+              onPasswordChanged(updatedUser);
+            }, 1500);
+          }
+        } catch (err) {
+          setError('Connection error. Please try again.');
+        }
+        setLoading(false);
+      };
+
+      if (!isOpen) return null;
+
+      return (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md animate-fade-in">
+            <div className="p-6 border-b border-gray-100">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-primary-100 rounded-full flex items-center justify-center">
+                  <svg className="w-6 h-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-accent">
+                    {isRequired ? 'Create New Password' : 'Change Password'}
+                  </h2>
+                  {isRequired && (
+                    <p className="text-sm text-gray-500">A temporary password was assigned. Please create your own password.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+            {success ? (
+              <div className="p-8 text-center">
+                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/>
+                  </svg>
+                </div>
+                <h3 className="text-lg font-semibold text-gray-800">Password Changed!</h3>
+                <p className="text-gray-500 mt-2">Redirecting you to your portals...</p>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                {error && (
+                  <div className="flex items-center gap-3 bg-danger-50 text-danger-600 p-4 rounded-xl text-sm border border-red-100">
+                    <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                    <span>{error}</span>
+                  </div>
+                )}
+
+                {!isRequired && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Current Password</label>
+                    <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)}
+                      className="input-modern w-full px-4 py-3 text-gray-900" placeholder="Enter current password" required />
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">New Password</label>
+                  <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
+                    className="input-modern w-full px-4 py-3 text-gray-900" placeholder="Enter new password (min. 8 characters)" required />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Confirm New Password</label>
+                  <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="input-modern w-full px-4 py-3 text-gray-900" placeholder="Confirm new password" required />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  {!isRequired && (
+                    <button type="button" onClick={onCancel}
+                      className="flex-1 py-3 px-4 rounded-xl border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition">
+                      Cancel
+                    </button>
+                  )}
+                  <button type="submit" disabled={loading}
+                    className={`${isRequired ? 'w-full' : 'flex-1'} btn-primary py-3 px-4 rounded-xl text-white font-medium disabled:opacity-50`}>
+                    {loading ? 'Changing...' : 'Set New Password'}
+                  </button>
+                </div>
+
+                {isRequired && (
+                  <p className="text-xs text-gray-400 text-center mt-4">
+                    You must create a new password before continuing. Contact your administrator if you need assistance.
+                  </p>
+                )}
+              </form>
+            )}
+          </div>
+        </div>
+      );
+    };
+
     // Main App Component
     const App = () => {
       const [token, setToken] = useState(localStorage.getItem('unified_token') || localStorage.getItem('admin_token'));
@@ -528,10 +672,15 @@
         const stored = localStorage.getItem('unified_user') || localStorage.getItem('admin_user');
         return stored ? JSON.parse(stored) : null;
       });
+      const [showPasswordChange, setShowPasswordChange] = useState(false);
 
       const handleLogin = (newToken, newUser) => {
         setToken(newToken);
         setUser(newUser);
+        // Check if password change is required
+        if (newUser.requirePasswordChange) {
+          setShowPasswordChange(true);
+        }
       };
 
       const handleLogout = () => {
@@ -543,10 +692,34 @@
         localStorage.removeItem('portal_user');
         setToken(null);
         setUser(null);
+        setShowPasswordChange(false);
+      };
+
+      const handlePasswordChanged = (updatedUser) => {
+        setUser(updatedUser);
+        setShowPasswordChange(false);
       };
 
       if (!token || !user) {
         return <LoginPage onLogin={handleLogin} />;
+      }
+
+      // Show password change modal if required
+      if (user.requirePasswordChange || showPasswordChange) {
+        return (
+          <>
+            <PasswordChangeModal
+              isOpen={true}
+              isRequired={user.requirePasswordChange}
+              token={token}
+              user={user}
+              onPasswordChanged={handlePasswordChanged}
+              onCancel={() => setShowPasswordChange(false)}
+            />
+            {/* Show dimmed portal hub behind if password change was initiated voluntarily */}
+            {!user.requirePasswordChange && <div className="opacity-50 pointer-events-none"><PortalHub user={user} token={token} onLogout={handleLogout} /></div>}
+          </>
+        );
       }
 
       return <PortalHub user={user} token={token} onLogout={handleLogout} />;

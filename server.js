@@ -10,6 +10,8 @@ const path = require('path');
 const multer = require('multer');
 const hubspot = require('./hubspot');
 const googledrive = require('./googledrive');
+const pdfGenerator = require('./pdf-generator');
+const changelogGenerator = require('./changelog-generator');
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -432,7 +434,9 @@ app.post('/api/auth/login', async (req, res) => {
       hasImplementationsAccess: user.hasImplementationsAccess || false,
       hasClientPortalAdminAccess: user.hasClientPortalAdminAccess || false,
       assignedProjects: user.assignedProjects || [],
-      assignedClients: user.assignedClients || []
+      assignedClients: user.assignedClients || [],
+      // Password reset flag
+      requirePasswordChange: user.requirePasswordChange || false
     };
     // Include client-specific fields
     if (user.role === 'client') {
@@ -4796,111 +4800,23 @@ app.post('/api/service-reports', authenticateToken, requireServiceAccess, async 
       try {
         const reportDate = new Date(reportData.serviceCompletionDate || newReport.createdAt).toLocaleDateString();
 
-        // Generate HTML service report
-        const htmlReport = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Service Report - ${reportData.clientFacilityName}</title>
-  <style>
-    body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
-    .header { text-align: center; border-bottom: 2px solid #045E9F; padding-bottom: 15px; margin-bottom: 20px; }
-    .header h1 { color: #045E9F; margin: 0; }
-    .section { margin-bottom: 20px; }
-    .section h2 { color: #00205A; font-size: 14px; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 10px; }
-    .field { margin-bottom: 10px; }
-    .field label { font-weight: bold; color: #333; display: block; }
-    .field value { display: block; padding: 5px 0; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-    .signature-box { border: 1px solid #ddd; padding: 10px; margin-top: 10px; }
-    .signature-img { max-width: 200px; max-height: 80px; }
-    .footer { text-align: center; font-size: 12px; color: #666; margin-top: 30px; border-top: 1px solid #ddd; padding-top: 10px; }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <h1>SERVICE REPORT</h1>
-    <p>Thrive 365 Labs</p>
-  </div>
+        // Generate PDF service report
+        console.log(`📄 Generating PDF for service report: ${reportData.clientFacilityName}`);
+        const pdfBuffer = await pdfGenerator.generateServiceReportPDF({ ...reportData, id: newReport.id }, req.user.name);
 
-  <div class="section">
-    <h2>CLIENT INFORMATION</h2>
-    <div class="grid">
-      <div class="field"><label>Client/Facility:</label><value>${reportData.clientFacilityName || '-'}</value></div>
-      <div class="field"><label>Customer Name:</label><value>${reportData.customerName || '-'}</value></div>
-      <div class="field"><label>Address:</label><value>${reportData.address || '-'}</value></div>
-      <div class="field"><label>Service Date:</label><value>${reportDate}</value></div>
-      <div class="field"><label>Analyzer Model:</label><value>${reportData.analyzerModel || '-'}</value></div>
-      <div class="field"><label>Serial Number:</label><value>${reportData.analyzerSerialNumber || '-'}</value></div>
-      <div class="field"><label>HubSpot Ticket #:</label><value>${reportData.hubspotTicketNumber || '-'}</value></div>
-      <div class="field"><label>Service Provider:</label><value>${reportData.serviceProviderName || req.user.name}</value></div>
-    </div>
-  </div>
-
-  <div class="section">
-    <h2>SERVICE PERFORMED</h2>
-    <div class="field"><label>Service Type:</label><value>${reportData.serviceType || '-'}</value></div>
-    ${reportData.serviceType === 'Validations' ? `
-    <div class="grid">
-      <div class="field"><label>Start Date:</label><value>${reportData.validationStartDate || '-'}</value></div>
-      <div class="field"><label>End Date:</label><value>${reportData.validationEndDate || '-'}</value></div>
-    </div>
-    ${reportData.analyzersValidated && reportData.analyzersValidated.length > 0 ? `
-    <div class="field">
-      <label>Analyzers Validated:</label>
-      <table style="width:100%; border-collapse:collapse; margin-top:5px;">
-        <tr style="background:#f5f5f5;"><th style="padding:5px; border:1px solid #ddd; text-align:left;">Model</th><th style="padding:5px; border:1px solid #ddd; text-align:left;">Serial Number</th><th style="padding:5px; border:1px solid #ddd; text-align:left;">Status</th></tr>
-        ${reportData.analyzersValidated.map(a => `<tr><td style="padding:5px; border:1px solid #ddd;">${a.model || '-'}</td><td style="padding:5px; border:1px solid #ddd;">${a.serialNumber || '-'}</td><td style="padding:5px; border:1px solid #ddd;">${a.status || '-'}</td></tr>`).join('')}
-      </table>
-    </div>
-    ` : ''}
-    <div class="field"><label>Training Provided:</label><value>${reportData.trainingProvided || '-'}</value></div>
-    <div class="field"><label>Validation Results:</label><value>${reportData.validationResults || '-'}</value></div>
-    <div class="field"><label>Recommendations:</label><value>${reportData.recommendations || '-'}</value></div>
-    ` : `
-    <div class="field"><label>Description of Work:</label><value>${reportData.descriptionOfWork || '-'}</value></div>
-    <div class="field"><label>Materials Used:</label><value>${reportData.materialsUsed || '-'}</value></div>
-    <div class="field"><label>Solution:</label><value>${reportData.solution || '-'}</value></div>
-    <div class="field"><label>Final Recommendations:</label><value>${reportData.outstandingIssues || '-'}</value></div>
-    `}
-  </div>
-
-  <div class="section">
-    <h2>SIGNATURES</h2>
-    <div class="grid">
-      <div class="signature-box">
-        <label>Customer Signature:</label>
-        ${reportData.customerSignature ? `<img src="${reportData.customerSignature}" class="signature-img" alt="Customer Signature"/>` : '<p>Not signed</p>'}
-        <p>Date: ${reportData.customerSignatureDate || '-'}</p>
-      </div>
-      <div class="signature-box">
-        <label>Technician Signature:</label>
-        ${reportData.technicianSignature ? `<img src="${reportData.technicianSignature}" class="signature-img" alt="Technician Signature"/>` : '<p>Not signed</p>'}
-        <p>Date: ${reportData.technicianSignatureDate || '-'}</p>
-      </div>
-    </div>
-  </div>
-
-  <div class="footer">
-    <p>Report ID: ${newReport.id}</p>
-    <p>Generated on ${new Date().toLocaleString()}</p>
-  </div>
-</body>
-</html>`;
-
-        const fileName = `Service_Report_${reportData.clientFacilityName.replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate.replace(/\//g, '-')}.html`;
+        const fileName = `Service_Report_${reportData.clientFacilityName.replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate.replace(/\//g, '-')}.pdf`;
         const noteText = `Service Report Submitted\n\nClient: ${reportData.clientFacilityName}\nService Type: ${reportData.serviceType}\nTechnician: ${reportData.serviceProviderName || req.user.name}\nTicket #: ${reportData.hubspotTicketNumber || 'N/A'}`;
 
         const uploadResult = await hubspot.uploadFileAndAttachToRecord(
           reportData.hubspotCompanyId,
-          htmlReport,
+          pdfBuffer.toString('base64'),
           fileName,
           noteText,
           {
             recordType: 'companies',
             folderPath: '/service-reports',
             notePrefix: '[Service Portal]',
-            isBase64: false
+            isBase64: true
           }
         );
 
@@ -4909,7 +4825,7 @@ app.post('/api/service-reports', authenticateToken, requireServiceAccess, async 
         newReport.hubspotNoteId = uploadResult.noteId;
         await db.set('service_reports', serviceReports);
 
-        console.log(`✅ Service report uploaded to HubSpot for company ${reportData.hubspotCompanyId}`);
+        console.log(`✅ Service report PDF uploaded to HubSpot for company ${reportData.hubspotCompanyId}`);
 
         // Create HubSpot ticket with service report attached (for ALL service types)
         try {
@@ -4918,9 +4834,9 @@ app.post('/api/service-reports', authenticateToken, requireServiceAccess, async 
               subject: `Service Report: ${reportData.clientFacilityName} - ${reportData.serviceType}`,
               content: `Service Report Submitted\n\nClient: ${reportData.clientFacilityName}\nService Type: ${reportData.serviceType}\nTechnician: ${reportData.serviceProviderName || req.user.name}\nDate: ${reportDate}\n\nDescription: ${reportData.descriptionOfWork || reportData.validationResults || 'See attached report'}`,
               priority: 'LOW',
-              isBase64: false
+              isBase64: true
             },
-            htmlReport,
+            pdfBuffer.toString('base64'),
             fileName,
             reportData.hubspotCompanyId
           );
@@ -4942,25 +4858,25 @@ app.post('/api/service-reports', authenticateToken, requireServiceAccess, async 
     if (reportData.hubspotDealId && hubspot.isValidRecordId(reportData.hubspotDealId)) {
       try {
         const reportDate = new Date(reportData.serviceCompletionDate || newReport.createdAt).toLocaleDateString();
-        const fileName = `Service_Report_${reportData.clientFacilityName.replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate.replace(/\//g, '-')}.html`;
+        const fileName = `Service_Report_${reportData.clientFacilityName.replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate.replace(/\//g, '-')}.pdf`;
         const noteText = `Service Report Submitted\n\nClient: ${reportData.clientFacilityName}\nService Type: ${reportData.serviceType}\nTechnician: ${reportData.serviceProviderName || req.user.name}`;
 
-        // Generate HTML report if not already done
-        const htmlReportForDeal = newReport.htmlReport || `<!DOCTYPE html><html><body><h1>Service Report</h1><p>See company record for full report.</p></body></html>`;
+        // Generate PDF for deal upload
+        const pdfBufferForDeal = await pdfGenerator.generateServiceReportPDF({ ...reportData, id: newReport.id }, req.user.name);
 
         await hubspot.uploadFileAndAttachToRecord(
           reportData.hubspotDealId,
-          htmlReportForDeal,
+          pdfBufferForDeal.toString('base64'),
           fileName,
           noteText,
           {
             recordType: 'deals',
             folderPath: '/service-reports',
             notePrefix: '[Service Portal]',
-            isBase64: false
+            isBase64: true
           }
         );
-        console.log(`✅ Service report uploaded to HubSpot deal ${reportData.hubspotDealId}`);
+        console.log(`✅ Service report PDF uploaded to HubSpot deal ${reportData.hubspotDealId}`);
       } catch (dealError) {
         console.error('HubSpot deal upload error (non-blocking):', dealError.message);
       }
@@ -5165,54 +5081,69 @@ app.post('/api/validation-reports', authenticateToken, requireServiceAccess, asy
       { clientName: reportData.clientFacilityName, projectId: reportData.projectId }
     );
 
-    // Upload to HubSpot if company ID is available
+    // Upload PDF to HubSpot if company ID is available
     if (reportData.hubspotCompanyId && hubspot.isValidRecordId(reportData.hubspotCompanyId)) {
       try {
         const startDate = new Date(reportData.startDate).toLocaleDateString();
         const endDate = new Date(reportData.endDate).toLocaleDateString();
 
-        // Build validation summary for HubSpot
-        let validationSummary = `VALIDATION REPORT - ${reportData.clientFacilityName}\n`;
-        validationSummary += `Date Range: ${startDate} - ${endDate}\n`;
-        validationSummary += `Days On-Site: ${reportData.daysOnSite || 'N/A'}\n`;
-        validationSummary += `Service Provider: ${reportData.serviceProviderName}\n\n`;
+        // Generate PDF validation report
+        console.log(`📄 Generating PDF for validation report: ${reportData.clientFacilityName}`);
+        const pdfBuffer = await pdfGenerator.generateValidationReportPDF({ ...reportData, id: newReport.id }, req.user.name);
 
-        if (reportData.analyzersValidated && reportData.analyzersValidated.length > 0) {
-          validationSummary += `ANALYZERS VALIDATED:\n`;
-          reportData.analyzersValidated.forEach((analyzer, idx) => {
-            validationSummary += `${idx + 1}. ${analyzer.model} (SN: ${analyzer.serialNumber})\n`;
-            validationSummary += `   Status: ${analyzer.validationStatus}\n`;
-          });
-          validationSummary += `\n`;
-        }
+        const fileName = `Validation_Report_${reportData.clientFacilityName.replace(/[^a-zA-Z0-9]/g, '_')}_${startDate.replace(/\//g, '-')}_to_${endDate.replace(/\//g, '-')}.pdf`;
+        const noteText = `Validation Report Submitted\n\nClient: ${reportData.clientFacilityName}\nDate Range: ${startDate} - ${endDate}\nDays On-Site: ${reportData.daysOnSite || 'N/A'}\nService Provider: ${reportData.serviceProviderName || req.user.name}`;
 
-        if (reportData.trainingProvided) {
-          validationSummary += `TRAINING PROVIDED:\n${reportData.trainingProvided}\n\n`;
-        }
-
-        if (reportData.validationResults) {
-          validationSummary += `VALIDATION RESULTS:\n${reportData.validationResults}\n\n`;
-        }
-
-        if (reportData.outstandingItems) {
-          validationSummary += `OUTSTANDING ITEMS:\n${reportData.outstandingItems}\n\n`;
-        }
-
-        if (reportData.nextSteps) {
-          validationSummary += `NEXT STEPS:\n${reportData.nextSteps}\n`;
-        }
-
-        // Create note on company
-        await hubspot.createNote(
+        const uploadResult = await hubspot.uploadFileAndAttachToRecord(
           reportData.hubspotCompanyId,
-          'company',
-          `Validation Report Completed - ${startDate} to ${endDate}`,
-          validationSummary
+          pdfBuffer.toString('base64'),
+          fileName,
+          noteText,
+          {
+            recordType: 'companies',
+            folderPath: '/validation-reports',
+            notePrefix: '[Service Portal]',
+            isBase64: true
+          }
         );
 
-        console.log(`✅ Validation report uploaded to HubSpot for company ${reportData.hubspotCompanyId}`);
+        // Store HubSpot reference in the report
+        newReport.hubspotFileId = uploadResult.fileId;
+        newReport.hubspotNoteId = uploadResult.noteId;
+        await db.set('validation_reports', validationReports);
+
+        console.log(`✅ Validation report PDF uploaded to HubSpot for company ${reportData.hubspotCompanyId}`);
       } catch (hubspotError) {
         console.error('HubSpot upload error (non-blocking):', hubspotError.message);
+      }
+    }
+
+    // Also upload PDF to Deal record if hubspotDealId is available
+    if (reportData.hubspotDealId && hubspot.isValidRecordId(reportData.hubspotDealId)) {
+      try {
+        const startDate = new Date(reportData.startDate).toLocaleDateString();
+        const endDate = new Date(reportData.endDate).toLocaleDateString();
+
+        // Generate PDF for deal upload
+        const pdfBufferForDeal = await pdfGenerator.generateValidationReportPDF({ ...reportData, id: newReport.id }, req.user.name);
+        const fileName = `Validation_Report_${reportData.clientFacilityName.replace(/[^a-zA-Z0-9]/g, '_')}_${startDate.replace(/\//g, '-')}_to_${endDate.replace(/\//g, '-')}.pdf`;
+        const noteText = `Validation Report Submitted\n\nClient: ${reportData.clientFacilityName}\nDate Range: ${startDate} - ${endDate}\nService Provider: ${reportData.serviceProviderName || req.user.name}`;
+
+        await hubspot.uploadFileAndAttachToRecord(
+          reportData.hubspotDealId,
+          pdfBufferForDeal.toString('base64'),
+          fileName,
+          noteText,
+          {
+            recordType: 'deals',
+            folderPath: '/validation-reports',
+            notePrefix: '[Service Portal]',
+            isBase64: true
+          }
+        );
+        console.log(`✅ Validation report PDF uploaded to HubSpot deal ${reportData.hubspotDealId}`);
+      } catch (dealError) {
+        console.error('HubSpot deal upload error (non-blocking):', dealError.message);
       }
     }
 
@@ -5327,6 +5258,11 @@ app.get('/service-portal', (req, res) => {
 // Knowledge Hub route
 app.get('/knowledge', (req, res) => {
   res.sendFile(__dirname + '/public/knowledge.html');
+});
+
+// Link Directory route
+app.get('/directory', (req, res) => {
+  res.sendFile(__dirname + '/public/link-directory.html');
 });
 
 // Changelog route
@@ -5445,6 +5381,259 @@ app.delete('/api/changelog/:id', authenticateToken, requireAdmin, async (req, re
     await db.set('changelog', changelog);
     res.json({ message: 'Changelog deleted' });
   } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Generate changelog from git commits (admin only)
+app.post('/api/changelog/generate', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { version, sinceTag } = req.body;
+
+    console.log('📋 Generating changelog from git commits...');
+
+    // Generate changelog entry from commits
+    const entry = await changelogGenerator.generateChangelogFromCommits(version, sinceTag);
+
+    if (!entry) {
+      return res.status(400).json({ error: 'No commits found to generate changelog' });
+    }
+
+    // Get existing changelog
+    const changelog = (await db.get('changelog')) || [];
+
+    // Mark all existing as not current
+    changelog.forEach(e => e.isCurrent = false);
+
+    // Add metadata
+    entry.createdBy = req.user.email;
+    entry.generatedFromGit = true;
+
+    // Add new entry at the beginning
+    changelog.unshift(entry);
+    await db.set('changelog', changelog);
+
+    // Log activity
+    await logActivity(
+      req.user.id,
+      req.user.name,
+      'changelog_generated',
+      'changelog',
+      entry.id,
+      { version: entry.version, sectionsCount: entry.sections.length }
+    );
+
+    res.json({
+      message: 'Changelog generated successfully',
+      entry
+    });
+  } catch (error) {
+    console.error('Changelog generation error:', error);
+    res.status(500).json({ error: 'Failed to generate changelog: ' + error.message });
+  }
+});
+
+// Preview changelog from git commits (admin only, doesn't save)
+app.get('/api/changelog/preview', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { sinceTag, maxCommits } = req.query;
+
+    // Get recent commits
+    const commits = changelogGenerator.getRecentCommits(sinceTag, parseInt(maxCommits) || 50);
+
+    if (commits.length === 0) {
+      return res.json({ commits: [], sections: [] });
+    }
+
+    // Group by category
+    const sections = changelogGenerator.groupCommitsByCategory(commits);
+
+    res.json({
+      commitCount: commits.length,
+      commits: commits.slice(0, 20).map(c => ({
+        hash: c.hash.substring(0, 7),
+        message: c.message,
+        date: c.date
+      })),
+      sections: sections.map(s => ({
+        label: s.label,
+        color: s.color,
+        itemCount: s.items.length,
+        items: s.items.map(i => i.message)
+      }))
+    });
+  } catch (error) {
+    console.error('Changelog preview error:', error);
+    res.status(500).json({ error: 'Failed to preview changelog' });
+  }
+});
+
+// ============== PASSWORD MANAGEMENT ==============
+
+// Generate temp password based on user type
+function generateTempPassword(user) {
+  // For clients: ClientName2026!
+  // For users: FirstLastName2026!
+  if (user.role === 'client') {
+    const clientName = (user.practiceName || user.name || 'Client').replace(/[^a-zA-Z0-9]/g, '');
+    return `${clientName}2026!`;
+  } else {
+    const nameParts = (user.name || 'User').split(' ');
+    const firstName = (nameParts[0] || '').replace(/[^a-zA-Z0-9]/g, '');
+    const lastName = (nameParts[nameParts.length - 1] || '').replace(/[^a-zA-Z0-9]/g, '');
+    return `${firstName}${lastName}2026!`;
+  }
+}
+
+// Bulk password reset for all users (admin only)
+app.post('/api/admin/bulk-password-reset', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { userType, specificUserIds } = req.body; // userType: 'all' | 'clients' | 'users' | 'specific'
+
+    const users = await getUsers();
+    const results = {
+      total: 0,
+      reset: [],
+      skipped: []
+    };
+
+    for (let i = 0; i < users.length; i++) {
+      const user = users[i];
+
+      // Skip admin users from bulk reset
+      if (user.role === 'admin') {
+        results.skipped.push({ email: user.email, reason: 'Admin accounts excluded' });
+        continue;
+      }
+
+      // Filter by userType
+      if (userType === 'clients' && user.role !== 'client') {
+        continue;
+      }
+      if (userType === 'users' && user.role === 'client') {
+        continue;
+      }
+      if (userType === 'specific' && (!specificUserIds || !specificUserIds.includes(user.id))) {
+        continue;
+      }
+
+      // Generate temp password
+      const tempPassword = generateTempPassword(user);
+      const hashedPassword = await bcrypt.hash(tempPassword, 10);
+
+      // Update user
+      users[i].password = hashedPassword;
+      users[i].requirePasswordChange = true;
+      users[i].lastPasswordReset = new Date().toISOString();
+
+      results.reset.push({
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        tempPassword: tempPassword // Include for admin reference
+      });
+      results.total++;
+    }
+
+    await db.set('users', users);
+
+    // Log activity
+    await logActivity(
+      req.user.id,
+      req.user.name,
+      'bulk_password_reset',
+      'users',
+      null,
+      { userType, resetCount: results.total }
+    );
+
+    res.json({
+      message: `Successfully reset passwords for ${results.total} users`,
+      results
+    });
+  } catch (error) {
+    console.error('Bulk password reset error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Reset single user password (admin only)
+app.post('/api/admin/reset-user-password/:userId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { customPassword } = req.body;
+
+    const users = await getUsers();
+    const userIndex = users.findIndex(u => u.id === userId);
+
+    if (userIndex === -1) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const user = users[userIndex];
+
+    // Use custom password or generate temp password
+    const newPassword = customPassword || generateTempPassword(user);
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    users[userIndex].password = hashedPassword;
+    users[userIndex].requirePasswordChange = !customPassword; // Only require change for temp passwords
+    users[userIndex].lastPasswordReset = new Date().toISOString();
+
+    await db.set('users', users);
+
+    res.json({
+      message: 'Password reset successfully',
+      tempPassword: customPassword ? undefined : newPassword,
+      requirePasswordChange: users[userIndex].requirePasswordChange
+    });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Change password (authenticated user)
+app.post('/api/auth/change-password', authenticateToken, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!newPassword || newPassword.length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters' });
+    }
+
+    const users = await getUsers();
+    const userIndex = users.findIndex(u => u.id === req.user.id);
+
+    if (userIndex === -1) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const user = users[userIndex];
+
+    // If not a forced password change, verify current password
+    if (!user.requirePasswordChange) {
+      if (!currentPassword) {
+        return res.status(400).json({ error: 'Current password is required' });
+      }
+      const passwordMatch = await bcrypt.compare(currentPassword, user.password);
+      if (!passwordMatch) {
+        return res.status(400).json({ error: 'Current password is incorrect' });
+      }
+    }
+
+    // Hash and save new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    users[userIndex].password = hashedPassword;
+    users[userIndex].requirePasswordChange = false;
+    users[userIndex].lastPasswordChange = new Date().toISOString();
+
+    await db.set('users', users);
+
+    res.json({ message: 'Password changed successfully' });
+  } catch (error) {
+    console.error('Change password error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
