@@ -228,8 +228,9 @@
         });
       }
 
-      // Implementations App - admins, users with hasImplementationsAccess, or users with assigned projects
-      if (isAdmin || user.hasImplementationsAccess || (user.assignedProjects && user.assignedProjects.length > 0)) {
+      // Implementations App - admins, users with hasImplementationsAccess, or team members with assigned projects
+      // Note: Clients are excluded even if they have assigned projects (those are for their portal timeline only)
+      if (!isClient && (isAdmin || user.hasImplementationsAccess || (user.assignedProjects && user.assignedProjects.length > 0))) {
         availablePortals.push({
           id: 'implementations',
           name: 'Launch',
