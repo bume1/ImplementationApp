@@ -687,7 +687,8 @@
                 <p className="text-gray-600 mt-1">Manage all users, roles, and portal access</p>
               </div>
               <button onClick={() => { setShowForm(true); setEditingUser(null); setFormData(defaultFormData); }}
-                className="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-accent flex items-center gap-2">
+                className="px-4 py-2 rounded-lg font-medium flex items-center gap-2 shadow-sm hover:shadow-md transition-all"
+                style={{backgroundColor: '#045E9F', color: 'white'}}>
                 {Icons.plus} Add User
               </button>
             </div>
@@ -869,16 +870,10 @@
                     <div className="border-t pt-4">
                       <h3 className="font-medium text-gray-800 mb-3">Client Settings</h3>
                       <div className="grid md:grid-cols-2 gap-4">
-                        <div>
+                        <div className="md:col-span-2">
                           <label className="block text-sm font-medium text-gray-700 mb-1">Practice Name *</label>
                           <input type="text" value={formData.practiceName} onChange={(e) => setFormData({ ...formData, practiceName: e.target.value })}
                             className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" required />
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <input type="checkbox" id="isNewClient" checked={formData.isNewClient}
-                            onChange={(e) => setFormData({ ...formData, isNewClient: e.target.checked })}
-                            className="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary" />
-                          <label htmlFor="isNewClient" className="text-sm font-medium text-gray-700">New Client</label>
                         </div>
                         <div className="md:col-span-2">
                           <label className="block text-sm font-medium text-gray-700 mb-1">Practice Logo</label>
@@ -1944,9 +1939,17 @@
 
     // Main App
     const App = () => {
-      const [token, setToken] = useState(localStorage.getItem('admin_token'));
+      // Check multiple token sources - admin_token or unified_token from Portal Hub
+      const [token, setToken] = useState(() => {
+        return localStorage.getItem('admin_token') || localStorage.getItem('unified_token');
+      });
       const [user, setUser] = useState(() => {
-        try { return JSON.parse(localStorage.getItem('admin_user')); } catch { return null; }
+        try {
+          const userData = localStorage.getItem('admin_user') || localStorage.getItem('unified_user');
+          return userData ? JSON.parse(userData) : null;
+        } catch {
+          return null;
+        }
       });
       const [activePage, setActivePage] = useState('dashboard');
       const [isMobileOpen, setIsMobileOpen] = useState(false);

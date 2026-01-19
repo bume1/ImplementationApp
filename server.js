@@ -5005,6 +5005,11 @@ app.get('/service-portal', (req, res) => {
   res.sendFile(__dirname + '/public/service-portal.html');
 });
 
+// Knowledge Hub route
+app.get('/knowledge', (req, res) => {
+  res.sendFile(__dirname + '/public/knowledge.html');
+});
+
 // ============== ADMIN HUB ROUTES ==============
 
 // Admin hub HTML route

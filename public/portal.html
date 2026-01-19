@@ -422,16 +422,17 @@
     const HomePage = ({ data, announcements, onNavigate }) => {
       return (
         <div className="space-y-6">
-          <div className="bg-gradient-to-r from-primary to-accent text-white p-6 rounded-xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-2xl font-bold">Welcome to Your Portal</h1>
-                <p className="mt-2 opacity-90">
-                  {data?.user?.practiceName || 'Your Practice'}
-                </p>
+          {/* Dynamic Banner Header */}
+          <div className="relative rounded-2xl overflow-hidden shadow-lg" style={{minHeight: '160px'}}>
+            <div className="absolute inset-0 bg-cover bg-center" style={{backgroundImage: 'url(/banners/banner-client.jpg)', backgroundColor: '#00205A'}}></div>
+            <div className="absolute inset-0" style={{background: 'linear-gradient(to right, rgba(0,32,90,0.95) 0%, rgba(4,94,159,0.8) 50%, rgba(4,94,159,0.4) 100%)'}}></div>
+            <div className="relative p-6 md:p-8 flex items-center justify-between min-h-[160px]">
+              <div className="text-white">
+                <h1 className="text-2xl md:text-3xl font-bold drop-shadow-sm">Welcome to Your Portal</h1>
+                <p className="mt-2 text-white/90">{data?.user?.practiceName || 'Your Practice'}</p>
               </div>
               {data?.user?.logo && (
-                <img src={data.user.logo} alt={data?.user?.practiceName || 'Practice Logo'} className="h-16 max-w-[200px] object-contain bg-white/20 rounded-lg p-2" />
+                <img src={data.user.logo} alt={data?.user?.practiceName || 'Practice Logo'} className="h-16 md:h-20 max-w-[200px] object-contain bg-white/90 rounded-xl p-3 shadow-lg" />
               )}
             </div>
           </div>
@@ -3071,10 +3072,17 @@
     };
     
     const App = () => {
-      const [token, setToken] = useState(localStorage.getItem('portal_token'));
+      // Check multiple token sources - portal_token, unified_token, or admin_token from Portal Hub
+      const [token, setToken] = useState(() => {
+        return localStorage.getItem('portal_token') || localStorage.getItem('unified_token') || localStorage.getItem('admin_token');
+      });
       const [user, setUser] = useState(() => {
-        const saved = localStorage.getItem('portal_user');
-        return saved ? JSON.parse(saved) : null;
+        try {
+          const userData = localStorage.getItem('portal_user') || localStorage.getItem('unified_user') || localStorage.getItem('admin_user');
+          return userData ? JSON.parse(userData) : null;
+        } catch {
+          return null;
+        }
       });
       const slug = getSlugFromUrl();
       
