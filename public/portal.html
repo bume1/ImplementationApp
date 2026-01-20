@@ -227,7 +227,8 @@
       download: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>,
       plus: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"/></svg>,
       refresh: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>,
-      check: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>
+      check: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>,
+      trash: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
     };
     
     // Additional icons for admin portal
@@ -1729,19 +1730,23 @@
     };
 
     // Client Submission History Page - Spreadsheet View
-    const SubmissionHistoryPage = ({ token, slug, isAdmin, onNavigate }) => {
+    const SubmissionHistoryPage = ({ token, slug, isAdmin, onNavigate, currentUser }) => {
       const [submissions, setSubmissions] = useState([]);
       const [loading, setLoading] = useState(true);
       const [selectedClient, setSelectedClient] = useState('');
       const [clientList, setClientList] = useState([]);
       const [expandedRows, setExpandedRows] = useState({});
-      
+      const [deleting, setDeleting] = useState(false);
+
+      // Check if user can delete (Super Admin or Manager only)
+      const canDelete = currentUser?.role === 'admin' || currentUser?.isManager;
+
       // Filters
       const [dateFrom, setDateFrom] = useState('');
       const [dateTo, setDateTo] = useState('');
       const [categoryFilter, setCategoryFilter] = useState('');
       const [searchTerm, setSearchTerm] = useState('');
-      
+
       // Flatten all submissions into item-level rows
       const [itemRows, setItemRows] = useState([]);
       const [selectedRows, setSelectedRows] = useState(new Set());
@@ -1880,6 +1885,59 @@
         setCategoryFilter('');
         setSearchTerm('');
         setSelectedRows(new Set());
+      };
+
+      const handleDeleteSelected = async () => {
+        if (!canDelete) return;
+
+        // Get unique submission IDs from selected rows
+        const selectedSubmissionIds = [...new Set(
+          filteredRows
+            .filter((_, i) => selectedRows.has(i))
+            .map(row => row.submissionId)
+        )];
+
+        if (selectedSubmissionIds.length === 0) {
+          alert('No submissions selected');
+          return;
+        }
+
+        const confirmMessage = selectedRows.size === filteredRows.length
+          ? `Are you sure you want to delete ALL ${selectedSubmissionIds.length} submission(s)? This action cannot be undone.`
+          : `Are you sure you want to delete ${selectedSubmissionIds.length} submission(s) containing ${selectedRows.size} row(s)? This action cannot be undone.`;
+
+        if (!confirm(confirmMessage)) return;
+
+        setDeleting(true);
+        try {
+          const response = await fetch(`${API_URL}/api/inventory/submissions`, {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              submissionIds: selectedSubmissionIds,
+              slug: isAdmin ? selectedClient : slug
+            })
+          });
+
+          const data = await response.json();
+
+          if (response.ok) {
+            alert(`Successfully deleted ${data.deletedCount} submission(s)`);
+            setSelectedRows(new Set());
+            // Reload submissions
+            loadSubmissions(isAdmin ? selectedClient : slug);
+          } else {
+            alert(data.error || 'Failed to delete submissions');
+          }
+        } catch (error) {
+          console.error('Delete error:', error);
+          alert('Failed to delete submissions');
+        } finally {
+          setDeleting(false);
+        }
       };
 
       if (loading) {
@@ -2031,7 +2089,7 @@
                 </div>
               </div>
 
-              {/* Download Options */}
+              {/* Download & Delete Options */}
               <div className="bg-white p-4 rounded-xl shadow-sm flex flex-wrap items-center justify-between gap-4">
                 <div className="text-sm text-gray-600">
                   {selectedRows.size > 0 ? (
@@ -2041,6 +2099,19 @@
                   )}
                 </div>
                 <div className="flex gap-2">
+                  {canDelete && selectedRows.size > 0 && (
+                    <button
+                      onClick={handleDeleteSelected}
+                      disabled={deleting}
+                      className="bg-red-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-red-700 transition-colors flex items-center gap-2 text-sm disabled:opacity-50"
+                    >
+                      {deleting ? (
+                        <><div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div> Deleting...</>
+                      ) : (
+                        <>{Icons.trash} Delete Selected ({selectedRows.size})</>
+                      )}
+                    </button>
+                  )}
                   <button
                     onClick={handleDownloadFiltered}
                     className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-accent transition-colors flex items-center gap-2 text-sm"
@@ -3741,7 +3812,7 @@
           if (activePage === 'admin_clients') return <AdminClientsPage token={token} />;
           // Admin views aggregate inventory reports across all clients
           if (activePage === 'reports') return <AdminReportsPage token={token} onNavigate={navigateTo} />;
-          if (activePage === 'submission_history') return <SubmissionHistoryPage token={token} slug={slug} isAdmin={true} onNavigate={navigateTo} />;
+          if (activePage === 'submission_history') return <SubmissionHistoryPage token={token} slug={slug} isAdmin={true} onNavigate={navigateTo} currentUser={user} />;
         }
 
         // Client pages
@@ -3749,7 +3820,7 @@
         if (activePage === 'milestones') return <MilestonesPage data={data} onNavigate={navigateTo} />;
         if (activePage === 'inventory') return <InventoryPage token={token} slug={slug} />;
         if (activePage === 'reports') return <ReportsPage token={token} slug={slug} onNavigate={navigateTo} />;
-        if (activePage === 'submission_history') return <SubmissionHistoryPage token={token} slug={slug} isAdmin={false} onNavigate={navigateTo} />;
+        if (activePage === 'submission_history') return <SubmissionHistoryPage token={token} slug={slug} isAdmin={false} onNavigate={navigateTo} currentUser={user} />;
         if (activePage === 'support') return <SupportPage settings={settings} token={token} userData={data?.user} activeTab={activeSubTab} onTabChange={(tab) => navigateTo('support', tab)} />;
         if (activePage === 'files') return <FilesPage settings={settings} documents={documents} token={token} projects={data?.projects || []} userData={data?.user} />;
         

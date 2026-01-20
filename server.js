@@ -3354,6 +3354,49 @@ app.post('/api/inventory/submit', authenticateToken, async (req, res) => {
   }
 });
 
+// Delete inventory submissions (Super Admin & Manager only)
+app.delete('/api/inventory/submissions', authenticateToken, async (req, res) => {
+  try {
+    // Only allow Super Admins and Managers
+    if (req.user.role !== 'admin' && !req.user.isManager) {
+      return res.status(403).json({ error: 'Access denied. Only Super Admins and Managers can delete submissions.' });
+    }
+
+    const { submissionIds, slug } = req.body;
+
+    if (!submissionIds || !Array.isArray(submissionIds) || submissionIds.length === 0) {
+      return res.status(400).json({ error: 'submissionIds array is required' });
+    }
+
+    const allSubmissions = (await db.get('inventory_submissions')) || [];
+    const idsToDelete = new Set(submissionIds);
+
+    // Filter out submissions that match the IDs and optionally the slug
+    const remainingSubmissions = allSubmissions.filter(s => {
+      if (slug && s.slug !== slug) return true; // Keep submissions from other clients
+      return !idsToDelete.has(s.id);
+    });
+
+    const deletedCount = allSubmissions.length - remainingSubmissions.length;
+
+    await db.set('inventory_submissions', remainingSubmissions);
+
+    await logActivity(
+      req.user.id || null,
+      req.user.name || req.user.email,
+      'inventory_submissions_deleted',
+      'inventory',
+      null,
+      { slug, deletedCount, submissionIds }
+    );
+
+    res.json({ success: true, deletedCount });
+  } catch (error) {
+    console.error('Delete submissions error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.get('/api/inventory/report/:slug', authenticateToken, async (req, res) => {
   try {
     const { slug } = req.params;
@@ -3525,7 +3568,8 @@ app.get('/api/inventory/report/:slug', authenticateToken, async (req, res) => {
 });
 
 // ============== ADMIN AGGREGATE INVENTORY REPORT ==============
-app.get('/api/inventory/report-all', authenticateToken, requireAdmin, async (req, res) => {
+// Allow Super Admins, Managers, and Client Portal Admins to access
+app.get('/api/inventory/report-all', authenticateToken, requireClientPortalAdmin, async (req, res) => {
   try {
     const allSubmissions = (await db.get('inventory_submissions')) || [];
     const users = await getUsers();
@@ -5407,6 +5451,56 @@ app.delete('/api/service-reports/:id', authenticateToken, requireAdmin, async (r
     res.json({ message: 'Report deleted successfully' });
   } catch (error) {
     console.error('Delete service report error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Batch delete service reports (Super Admin can delete any, Service Technicians can delete their own)
+app.delete('/api/service-reports', authenticateToken, async (req, res) => {
+  try {
+    const { reportIds } = req.body;
+    const isSuperAdmin = req.user.role === 'admin';
+    const isServiceTechnician = req.user.role === 'vendor' || req.user.hasServicePortalAccess;
+
+    // Only Super Admins and Service Technicians can delete
+    if (!isSuperAdmin && !isServiceTechnician) {
+      return res.status(403).json({ error: 'Access denied. Only Super Admins and Service Technicians can delete reports.' });
+    }
+
+    if (!reportIds || !Array.isArray(reportIds) || reportIds.length === 0) {
+      return res.status(400).json({ error: 'reportIds array is required' });
+    }
+
+    let serviceReports = (await db.get('service_reports')) || [];
+    const idsToDelete = new Set(reportIds);
+    const initialCount = serviceReports.length;
+
+    // For service technicians, only allow deleting their own reports
+    if (!isSuperAdmin) {
+      const reportsToDelete = serviceReports.filter(r => idsToDelete.has(r.id));
+      const unauthorizedReports = reportsToDelete.filter(r => r.technicianId !== req.user.id);
+      if (unauthorizedReports.length > 0) {
+        return res.status(403).json({ error: 'You can only delete your own reports.' });
+      }
+    }
+
+    serviceReports = serviceReports.filter(r => !idsToDelete.has(r.id));
+    const deletedCount = initialCount - serviceReports.length;
+
+    await db.set('service_reports', serviceReports);
+
+    await logActivity(
+      req.user.id || null,
+      req.user.name || req.user.email,
+      'service_reports_deleted',
+      'service_reports',
+      null,
+      { deletedCount, reportIds }
+    );
+
+    res.json({ success: true, deletedCount });
+  } catch (error) {
+    console.error('Batch delete service reports error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });

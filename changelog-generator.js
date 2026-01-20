@@ -218,6 +218,78 @@ async function updateChangelogMd(version, date, sections) {
   return false;
 }
 
+// Update README-active.md Version History section
+async function updateReadmeVersion(version, date, sections) {
+  const readmePath = path.join(__dirname, 'README-active.md');
+
+  try {
+    let content = await fs.readFile(readmePath, 'utf-8');
+
+    // Extract version number (remove "Version " prefix if present)
+    const versionNum = version.replace(/^Version\s+/i, '');
+    const dateStr = date || new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+    // Generate highlights from sections (top 3-5 items)
+    const highlights = [];
+    sections.forEach(section => {
+      section.items.slice(0, 2).forEach(item => {
+        if (highlights.length < 6) {
+          highlights.push(item.message || item);
+        }
+      });
+    });
+
+    // Build the new Version History section
+    const newVersionSection = `## Version History
+
+### Current Version: ${versionNum} (${dateStr})
+
+#### Highlights
+${highlights.map(h => `- ${h}`).join('\n')}
+
+See [CHANGELOG](/changelog) for complete version history.
+
+### Previous Versions`;
+
+    // Replace the Version History section using regex
+    // Match from "## Version History" to just before the next major section or end
+    const versionHistoryRegex = /## Version History[\s\S]*?### Previous Versions/;
+
+    if (versionHistoryRegex.test(content)) {
+      content = content.replace(versionHistoryRegex, newVersionSection);
+      await fs.writeFile(readmePath, content, 'utf-8');
+      console.log(`✅ Updated README-active.md with version ${versionNum}`);
+      return true;
+    } else {
+      console.log('⚠️ Could not find Version History section in README-active.md');
+      return false;
+    }
+  } catch (error) {
+    console.error('Error updating README-active.md:', error.message);
+    return false;
+  }
+}
+
+// Sync all changelog files (changelog.md, changelog.html static data, and README-active.md)
+async function syncAllChangelogFiles(version, date, sections) {
+  const results = {
+    changelogMd: false,
+    readme: false
+  };
+
+  // Update changelog.md
+  results.changelogMd = await updateChangelogMd(version, date, sections);
+
+  // Update README-active.md
+  results.readme = await updateReadmeVersion(version, date, sections);
+
+  console.log('\n📊 Sync Results:');
+  console.log(`   changelog.md: ${results.changelogMd ? '✅' : '❌'}`);
+  console.log(`   README-active.md: ${results.readme ? '✅' : '❌'}`);
+
+  return results;
+}
+
 // Generate changelog entry for database storage
 function generateChangelogEntry(version, sections) {
   return {
@@ -277,8 +349,8 @@ async function generateChangelogFromCommits(version = null, sinceTag = null) {
   // Generate date string
   const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
-  // Update markdown file
-  await updateChangelogMd(version, dateStr, sections);
+  // Sync all changelog files (changelog.md and README-active.md)
+  await syncAllChangelogFiles(version, dateStr, sections);
 
   // Return entry for database
   return generateChangelogEntry(version, sections);
@@ -290,7 +362,9 @@ module.exports = {
   parseCommitMessage,
   groupCommitsByCategory,
   getRecentCommits,
-  generateChangelogEntry
+  generateChangelogEntry,
+  updateReadmeVersion,
+  syncAllChangelogFiles
 };
 
 // CLI usage
