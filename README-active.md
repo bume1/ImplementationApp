@@ -161,6 +161,7 @@ Version history and release notes for the application.
 - **Password reset system** with admin approval workflow
 - **Bulk password reset** with first-login change prompt
 - **Forgot password** request system
+- **Forced password change**: New users and password-reset users must create their own password on first login
 
 ### Project & Task Management
 
@@ -474,20 +475,21 @@ Configure via Admin Hub > Settings > Client Portal Domain.
 
 ## Version History
 
-### Current Version: 2.7.1 (January 2026)
+### Current Version: 2.7.2 (January 2026)
 
 #### Highlights
+- **Security**: New users created by Super Admin now require password change on first login
+- **Security**: Manual password resets force users to create their own password
+- **Security**: Consistent password change enforcement across all user creation and reset flows
 - Manager permissions to edit client details in Client Portal Admin
 - Client details sync between Client Portal Admin and Admin Hub User Management
-- Replace Ticket History with Service History in Customer Support Center
-- Hide Live Chat tab from Customer Support Center
 - Enhanced Client Users page with edit functionality for Managers
-- Automatic README version sync with changelog updates
 
 See [CHANGELOG](/changelog) for complete version history.
 
 ### Previous Versions
 
+- **2.7.1**: Manager permissions for client editing, Client Portal Admin enhancements
 - **2.7.0**: Automated changelog generation, bulk password reset, PDF generation, Knowledge Hub
 - **2.5.0**: UI Modernization, Permission System Overhaul, Unified Login Portal
 - **2.4.0**: Service Portal Updates, Validation Reports
