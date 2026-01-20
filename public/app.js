@@ -1243,12 +1243,17 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
                 
                 <section>
                   <h3 className="text-lg font-bold text-primary mb-3">Project Phases</h3>
-                  <div className="space-y-2 text-gray-600">
-                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-purple-500 rounded"></div><span><strong>Phase 0:</strong> Contract Signature</span></div>
-                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-blue-500 rounded"></div><span><strong>Phase 1:</strong> Pre-Launch (Kick Off, Data Systems Prep)</span></div>
-                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-green-500 rounded"></div><span><strong>Phase 2:</strong> Implementation Sprints (Soft-Pilot, System Setup)</span></div>
-                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-orange-500 rounded"></div><span><strong>Phase 3:</strong> Go-Live (Validation, Live Operations)</span></div>
-                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-pink-500 rounded"></div><span><strong>Phase 4:</strong> Post-Launch Optimization</span></div>
+                  <div className="space-y-2 text-gray-600 text-sm">
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-blue-500 rounded"></div><span><strong>Phase 1:</strong> Contract & Initial Setup</span></div>
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-indigo-500 rounded"></div><span><strong>Phase 2:</strong> Billing, CLIA & Hiring</span></div>
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-cyan-500 rounded"></div><span><strong>Phase 3:</strong> Tech Infrastructure & LIS Integration</span></div>
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-yellow-500 rounded"></div><span><strong>Phase 4:</strong> Inventory Forecasting & Procurement</span></div>
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-green-500 rounded"></div><span><strong>Phase 5:</strong> Supply Orders & Logistics</span></div>
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-teal-500 rounded"></div><span><strong>Phase 6:</strong> Onboarding & Welcome Calls</span></div>
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-purple-500 rounded"></div><span><strong>Phase 7:</strong> Virtual Soft Pilot & Prep</span></div>
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-orange-500 rounded"></div><span><strong>Phase 8:</strong> Training & Full Validation</span></div>
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-red-500 rounded"></div><span><strong>Phase 9:</strong> Go-Live</span></div>
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-pink-500 rounded"></div><span><strong>Phase 10:</strong> Post-Launch Support & Optimization</span></div>
                   </div>
                 </section>
 
@@ -2353,11 +2358,16 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
 
 // ============== TIMELINE VIEW COMPONENT (Phase/Stage Grouped) ==============
 const phaseNames = {
-  'Phase 0': 'Phase 0: Contract Signature',
-  'Phase 1': 'Phase 1: Pre-Launch',
-  'Phase 2': 'Phase 2: Implementation Sprints',
-  'Phase 3': 'Phase 3: Go-Live',
-  'Phase 4': 'Phase 4: Post-Launch Optimization'
+  'Phase 1': 'Phase 1: Contract & Initial Setup',
+  'Phase 2': 'Phase 2: Billing, CLIA & Hiring',
+  'Phase 3': 'Phase 3: Tech Infrastructure & LIS Integration',
+  'Phase 4': 'Phase 4: Inventory Forecasting & Procurement',
+  'Phase 5': 'Phase 5: Supply Orders & Logistics',
+  'Phase 6': 'Phase 6: Onboarding & Welcome Calls',
+  'Phase 7': 'Phase 7: Virtual Soft Pilot & Prep',
+  'Phase 8': 'Phase 8: Training & Full Validation',
+  'Phase 9': 'Phase 9: Go-Live',
+  'Phase 10': 'Phase 10: Post-Launch Support & Optimization'
 };
 
 const TimelineView = ({ tasks, getPhaseColor, viewMode }) => {
@@ -3948,33 +3958,48 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
 
   const getPhaseColor = (phase) => {
     const colors = {
-      'Phase 0': 'border-purple-500',
       'Phase 1': 'border-blue-500',
-      'Phase 2': 'border-green-500',
-      'Phase 3': 'border-orange-500',
-      'Phase 4': 'border-pink-500'
+      'Phase 2': 'border-indigo-500',
+      'Phase 3': 'border-cyan-500',
+      'Phase 4': 'border-yellow-500',
+      'Phase 5': 'border-green-500',
+      'Phase 6': 'border-teal-500',
+      'Phase 7': 'border-purple-500',
+      'Phase 8': 'border-orange-500',
+      'Phase 9': 'border-red-500',
+      'Phase 10': 'border-pink-500'
     };
     return colors[phase] || 'border-gray-500';
   };
 
   const getPhaseBackground = (phase) => {
     const colors = {
-      'Phase 0': 'bg-purple-500',
       'Phase 1': 'bg-blue-500',
-      'Phase 2': 'bg-green-500',
-      'Phase 3': 'bg-orange-500',
-      'Phase 4': 'bg-pink-500'
+      'Phase 2': 'bg-indigo-500',
+      'Phase 3': 'bg-cyan-500',
+      'Phase 4': 'bg-yellow-500',
+      'Phase 5': 'bg-green-500',
+      'Phase 6': 'bg-teal-500',
+      'Phase 7': 'bg-purple-500',
+      'Phase 8': 'bg-orange-500',
+      'Phase 9': 'bg-red-500',
+      'Phase 10': 'bg-pink-500'
     };
     return colors[phase] || 'bg-gray-500';
   };
 
   const getPhaseGradient = (phase) => {
     const gradients = {
-      'Phase 0': 'bg-gradient-to-r from-purple-600 to-purple-700',
       'Phase 1': 'bg-gradient-to-r from-blue-600 to-blue-700',
-      'Phase 2': 'bg-gradient-to-r from-green-600 to-green-700',
-      'Phase 3': 'bg-gradient-to-r from-orange-600 to-orange-700',
-      'Phase 4': 'bg-gradient-to-r from-pink-600 to-pink-700'
+      'Phase 2': 'bg-gradient-to-r from-indigo-600 to-indigo-700',
+      'Phase 3': 'bg-gradient-to-r from-cyan-600 to-cyan-700',
+      'Phase 4': 'bg-gradient-to-r from-yellow-600 to-yellow-700',
+      'Phase 5': 'bg-gradient-to-r from-green-600 to-green-700',
+      'Phase 6': 'bg-gradient-to-r from-teal-600 to-teal-700',
+      'Phase 7': 'bg-gradient-to-r from-purple-600 to-purple-700',
+      'Phase 8': 'bg-gradient-to-r from-orange-600 to-orange-700',
+      'Phase 9': 'bg-gradient-to-r from-red-600 to-red-700',
+      'Phase 10': 'bg-gradient-to-r from-pink-600 to-pink-700'
     };
     return gradients[phase] || 'bg-gradient-to-r from-gray-600 to-gray-700';
   };
@@ -4620,42 +4645,17 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
         </div>
 
         <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
-          <div className="flex flex-wrap gap-4 text-sm">
-            <button
-              onClick={() => document.getElementById('phase-Phase 0')?.scrollIntoView({ behavior: 'smooth' })}
-              className="flex items-center gap-2 hover:bg-purple-50 px-2 py-1 rounded transition-colors cursor-pointer"
-            >
-              <div className="w-3 h-3 bg-purple-500 rounded"></div>
-              <span>Phase 0: Contract Signature</span>
-            </button>
-            <button
-              onClick={() => document.getElementById('phase-Phase 1')?.scrollIntoView({ behavior: 'smooth' })}
-              className="flex items-center gap-2 hover:bg-blue-50 px-2 py-1 rounded transition-colors cursor-pointer"
-            >
-              <div className="w-3 h-3 bg-blue-500 rounded"></div>
-              <span>Phase 1: Pre-Launch</span>
-            </button>
-            <button
-              onClick={() => document.getElementById('phase-Phase 2')?.scrollIntoView({ behavior: 'smooth' })}
-              className="flex items-center gap-2 hover:bg-green-50 px-2 py-1 rounded transition-colors cursor-pointer"
-            >
-              <div className="w-3 h-3 bg-green-500 rounded"></div>
-              <span>Phase 2: Implementation Sprints</span>
-            </button>
-            <button
-              onClick={() => document.getElementById('phase-Phase 3')?.scrollIntoView({ behavior: 'smooth' })}
-              className="flex items-center gap-2 hover:bg-orange-50 px-2 py-1 rounded transition-colors cursor-pointer"
-            >
-              <div className="w-3 h-3 bg-orange-500 rounded"></div>
-              <span>Phase 3: Go-Live</span>
-            </button>
-            <button
-              onClick={() => document.getElementById('phase-Phase 4')?.scrollIntoView({ behavior: 'smooth' })}
-              className="flex items-center gap-2 hover:bg-pink-50 px-2 py-1 rounded transition-colors cursor-pointer"
-            >
-              <div className="w-3 h-3 bg-pink-500 rounded"></div>
-              <span>Phase 4: Post-Launch Optimization</span>
-            </button>
+          <div className="flex flex-wrap gap-2 text-xs">
+            {PHASE_ORDER.map(phase => (
+              <button
+                key={phase}
+                onClick={() => document.getElementById(`phase-${phase}`)?.scrollIntoView({ behavior: 'smooth' })}
+                className={`flex items-center gap-1 hover:opacity-80 px-2 py-1 rounded transition-colors cursor-pointer ${getPhaseColor(phase).replace('border-', 'bg-').replace('-500', '-100')}`}
+              >
+                <div className={`w-2 h-2 rounded ${getPhaseColor(phase).replace('border-', 'bg-')}`}></div>
+                <span className="whitespace-nowrap">{phaseNames[phase] || phase}</span>
+              </button>
+            ))}
           </div>
         </div>
 
@@ -5564,35 +5564,29 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                     <label className="block text-sm font-medium mb-1">Phase</label>
                     <select
                       value={newTask.phase}
-                      onChange={(e) => setNewTask({...newTask, phase: e.target.value})}
+                      onChange={(e) => setNewTask({...newTask, phase: e.target.value, stage: 'Tasks'})}
                       className="w-full px-3 py-2 border rounded-md"
                     >
-                      <option value="Phase 0">Phase 0: Contract Signature</option>
-                      <option value="Phase 1">Phase 1: Pre-Launch</option>
-                      <option value="Phase 2">Phase 2: Implementation Sprints</option>
-                      <option value="Phase 3">Phase 3: Go-Live</option>
-                      <option value="Phase 4">Phase 4: Post-Launch Optimization</option>
+                      <option value="Phase 1">Phase 1: Contract & Initial Setup</option>
+                      <option value="Phase 2">Phase 2: Billing, CLIA & Hiring</option>
+                      <option value="Phase 3">Phase 3: Tech Infrastructure & LIS</option>
+                      <option value="Phase 4">Phase 4: Inventory Forecasting</option>
+                      <option value="Phase 5">Phase 5: Supply Orders & Logistics</option>
+                      <option value="Phase 6">Phase 6: Onboarding & Welcome Calls</option>
+                      <option value="Phase 7">Phase 7: Virtual Soft Pilot & Prep</option>
+                      <option value="Phase 8">Phase 8: Training & Full Validation</option>
+                      <option value="Phase 9">Phase 9: Go-Live</option>
+                      <option value="Phase 10">Phase 10: Post-Launch Support</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">Stage</label>
-                    <select
-                      value={newTask.stage}
-                      onChange={(e) => setNewTask({...newTask, stage: e.target.value})}
-                      className="w-full px-3 py-2 border rounded-md"
-                    >
-                      <option value="">-- Select Stage --</option>
-                      <option value="Contract Signature">Contract Signature</option>
-                      <option value="Project Kick Off & Stakeholder Alignment">Project Kick Off & Stakeholder Alignment</option>
-                      <option value="Launch Data & Systems Prep">Launch Data & Systems Prep</option>
-                      <option value="Sprint 1: Core System Setups">Sprint 1: Core System Setups</option>
-                      <option value="Sprint 2: Lab & QUA Pilot Prep">Sprint 2: Lab & QUA Pilot Prep</option>
-                      <option value="Sprint 3: Soft-Pilot">Sprint 3: Soft-Pilot</option>
-                      <option value="Training/Validation">Training/Validation</option>
-                      <option value="Go-Live">Go-Live</option>
-                      <option value="KPIs">KPIs</option>
-                      <option value="Monitoring & Customer Support">Monitoring & Customer Support</option>
-                    </select>
+                    <label className="block text-sm font-medium mb-1 text-gray-400">Stage (Auto)</label>
+                    <input
+                      type="text"
+                      value="Tasks"
+                      disabled
+                      className="w-full px-3 py-2 border rounded-md bg-gray-100 text-gray-500"
+                    />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
