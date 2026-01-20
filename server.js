@@ -3350,6 +3350,49 @@ app.post('/api/inventory/submit', authenticateToken, async (req, res) => {
   }
 });
 
+// Delete inventory submissions (Super Admin & Manager only)
+app.delete('/api/inventory/submissions', authenticateToken, async (req, res) => {
+  try {
+    // Only allow Super Admins and Managers
+    if (req.user.role !== 'admin' && !req.user.isManager) {
+      return res.status(403).json({ error: 'Access denied. Only Super Admins and Managers can delete submissions.' });
+    }
+
+    const { submissionIds, slug } = req.body;
+
+    if (!submissionIds || !Array.isArray(submissionIds) || submissionIds.length === 0) {
+      return res.status(400).json({ error: 'submissionIds array is required' });
+    }
+
+    const allSubmissions = (await db.get('inventory_submissions')) || [];
+    const idsToDelete = new Set(submissionIds);
+
+    // Filter out submissions that match the IDs and optionally the slug
+    const remainingSubmissions = allSubmissions.filter(s => {
+      if (slug && s.slug !== slug) return true; // Keep submissions from other clients
+      return !idsToDelete.has(s.id);
+    });
+
+    const deletedCount = allSubmissions.length - remainingSubmissions.length;
+
+    await db.set('inventory_submissions', remainingSubmissions);
+
+    await logActivity(
+      req.user.id || null,
+      req.user.name || req.user.email,
+      'inventory_submissions_deleted',
+      'inventory',
+      null,
+      { slug, deletedCount, submissionIds }
+    );
+
+    res.json({ success: true, deletedCount });
+  } catch (error) {
+    console.error('Delete submissions error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.get('/api/inventory/report/:slug', authenticateToken, async (req, res) => {
   try {
     const { slug } = req.params;
