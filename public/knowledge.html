@@ -607,7 +607,7 @@ If configured, uploaded files are automatically attached to your HubSpot company
         description: 'System architecture, API reference, and developer resources',
         icon: Icons.code,
         color: 'bg-slate-700',
-        adminOnly: true,
+        ownerOnly: true,
         articles: [
           {
             title: 'System Overview',
@@ -942,6 +942,195 @@ Change user password - updates password for authenticated user`
 The application supports custom domains for main application access and client portal URLs (e.g., launch.yourdomain.com/{slug}).`
           }
         ]
+      },
+      'admin-guide': {
+        title: 'Admin Guide',
+        description: 'Key tips, best practices, and advanced features for system administrators',
+        icon: Icons.admin,
+        color: 'bg-rose-600',
+        adminOnly: true,
+        articles: [
+          {
+            title: 'Admin Hub Best Practices',
+            content: `Essential tips for effectively managing the Admin Hub.
+
+**Dashboard Overview:**
+The Admin Hub dashboard is your command center. Use the quick stats section to monitor:
+- Active implementation projects (New Launches count)
+- Pending items requiring attention (Open Tickets)
+
+**Inbox Management Tips:**
+1. Check the inbox at least once daily
+2. Prioritize password reset requests - users are blocked until resolved
+3. Track bug reports for patterns that may indicate system issues
+4. Use feature requests to inform development priorities
+
+**Quick Actions:**
+- Navigate directly to User Management from the dashboard
+- Access system statistics for a high-level overview
+- View the changelog to stay informed about updates
+
+**Best Practice:** Set a daily routine to review the inbox first thing in the morning.`
+          },
+          {
+            title: 'User Management Deep Dive',
+            content: `Advanced user management techniques and strategies.
+
+**User Role Selection Guide:**
+- **Admin**: Reserve for system owners and IT administrators only
+- **Team Member**: Most internal staff - use permission toggles for fine-grained control
+- **Client**: Always assign to a specific practice/client
+- **Vendor**: External service providers - limit to assigned clients only
+
+**Permission Strategy:**
+Think about least-privilege access:
+1. Start with minimal permissions
+2. Add access as needed based on job function
+3. Review permissions quarterly
+
+**Manager Flag:**
+The "Is Manager" toggle gives limited Admin Hub access without full admin privileges. Use for:
+- Team leads who need to view dashboard stats
+- Supervisors who need to manage service portal
+
+**Bulk Operations Tips:**
+1. Use search to filter users first
+2. Select multiple users with checkboxes
+3. Bulk password reset sends emails with temporary passwords
+4. Users will be prompted to change password on first login
+
+**Security Tip:** Always verify email addresses before creating accounts to prevent unauthorized access.`
+          },
+          {
+            title: 'Reporting & Analytics',
+            content: `Understanding and using reports effectively across the system.
+
+**Admin Hub Dashboard Stats:**
+- **New Launches**: Count of active (non-complete) implementation projects
+- **Open Tickets**: Sum of unresolved feedback, bugs, and password reset requests
+
+**Service Portal Reports:**
+Service reports are automatically synced to HubSpot:
+1. PDF generated on submission
+2. Ticket created in HubSpot
+3. Attached to client's company record
+4. Visible in client's Customer Support Center
+
+**Launch App Reports:**
+From the Launch App, you can:
+- Export soft-pilot checklists to Google Drive
+- Generate project status reports
+- View task completion analytics
+
+**Inventory Reports (Client Portal):**
+Monitor client inventory through:
+- Low stock alerts (2 or fewer items)
+- Expiring soon warnings (30 days)
+- Weekly submission compliance
+- CSV export for external analysis
+
+**Pro Tip:** Set up regular report reviews (weekly for inventory, monthly for projects) to catch issues early.`
+          },
+          {
+            title: 'HubSpot Integration Management',
+            content: `Managing the HubSpot CRM integration effectively.
+
+**What Syncs Automatically:**
+1. Service reports create HubSpot tickets
+2. Files uploaded sync to company/deal records
+3. Support tickets from portal appear in HubSpot
+4. Deal pipeline stages can be mapped to project stages
+
+**Troubleshooting Sync Issues:**
+- Check the HUBSPOT_PRIVATE_APP_TOKEN is valid
+- Verify the HubSpot company/deal record exists
+- Review server logs for API errors
+- Test connection using /api/hubspot/test endpoint
+
+**Best Practices:**
+1. Keep HubSpot company records up to date
+2. Use consistent naming conventions
+3. Map project stages to deal stages for accurate pipeline views
+4. Review sync status after major updates
+
+**Important:** Changes made directly in HubSpot may not reflect in the portal. Always make primary changes in the portal.`
+          },
+          {
+            title: 'Troubleshooting Common Issues',
+            content: `Quick solutions for frequently encountered problems.
+
+**User Can't Login:**
+1. Verify email is correct (case-sensitive)
+2. Check if password reset is needed
+3. Confirm user account exists and is active
+4. Clear browser cache/cookies
+
+**Service Portal Issues:**
+1. Ensure user has "Has Service Portal Access" permission
+2. Verify they're using the correct login
+3. Check if they have assigned clients (for vendors)
+
+**Client Portal Issues:**
+1. Confirm client user is assigned to correct practice
+2. Verify the practice slug is correct
+3. Check if the client portal is enabled
+
+**Inventory Not Showing:**
+1. Ensure inventory template exists for the client
+2. Verify client has submitted at least one update
+3. Check browser console for JavaScript errors
+
+**HubSpot Not Syncing:**
+1. Verify HubSpot API token is valid
+2. Check server logs for error messages
+3. Confirm company/deal record exists in HubSpot
+4. Test API connection
+
+**General Tips:**
+- Always check browser console (F12) for JavaScript errors
+- Clear browser cache when experiencing display issues
+- Verify user permissions are correctly assigned
+- Check server logs for API errors`
+          },
+          {
+            title: 'Security & Access Control',
+            content: `Security best practices for system administrators.
+
+**Password Policies:**
+- Minimum 8 characters required
+- Encourage mix of letters, numbers, symbols
+- Force password change on first login for new users
+- Process password reset requests promptly
+
+**Session Management:**
+- JWT tokens expire after 24 hours
+- Users must re-authenticate after token expiry
+- Tokens stored in browser localStorage
+- Logout clears all stored tokens
+
+**Permission Auditing:**
+Regularly review:
+1. Who has Admin access
+2. Which vendors have client access
+3. Team member permission levels
+4. Inactive user accounts
+
+**Security Checklist:**
+- [ ] Review admin accounts quarterly
+- [ ] Audit vendor access monthly
+- [ ] Remove access for departed employees immediately
+- [ ] Monitor for unusual login patterns
+- [ ] Keep environment variables secure
+
+**Emergency Procedures:**
+If you suspect unauthorized access:
+1. Change affected user passwords immediately
+2. Review recent activity in the system
+3. Check HubSpot for unexpected changes
+4. Update JWT_SECRET if token compromise suspected
+5. Notify affected clients if their data was accessed`
+          }
+        ]
       }
     };
 
@@ -950,8 +1139,15 @@ The application supports custom domains for main application access and client p
       const [isOpen, setIsOpen] = useState(false);
       const [openArticle, setOpenArticle] = useState(null);
 
+      // Determine border styling based on access level
+      const getBorderClass = () => {
+        if (guide.ownerOnly) return 'border-amber-200 ring-1 ring-amber-100';
+        if (guide.adminOnly) return 'border-rose-200 ring-1 ring-rose-100';
+        return 'border-gray-100';
+      };
+
       return (
-        <div className={`bg-white rounded-xl shadow-sm border overflow-hidden mb-4 ${guide.adminOnly ? 'border-amber-200 ring-1 ring-amber-100' : 'border-gray-100'}`}>
+        <div className={`bg-white rounded-xl shadow-sm border overflow-hidden mb-4 ${getBorderClass()}`}>
           <button
             onClick={() => setIsOpen(!isOpen)}
             className="w-full p-5 flex items-center justify-between hover:bg-gray-50 transition"
@@ -963,10 +1159,16 @@ The application supports custom domains for main application access and client p
               <div className="text-left">
                 <div className="flex items-center gap-2">
                   <h3 className="text-lg font-semibold text-accent">{guide.title}</h3>
-                  {guide.adminOnly && (
+                  {guide.ownerOnly && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-medium rounded-full">
                       {Icons.lock}
                       Admin Only
+                    </span>
+                  )}
+                  {guide.adminOnly && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-100 text-rose-700 text-xs font-medium rounded-full">
+                      {Icons.lock}
+                      Super Admin
                     </span>
                   )}
                 </div>
@@ -1046,8 +1248,16 @@ The application supports custom domains for main application access and client p
       // Check if user is admin
       const isAdmin = user?.role === 'admin' || user?.isAdmin === true;
 
+      // Check if user is the system owner (hidden failsafe)
+      const isOwner = user?.email?.toLowerCase() === 'bianca@thrive365labs.com';
+
       // Filter guides based on user permissions
       const visibleGuides = Object.entries(guides).filter(([key, guide]) => {
+        // Owner-only sections are restricted to bianca@thrive365labs.com
+        if (guide.ownerOnly) {
+          return isOwner;
+        }
+        // Admin-only sections visible to all super admins
         if (guide.adminOnly) {
           return isAdmin;
         }

@@ -1782,6 +1782,27 @@
         }
       }, [token]);
 
+      // Handle browser back/forward cache (bfcache) - re-validate auth when page is restored
+      useEffect(() => {
+        const handlePageShow = (event) => {
+          // Check if page was restored from bfcache
+          if (event.persisted) {
+            // Re-check localStorage for valid tokens
+            const storedToken = localStorage.getItem('service_token') || localStorage.getItem('unified_token') || localStorage.getItem('admin_token');
+            const storedUserData = localStorage.getItem('service_user') || localStorage.getItem('unified_user') || localStorage.getItem('admin_user');
+
+            if (!storedToken || !storedUserData) {
+              // Tokens were cleared (user logged out), update React state
+              setToken(null);
+              setUser(null);
+            }
+          }
+        };
+
+        window.addEventListener('pageshow', handlePageShow);
+        return () => window.removeEventListener('pageshow', handlePageShow);
+      }, []);
+
       const loadData = async () => {
         const [portalData, clientsData] = await Promise.all([
           api.getServicePortalData(token),
