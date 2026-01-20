@@ -1,31 +1,51 @@
 const { useState, useEffect, useMemo } = React;
 const API_URL = window.location.origin;
 
-// ============== STANDARD PHASES AND STAGES (Always visible) ==============
+// ============== STANDARD PHASES (Phase-only structure) ==============
 const STANDARD_PHASES = {
-  'Phase 0': {
-    name: 'Phase 0: Contract Signature',
-    stages: ['Contract Signature']
-  },
   'Phase 1': {
-    name: 'Phase 1: Pre-Launch',
-    stages: ['Project Kick Off & Stakeholder Alignment', 'Launch Data & Systems Prep']
+    name: 'Phase 1: Contract & Initial Setup',
+    stages: ['Tasks']
   },
   'Phase 2': {
-    name: 'Phase 2: Implementation Sprints',
-    stages: ['Sprint 1: Core System Setups', 'Sprint 2: Lab & QUA Pilot Prep', 'Sprint 3: Soft-Pilot']
+    name: 'Phase 2: Billing, CLIA & Hiring',
+    stages: ['Tasks']
   },
   'Phase 3': {
-    name: 'Phase 3: Go-Live',
-    stages: ['Training/Validation', 'Go-Live']
+    name: 'Phase 3: Tech Infrastructure & LIS Integration',
+    stages: ['Tasks']
   },
   'Phase 4': {
-    name: 'Phase 4: Post-Launch Optimization',
-    stages: ['KPIs', 'Monitoring & Customer Support']
+    name: 'Phase 4: Inventory Forecasting & Procurement',
+    stages: ['Tasks']
+  },
+  'Phase 5': {
+    name: 'Phase 5: Supply Orders & Logistics',
+    stages: ['Tasks']
+  },
+  'Phase 6': {
+    name: 'Phase 6: Onboarding & Welcome Calls',
+    stages: ['Tasks']
+  },
+  'Phase 7': {
+    name: 'Phase 7: Virtual Soft Pilot & Prep',
+    stages: ['Tasks']
+  },
+  'Phase 8': {
+    name: 'Phase 8: Training & Full Validation',
+    stages: ['Tasks']
+  },
+  'Phase 9': {
+    name: 'Phase 9: Go-Live',
+    stages: ['Tasks']
+  },
+  'Phase 10': {
+    name: 'Phase 10: Post-Launch Support & Optimization',
+    stages: ['Tasks']
   }
 };
 
-const PHASE_ORDER = ['Phase 0', 'Phase 1', 'Phase 2', 'Phase 3', 'Phase 4'];
+const PHASE_ORDER = ['Phase 1', 'Phase 2', 'Phase 3', 'Phase 4', 'Phase 5', 'Phase 6', 'Phase 7', 'Phase 8', 'Phase 9', 'Phase 10'];
 
 // Helper to format date for display (handles ISO, YYYY-MM-DD, and locale formats)
 const formatDateForDisplay = (dateStr) => {
@@ -4671,6 +4691,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                 </div>
                 {Object.entries(groupedByPhase[phase] || {}).map(([stageName, stageTasks]) => (
                   <div key={stageName} className={`bg-white rounded-lg shadow-sm overflow-hidden border-l-4 ${getPhaseColor(phase)}`}>
+                    {stageName !== 'Tasks' && (
                     <div className="bg-gray-50 p-3 border-b flex justify-between items-center">
                       <div>
                         <h3 className="font-semibold text-gray-700">{stageName}</h3>
@@ -4722,6 +4743,24 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                         )}
                       </div>
                     </div>
+                    )}
+                    {stageName === 'Tasks' && viewMode === 'internal' && canEdit && (
+                      <div className="bg-gray-50 p-2 border-b flex justify-end">
+                        <button
+                          onClick={() => {
+                            setNewTask({
+                              ...newTask,
+                              phase: phase,
+                              stage: stageName
+                            });
+                            setShowAddTask(true);
+                          }}
+                          className="text-primary hover:text-accent text-sm font-medium"
+                        >
+                          + Add Task
+                        </button>
+                      </div>
+                    )}
                     <div className="divide-y divide-gray-200">
                       {stageTasks.length === 0 ? (
                         <div className="p-4 text-gray-400 text-sm italic">No tasks in this stage</div>
