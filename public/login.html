@@ -496,7 +496,7 @@
                 <div>
                   <p className="text-gray-500">Role</p>
                   <p className="font-medium capitalize">
-                    {user.role === 'user' ? 'Team Member' : user.role === 'vendor' ? 'External Vendor' : user.role}
+                    {isAdmin ? 'Super Admin' : isManager ? 'Manager' : user.role === 'user' ? 'Team Member' : user.role === 'vendor' ? 'External Vendor' : user.role === 'client' ? 'Client' : user.role}
                   </p>
                 </div>
               </div>

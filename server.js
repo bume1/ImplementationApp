@@ -2910,6 +2910,77 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
   }
 });
 
+// Get service reports for clients (Service History)
+app.get('/api/client/service-reports', authenticateToken, async (req, res) => {
+  try {
+    // Only clients can use this endpoint
+    if (req.user.role !== 'client') {
+      return res.status(403).json({ error: 'Client access required' });
+    }
+
+    // Get fresh user data with HubSpot IDs
+    const users = await getUsers();
+    const clientUser = users.find(u => u.id === req.user.id);
+
+    if (!clientUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const hubspotCompanyId = clientUser.hubspotCompanyId || '';
+    const clientSlug = clientUser.slug || '';
+    const practiceName = clientUser.practiceName || clientUser.name || '';
+
+    console.log(`📋 Service reports fetch for ${clientUser.username}:`);
+    console.log(`   - Company ID: "${hubspotCompanyId}"`);
+    console.log(`   - Slug: "${clientSlug}"`);
+    console.log(`   - Practice: "${practiceName}"`);
+
+    // Fetch all service reports
+    const serviceReports = (await db.get('service_reports')) || [];
+
+    // Filter reports for this client by:
+    // 1. Matching hubspotCompanyId
+    // 2. Or matching client name/practice name (fallback)
+    const clientReports = serviceReports.filter(report => {
+      if (hubspotCompanyId && report.hubspotCompanyId === hubspotCompanyId) {
+        return true;
+      }
+      // Fallback: match by client name
+      const reportClient = (report.clientFacilityName || '').toLowerCase();
+      const userPractice = practiceName.toLowerCase();
+      if (userPractice && reportClient.includes(userPractice)) {
+        return true;
+      }
+      return false;
+    });
+
+    // Sort by creation date, newest first
+    clientReports.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    console.log(`📋 Found ${clientReports.length} service reports for ${clientUser.username}`);
+
+    // Map to a cleaner format for the frontend
+    const reports = clientReports.map(r => ({
+      id: r.id,
+      subject: `${r.serviceType} - ${r.clientFacilityName}`,
+      serviceType: r.serviceType,
+      technicianName: r.technicianName || r.serviceProviderName,
+      ticketNumber: r.hubspotTicketId || r.hubspotTicketNumber || null,
+      createdAt: r.createdAt,
+      completedAt: r.serviceCompletionDate || r.createdAt,
+      status: 'Completed',
+      description: r.descriptionOfWork || r.validationResults || '',
+      pdfUrl: r.pdfUrl || null,
+      driveFileId: r.driveFileId || null
+    }));
+
+    res.json({ reports, count: reports.length });
+  } catch (error) {
+    console.error('Error fetching client service reports:', error);
+    res.status(500).json({ error: error.message || 'Failed to fetch service reports' });
+  }
+});
+
 // Get HubSpot file download URL for clients
 app.get('/api/client/hubspot/file/:fileId', authenticateToken, async (req, res) => {
   try {
