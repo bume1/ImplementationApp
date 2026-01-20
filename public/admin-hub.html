@@ -144,10 +144,11 @@
           headers: { 'Authorization': `Bearer ${token}` }
         }).then(handleResponse).catch(err => ({ error: err.message })),
 
-      bulkPasswordReset: (token) =>
+      bulkPasswordReset: (token, userType = 'all') =>
         fetch(`${API_URL}/api/admin/bulk-password-reset`, {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userType })
         }).then(handleResponse).catch(err => ({ error: err.message })),
 
       getServiceReports: (token) =>

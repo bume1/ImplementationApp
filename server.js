@@ -6005,6 +6005,7 @@ app.post('/api/admin/bulk-password-reset', authenticateToken, requireAdmin, asyn
 
     res.json({
       message: `Successfully reset passwords for ${results.total} users`,
+      total: results.total, // Include at top level for backward compatibility
       results
     });
   } catch (error) {
