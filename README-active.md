@@ -35,11 +35,11 @@ This project addresses a critical market need for specialized project management
 ### Prerequisites
 - Node.js >= 14.0.0
 - npm or yarn
-- Replit account (for database)
+- Database server (key-value store)
 
 ### Installation
 
-1. Clone or upload the project to Replit as a Node.js project
+1. Clone the repository to your local environment or server
 
 2. Install dependencies:
 ```bash
@@ -71,7 +71,7 @@ npm start
 | **Backend** | Express.js REST API |
 | **Frontend** | React 18 (CDN-loaded), Babel standalone for JSX |
 | **Styling** | Tailwind CSS (CDN) |
-| **Database** | Replit Database (key-value store) |
+| **Database** | Key-Value Database Store |
 | **Authentication** | JWT tokens, bcryptjs password hashing |
 | **PDF Generation** | PDFKit, PDFMake |
 
@@ -409,14 +409,13 @@ Version history and release notes for the application.
 |---------|---------|
 | **HubSpot** | CRM integration for deal pipeline, client profiles, ticket management, and file storage |
 | **Google Drive** | Storage for soft-pilot checklist uploads and document management |
-| **Replit Database** | Primary data persistence (key-value store) |
+| **Key-Value Database** | Primary data persistence |
 
 ### NPM Packages
 
 ```json
 {
   "@hubspot/api-client": "^13.4.0",
-  "@replit/database": "^2.0.5",
   "axios": "^1.13.2",
   "bcryptjs": "^2.4.3",
   "body-parser": "^1.20.2",
@@ -456,12 +455,13 @@ Version history and release notes for the application.
 
 ## Deployment
 
-### Replit Deployment
+### Server Deployment
 
-1. Import the project to Replit
-2. Configure environment secrets in Replit Secrets
-3. Click "Run" to start the application
-4. Configure custom domain if needed
+1. Clone the repository to your server
+2. Install dependencies with `npm install`
+3. Configure environment variables (see Environment Variables section)
+4. Start the application with `npm start`
+5. Configure custom domain if needed
 
 ### Custom Domain Setup
 
