@@ -595,8 +595,38 @@
       const tasks = allTasks.filter(t => t.showToClient !== false);
       const [viewType, setViewType] = useState('list');
       
-      const PHASE_ORDER = ['Phase 0', 'Phase 1', 'Phase 2', 'Phase 3', 'Phase 4'];
-      
+      // Dynamic phase extraction from task data - phases are derived from actual tasks
+      // This ensures client portal view always matches the internal project board
+      const extractPhasesFromTasks = (taskList) => {
+        const phaseMap = {};
+        taskList.forEach(task => {
+          const phase = task.phase || 'No Phase';
+          if (!phaseMap[phase]) {
+            phaseMap[phase] = { name: phase, stages: new Set() };
+          }
+          const stage = task.stage || 'General';
+          phaseMap[phase].stages.add(stage);
+        });
+        Object.keys(phaseMap).forEach(phase => {
+          phaseMap[phase].stages = Array.from(phaseMap[phase].stages);
+        });
+        return phaseMap;
+      };
+
+      // Sort phases naturally (Phase 1, Phase 2, ... Phase 10, etc.)
+      const sortPhases = (phases) => {
+        return phases.sort((a, b) => {
+          const numA = parseInt(a.match(/\d+/)?.[0] || '999');
+          const numB = parseInt(b.match(/\d+/)?.[0] || '999');
+          if (numA !== numB) return numA - numB;
+          return a.localeCompare(b);
+        });
+      };
+
+      // Extract dynamic phases from tasks
+      const dynamicPhases = extractPhasesFromTasks(tasks);
+      const PHASE_ORDER = sortPhases(Object.keys(dynamicPhases));
+
       const formatDateForDisplay = (dateStr) => {
         if (!dateStr) return '';
         try {
@@ -616,38 +646,33 @@
           return dateStr;
         }
       };
-      
-      const STANDARD_PHASES = {
-        'Phase 0': { name: 'Phase 0: Contract Signature', stages: ['Contract Signature'] },
-        'Phase 1': { name: 'Phase 1: Pre-Launch', stages: ['Project Kick Off & Stakeholder Alignment', 'Launch Data & Systems Prep'] },
-        'Phase 2': { name: 'Phase 2: Implementation Sprints', stages: ['Sprint 1: Core System Setups', 'Sprint 2: Lab & QUA Pilot Prep', 'Sprint 3: Soft-Pilot'] },
-        'Phase 3': { name: 'Phase 3: Go-Live', stages: ['Training/Validation', 'Go-Live'] },
-        'Phase 4': { name: 'Phase 4: Post-Launch Optimization', stages: ['KPIs', 'Monitoring & Customer Support'] }
+
+      // Dynamic phase colors that cycle through a palette
+      const getPhaseColor = (phase, index) => {
+        const colors = ['border-purple-500', 'border-blue-600', 'border-green-500', 'border-yellow-500', 'border-orange-500', 'border-red-500', 'border-pink-500', 'border-indigo-500', 'border-teal-500', 'border-cyan-500'];
+        return colors[index % colors.length] || 'border-gray-500';
       };
-      
-      const getPhaseColor = (phase) => {
-        const colors = { 'Phase 0': 'border-purple-500', 'Phase 1': 'border-primary', 'Phase 2': 'border-green-500', 'Phase 3': 'border-orange-500', 'Phase 4': 'border-pink-500' };
-        return colors[phase] || 'border-gray-500';
+
+      // Dynamic phase gradients that cycle through a palette
+      const getPhaseGradient = (phase, index) => {
+        const gradients = ['bg-gradient-to-r from-purple-600 to-purple-700', 'bg-gradient-to-r from-blue-600 to-blue-700', 'bg-gradient-to-r from-green-600 to-green-700', 'bg-gradient-to-r from-yellow-500 to-yellow-600', 'bg-gradient-to-r from-orange-500 to-orange-600', 'bg-gradient-to-r from-red-500 to-red-600', 'bg-gradient-to-r from-pink-500 to-pink-600', 'bg-gradient-to-r from-indigo-500 to-indigo-600', 'bg-gradient-to-r from-teal-500 to-teal-600', 'bg-gradient-to-r from-cyan-500 to-cyan-600'];
+        return gradients[index % gradients.length] || 'bg-gradient-to-r from-gray-600 to-gray-700';
       };
-      
-      const getPhaseGradient = (phase) => {
-        const gradients = { 'Phase 0': 'bg-gradient-to-r from-purple-600 to-purple-700', 'Phase 1': 'bg-gradient-to-r from-blue-600 to-blue-800', 'Phase 2': 'bg-gradient-to-r from-green-600 to-green-700', 'Phase 3': 'bg-gradient-to-r from-orange-600 to-orange-700', 'Phase 4': 'bg-gradient-to-r from-pink-600 to-pink-700' };
-        return gradients[phase] || 'bg-gradient-to-r from-gray-600 to-gray-700';
-      };
-      
-      const ensureAllPhasesAndStages = (groupedByPhase) => {
+
+      // Helper to organize tasks by phase and stage
+      const organizeTasksByPhaseAndStage = (taskList, phaseOrder, phases) => {
         const result = {};
-        PHASE_ORDER.forEach(phase => {
+        phaseOrder.forEach(phase => {
           result[phase] = {};
-          const standardStages = STANDARD_PHASES[phase]?.stages || [];
-          standardStages.forEach(stage => {
-            result[phase][stage] = groupedByPhase[phase]?.[stage] || [];
-          });
-          if (groupedByPhase[phase]) {
-            Object.keys(groupedByPhase[phase]).forEach(stage => {
-              if (!result[phase][stage]) result[phase][stage] = groupedByPhase[phase][stage];
-            });
-          }
+          const stages = phases[phase]?.stages || [];
+          stages.forEach(stage => { result[phase][stage] = []; });
+        });
+        taskList.forEach(task => {
+          const phase = task.phase || 'No Phase';
+          const stage = task.stage || 'General';
+          if (!result[phase]) result[phase] = {};
+          if (!result[phase][stage]) result[phase][stage] = [];
+          result[phase][stage].push(task);
         });
         return result;
       };
@@ -655,29 +680,23 @@
       const completedTasks = tasks.filter(t => t.completed).length;
       const totalTasks = tasks.length;
       const progressPercent = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-      
-      const rawGroupedByPhase = tasks.reduce((acc, task) => {
-        if (!acc[task.phase]) acc[task.phase] = {};
-        const stageKey = task.stage || 'General';
-        if (!acc[task.phase][stageKey]) acc[task.phase][stageKey] = [];
-        acc[task.phase][stageKey].push(task);
-        return acc;
-      }, {});
-      const groupedByPhase = ensureAllPhasesAndStages(rawGroupedByPhase);
-      
+
+      // Use dynamic phase organization
+      const groupedByPhase = organizeTasksByPhaseAndStage(tasks, PHASE_ORDER, dynamicPhases);
+
       const ListView = () => (
         <div className="space-y-8">
-          {PHASE_ORDER.map(phase => {
+          {PHASE_ORDER.map((phase, phaseIndex) => {
             const phaseTasks = Object.values(groupedByPhase[phase] || {}).flat();
             const phaseCompleted = phaseTasks.filter(t => t.completed).length;
             const phaseTotal = phaseTasks.length;
             const phasePercent = phaseTotal > 0 ? Math.round((phaseCompleted / phaseTotal) * 100) : 0;
             return (
             <div key={phase} className="space-y-4">
-              <div className={`${getPhaseGradient(phase)} p-4 rounded-lg text-white shadow-md`}>
+              <div className={`${getPhaseGradient(phase, phaseIndex)} p-4 rounded-lg text-white shadow-md`}>
                 <div className="flex items-center justify-between">
                   <div>
-                    <h2 className="text-lg font-bold">{STANDARD_PHASES[phase]?.name || phase}</h2>
+                    <h2 className="text-lg font-bold">{dynamicPhases[phase]?.name || phase}</h2>
                     <p className="text-sm opacity-90 mt-1">
                       {phaseTotal > 0 ? `${phaseCompleted} of ${phaseTotal} complete` : 'No tasks assigned yet'}
                     </p>
@@ -698,7 +717,7 @@
                 const dueDates = stageTasks.filter(t => t.dueDate).map(t => t.dueDate).sort();
                 const targetDate = dueDates.length > 0 ? dueDates[dueDates.length - 1] : null;
                 return (
-                  <div key={stageName} className={`bg-white rounded-lg shadow-sm overflow-hidden border-l-4 ${getPhaseColor(phase)}`}>
+                  <div key={stageName} className={`bg-white rounded-lg shadow-sm overflow-hidden border-l-4 ${getPhaseColor(phase, phaseIndex)}`}>
                     <div className="bg-gray-50 p-3 border-b flex justify-between items-start">
                       <div>
                         <h3 className="font-semibold text-gray-700">{stageName}</h3>
@@ -735,10 +754,8 @@
                                   <span className="ml-2 text-gray-400" title={`${task.files.length} file${task.files.length > 1 ? 's' : ''} attached`}>📎</span>
                                 )}
                               </h3>
-                              {(task.ownerDisplayName || task.dateCompleted || task.dueDate) && (
+                              {(task.dateCompleted || task.dueDate) && (
                                 <p className="text-sm text-gray-600 mt-1">
-                                  {task.ownerDisplayName && <span>Owner: {task.ownerDisplayName}</span>}
-                                  {task.ownerDisplayName && (task.dateCompleted || task.dueDate) && <span className="mx-2">•</span>}
                                   {task.dueDate && !task.completed && (
                                     <span className={new Date(task.dueDate) < new Date() ? 'text-red-600' : 'text-blue-600'}>
                                       Due: {new Date(task.dueDate + 'T12:00:00').toLocaleDateString()}
@@ -795,14 +812,14 @@
         <div className="bg-white rounded-lg shadow-sm p-6">
           <h2 className="text-2xl font-bold mb-6 text-accent">Project Timeline</h2>
           <div className="space-y-8">
-            {PHASE_ORDER.map(phase => {
+            {PHASE_ORDER.map((phase, phaseIndex) => {
               const phaseData = groupedByPhase[phase] || {};
               const phaseTasks = Object.values(phaseData).flat();
               const completedCount = phaseTasks.filter(t => t.completed).length;
               return (
-                <div key={phase} className={`border-l-4 ${getPhaseColor(phase)} pl-6`}>
+                <div key={phase} className={`border-l-4 ${getPhaseColor(phase, phaseIndex)} pl-6`}>
                   <div className="mb-4">
-                    <h3 className="text-xl font-bold text-gray-900">{STANDARD_PHASES[phase]?.name || phase}</h3>
+                    <h3 className="text-xl font-bold text-gray-900">{dynamicPhases[phase]?.name || phase}</h3>
                     <p className="text-sm text-gray-600">{completedCount} of {phaseTasks.length} complete ({phaseTasks.length > 0 ? Math.round((completedCount / phaseTasks.length) * 100) : 0}%)</p>
                   </div>
                   <div className="space-y-4">
@@ -835,11 +852,9 @@
                                       <span className="ml-2 text-gray-400" title={`${task.files.length} file${task.files.length > 1 ? 's' : ''} attached`}>📎</span>
                                     )}
                                   </h5>
-                                  {(task.dateCompleted || task.ownerDisplayName) && (
+                                  {task.dateCompleted && (
                                     <p className="mt-1 text-xs text-gray-600">
-                                      {task.ownerDisplayName && <span className="text-gray-500">Owner: {task.ownerDisplayName}</span>}
-                                      {task.ownerDisplayName && task.dateCompleted && <span className="mx-1">•</span>}
-                                      {task.dateCompleted && <span className="text-green-600">Completed: {formatDateForDisplay(task.dateCompleted)}</span>}
+                                      <span className="text-green-600">Completed: {formatDateForDisplay(task.dateCompleted)}</span>
                                     </p>
                                   )}
                                   {task.description && (

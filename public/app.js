@@ -1077,12 +1077,12 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
   };
 
   const getBaseUrl = (domain) => {
-    if (!domain) return 'https://deapps.pro';
+    if (!domain) return 'https://thrive365labs.live';
     try {
       const url = new URL(domain);
       return url.origin;
     } catch {
-      return 'https://deapps.pro';
+      return 'https://thrive365labs.live';
     }
   };
 
@@ -1282,7 +1282,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
                   <h3 className="text-lg font-bold text-primary mb-3">Client Portal</h3>
                   <ul className="list-disc ml-5 text-gray-600 space-y-1">
                     <li>Each project has a shareable client link for external stakeholders</li>
-                    <li>Client portal URL format: <code className="bg-gray-100 px-1 rounded">https://deapps.pro/launch/client-name</code></li>
+                    <li>Client portal URL format: <code className="bg-gray-100 px-1 rounded">https://thrive365labs.live/launch/client-name</code></li>
                     <li>Click "Copy Client Link" on project cards to share with clients</li>
                     <li>Clients can view progress without logging in</li>
                   </ul>
@@ -2157,12 +2157,12 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
                 <div>
                   <label className="block text-sm font-medium mb-1">Custom Domain URL</label>
                   <input
-                    placeholder="e.g., https://deapps.pro"
+                    placeholder="e.g., https://thrive365labs.live"
                     value={newDomain}
                     onChange={(e) => setNewDomain(e.target.value)}
                     className="w-full px-3 py-2 border rounded-md"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Include https:// (e.g., https://deapps.pro)</p>
+                  <p className="text-xs text-gray-500 mt-1">Include https:// (e.g., https://thrive365labs.live)</p>
                 </div>
               </div>
               <div className="flex gap-2 mt-6">
@@ -3935,12 +3935,12 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
   };
 
   const getBaseUrlForProject = (domain) => {
-    if (!domain) return 'https://deapps.pro';
+    if (!domain) return 'https://thrive365labs.live';
     try {
       const url = new URL(domain);
       return url.origin;
     } catch {
-      return 'https://deapps.pro';
+      return 'https://thrive365labs.live';
     }
   };
 
