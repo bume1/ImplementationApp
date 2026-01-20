@@ -5450,6 +5450,40 @@ app.delete('/api/service-reports/:id', authenticateToken, requireAdmin, async (r
   }
 });
 
+// Batch delete service reports (Super Admin only)
+app.delete('/api/service-reports', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { reportIds } = req.body;
+
+    if (!reportIds || !Array.isArray(reportIds) || reportIds.length === 0) {
+      return res.status(400).json({ error: 'reportIds array is required' });
+    }
+
+    let serviceReports = (await db.get('service_reports')) || [];
+    const idsToDelete = new Set(reportIds);
+    const initialCount = serviceReports.length;
+
+    serviceReports = serviceReports.filter(r => !idsToDelete.has(r.id));
+    const deletedCount = initialCount - serviceReports.length;
+
+    await db.set('service_reports', serviceReports);
+
+    await logActivity(
+      req.user.id || null,
+      req.user.name || req.user.email,
+      'service_reports_deleted',
+      'service_reports',
+      null,
+      { deletedCount, reportIds }
+    );
+
+    res.json({ success: true, deletedCount });
+  } catch (error) {
+    console.error('Batch delete service reports error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ============== VALIDATION REPORTS (Multi-day service reports for Phase 3) ==============
 
 // Create validation report (multi-day service report)
