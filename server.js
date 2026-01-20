@@ -366,7 +366,10 @@ app.post('/api/users', authenticateToken, async (req, res) => {
       hasAdminHubAccess: hasAdminHubAccess || false,
       hasImplementationsAccess: hasImplementationsAccess || false,
       hasClientPortalAdminAccess: hasClientPortalAdminAccess || false,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      // Force new users to change their password on first login
+      requirePasswordChange: true,
+      lastPasswordReset: new Date().toISOString()
     };
 
     // Client-specific fields
