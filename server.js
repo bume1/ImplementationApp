@@ -3564,7 +3564,8 @@ app.get('/api/inventory/report/:slug', authenticateToken, async (req, res) => {
 });
 
 // ============== ADMIN AGGREGATE INVENTORY REPORT ==============
-app.get('/api/inventory/report-all', authenticateToken, requireAdmin, async (req, res) => {
+// Allow Super Admins, Managers, and Client Portal Admins to access
+app.get('/api/inventory/report-all', authenticateToken, requireClientPortalAdmin, async (req, res) => {
   try {
     const allSubmissions = (await db.get('inventory_submissions')) || [];
     const users = await getUsers();
@@ -5450,10 +5451,17 @@ app.delete('/api/service-reports/:id', authenticateToken, requireAdmin, async (r
   }
 });
 
-// Batch delete service reports (Super Admin only)
-app.delete('/api/service-reports', authenticateToken, requireAdmin, async (req, res) => {
+// Batch delete service reports (Super Admin can delete any, Service Technicians can delete their own)
+app.delete('/api/service-reports', authenticateToken, async (req, res) => {
   try {
     const { reportIds } = req.body;
+    const isSuperAdmin = req.user.role === 'admin';
+    const isServiceTechnician = req.user.role === 'vendor' || req.user.hasServicePortalAccess;
+
+    // Only Super Admins and Service Technicians can delete
+    if (!isSuperAdmin && !isServiceTechnician) {
+      return res.status(403).json({ error: 'Access denied. Only Super Admins and Service Technicians can delete reports.' });
+    }
 
     if (!reportIds || !Array.isArray(reportIds) || reportIds.length === 0) {
       return res.status(400).json({ error: 'reportIds array is required' });
@@ -5462,6 +5470,15 @@ app.delete('/api/service-reports', authenticateToken, requireAdmin, async (req, 
     let serviceReports = (await db.get('service_reports')) || [];
     const idsToDelete = new Set(reportIds);
     const initialCount = serviceReports.length;
+
+    // For service technicians, only allow deleting their own reports
+    if (!isSuperAdmin) {
+      const reportsToDelete = serviceReports.filter(r => idsToDelete.has(r.id));
+      const unauthorizedReports = reportsToDelete.filter(r => r.technicianId !== req.user.id);
+      if (unauthorizedReports.length > 0) {
+        return res.status(403).json({ error: 'You can only delete your own reports.' });
+      }
+    }
 
     serviceReports = serviceReports.filter(r => !idsToDelete.has(r.id));
     const deletedCount = initialCount - serviceReports.length;

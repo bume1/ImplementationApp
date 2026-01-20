@@ -1238,8 +1238,17 @@
       const [selectedReports, setSelectedReports] = useState(new Set());
       const [deleting, setDeleting] = useState(false);
 
-      // Only Super Admins can delete (not managers)
-      const canDelete = currentUser?.role === 'admin';
+      // Super Admins can delete any, Service Technicians can delete their own
+      const isSuperAdmin = currentUser?.role === 'admin';
+      const isServiceTechnician = currentUser?.role === 'vendor' || currentUser?.hasServicePortalAccess;
+      const canDeleteAny = isSuperAdmin || isServiceTechnician;
+
+      // Check if current user can delete a specific report
+      const canDeleteReport = (report) => {
+        if (isSuperAdmin) return true;
+        if (isServiceTechnician && report.technicianId === currentUser?.id) return true;
+        return false;
+      };
 
       useEffect(() => {
         loadReports();
@@ -1273,11 +1282,14 @@
         loadReports();
       };
 
+      // Get reports that current user can delete
+      const deletableReports = filteredReports.filter(r => canDeleteReport(r));
+
       const toggleSelectAll = () => {
-        if (selectedReports.size === filteredReports.length) {
+        if (selectedReports.size === deletableReports.length && deletableReports.length > 0) {
           setSelectedReports(new Set());
         } else {
-          setSelectedReports(new Set(filteredReports.map(r => r.id)));
+          setSelectedReports(new Set(deletableReports.map(r => r.id)));
         }
       };
 
@@ -1409,14 +1421,14 @@
             </form>
           </div>
 
-          {/* Selection Info & Delete Button (Super Admin only) */}
-          {canDelete && filteredReports.length > 0 && (
+          {/* Selection Info & Delete Button (Super Admin and Service Technicians) */}
+          {canDeleteAny && deletableReports.length > 0 && (
             <div className="bg-white p-4 rounded-xl shadow-sm flex flex-wrap items-center justify-between gap-4">
               <div className="text-sm text-gray-600">
                 {selectedReports.size > 0 ? (
-                  <span className="font-medium text-primary">{selectedReports.size} of {filteredReports.length} reports selected</span>
+                  <span className="font-medium text-primary">{selectedReports.size} of {deletableReports.length} deletable reports selected</span>
                 ) : (
-                  <span>{filteredReports.length} reports found</span>
+                  <span>{filteredReports.length} reports found ({deletableReports.length} deletable)</span>
                 )}
               </div>
               {selectedReports.size > 0 && (
@@ -1444,11 +1456,11 @@
               <table className="w-full">
                 <thead className="bg-gray-50 border-b">
                   <tr>
-                    {canDelete && (
+                    {canDeleteAny && deletableReports.length > 0 && (
                       <th className="px-4 py-3 text-left">
                         <input
                           type="checkbox"
-                          checked={selectedReports.size === filteredReports.length && filteredReports.length > 0}
+                          checked={selectedReports.size === deletableReports.length && deletableReports.length > 0}
                           onChange={toggleSelectAll}
                           className="rounded"
                         />
@@ -1465,14 +1477,18 @@
                 <tbody className="divide-y divide-gray-200">
                   {filteredReports.map((report, idx) => (
                     <tr key={report.id || idx} className={`hover:bg-gray-50 ${selectedReports.has(report.id) ? 'bg-blue-50' : ''}`}>
-                      {canDelete && (
+                      {canDeleteAny && deletableReports.length > 0 && (
                         <td className="px-4 py-4">
-                          <input
-                            type="checkbox"
-                            checked={selectedReports.has(report.id)}
-                            onChange={() => toggleSelect(report.id)}
-                            className="rounded"
-                          />
+                          {canDeleteReport(report) ? (
+                            <input
+                              type="checkbox"
+                              checked={selectedReports.has(report.id)}
+                              onChange={() => toggleSelect(report.id)}
+                              className="rounded"
+                            />
+                          ) : (
+                            <span className="text-gray-300">-</span>
+                          )}
                         </td>
                       )}
                       <td className="px-6 py-4 text-sm text-gray-900">
