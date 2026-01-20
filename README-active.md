@@ -474,20 +474,21 @@ Configure via Admin Hub > Settings > Client Portal Domain.
 
 ## Version History
 
-### Current Version: 2.7.0 (January 2026)
+### Current Version: 2.7.1 (January 2026)
 
 #### Highlights
-- Automated changelog generation from git commits
-- Bulk password reset system with first-login change prompt
-- PDF generation for service/validation reports
-- Knowledge Hub module
-- Enhanced HubSpot ticket integration with readable stage labels
-- Modern UI with dynamic banner headers
+- Manager permissions to edit client details in Client Portal Admin
+- Client details sync between Client Portal Admin and Admin Hub User Management
+- Replace Ticket History with Service History in Customer Support Center
+- Hide Live Chat tab from Customer Support Center
+- Enhanced Client Users page with edit functionality for Managers
+- Automatic README version sync with changelog updates
 
 See [CHANGELOG](/changelog) for complete version history.
 
 ### Previous Versions
 
+- **2.7.0**: Automated changelog generation, bulk password reset, PDF generation, Knowledge Hub
 - **2.5.0**: UI Modernization, Permission System Overhaul, Unified Login Portal
 - **2.4.0**: Service Portal Updates, Validation Reports
 - **2.3.0**: Central Admin Hub, Service Portal Launch
@@ -576,4 +577,4 @@ Proprietary - Thrive 365 Labs
 
 ---
 
-*Last Updated: January 2026*
+*Last Updated: January 20, 2026*
