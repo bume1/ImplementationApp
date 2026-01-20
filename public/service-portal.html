@@ -1282,6 +1282,16 @@
         loadReports();
       };
 
+      // Filter reports based on search term
+      const filteredReports = reports.filter(report => {
+        if (searchTerm && !report.clientFacilityName?.toLowerCase().includes(searchTerm.toLowerCase()) &&
+            !report.serviceType?.toLowerCase().includes(searchTerm.toLowerCase()) &&
+            !report.hubspotTicketNumber?.toLowerCase().includes(searchTerm.toLowerCase())) {
+          return false;
+        }
+        return true;
+      });
+
       // Get reports that current user can delete
       const deletableReports = filteredReports.filter(r => canDeleteReport(r));
 
@@ -1304,7 +1314,7 @@
       };
 
       const handleDeleteSelected = async () => {
-        if (!canDelete) return;
+        if (!canDeleteAny) return;
 
         const selectedIds = [...selectedReports];
         if (selectedIds.length === 0) {
@@ -1342,15 +1352,6 @@
           setDeleting(false);
         }
       };
-
-      const filteredReports = reports.filter(report => {
-        if (searchTerm && !report.clientFacilityName?.toLowerCase().includes(searchTerm.toLowerCase()) &&
-            !report.serviceType?.toLowerCase().includes(searchTerm.toLowerCase()) &&
-            !report.hubspotTicketNumber?.toLowerCase().includes(searchTerm.toLowerCase())) {
-          return false;
-        }
-        return true;
-      });
 
       return (
         <div className="space-y-6">
