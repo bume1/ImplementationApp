@@ -25,7 +25,8 @@ Preferred communication style: Simple, everyday language.
 - **Data Storage**: Replit Database (key-value store) for users, projects, tasks, password reset requests, HubSpot mappings, activity logs, client documents, and inventory submissions.
 - **Authentication**: JWT-based, role-based access (admin vs. regular user), and admin-managed password resets.
 - **Project Access Control**: Admins manage all projects; regular users access assigned projects only.
-- **Task Management**: 102-task template system, per-stage task addition, email-based owner assignment, subtasks with completion enforcement, bulk operations, and task descriptions. Subtasks support optional due dates and are visible to clients when the parent task is.
+- **Task Management**: 103-task template system organized by 10 phases (Contract & Initial Setup, Billing/CLIA/Hiring, Tech Infrastructure/LIS, Inventory Forecasting, Supply Orders, Onboarding/Welcome Calls, Virtual Soft Pilot, Training/Validation, Go-Live, Post-Launch Support), email-based owner assignment, subtasks with completion enforcement, bulk operations, and task descriptions. Subtasks support optional due dates and are visible to clients when the parent task is.
+- **Phase Structure**: 10 sequential phases based on the QUA Launch Project Timeline (Phase 1-10), with phase-only grouping (no nested stages) for simplified project tracking.
 - **Template System**: Project cloning and task template application from JSON; creation of templates from existing launch boards.
 - **CSV Import**: Bulk task import for templates and projects.
 - **HubSpot Integration**: OAuth-based configuration, stage mapping, automated task/stage completion notes sync, manual sync, and file uploads directly to HubSpot records (Company, Deal, Contact) using a private app token. Automatic note syncing to HubSpot.
