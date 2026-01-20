@@ -4,6 +4,15 @@
 
 ---
 
+### Version 2.7.2 - January 2026
+
+#### Security Improvements
+- New users created by Super Admin now require password change on first login
+- Manual password resets by Super Admin now force users to create their own password
+- Consistent password change enforcement across all user creation and reset flows
+
+---
+
 ### Version 2.7.1 - January 2026
 
 #### New Features
@@ -250,4 +259,4 @@
 
 ---
 
-*Last Updated: January 19, 2026*
+*Last Updated: January 20, 2026*

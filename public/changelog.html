@@ -41,10 +41,23 @@
     // Static changelog entries (fallback and legacy)
     const staticChangelog = [
       {
+        id: 'static-272',
+        version: '2.7.2',
+        date: 'January 20, 2026',
+        isCurrent: true,
+        sections: [
+          { title: 'Security Improvements', color: 'green', items: [
+            'New users created by Super Admin now require password change on first login',
+            'Manual password resets by Super Admin now force users to create their own password',
+            'Consistent password change enforcement across all user creation and reset flows'
+          ]}
+        ]
+      },
+      {
         id: 'static-271',
         version: '2.7.1',
         date: 'January 19, 2026',
-        isCurrent: true,
+        isCurrent: false,
         sections: [
           { title: 'New Features', color: 'primary', items: [
             'Add Manager permissions to edit client details in Client Portal Admin',

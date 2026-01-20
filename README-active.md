@@ -35,11 +35,11 @@ This project addresses a critical market need for specialized project management
 ### Prerequisites
 - Node.js >= 14.0.0
 - npm or yarn
-- Replit account (for database)
+- Database server (key-value store)
 
 ### Installation
 
-1. Clone or upload the project to Replit as a Node.js project
+1. Clone the repository to your local environment or server
 
 2. Install dependencies:
 ```bash
@@ -71,7 +71,7 @@ npm start
 | **Backend** | Express.js REST API |
 | **Frontend** | React 18 (CDN-loaded), Babel standalone for JSX |
 | **Styling** | Tailwind CSS (CDN) |
-| **Database** | Replit Database (key-value store) |
+| **Database** | Key-Value Database Store |
 | **Authentication** | JWT tokens, bcryptjs password hashing |
 | **PDF Generation** | PDFKit, PDFMake |
 
@@ -161,6 +161,7 @@ Version history and release notes for the application.
 - **Password reset system** with admin approval workflow
 - **Bulk password reset** with first-login change prompt
 - **Forgot password** request system
+- **Forced password change**: New users and password-reset users must create their own password on first login
 
 ### Project & Task Management
 
@@ -408,14 +409,13 @@ Version history and release notes for the application.
 |---------|---------|
 | **HubSpot** | CRM integration for deal pipeline, client profiles, ticket management, and file storage |
 | **Google Drive** | Storage for soft-pilot checklist uploads and document management |
-| **Replit Database** | Primary data persistence (key-value store) |
+| **Key-Value Database** | Primary data persistence |
 
 ### NPM Packages
 
 ```json
 {
   "@hubspot/api-client": "^13.4.0",
-  "@replit/database": "^2.0.5",
   "axios": "^1.13.2",
   "bcryptjs": "^2.4.3",
   "body-parser": "^1.20.2",
@@ -455,12 +455,13 @@ Version history and release notes for the application.
 
 ## Deployment
 
-### Replit Deployment
+### Server Deployment
 
-1. Import the project to Replit
-2. Configure environment secrets in Replit Secrets
-3. Click "Run" to start the application
-4. Configure custom domain if needed
+1. Clone the repository to your server
+2. Install dependencies with `npm install`
+3. Configure environment variables (see Environment Variables section)
+4. Start the application with `npm start`
+5. Configure custom domain if needed
 
 ### Custom Domain Setup
 
@@ -474,20 +475,21 @@ Configure via Admin Hub > Settings > Client Portal Domain.
 
 ## Version History
 
-### Current Version: 2.7.1 (January 2026)
+### Current Version: 2.7.2 (January 2026)
 
 #### Highlights
+- **Security**: New users created by Super Admin now require password change on first login
+- **Security**: Manual password resets force users to create their own password
+- **Security**: Consistent password change enforcement across all user creation and reset flows
 - Manager permissions to edit client details in Client Portal Admin
 - Client details sync between Client Portal Admin and Admin Hub User Management
-- Replace Ticket History with Service History in Customer Support Center
-- Hide Live Chat tab from Customer Support Center
 - Enhanced Client Users page with edit functionality for Managers
-- Automatic README version sync with changelog updates
 
 See [CHANGELOG](/changelog) for complete version history.
 
 ### Previous Versions
 
+- **2.7.1**: Manager permissions for client editing, Client Portal Admin enhancements
 - **2.7.0**: Automated changelog generation, bulk password reset, PDF generation, Knowledge Hub
 - **2.5.0**: UI Modernization, Permission System Overhaul, Unified Login Portal
 - **2.4.0**: Service Portal Updates, Validation Reports
