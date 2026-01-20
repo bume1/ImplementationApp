@@ -38,6 +38,20 @@
   <script type="text/babel">
     const { useState, useEffect } = React;
 
+    // Phase name mappings for full display titles
+    const phaseNames = {
+      'Phase 1': 'Phase 1: Contract & Initial Setup',
+      'Phase 2': 'Phase 2: Billing, CLIA & Hiring',
+      'Phase 3': 'Phase 3: Tech Infrastructure & LIS Integration',
+      'Phase 4': 'Phase 4: Inventory Forecasting & Procurement',
+      'Phase 5': 'Phase 5: Supply Orders & Logistics',
+      'Phase 6': 'Phase 6: Onboarding & Welcome Calls',
+      'Phase 7': 'Phase 7: Virtual Soft Pilot & Prep',
+      'Phase 8': 'Phase 8: Training & Full Validation',
+      'Phase 9': 'Phase 9: Go-Live',
+      'Phase 10': 'Phase 10: Post-Launch Support & Optimization'
+    };
+
     // Dynamic phase extraction from task data - phases are derived from actual tasks
     // This ensures client view always matches the internal project board
     const extractPhasesFromTasks = (tasks) => {
@@ -50,7 +64,7 @@
 
         if (!phaseMap[phase]) {
           phaseMap[phase] = {
-            name: phase,
+            name: phaseNames[phase] || phase,
             stages: new Set()
           };
         }
