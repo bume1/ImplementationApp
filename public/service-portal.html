@@ -128,6 +128,52 @@
           method: 'PUT',
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
           body: JSON.stringify(reportData)
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+      // Assignment APIs (for admins and managers)
+      getTechnicians: (token) =>
+        fetch(`${API_URL}/api/service-portal/technicians`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+      assignServiceReport: (token, reportData) =>
+        fetch(`${API_URL}/api/service-reports/assign`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(reportData)
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+      uploadServiceReportPhotos: (token, reportId, files) => {
+        const formData = new FormData();
+        files.forEach(file => formData.append('photos', file));
+        return fetch(`${API_URL}/api/service-reports/${reportId}/photos`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: formData
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' }));
+      },
+
+      uploadServiceReportFiles: (token, reportId, files) => {
+        const formData = new FormData();
+        files.forEach(file => formData.append('files', file));
+        return fetch(`${API_URL}/api/service-reports/${reportId}/files`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: formData
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' }));
+      },
+
+      // Vendor management APIs
+      createVendor: (token, vendorData) =>
+        fetch(`${API_URL}/api/users`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...vendorData, role: 'vendor' })
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+      getAllClients: (token) =>
+        fetch(`${API_URL}/api/clients`, {
+          headers: { 'Authorization': `Bearer ${token}` }
         }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' }))
     };
 
@@ -148,7 +194,10 @@
       beaker: <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5"/></svg>,
       chartBar: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>,
       users: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/></svg>,
-      trash: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>
+      trash: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>,
+      userPlus: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM4 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 0110.374 21c-2.331 0-4.512-.645-6.374-1.766z"/></svg>,
+      assign: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z"/></svg>,
+      photo: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"/></svg>
     };
 
     // Login Page Component
@@ -249,14 +298,19 @@
 
     // Sidebar Component
     const Sidebar = ({ activePage, onNavigate, user, isMobileOpen, onClose }) => {
+      // Check if user can assign reports (super admin or manager with service portal access)
+      const canAssignReports = user?.role === 'admin' || (user?.isManager && user?.hasServicePortalAccess);
+
       const baseMenuItems = [
         { id: 'home', label: 'Dashboard', icon: Icons.home },
         { id: 'new_report', label: 'New Service Report', icon: Icons.plus },
         { id: 'reports', label: 'Service Reports', icon: Icons.folder }
       ];
 
-      // Service Portal does not have user management - handled in Admin Hub
-      const menuItems = baseMenuItems;
+      // Add Assign Report option for admins and managers
+      const menuItems = canAssignReports
+        ? [...baseMenuItems, { id: 'assign_report', label: 'Assign Report', icon: Icons.assign }]
+        : baseMenuItems;
 
       const handleNavigate = (id) => {
         onNavigate(id);
@@ -2066,6 +2120,604 @@
       );
     };
 
+    // Assign Report Page Component (for admins and managers)
+    const AssignReportPage = ({ token, user, clients, onSuccess }) => {
+      const [technicians, setTechnicians] = useState([]);
+      const [allClients, setAllClients] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [submitting, setSubmitting] = useState(false);
+      const [error, setError] = useState('');
+      const [success, setSuccess] = useState('');
+
+      // Form state
+      const [formData, setFormData] = useState({
+        assignedToId: '', clientFacilityName: '', customerName: '', address: '',
+        serviceType: '', analyzerModel: '', analyzerSerialNumber: '',
+        hubspotTicketNumber: '', serviceCompletionDate: '', managerNotes: ''
+      });
+
+      // File upload state
+      const [photos, setPhotos] = useState([]);
+      const [files, setFiles] = useState([]);
+      const [photoPreviewUrls, setPhotoPreviewUrls] = useState([]);
+      const [fileNames, setFileNames] = useState([]);
+      const photoInputRef = useRef(null);
+      const fileInputRef = useRef(null);
+
+      // Add Vendor Modal state
+      const [showVendorModal, setShowVendorModal] = useState(false);
+      const [vendorFormData, setVendorFormData] = useState({ name: '', email: '', password: '', assignedClients: [] });
+      const [vendorSaving, setVendorSaving] = useState(false);
+      const [vendorError, setVendorError] = useState('');
+
+      const serviceTypes = ['Analyzer Hardware', 'Inventory', 'LIS/EMR', 'Billing & Fees', 'Compliance', 'Training', 'Validations'];
+
+      useEffect(() => {
+        loadData();
+      }, []);
+
+      const loadData = async () => {
+        setLoading(true);
+        const [techData, clientData] = await Promise.all([
+          api.getTechnicians(token),
+          api.getAllClients(token)
+        ]);
+        if (!techData.error) setTechnicians(techData);
+        if (!clientData.error) setAllClients(clientData);
+        setLoading(false);
+      };
+
+      const handleClientSelect = (clientName) => {
+        const client = (clients.length > 0 ? clients : allClients).find(c => (c.name || c.clientName) === clientName);
+        if (client) {
+          setFormData(prev => ({
+            ...prev,
+            clientFacilityName: client.name || client.clientName || '',
+            address: client.address || '',
+            hubspotCompanyId: client.hubspotCompanyId || ''
+          }));
+        }
+      };
+
+      const handlePhotoSelect = (e) => {
+        const selectedFiles = Array.from(e.target.files);
+        setPhotos(prev => [...prev, ...selectedFiles]);
+        const newUrls = selectedFiles.map(file => URL.createObjectURL(file));
+        setPhotoPreviewUrls(prev => [...prev, ...newUrls]);
+      };
+
+      const handleFileSelect = (e) => {
+        const selectedFiles = Array.from(e.target.files);
+        setFiles(prev => [...prev, ...selectedFiles]);
+        setFileNames(prev => [...prev, ...selectedFiles.map(f => f.name)]);
+      };
+
+      const removePhoto = (idx) => {
+        URL.revokeObjectURL(photoPreviewUrls[idx]);
+        setPhotos(prev => prev.filter((_, i) => i !== idx));
+        setPhotoPreviewUrls(prev => prev.filter((_, i) => i !== idx));
+      };
+
+      const removeFile = (idx) => {
+        setFiles(prev => prev.filter((_, i) => i !== idx));
+        setFileNames(prev => prev.filter((_, i) => i !== idx));
+      };
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!formData.assignedToId || !formData.clientFacilityName) {
+          setError('Please select a technician/vendor and a client');
+          return;
+        }
+
+        setSubmitting(true);
+        setError('');
+
+        try {
+          const result = await api.assignServiceReport(token, formData);
+          if (result.error) {
+            setError(result.error);
+            setSubmitting(false);
+            return;
+          }
+
+          // Upload photos if any
+          if (photos.length > 0) {
+            await api.uploadServiceReportPhotos(token, result.id, photos);
+          }
+
+          // Upload files if any
+          if (files.length > 0) {
+            await api.uploadServiceReportFiles(token, result.id, files);
+          }
+
+          setSuccess('Report assigned successfully!');
+          // Reset form
+          setFormData({
+            assignedToId: '', clientFacilityName: '', customerName: '', address: '',
+            serviceType: '', analyzerModel: '', analyzerSerialNumber: '',
+            hubspotTicketNumber: '', serviceCompletionDate: '', managerNotes: ''
+          });
+          setPhotos([]);
+          setFiles([]);
+          setPhotoPreviewUrls([]);
+          setFileNames([]);
+
+          setTimeout(() => {
+            setSuccess('');
+            if (onSuccess) onSuccess();
+          }, 2000);
+        } catch (err) {
+          setError('Failed to assign report. Please try again.');
+        } finally {
+          setSubmitting(false);
+        }
+      };
+
+      const handleCreateVendor = async (e) => {
+        e.preventDefault();
+        if (!vendorFormData.name || !vendorFormData.email || !vendorFormData.password) {
+          setVendorError('Please fill in all required fields');
+          return;
+        }
+
+        setVendorSaving(true);
+        setVendorError('');
+
+        try {
+          const result = await api.createVendor(token, vendorFormData);
+          if (result.error) {
+            setVendorError(result.error);
+            setVendorSaving(false);
+            return;
+          }
+
+          // Refresh technicians list
+          const techData = await api.getTechnicians(token);
+          if (!techData.error) setTechnicians(techData);
+
+          // Close modal and reset form
+          setShowVendorModal(false);
+          setVendorFormData({ name: '', email: '', password: '', assignedClients: [] });
+          setSuccess('Vendor created successfully!');
+          setTimeout(() => setSuccess(''), 3000);
+        } catch (err) {
+          setVendorError('Failed to create vendor. Please try again.');
+        } finally {
+          setVendorSaving(false);
+        }
+      };
+
+      if (loading) {
+        return (
+          <div className="flex items-center justify-center py-12">
+            <div className="text-center">
+              <svg className="animate-spin w-8 h-8 text-primary-500 mx-auto mb-3" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+              </svg>
+              <p className="text-gray-500">Loading...</p>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="space-y-6 animate-fade-in">
+          {/* Header */}
+          <div className="card-modern p-6">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white shadow-lg">
+                {Icons.assign}
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">Assign Service Report</h1>
+                <p className="text-gray-500">Pre-populate details and assign a service visit to a technician or vendor</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Success/Error Messages */}
+          {success && (
+            <div className="bg-success-50 text-success-600 px-4 py-3 rounded-xl flex items-center gap-2">
+              {Icons.check}
+              <span>{success}</span>
+            </div>
+          )}
+          {error && (
+            <div className="bg-danger-50 text-danger-600 px-4 py-3 rounded-xl flex items-center gap-2">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+              <span>{error}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Assignment Section */}
+            <div className="card-modern p-6 border-l-4 border-blue-500">
+              <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
+                <span className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 text-sm">1</span>
+                Assignment
+              </h2>
+              <div className="flex gap-4 items-end">
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Assign To *</label>
+                  <select
+                    value={formData.assignedToId}
+                    onChange={(e) => setFormData({...formData, assignedToId: e.target.value})}
+                    className="input-modern w-full px-4 py-3"
+                    required
+                  >
+                    <option value="">Select a technician or vendor...</option>
+                    {technicians.map(tech => (
+                      <option key={tech.id} value={tech.id}>
+                        {tech.name} {tech.role === 'vendor' ? '(Vendor)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowVendorModal(true)}
+                  className="px-4 py-3 bg-orange-500 text-white rounded-xl font-medium hover:bg-orange-600 transition flex items-center gap-2 whitespace-nowrap"
+                >
+                  {Icons.userPlus}
+                  Add New Vendor
+                </button>
+              </div>
+            </div>
+
+            {/* Client Information Section */}
+            <div className="card-modern p-6">
+              <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
+                <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">2</span>
+                Client Information
+              </h2>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Client/Facility Name *</label>
+                  <select
+                    value={formData.clientFacilityName}
+                    onChange={(e) => handleClientSelect(e.target.value)}
+                    className="input-modern w-full px-4 py-3"
+                    required
+                  >
+                    <option value="">Select a client...</option>
+                    {(clients.length > 0 ? clients : allClients).map((client, idx) => (
+                      <option key={idx} value={client.name || client.clientName}>
+                        {client.name || client.clientName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Customer Name</label>
+                  <input
+                    type="text"
+                    value={formData.customerName}
+                    onChange={(e) => setFormData({...formData, customerName: e.target.value})}
+                    className="input-modern w-full px-4 py-3"
+                    placeholder="Contact name"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                  <input
+                    type="text"
+                    value={formData.address}
+                    onChange={(e) => setFormData({...formData, address: e.target.value})}
+                    className="input-modern w-full px-4 py-3"
+                    placeholder="Service address"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Service Details Section */}
+            <div className="card-modern p-6">
+              <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
+                <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">3</span>
+                Service Details
+              </h2>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Service Type</label>
+                  <select
+                    value={formData.serviceType}
+                    onChange={(e) => setFormData({...formData, serviceType: e.target.value})}
+                    className="input-modern w-full px-4 py-3"
+                  >
+                    <option value="">Select service type...</option>
+                    {serviceTypes.map(type => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Target Completion Date</label>
+                  <input
+                    type="date"
+                    value={formData.serviceCompletionDate}
+                    onChange={(e) => setFormData({...formData, serviceCompletionDate: e.target.value})}
+                    className="input-modern w-full px-4 py-3"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Analyzer Model</label>
+                  <input
+                    type="text"
+                    value={formData.analyzerModel}
+                    onChange={(e) => setFormData({...formData, analyzerModel: e.target.value})}
+                    className="input-modern w-full px-4 py-3"
+                    placeholder="e.g., DZLite C270"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Analyzer Serial Number</label>
+                  <input
+                    type="text"
+                    value={formData.analyzerSerialNumber}
+                    onChange={(e) => setFormData({...formData, analyzerSerialNumber: e.target.value})}
+                    className="input-modern w-full px-4 py-3"
+                    placeholder="e.g., 601744124"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">HubSpot Ticket #</label>
+                  <input
+                    type="text"
+                    value={formData.hubspotTicketNumber}
+                    onChange={(e) => setFormData({...formData, hubspotTicketNumber: e.target.value})}
+                    className="input-modern w-full px-4 py-3"
+                    placeholder="Enter ticket number"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Manager Notes Section */}
+            <div className="card-modern p-6 border-l-4 border-yellow-500">
+              <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
+                <span className="w-6 h-6 bg-yellow-100 rounded-full flex items-center justify-center text-yellow-600 text-sm">4</span>
+                Manager Notes
+              </h2>
+              <textarea
+                value={formData.managerNotes}
+                onChange={(e) => setFormData({...formData, managerNotes: e.target.value})}
+                rows={4}
+                className="input-modern w-full px-4 py-3"
+                placeholder="Add instructions or notes for the technician..."
+              />
+            </div>
+
+            {/* Reference Photos Section */}
+            <div className="card-modern p-6">
+              <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
+                <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">5</span>
+                Reference Photos
+              </h2>
+              <p className="text-sm text-gray-500 mb-3">Upload photos for technician reference (equipment photos, location details, etc.)</p>
+              <input
+                type="file"
+                ref={photoInputRef}
+                onChange={handlePhotoSelect}
+                accept="image/*"
+                multiple
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => photoInputRef.current?.click()}
+                className="px-4 py-2 border-2 border-dashed border-gray-300 rounded-xl hover:border-primary-500 text-gray-600 hover:text-primary-600 transition flex items-center gap-2"
+              >
+                {Icons.photo} Add Photos
+              </button>
+              {photoPreviewUrls.length > 0 && (
+                <div className="flex flex-wrap gap-3 mt-4">
+                  {photoPreviewUrls.map((url, idx) => (
+                    <div key={idx} className="relative">
+                      <img src={url} alt={`Preview ${idx + 1}`} className="w-24 h-24 object-cover rounded-xl border" />
+                      <button
+                        type="button"
+                        onClick={() => removePhoto(idx)}
+                        className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Client Files Section */}
+            <div className="card-modern p-6">
+              <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
+                <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">6</span>
+                Client Files
+              </h2>
+              <p className="text-sm text-gray-500 mb-3">Upload relevant documents (service manuals, previous reports, etc.)</p>
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileSelect}
+                multiple
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="px-4 py-2 border-2 border-dashed border-gray-300 rounded-xl hover:border-primary-500 text-gray-600 hover:text-primary-600 transition flex items-center gap-2"
+              >
+                {Icons.folder} Add Files
+              </button>
+              {fileNames.length > 0 && (
+                <div className="space-y-2 mt-4">
+                  {fileNames.map((name, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                      <span className="text-sm text-gray-700 flex items-center gap-2">
+                        {Icons.document} {name}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeFile(idx)}
+                        className="text-red-500 hover:text-red-700 text-sm font-medium"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Submit Buttons */}
+            <div className="flex justify-end gap-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setFormData({
+                    assignedToId: '', clientFacilityName: '', customerName: '', address: '',
+                    serviceType: '', analyzerModel: '', analyzerSerialNumber: '',
+                    hubspotTicketNumber: '', serviceCompletionDate: '', managerNotes: ''
+                  });
+                  setPhotos([]);
+                  setFiles([]);
+                  setPhotoPreviewUrls([]);
+                  setFileNames([]);
+                }}
+                className="px-6 py-3 border rounded-xl hover:bg-gray-50 font-medium"
+              >
+                Clear Form
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="btn-primary px-8 py-3 text-white rounded-xl font-medium disabled:opacity-50 flex items-center gap-2"
+              >
+                {submitting ? (
+                  <>
+                    <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                    Assigning...
+                  </>
+                ) : 'Assign Report'}
+              </button>
+            </div>
+          </form>
+
+          {/* Add Vendor Modal */}
+          {showVendorModal && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto animate-fade-in">
+                <div className="p-6 border-b flex justify-between items-center sticky top-0 bg-white rounded-t-2xl">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center text-orange-600">
+                      {Icons.userPlus}
+                    </div>
+                    <h3 className="text-xl font-bold text-gray-900">Add New Vendor</h3>
+                  </div>
+                  <button onClick={() => { setShowVendorModal(false); setVendorError(''); }} className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-lg transition">
+                    {Icons.close}
+                  </button>
+                </div>
+                <form onSubmit={handleCreateVendor} className="p-6 space-y-4">
+                  {vendorError && (
+                    <div className="bg-danger-50 text-danger-600 px-4 py-3 rounded-xl text-sm">
+                      {vendorError}
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                    <input
+                      type="text"
+                      value={vendorFormData.name}
+                      onChange={(e) => setVendorFormData({...vendorFormData, name: e.target.value})}
+                      className="input-modern w-full px-4 py-3"
+                      placeholder="Vendor name"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                    <input
+                      type="email"
+                      value={vendorFormData.email}
+                      onChange={(e) => setVendorFormData({...vendorFormData, email: e.target.value})}
+                      className="input-modern w-full px-4 py-3"
+                      placeholder="vendor@example.com"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Password *</label>
+                    <input
+                      type="password"
+                      value={vendorFormData.password}
+                      onChange={(e) => setVendorFormData({...vendorFormData, password: e.target.value})}
+                      className="input-modern w-full px-4 py-3"
+                      placeholder="Create a password"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Assigned Clients</label>
+                    <p className="text-xs text-gray-500 mb-2">Vendors can submit and view reports for their assigned clients</p>
+                    <div className="max-h-48 overflow-y-auto border rounded-xl p-2 space-y-2">
+                      {allClients.length > 0 ? allClients.map((client, idx) => {
+                        const clientName = client.name || client.clientName;
+                        const isAssigned = (vendorFormData.assignedClients || []).includes(clientName);
+                        return (
+                          <div key={idx} className={`flex items-center p-2 rounded-lg ${isAssigned ? 'bg-orange-50' : 'bg-gray-50'}`}>
+                            <label className="flex items-center gap-2 cursor-pointer flex-1">
+                              <input
+                                type="checkbox"
+                                checked={isAssigned}
+                                onChange={() => {
+                                  const current = vendorFormData.assignedClients || [];
+                                  setVendorFormData({
+                                    ...vendorFormData,
+                                    assignedClients: isAssigned
+                                      ? current.filter(c => c !== clientName)
+                                      : [...current, clientName]
+                                  });
+                                }}
+                                className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                              />
+                              <span className="text-sm">{clientName}</span>
+                            </label>
+                          </div>
+                        );
+                      }) : <p className="text-sm text-gray-500 text-center py-4">No clients available</p>}
+                    </div>
+                  </div>
+                  <div className="flex gap-3 pt-4">
+                    <button
+                      type="button"
+                      onClick={() => { setShowVendorModal(false); setVendorError(''); }}
+                      className="flex-1 px-4 py-3 border rounded-xl hover:bg-gray-50 font-medium"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={vendorSaving}
+                      className="flex-1 px-4 py-3 bg-orange-500 text-white rounded-xl hover:bg-orange-600 font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {vendorSaving ? (
+                        <>
+                          <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                          Creating...
+                        </>
+                      ) : 'Create Vendor'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+
     // Main App Component
     const App = () => {
       // Check multiple token sources - service_token, unified_token, or admin_token
@@ -2215,6 +2867,22 @@
             );
           case 'reports':
             return <ReportsPage token={token} onViewReport={handleViewReport} currentUser={user} />;
+          case 'assign_report':
+            // Only show for admins and managers
+            if (user?.role === 'admin' || (user?.isManager && user?.hasServicePortalAccess)) {
+              return (
+                <AssignReportPage
+                  token={token}
+                  user={user}
+                  clients={clients}
+                  onSuccess={() => {
+                    loadData();
+                    setActivePage('home');
+                  }}
+                />
+              );
+            }
+            return <HomePage user={user} onNavigate={setActivePage} recentReports={data?.recentReports || []} assignedReports={assignedReports} onEditAssignment={handleEditAssignment} />;
           default:
             return <HomePage user={user} onNavigate={setActivePage} recentReports={data?.recentReports || []} assignedReports={assignedReports} onEditAssignment={handleEditAssignment} />;
         }
