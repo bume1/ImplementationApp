@@ -310,10 +310,18 @@
         { id: 'reports', label: 'Service Reports', icon: Icons.folder }
       ];
 
-      // Add Assign Report option for admins and managers
-      const menuItems = canAssignReports
-        ? [...baseMenuItems, { id: 'assign_report', label: 'Assign Report', icon: Icons.assign }]
-        : baseMenuItems;
+      // Build menu items based on user role
+      let menuItems = [...baseMenuItems];
+
+      // Add Assigned Reports for vendors and technicians (those who receive assignments)
+      if (user?.role === 'vendor' || user?.hasServicePortalAccess) {
+        menuItems.push({ id: 'assigned_reports', label: 'Assigned Reports', icon: Icons.clipboard });
+      }
+
+      // Add Assign Report option for admins and managers (those who can assign to others)
+      if (canAssignReports) {
+        menuItems.push({ id: 'assign_report', label: 'Assign Report', icon: Icons.assign });
+      }
 
       const handleNavigate = (id) => {
         onNavigate(id);
@@ -515,8 +523,14 @@
                         {new Date(report.serviceDate || report.serviceCompletionDate || report.createdAt).toLocaleDateString()}
                       </p>
                     </div>
-                    <span className="text-xs bg-success-50 text-success-600 px-3 py-1.5 rounded-full font-medium">
-                      Completed
+                    <span className={`text-xs px-3 py-1.5 rounded-full font-medium ${
+                      report.status === 'assigned'
+                        ? 'bg-warning-50 text-warning-600'
+                        : report.status === 'submitted'
+                          ? 'bg-success-50 text-success-600'
+                          : 'bg-success-50 text-success-600'
+                    }`}>
+                      {report.status === 'assigned' ? 'Assigned' : 'Completed'}
                     </span>
                   </div>
                 ))}
@@ -1863,6 +1877,90 @@
               </div>
             </div>
 
+            {/* Assignment Info - if this was an assigned report */}
+            {report.assignedById && (
+              <div className="p-6 border-b bg-blue-50/30">
+                <h2 className="text-lg font-bold text-accent mb-4">ASSIGNMENT DETAILS</h2>
+                <div className="grid md:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <p className="text-sm text-gray-500">Assigned By</p>
+                    <p className="font-medium">{report.assignedByName || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Assigned On</p>
+                    <p className="font-medium">{report.assignedAt ? new Date(report.assignedAt).toLocaleDateString() : '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Assigned To</p>
+                    <p className="font-medium">{report.assignedToName || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Status</p>
+                    <p className="font-medium">
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${
+                        report.status === 'assigned' ? 'bg-yellow-100 text-yellow-700' :
+                        report.status === 'submitted' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+                      }`}>
+                        {report.status === 'assigned' ? 'Pending' : report.status === 'submitted' ? 'Completed' : report.status}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+
+                {/* Manager Notes */}
+                {report.managerNotes && (
+                  <div className="mt-4 p-4 bg-blue-100/50 border border-blue-200 rounded-lg">
+                    <h3 className="font-semibold text-blue-800 mb-2 text-sm">Manager Notes</h3>
+                    <p className="text-sm text-blue-900 whitespace-pre-wrap">{report.managerNotes}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Reference Photos & Files */}
+            {((report.photos && report.photos.length > 0) || (report.clientFiles && report.clientFiles.length > 0)) && (
+              <div className="p-6 border-b">
+                <h2 className="text-lg font-bold text-accent mb-4">ATTACHMENTS</h2>
+
+                {/* Photos */}
+                {report.photos && report.photos.length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-sm text-gray-500 mb-2">Reference Photos</p>
+                    <div className="flex flex-wrap gap-3">
+                      {report.photos.map((photo, idx) => (
+                        <a key={photo.id || idx} href={photo.url} target="_blank" rel="noopener noreferrer" className="block group">
+                          <img src={photo.url} alt={photo.name || 'Reference photo'} className="w-24 h-24 object-cover rounded-lg border border-gray-200 group-hover:border-primary-500 transition shadow-sm" />
+                          {photo.name && <p className="text-xs text-gray-500 mt-1 truncate w-24">{photo.name}</p>}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Files */}
+                {report.clientFiles && report.clientFiles.length > 0 && (
+                  <div>
+                    <p className="text-sm text-gray-500 mb-2">Client Files</p>
+                    <div className="space-y-2">
+                      {report.clientFiles.map((file, idx) => (
+                        <a key={file.id || idx} href={file.url} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border hover:bg-gray-100 hover:border-primary-300 transition">
+                          <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center text-primary-600">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-gray-900 truncate">{file.name}</p>
+                            {file.uploadedAt && <p className="text-xs text-gray-500">Uploaded {new Date(file.uploadedAt).toLocaleDateString()}</p>}
+                          </div>
+                          <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Signatures */}
             <div className="p-6">
               <h2 className="text-lg font-bold text-accent mb-4">SIGNATURES</h2>
@@ -1891,6 +1989,122 @@
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      );
+    };
+
+    // Assigned Reports Page - Shows reports assigned to the current vendor/technician
+    const AssignedReportsPage = ({ assignedReports, onEditAssignment, onBack }) => {
+      return (
+        <div className="space-y-6 animate-fade-in">
+          {/* Header */}
+          <div className="relative rounded-2xl overflow-hidden shadow-lg" style={{minHeight: '140px'}}>
+            <div className="absolute inset-0 bg-cover bg-center" style={{backgroundImage: 'url(/banners/banner-service.jpg)'}}></div>
+            <div className="absolute inset-0 bg-gradient-to-r from-red-700/90 via-red-600/70 to-transparent"></div>
+            <div className="relative p-6 flex items-center min-h-[140px]">
+              <div className="text-white">
+                <h1 className="text-2xl font-bold drop-shadow-sm">Assigned Service Reports</h1>
+                <p className="mt-1 text-white/80 text-sm">Complete your assigned service visits</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Summary Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="card-modern p-5 border-l-4 border-red-500">
+              <p className="text-sm text-gray-500">Pending</p>
+              <p className="text-2xl font-bold text-red-600">{assignedReports.length}</p>
+            </div>
+          </div>
+
+          {/* Assigned Reports List */}
+          <div className="card-modern">
+            <div className="p-6 border-b">
+              <h2 className="text-lg font-bold text-gray-900">Your Assigned Service Visits</h2>
+              <p className="text-sm text-gray-500 mt-1">Click on a report to complete and submit</p>
+            </div>
+
+            {assignedReports.length > 0 ? (
+              <div className="divide-y">
+                {assignedReports.map(report => (
+                  <div key={report.id} className="p-6 hover:bg-gray-50 transition">
+                    <div className="flex items-center justify-between flex-wrap gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center text-red-600">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z"/></svg>
+                          </div>
+                          <div>
+                            <h3 className="font-semibold text-gray-900">{report.clientFacilityName}</h3>
+                            <p className="text-sm text-gray-500">{report.customerName || 'No customer name'}</p>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          {report.serviceType && (
+                            <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">
+                              {report.serviceType}
+                            </span>
+                          )}
+                          {report.serviceCompletionDate && (
+                            <span className="text-xs text-gray-500">
+                              Due: {new Date(report.serviceCompletionDate).toLocaleDateString()}
+                            </span>
+                          )}
+                          <span className="px-2 py-1 bg-warning-50 text-warning-600 rounded text-xs font-medium">
+                            Pending
+                          </span>
+                        </div>
+
+                        {report.managerNotes && (
+                          <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                            <p className="text-xs font-medium text-blue-800 mb-1">Manager Notes:</p>
+                            <p className="text-sm text-blue-900">{report.managerNotes}</p>
+                          </div>
+                        )}
+
+                        <div className="mt-2 text-xs text-gray-400">
+                          Assigned by {report.assignedByName} on {new Date(report.assignedAt).toLocaleDateString()}
+                        </div>
+
+                        {/* Show photos/files count if any */}
+                        <div className="mt-2 flex items-center gap-4 text-xs text-gray-500">
+                          {report.photos && report.photos.length > 0 && (
+                            <span className="flex items-center gap-1">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"/></svg>
+                              {report.photos.length} photo{report.photos.length > 1 ? 's' : ''}
+                            </span>
+                          )}
+                          {report.clientFiles && report.clientFiles.length > 0 && (
+                            <span className="flex items-center gap-1">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
+                              {report.clientFiles.length} file{report.clientFiles.length > 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => onEditAssignment(report)}
+                        className="px-5 py-2.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition flex items-center gap-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/></svg>
+                        Complete Report
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-12 text-center">
+                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900">All caught up!</h3>
+                <p className="text-gray-500 mt-1">You have no pending service visits to complete.</p>
+              </div>
+            )}
           </div>
         </div>
       );
@@ -2870,6 +3084,14 @@
             );
           case 'reports':
             return <ReportsPage token={token} onViewReport={handleViewReport} currentUser={user} />;
+          case 'assigned_reports':
+            return (
+              <AssignedReportsPage
+                assignedReports={assignedReports}
+                onEditAssignment={handleEditAssignment}
+                onBack={() => setActivePage('home')}
+              />
+            );
           case 'assign_report':
             // Only show for admins and managers
             if (user?.role === 'admin' || (user?.isManager && user?.hasServicePortalAccess)) {
