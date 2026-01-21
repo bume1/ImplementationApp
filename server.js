@@ -234,8 +234,6 @@ const authenticateToken = async (req, res, next) => {
       hasImplementationsAccess: freshUser.hasImplementationsAccess || false,
       // Managers automatically get client portal admin access
       hasClientPortalAdminAccess: freshUser.hasClientPortalAdminAccess || isManager || false,
-      // Service Report Admin access - allows managing vendors and service assignments
-      hasServiceReportAdminAccess: freshUser.hasServiceReportAdminAccess || false,
       // Vendor-specific: clients they can service
       assignedClients: freshUser.assignedClients || [],
       // Client-specific fields
@@ -345,7 +343,7 @@ app.post('/api/users', authenticateToken, async (req, res) => {
     const {
       email, password, name, role, practiceName, isNewClient, assignedProjects, logo,
       hasServicePortalAccess, hasAdminHubAccess, hasImplementationsAccess, hasClientPortalAdminAccess,
-      hasServiceReportAdminAccess, isManager, assignedClients, hubspotCompanyId, hubspotDealId, hubspotContactId, projectAccessLevels
+      isManager, assignedClients, hubspotCompanyId, hubspotDealId, hubspotContactId, projectAccessLevels
     } = req.body;
     if (!email || !password || !name) {
       return res.status(400).json({ error: 'Email, password, and name are required' });
@@ -368,7 +366,6 @@ app.post('/api/users', authenticateToken, async (req, res) => {
       hasAdminHubAccess: hasAdminHubAccess || false,
       hasImplementationsAccess: hasImplementationsAccess || false,
       hasClientPortalAdminAccess: hasClientPortalAdminAccess || false,
-      hasServiceReportAdminAccess: hasServiceReportAdminAccess || false,
       createdAt: new Date().toISOString(),
       // Force new users to change their password on first login
       requirePasswordChange: true,
@@ -416,7 +413,6 @@ app.post('/api/users', authenticateToken, async (req, res) => {
       hasAdminHubAccess: newUser.hasAdminHubAccess,
       hasImplementationsAccess: newUser.hasImplementationsAccess,
       hasClientPortalAdminAccess: newUser.hasClientPortalAdminAccess,
-      hasServiceReportAdminAccess: newUser.hasServiceReportAdminAccess,
       practiceName: newUser.practiceName,
       isNewClient: newUser.isNewClient,
       slug: newUser.slug,
@@ -468,8 +464,6 @@ app.post('/api/auth/login', async (req, res) => {
       hasImplementationsAccess: user.hasImplementationsAccess || false,
       // Managers automatically get client portal admin access
       hasClientPortalAdminAccess: user.hasClientPortalAdminAccess || isManager || false,
-      // Service Report Admin - can manage vendors and service assignments
-      hasServiceReportAdminAccess: user.hasServiceReportAdminAccess || false,
       assignedProjects: user.assignedProjects || [],
       assignedClients: user.assignedClients || [],
       // Password reset flag
@@ -819,7 +813,7 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
       name, email, role, password, assignedProjects, projectAccessLevels,
       practiceName, isNewClient, logo, hubspotCompanyId, hubspotDealId, hubspotContactId,
       hasServicePortalAccess, hasAdminHubAccess, hasImplementationsAccess, hasClientPortalAdminAccess,
-      hasServiceReportAdminAccess, isManager, assignedClients
+      isManager, assignedClients
     } = req.body;
     const users = await getUsers();
     const idx = users.findIndex(u => u.id === userId);
@@ -844,7 +838,6 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
     if (hasAdminHubAccess !== undefined) users[idx].hasAdminHubAccess = hasAdminHubAccess;
     if (hasImplementationsAccess !== undefined) users[idx].hasImplementationsAccess = hasImplementationsAccess;
     if (hasClientPortalAdminAccess !== undefined) users[idx].hasClientPortalAdminAccess = hasClientPortalAdminAccess;
-    if (hasServiceReportAdminAccess !== undefined) users[idx].hasServiceReportAdminAccess = hasServiceReportAdminAccess;
 
     // Vendor-specific: assigned clients
     if (assignedClients !== undefined) users[idx].assignedClients = assignedClients;
@@ -877,7 +870,6 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
       hasAdminHubAccess: users[idx].hasAdminHubAccess || false,
       hasImplementationsAccess: users[idx].hasImplementationsAccess || false,
       hasClientPortalAdminAccess: users[idx].hasClientPortalAdminAccess || false,
-      hasServiceReportAdminAccess: users[idx].hasServiceReportAdminAccess || false,
       assignedProjects: users[idx].assignedProjects || [],
       projectAccessLevels: users[idx].projectAccessLevels || {},
       assignedClients: users[idx].assignedClients || [],
@@ -5097,8 +5089,8 @@ app.get('/api/service-portal/data', authenticateToken, requireServiceAccess, asy
     const serviceReports = (await db.get('service_reports')) || [];
     let userReports;
 
-    if (req.user.role === 'admin' || req.user.isManager || req.user.hasServiceReportAdminAccess) {
-      // Super Admins, Managers, and Service Report Admins see all reports
+    if (req.user.role === 'admin' || (req.user.isManager && req.user.hasServicePortalAccess)) {
+      // Super Admins and Managers with Service Portal access see all reports
       userReports = serviceReports;
     } else if (req.user.role === 'vendor') {
       // Vendors see their own reports + reports for their assigned clients
@@ -5518,11 +5510,11 @@ app.delete('/api/service-reports', authenticateToken, async (req, res) => {
 
 // ============== SERVICE REPORT ASSIGNMENTS (Manager/Admin assigns to Technician/Vendor) ==============
 
-// Create and assign service report to technician/vendor (admin/manager only)
+// Create and assign service report to technician/vendor (admin/manager with service access only)
 app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
   try {
-    // Only admins, managers, and users with service report admin access can assign service reports
-    if (req.user.role !== 'admin' && !req.user.isManager && !req.user.hasServiceReportAdminAccess) {
+    // Only admins and managers with service portal access can assign service reports
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
       return res.status(403).json({ error: 'Only admins and managers can assign service reports' });
     }
 
@@ -5769,11 +5761,11 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
   }
 });
 
-// Upload photos to service report (admin/manager/service report admin only)
+// Upload photos to service report (admin/manager with service access only)
 app.post('/api/service-reports/:id/photos', authenticateToken, upload.array('photos', 10), async (req, res) => {
   try {
-    // Only admins, managers, and service report admins can upload photos
-    if (req.user.role !== 'admin' && !req.user.isManager && !req.user.hasServiceReportAdminAccess) {
+    // Only admins and managers with service portal access can upload photos
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
       return res.status(403).json({ error: 'Only admins and managers can upload photos' });
     }
 
@@ -5823,11 +5815,11 @@ app.post('/api/service-reports/:id/photos', authenticateToken, upload.array('pho
   }
 });
 
-// Upload client files to service report (admin/manager/service report admin only)
+// Upload client files to service report (admin/manager with service access only)
 app.post('/api/service-reports/:id/files', authenticateToken, upload.array('files', 10), async (req, res) => {
   try {
-    // Only admins, managers, and service report admins can upload client files
-    if (req.user.role !== 'admin' && !req.user.isManager && !req.user.hasServiceReportAdminAccess) {
+    // Only admins and managers with service portal access can upload client files
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
       return res.status(403).json({ error: 'Only admins and managers can upload client files' });
     }
 
@@ -5877,10 +5869,10 @@ app.post('/api/service-reports/:id/files', authenticateToken, upload.array('file
   }
 });
 
-// Delete photo from service report (admin/manager/service report admin only)
+// Delete photo from service report (admin/manager with service access only)
 app.delete('/api/service-reports/:id/photos/:photoId', authenticateToken, async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && !req.user.isManager && !req.user.hasServiceReportAdminAccess) {
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
       return res.status(403).json({ error: 'Only admins and managers can delete photos' });
     }
 
@@ -5913,10 +5905,10 @@ app.delete('/api/service-reports/:id/photos/:photoId', authenticateToken, async 
   }
 });
 
-// Delete client file from service report (admin/manager/service report admin only)
+// Delete client file from service report (admin/manager with service access only)
 app.delete('/api/service-reports/:id/files/:fileId', authenticateToken, async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && !req.user.isManager && !req.user.hasServiceReportAdminAccess) {
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
       return res.status(403).json({ error: 'Only admins and managers can delete files' });
     }
 
@@ -5949,10 +5941,10 @@ app.delete('/api/service-reports/:id/files/:fileId', authenticateToken, async (r
   }
 });
 
-// Update manager notes on service report (admin/manager/service report admin only)
+// Update manager notes on service report (admin/manager with service access only)
 app.put('/api/service-reports/:id/manager-notes', authenticateToken, async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && !req.user.isManager && !req.user.hasServiceReportAdminAccess) {
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
       return res.status(403).json({ error: 'Only admins and managers can update manager notes' });
     }
 
@@ -5979,7 +5971,7 @@ app.put('/api/service-reports/:id/manager-notes', authenticateToken, async (req,
 // Get service portal technicians/vendors for assignment dropdown
 app.get('/api/service-portal/technicians', authenticateToken, async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && !req.user.isManager && !req.user.hasServiceReportAdminAccess) {
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
       return res.status(403).json({ error: 'Only admins and managers can access technician list' });
     }
 

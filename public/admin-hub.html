@@ -872,7 +872,6 @@
         isManager: false, // Manager flag - limited admin access (no inbox/user management)
         hasServicePortalAccess: false, hasAdminHubAccess: false,
         hasImplementationsAccess: false, hasClientPortalAdminAccess: false,
-        hasServiceReportAdminAccess: false, // Service Report Admin - can manage vendors and assignments
         practiceName: '', isNewClient: false,
         logo: '', hubspotCompanyId: '', hubspotDealId: '', hubspotContactId: '',
         assignedProjects: [], projectAccessLevels: {}, assignedClients: []
@@ -941,7 +940,6 @@
           hasAdminHubAccess: user.hasAdminHubAccess || false,
           hasImplementationsAccess: user.hasImplementationsAccess || false,
           hasClientPortalAdminAccess: user.hasClientPortalAdminAccess || false,
-          hasServiceReportAdminAccess: user.hasServiceReportAdminAccess || false,
           practiceName: user.practiceName || '',
           isNewClient: user.isNewClient || false,
           logo: user.logo || '',
@@ -1276,14 +1274,8 @@
                             className="w-5 h-5 rounded border-gray-300 text-orange-600 focus:ring-orange-500" />
                           <label htmlFor="clientPortalAdmin" className="text-sm font-medium text-gray-700">Client Portal Admin</label>
                         </div>
-                        <div className="flex items-center gap-3 p-3 bg-rose-50 rounded-lg">
-                          <input type="checkbox" id="serviceReportAdmin" checked={formData.hasServiceReportAdminAccess}
-                            onChange={(e) => setFormData({ ...formData, hasServiceReportAdminAccess: e.target.checked })}
-                            className="w-5 h-5 rounded border-gray-300 text-rose-600 focus:ring-rose-500" />
-                          <label htmlFor="serviceReportAdmin" className="text-sm font-medium text-gray-700">Service Report Admin</label>
-                        </div>
                       </div>
-                      <p className="text-xs text-gray-500 mt-2">Admins automatically have all permissions. Service Report Admin allows managing vendors and service assignments.</p>
+                      <p className="text-xs text-gray-500 mt-2">Admins automatically have all permissions. Managers with Service Portal access can manage vendors and assignments.</p>
                     </div>
                   )}
 
@@ -1577,7 +1569,6 @@
                               <button onClick={() => toggleServiceAccess(user)} disabled={user.role === 'admin'}
                                 className={`px-2 py-0.5 text-xs rounded ${user.hasServicePortalAccess || user.role === 'admin' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}
                                 title={user.role === 'admin' ? 'Admins always have access' : 'Click to toggle'}>Service</button>
-                              <span className={`px-2 py-0.5 text-xs rounded ${user.hasServiceReportAdminAccess || user.role === 'admin' ? 'bg-rose-100 text-rose-700' : 'bg-gray-100 text-gray-400'}`} title="Service Report Admin - Can manage vendors and assignments">SR Admin</span>
                             </div>
                           </td>
                           <td className="px-4 py-4 text-xs text-gray-500">
@@ -1658,8 +1649,8 @@
         name: '', email: '', password: '', assignedClients: []
       });
       const [vendorSaving, setVendorSaving] = useState(false);
-      // Vendor Management is visible to Managers and users with Service Report Admin access
-      const canManageVendors = (user?.isManager || user?.hasServiceReportAdminAccess) && user?.role !== 'admin';
+      // Vendor Management is visible to Managers with Service Portal access
+      const canManageVendors = user?.isManager && user?.hasServicePortalAccess && user?.role !== 'admin';
 
       useEffect(() => {
         loadData();
