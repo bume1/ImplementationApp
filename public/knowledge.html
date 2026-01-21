@@ -1195,6 +1195,150 @@ Each submitted report generates a PDF that:
 - Is attached to the client's support ticket history
 
 **PRO TIP:** Regularly review your recent reports to ensure accuracy while details are still fresh in memory.`
+          },
+          {
+            title: 'Managing Vendors and Service Assignments (Managers)',
+            content: `This guide is for Managers who need to manage vendors, assign service visits, and oversee service operations.
+
+**ACCESSING SERVICE PORTAL ADMIN FEATURES:**
+
+Managers with "Service Portal" access enabled can access full admin features:
+1. Go to Admin Hub → Service Portal section
+2. You'll see three tabs: Service Reports, Validation Reports, and Vendors
+
+**REQUIRED PERMISSION:**
+• You must be a Manager (isManager = true)
+• AND have "Service Portal" checkbox enabled in your user settings
+• Super Admins automatically have full access
+
+---
+
+**MANAGING EXTERNAL VENDORS:**
+
+The Vendors tab allows you to add and manage external service technicians.
+
+**Adding a New Vendor:**
+1. Click "Add Vendor" button
+2. Fill in required fields:
+   • **Name**: Vendor's full name
+   • **Email**: Their login email
+   • **Password**: Temporary password (they'll reset on first login)
+3. Select "Assigned Clients" - which clients this vendor can service
+4. Click "Create Vendor"
+
+**What Vendors Can Do:**
+• Submit service reports for their assigned clients
+• View reports they've created
+• Access the Service Portal
+
+**Editing a Vendor:**
+1. Find the vendor in the list
+2. Click the edit (pencil) icon
+3. Update their information or assigned clients
+4. Click "Update Vendor"
+
+**Deleting a Vendor:**
+1. Click the delete (trash) icon next to the vendor
+2. Confirm the deletion
+3. NOTE: This removes their access but keeps their submitted reports
+
+---
+
+**ASSIGNING SERVICE VISITS:**
+
+You can pre-assign service work to technicians or vendors with all client details filled in.
+
+**Creating an Assignment:**
+1. Go to Admin Hub → Service Portal → Service Reports tab
+2. Click "Assign New Service" button
+3. Fill in the assignment form:
+
+**Required Fields:**
+• **Assign To**: Select the technician/vendor
+• **Client/Facility**: Select the client
+• **Service Type**: Choose the service category
+
+**Pre-fill Fields:**
+• **Customer Name**: Contact person at the client
+• **Address**: Service location
+• **Analyzer Model/Serial**: Equipment details
+• **HubSpot Ticket #**: Reference ticket
+• **Service Completion Date**: Expected/scheduled date
+
+**Manager Notes:**
+Add instructions or context for the technician. They'll see this when they view the assignment.
+
+**Uploading Photos:**
+1. Click "Upload Photos"
+2. Select photos showing the issue or location
+3. Photos appear in the assignment for the technician to reference
+
+**Uploading Client Files:**
+1. Click "Upload Files"
+2. Select documents (manuals, previous reports, etc.)
+3. Files are attached for technician reference
+
+**Submit the Assignment:**
+Click "Create Assignment" - the technician will see it in their dashboard.
+
+---
+
+**TRACKING ASSIGNMENTS:**
+
+**In the Service Reports Tab:**
+• **Status: Assigned** (yellow) = Pending technician completion
+• **Status: Submitted** (green) = Technician has completed the report
+
+**Viewing Assignment Details:**
+1. Click "View" on any report
+2. See all pre-filled information
+3. Once completed, see technician's work documentation
+
+**Editing Manager Notes:**
+1. Open a report/assignment
+2. Find the "Manager Notes" section
+3. Update notes as needed
+4. Click "Save Notes"
+
+---
+
+**BEST PRACTICES FOR MANAGERS:**
+
+✓ **Assign work promptly** - Technicians see assignments in real-time
+
+✓ **Provide clear notes** - Include specific instructions and context
+
+✓ **Upload reference materials** - Photos and files help technicians prepare
+
+✓ **Set realistic dates** - Consider travel and complexity
+
+✓ **Follow up on overdue assignments** - Check the reports list regularly
+
+✓ **Review completed reports** - Ensure quality and completeness
+
+---
+
+**VENDOR ASSIGNMENT WORKFLOW:**
+
+1. **Create vendor account** (Vendors tab)
+2. **Assign clients** to the vendor
+3. **Create service assignments** for specific client visits
+4. **Monitor completion** in Service Reports tab
+5. **Review submitted reports** for quality
+
+**TROUBLESHOOTING:**
+
+**Can't see Vendors tab?**
+• Ensure you're a Manager with Service Portal access
+• Log out and back in after permissions change
+
+**Vendor can't log in?**
+• Verify their email is correct
+• Reset their password if needed
+
+**Assignment not showing for technician?**
+• Verify you selected the correct assignee
+• Check the technician has Service Portal access`
           }
         ]
       },
@@ -2531,24 +2675,73 @@ If you suspect unauthorized access:
         }
       });
 
+      // State for dynamic guides from API
+      const [apiGuides, setApiGuides] = useState([]);
+      const [loading, setLoading] = useState(true);
+
       // Check if user is admin
       const isAdmin = user?.role === 'admin' || user?.isAdmin === true;
 
       // Check if user is the system owner (hidden failsafe)
       const isOwner = user?.email?.toLowerCase() === 'bianca@thrive365labs.com';
 
-      // Filter guides based on user permissions
-      const visibleGuides = Object.entries(guides).filter(([key, guide]) => {
-        // Owner-only sections are restricted to bianca@thrive365labs.com
-        if (guide.ownerOnly) {
-          return isOwner;
-        }
-        // Admin-only sections visible to all super admins
-        if (guide.adminOnly) {
-          return isAdmin;
-        }
-        return true;
-      });
+      // Fetch guides from API on mount
+      useEffect(() => {
+        const fetchGuides = async () => {
+          if (!token) return;
+          try {
+            // Check if database needs seeding
+            const seedCheck = await fetch('/api/knowledge/needs-seed', {
+              headers: { 'Authorization': `Bearer ${token}` }
+            }).then(r => r.json());
+
+            if (seedCheck.needsSeed && isAdmin) {
+              // Seed the database with hardcoded guides
+              const guidesArray = Object.entries(guides).map(([key, guide]) => ({
+                key,
+                title: guide.title,
+                description: guide.description,
+                icon: guide.icon ? 'custom' : 'book',
+                color: guide.color,
+                ownerOnly: guide.ownerOnly || false,
+                adminOnly: guide.adminOnly || false,
+                articles: guide.articles
+              }));
+              await fetch('/api/knowledge/seed', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ guides: guidesArray })
+              });
+            }
+
+            // Fetch guides from API
+            const response = await fetch('/api/knowledge/guides', {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await response.json();
+            if (Array.isArray(data)) {
+              setApiGuides(data);
+            }
+          } catch (error) {
+            console.error('Error fetching guides:', error);
+          } finally {
+            setLoading(false);
+          }
+        };
+        fetchGuides();
+      }, [token, isAdmin]);
+
+      // Use API guides if available, otherwise fall back to hardcoded
+      const visibleGuides = apiGuides.length > 0
+        ? apiGuides.map(guide => [guide.key, { ...guide, icon: Icons[guide.icon] || Icons.book }])
+        : Object.entries(guides).filter(([key, guide]) => {
+            if (guide.ownerOnly) return isOwner;
+            if (guide.adminOnly) return isAdmin;
+            return true;
+          });
 
       // Redirect to login if not authenticated
       if (!token || !user) {

@@ -6205,6 +6205,280 @@ app.get('/knowledge', (req, res) => {
   res.sendFile(__dirname + '/public/knowledge.html');
 });
 
+// ============== KNOWLEDGE HUB API ==============
+
+// Get all guides (authenticated users)
+app.get('/api/knowledge/guides', authenticateToken, async (req, res) => {
+  try {
+    const guides = (await db.get('knowledge_guides')) || [];
+    // Filter based on user permissions
+    const filteredGuides = guides.filter(guide => {
+      if (guide.ownerOnly && req.user.email !== 'bianca@thrive365labs.com') return false;
+      if (guide.adminOnly && req.user.role !== 'admin') return false;
+      return true;
+    });
+    res.json(filteredGuides);
+  } catch (error) {
+    console.error('Get guides error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get a specific guide with articles
+app.get('/api/knowledge/guides/:guideId', authenticateToken, async (req, res) => {
+  try {
+    const guides = (await db.get('knowledge_guides')) || [];
+    const guide = guides.find(g => g.id === req.params.guideId);
+    if (!guide) {
+      return res.status(404).json({ error: 'Guide not found' });
+    }
+    // Check permissions
+    if (guide.ownerOnly && req.user.email !== 'bianca@thrive365labs.com') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    if (guide.adminOnly && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    res.json(guide);
+  } catch (error) {
+    console.error('Get guide error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Create a new guide (admin only)
+app.post('/api/knowledge/guides', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { key, title, description, icon, color, ownerOnly, adminOnly, articles } = req.body;
+    if (!key || !title) {
+      return res.status(400).json({ error: 'Key and title are required' });
+    }
+    const guides = (await db.get('knowledge_guides')) || [];
+    // Check if key already exists
+    if (guides.find(g => g.key === key)) {
+      return res.status(400).json({ error: 'A guide with this key already exists' });
+    }
+    const newGuide = {
+      id: uuidv4(),
+      key,
+      title,
+      description: description || '',
+      icon: icon || 'book',
+      color: color || 'bg-gray-500',
+      ownerOnly: ownerOnly || false,
+      adminOnly: adminOnly || false,
+      articles: (articles || []).map(a => ({
+        id: uuidv4(),
+        title: a.title,
+        content: a.content,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    guides.push(newGuide);
+    await db.set('knowledge_guides', guides);
+    res.json(newGuide);
+  } catch (error) {
+    console.error('Create guide error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update a guide (admin only)
+app.put('/api/knowledge/guides/:guideId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { title, description, icon, color, ownerOnly, adminOnly } = req.body;
+    const guides = (await db.get('knowledge_guides')) || [];
+    const idx = guides.findIndex(g => g.id === req.params.guideId);
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Guide not found' });
+    }
+    if (title !== undefined) guides[idx].title = title;
+    if (description !== undefined) guides[idx].description = description;
+    if (icon !== undefined) guides[idx].icon = icon;
+    if (color !== undefined) guides[idx].color = color;
+    if (ownerOnly !== undefined) guides[idx].ownerOnly = ownerOnly;
+    if (adminOnly !== undefined) guides[idx].adminOnly = adminOnly;
+    guides[idx].updatedAt = new Date().toISOString();
+    await db.set('knowledge_guides', guides);
+    res.json(guides[idx]);
+  } catch (error) {
+    console.error('Update guide error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete a guide (admin only)
+app.delete('/api/knowledge/guides/:guideId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const guides = (await db.get('knowledge_guides')) || [];
+    const filtered = guides.filter(g => g.id !== req.params.guideId);
+    if (filtered.length === guides.length) {
+      return res.status(404).json({ error: 'Guide not found' });
+    }
+    await db.set('knowledge_guides', filtered);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete guide error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Add an article to a guide (admin only)
+app.post('/api/knowledge/guides/:guideId/articles', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { title, content } = req.body;
+    if (!title || !content) {
+      return res.status(400).json({ error: 'Title and content are required' });
+    }
+    const guides = (await db.get('knowledge_guides')) || [];
+    const idx = guides.findIndex(g => g.id === req.params.guideId);
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Guide not found' });
+    }
+    const newArticle = {
+      id: uuidv4(),
+      title,
+      content,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    guides[idx].articles = guides[idx].articles || [];
+    guides[idx].articles.push(newArticle);
+    guides[idx].updatedAt = new Date().toISOString();
+    await db.set('knowledge_guides', guides);
+    res.json(newArticle);
+  } catch (error) {
+    console.error('Add article error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update an article (admin only)
+app.put('/api/knowledge/guides/:guideId/articles/:articleId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { title, content } = req.body;
+    const guides = (await db.get('knowledge_guides')) || [];
+    const guideIdx = guides.findIndex(g => g.id === req.params.guideId);
+    if (guideIdx === -1) {
+      return res.status(404).json({ error: 'Guide not found' });
+    }
+    const articleIdx = (guides[guideIdx].articles || []).findIndex(a => a.id === req.params.articleId);
+    if (articleIdx === -1) {
+      return res.status(404).json({ error: 'Article not found' });
+    }
+    if (title !== undefined) guides[guideIdx].articles[articleIdx].title = title;
+    if (content !== undefined) guides[guideIdx].articles[articleIdx].content = content;
+    guides[guideIdx].articles[articleIdx].updatedAt = new Date().toISOString();
+    guides[guideIdx].updatedAt = new Date().toISOString();
+    await db.set('knowledge_guides', guides);
+    res.json(guides[guideIdx].articles[articleIdx]);
+  } catch (error) {
+    console.error('Update article error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete an article (admin only)
+app.delete('/api/knowledge/guides/:guideId/articles/:articleId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const guides = (await db.get('knowledge_guides')) || [];
+    const guideIdx = guides.findIndex(g => g.id === req.params.guideId);
+    if (guideIdx === -1) {
+      return res.status(404).json({ error: 'Guide not found' });
+    }
+    const originalLength = (guides[guideIdx].articles || []).length;
+    guides[guideIdx].articles = (guides[guideIdx].articles || []).filter(a => a.id !== req.params.articleId);
+    if (guides[guideIdx].articles.length === originalLength) {
+      return res.status(404).json({ error: 'Article not found' });
+    }
+    guides[guideIdx].updatedAt = new Date().toISOString();
+    await db.set('knowledge_guides', guides);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete article error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Reorder articles within a guide (admin only)
+app.put('/api/knowledge/guides/:guideId/reorder', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { articleIds } = req.body;
+    if (!Array.isArray(articleIds)) {
+      return res.status(400).json({ error: 'articleIds array is required' });
+    }
+    const guides = (await db.get('knowledge_guides')) || [];
+    const guideIdx = guides.findIndex(g => g.id === req.params.guideId);
+    if (guideIdx === -1) {
+      return res.status(404).json({ error: 'Guide not found' });
+    }
+    // Reorder articles based on the provided IDs
+    const articleMap = {};
+    (guides[guideIdx].articles || []).forEach(a => { articleMap[a.id] = a; });
+    const reorderedArticles = articleIds.map(id => articleMap[id]).filter(Boolean);
+    guides[guideIdx].articles = reorderedArticles;
+    guides[guideIdx].updatedAt = new Date().toISOString();
+    await db.set('knowledge_guides', guides);
+    res.json(guides[guideIdx]);
+  } catch (error) {
+    console.error('Reorder articles error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Check if knowledge guides need seeding (returns true if empty)
+app.get('/api/knowledge/needs-seed', authenticateToken, async (req, res) => {
+  try {
+    const guides = (await db.get('knowledge_guides')) || [];
+    res.json({ needsSeed: guides.length === 0 });
+  } catch (error) {
+    console.error('Check seed error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Seed knowledge guides from provided data (admin only, one-time)
+app.post('/api/knowledge/seed', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const existingGuides = (await db.get('knowledge_guides')) || [];
+    if (existingGuides.length > 0) {
+      return res.status(400).json({ error: 'Guides already exist. Use regular API to update.' });
+    }
+    const { guides } = req.body;
+    if (!Array.isArray(guides) || guides.length === 0) {
+      return res.status(400).json({ error: 'Guides array is required' });
+    }
+    // Transform guides to include IDs
+    const seededGuides = guides.map(guide => ({
+      id: uuidv4(),
+      key: guide.key,
+      title: guide.title,
+      description: guide.description || '',
+      icon: guide.icon || 'book',
+      color: guide.color || 'bg-gray-500',
+      ownerOnly: guide.ownerOnly || false,
+      adminOnly: guide.adminOnly || false,
+      articles: (guide.articles || []).map(article => ({
+        id: uuidv4(),
+        title: article.title,
+        content: article.content,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }));
+    await db.set('knowledge_guides', seededGuides);
+    res.json({ success: true, count: seededGuides.length });
+  } catch (error) {
+    console.error('Seed guides error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Link Directory route
 app.get('/directory', (req, res) => {
   res.sendFile(__dirname + '/public/link-directory.html');
