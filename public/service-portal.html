@@ -301,6 +301,9 @@
       // Check if user can assign reports (super admin or manager with service portal access)
       const canAssignReports = user?.role === 'admin' || (user?.isManager && user?.hasServicePortalAccess);
 
+      // Debug logging
+      console.log('Sidebar user data:', { role: user?.role, isManager: user?.isManager, hasServicePortalAccess: user?.hasServicePortalAccess, canAssignReports });
+
       const baseMenuItems = [
         { id: 'home', label: 'Dashboard', icon: Icons.home },
         { id: 'new_report', label: 'New Service Report', icon: Icons.plus },
