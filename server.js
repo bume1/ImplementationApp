@@ -5508,6 +5508,490 @@ app.delete('/api/service-reports', authenticateToken, async (req, res) => {
   }
 });
 
+// ============== SERVICE REPORT ASSIGNMENTS (Manager/Admin assigns to Technician/Vendor) ==============
+
+// Create and assign service report to technician/vendor (admin/manager only)
+app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
+  try {
+    // Only admins and managers can assign service reports
+    if (req.user.role !== 'admin' && !req.user.isManager) {
+      return res.status(403).json({ error: 'Only admins and managers can assign service reports' });
+    }
+
+    const {
+      assignedToId,
+      clientFacilityName,
+      customerName,
+      address,
+      serviceType,
+      analyzerModel,
+      analyzerSerialNumber,
+      hubspotTicketNumber,
+      hubspotCompanyId,
+      hubspotDealId,
+      managerNotes,
+      photos,
+      clientFiles,
+      serviceCompletionDate
+    } = req.body;
+
+    if (!assignedToId || !clientFacilityName) {
+      return res.status(400).json({ error: 'Assigned technician and client facility name are required' });
+    }
+
+    // Verify the assigned user exists and has service access
+    const users = (await db.get('users')) || [];
+    const assignedUser = users.find(u => u.id === assignedToId);
+    if (!assignedUser) {
+      return res.status(400).json({ error: 'Assigned user not found' });
+    }
+    if (assignedUser.role !== 'vendor' && assignedUser.role !== 'admin' && !assignedUser.hasServicePortalAccess) {
+      return res.status(400).json({ error: 'Assigned user does not have service portal access' });
+    }
+
+    const serviceReports = (await db.get('service_reports')) || [];
+
+    const newReport = {
+      id: uuidv4(),
+      // Assignment info
+      status: 'assigned',
+      assignedToId,
+      assignedToName: assignedUser.name,
+      assignedById: req.user.id,
+      assignedByName: req.user.name,
+      assignedAt: new Date().toISOString(),
+      // Pre-filled info by manager
+      clientFacilityName,
+      customerName: customerName || '',
+      address: address || '',
+      serviceType: serviceType || '',
+      analyzerModel: analyzerModel || '',
+      analyzerSerialNumber: analyzerSerialNumber || '',
+      hubspotTicketNumber: hubspotTicketNumber || '',
+      hubspotCompanyId: hubspotCompanyId || '',
+      hubspotDealId: hubspotDealId || '',
+      serviceCompletionDate: serviceCompletionDate || '',
+      // Manager-only fields
+      managerNotes: managerNotes || '',
+      photos: photos || [], // Array of { id, url, name, uploadedAt }
+      clientFiles: clientFiles || [], // Array of { id, url, name, uploadedAt }
+      // Technician fields (to be filled when completing)
+      technicianId: null,
+      technicianName: null,
+      descriptionOfWork: '',
+      materialsUsed: '',
+      solution: '',
+      outstandingIssues: '',
+      validationResults: '',
+      validationStartDate: '',
+      validationEndDate: '',
+      trainingProvided: '',
+      recommendations: '',
+      analyzersValidated: [],
+      customerSignature: null,
+      customerSignatureDate: null,
+      technicianSignature: null,
+      technicianSignatureDate: null,
+      // Metadata
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    serviceReports.push(newReport);
+    await db.set('service_reports', serviceReports);
+
+    // Log activity
+    await logActivity(
+      req.user.id,
+      req.user.name,
+      'service_report_assigned',
+      'service_report',
+      newReport.id,
+      { clientName: clientFacilityName, assignedTo: assignedUser.name }
+    );
+
+    res.json(newReport);
+  } catch (error) {
+    console.error('Assign service report error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get assigned service reports for the current technician/vendor
+app.get('/api/service-reports/assigned', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+
+    // Filter reports assigned to this user that are not yet completed
+    const assignedReports = serviceReports.filter(r =>
+      r.assignedToId === req.user.id && r.status === 'assigned'
+    );
+
+    // Sort by assignment date (most recent first)
+    assignedReports.sort((a, b) => new Date(b.assignedAt) - new Date(a.assignedAt));
+
+    res.json(assignedReports);
+  } catch (error) {
+    console.error('Get assigned service reports error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Complete an assigned service report (technician/vendor submits their portion)
+app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const existingReport = serviceReports[reportIndex];
+
+    // Only the assigned technician can complete the report
+    if (existingReport.assignedToId !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Not authorized to complete this report' });
+    }
+
+    // Verify it's an assigned report
+    if (existingReport.status !== 'assigned') {
+      return res.status(400).json({ error: 'This report is not in assigned status' });
+    }
+
+    const {
+      descriptionOfWork,
+      materialsUsed,
+      solution,
+      outstandingIssues,
+      validationResults,
+      validationStartDate,
+      validationEndDate,
+      trainingProvided,
+      recommendations,
+      analyzersValidated,
+      customerSignature,
+      customerSignatureDate,
+      technicianSignature,
+      technicianSignatureDate,
+      serviceCompletionDate
+    } = req.body;
+
+    // Update the report with technician-provided info
+    serviceReports[reportIndex] = {
+      ...existingReport,
+      status: 'submitted',
+      technicianId: req.user.id,
+      technicianName: req.user.name,
+      // Technician-editable fields
+      descriptionOfWork: descriptionOfWork || existingReport.descriptionOfWork,
+      materialsUsed: materialsUsed || existingReport.materialsUsed,
+      solution: solution || existingReport.solution,
+      outstandingIssues: outstandingIssues || existingReport.outstandingIssues,
+      validationResults: validationResults || existingReport.validationResults,
+      validationStartDate: validationStartDate || existingReport.validationStartDate,
+      validationEndDate: validationEndDate || existingReport.validationEndDate,
+      trainingProvided: trainingProvided || existingReport.trainingProvided,
+      recommendations: recommendations || existingReport.recommendations,
+      analyzersValidated: analyzersValidated || existingReport.analyzersValidated,
+      customerSignature: customerSignature || existingReport.customerSignature,
+      customerSignatureDate: customerSignatureDate || existingReport.customerSignatureDate,
+      technicianSignature: technicianSignature || existingReport.technicianSignature,
+      technicianSignatureDate: technicianSignatureDate || existingReport.technicianSignatureDate,
+      serviceCompletionDate: serviceCompletionDate || existingReport.serviceCompletionDate || new Date().toISOString().split('T')[0],
+      serviceProviderName: req.user.name,
+      completedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    await db.set('service_reports', serviceReports);
+
+    const completedReport = serviceReports[reportIndex];
+
+    // Log activity
+    await logActivity(
+      req.user.id,
+      req.user.name,
+      'service_report_completed',
+      'service_report',
+      completedReport.id,
+      { clientName: completedReport.clientFacilityName, serviceType: completedReport.serviceType }
+    );
+
+    // Upload to HubSpot if company ID is available
+    if (completedReport.hubspotCompanyId && hubspot.isValidRecordId(completedReport.hubspotCompanyId)) {
+      try {
+        const reportDate = new Date(completedReport.serviceCompletionDate || completedReport.createdAt).toLocaleDateString();
+        console.log(`📄 Generating PDF for completed assigned service report: ${completedReport.clientFacilityName}`);
+        const pdfBuffer = await pdfGenerator.generateServiceReportPDF(completedReport, req.user.name);
+
+        const fileName = `Service_Report_${completedReport.clientFacilityName.replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate.replace(/\//g, '-')}.pdf`;
+        const noteText = `Service Report Completed\n\nClient: ${completedReport.clientFacilityName}\nService Type: ${completedReport.serviceType}\nTechnician: ${req.user.name}\nTicket #: ${completedReport.hubspotTicketNumber || 'N/A'}`;
+
+        const uploadResult = await hubspot.uploadFileAndAttachToRecord(
+          completedReport.hubspotCompanyId,
+          pdfBuffer.toString('base64'),
+          fileName,
+          noteText,
+          {
+            recordType: 'companies',
+            folderPath: '/service-reports',
+            notePrefix: '[Service Portal]',
+            isBase64: true
+          }
+        );
+
+        serviceReports[reportIndex].hubspotFileId = uploadResult.fileId;
+        serviceReports[reportIndex].hubspotNoteId = uploadResult.noteId;
+        await db.set('service_reports', serviceReports);
+
+        console.log(`✅ Completed service report PDF uploaded to HubSpot for company ${completedReport.hubspotCompanyId}`);
+      } catch (hubspotError) {
+        console.error('HubSpot upload error (non-blocking):', hubspotError.message);
+      }
+    }
+
+    res.json(serviceReports[reportIndex]);
+  } catch (error) {
+    console.error('Complete service report error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Upload photos to service report (admin/manager only)
+app.post('/api/service-reports/:id/photos', authenticateToken, upload.array('photos', 10), async (req, res) => {
+  try {
+    // Only admins and managers can upload photos
+    if (req.user.role !== 'admin' && !req.user.isManager) {
+      return res.status(403).json({ error: 'Only admins and managers can upload photos' });
+    }
+
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'No photos provided' });
+    }
+
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = serviceReports[reportIndex];
+    const photos = report.photos || [];
+
+    // Save photos to uploads directory
+    const uploadDir = path.join(__dirname, 'public', 'uploads', 'service-photos');
+    await fs.mkdir(uploadDir, { recursive: true });
+
+    for (const file of req.files) {
+      const fileId = uuidv4();
+      const ext = path.extname(file.originalname) || '.jpg';
+      const fileName = `${fileId}${ext}`;
+      const filePath = path.join(uploadDir, fileName);
+
+      await fs.writeFile(filePath, file.buffer);
+
+      photos.push({
+        id: fileId,
+        name: file.originalname,
+        url: `/uploads/service-photos/${fileName}`,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: req.user.name
+      });
+    }
+
+    serviceReports[reportIndex].photos = photos;
+    serviceReports[reportIndex].updatedAt = new Date().toISOString();
+    await db.set('service_reports', serviceReports);
+
+    res.json({ photos: serviceReports[reportIndex].photos });
+  } catch (error) {
+    console.error('Upload photos error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Upload client files to service report (admin/manager only)
+app.post('/api/service-reports/:id/files', authenticateToken, upload.array('files', 10), async (req, res) => {
+  try {
+    // Only admins and managers can upload client files
+    if (req.user.role !== 'admin' && !req.user.isManager) {
+      return res.status(403).json({ error: 'Only admins and managers can upload client files' });
+    }
+
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'No files provided' });
+    }
+
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = serviceReports[reportIndex];
+    const clientFiles = report.clientFiles || [];
+
+    // Save files to uploads directory
+    const uploadDir = path.join(__dirname, 'public', 'uploads', 'service-files');
+    await fs.mkdir(uploadDir, { recursive: true });
+
+    for (const file of req.files) {
+      const fileId = uuidv4();
+      const ext = path.extname(file.originalname) || '';
+      const fileName = `${fileId}${ext}`;
+      const filePath = path.join(uploadDir, fileName);
+
+      await fs.writeFile(filePath, file.buffer);
+
+      clientFiles.push({
+        id: fileId,
+        name: file.originalname,
+        url: `/uploads/service-files/${fileName}`,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: req.user.name
+      });
+    }
+
+    serviceReports[reportIndex].clientFiles = clientFiles;
+    serviceReports[reportIndex].updatedAt = new Date().toISOString();
+    await db.set('service_reports', serviceReports);
+
+    res.json({ clientFiles: serviceReports[reportIndex].clientFiles });
+  } catch (error) {
+    console.error('Upload client files error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete photo from service report (admin/manager only)
+app.delete('/api/service-reports/:id/photos/:photoId', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin' && !req.user.isManager) {
+      return res.status(403).json({ error: 'Only admins and managers can delete photos' });
+    }
+
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = serviceReports[reportIndex];
+    const photo = (report.photos || []).find(p => p.id === req.params.photoId);
+
+    if (photo) {
+      // Delete file from disk
+      try {
+        const filePath = path.join(__dirname, 'public', photo.url);
+        await fs.unlink(filePath);
+      } catch (e) { /* file may not exist */ }
+    }
+
+    serviceReports[reportIndex].photos = (report.photos || []).filter(p => p.id !== req.params.photoId);
+    serviceReports[reportIndex].updatedAt = new Date().toISOString();
+    await db.set('service_reports', serviceReports);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete photo error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete client file from service report (admin/manager only)
+app.delete('/api/service-reports/:id/files/:fileId', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin' && !req.user.isManager) {
+      return res.status(403).json({ error: 'Only admins and managers can delete files' });
+    }
+
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = serviceReports[reportIndex];
+    const file = (report.clientFiles || []).find(f => f.id === req.params.fileId);
+
+    if (file) {
+      // Delete file from disk
+      try {
+        const filePath = path.join(__dirname, 'public', file.url);
+        await fs.unlink(filePath);
+      } catch (e) { /* file may not exist */ }
+    }
+
+    serviceReports[reportIndex].clientFiles = (report.clientFiles || []).filter(f => f.id !== req.params.fileId);
+    serviceReports[reportIndex].updatedAt = new Date().toISOString();
+    await db.set('service_reports', serviceReports);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete client file error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update manager notes on service report (admin/manager only)
+app.put('/api/service-reports/:id/manager-notes', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin' && !req.user.isManager) {
+      return res.status(403).json({ error: 'Only admins and managers can update manager notes' });
+    }
+
+    const { managerNotes } = req.body;
+
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    serviceReports[reportIndex].managerNotes = managerNotes || '';
+    serviceReports[reportIndex].updatedAt = new Date().toISOString();
+    await db.set('service_reports', serviceReports);
+
+    res.json(serviceReports[reportIndex]);
+  } catch (error) {
+    console.error('Update manager notes error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get service portal technicians/vendors for assignment dropdown
+app.get('/api/service-portal/technicians', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin' && !req.user.isManager) {
+      return res.status(403).json({ error: 'Only admins and managers can access technician list' });
+    }
+
+    const users = (await db.get('users')) || [];
+
+    // Filter users with service portal access
+    const technicians = users.filter(u =>
+      u.role === 'vendor' || u.role === 'admin' || u.hasServicePortalAccess
+    ).map(u => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      role: u.role,
+      assignedClients: u.assignedClients || []
+    }));
+
+    res.json(technicians);
+  } catch (error) {
+    console.error('Get technicians error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ============== VALIDATION REPORTS (Multi-day service reports for Phase 3) ==============
 
 // Create validation report (multi-day service report)
