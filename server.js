@@ -5093,15 +5093,19 @@ app.get('/api/service-portal/data', authenticateToken, requireServiceAccess, asy
       // Super Admins and Managers with Service Portal access see all reports
       userReports = serviceReports;
     } else if (req.user.role === 'vendor') {
-      // Vendors see their own reports + reports for their assigned clients
+      // Vendors see their own reports + reports assigned to them + reports for their assigned clients
       const assignedClients = req.user.assignedClients || [];
       userReports = serviceReports.filter(r =>
         r.technicianId === req.user.id ||
+        r.assignedToId === req.user.id ||
         assignedClients.includes(r.clientFacilityName)
       );
     } else {
-      // Regular users with service access see only their own reports
-      userReports = serviceReports.filter(r => r.technicianId === req.user.id);
+      // Regular users with service access see their own reports + reports assigned to them
+      userReports = serviceReports.filter(r =>
+        r.technicianId === req.user.id ||
+        r.assignedToId === req.user.id
+      );
     }
 
     // Sort by date descending
