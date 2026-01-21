@@ -5089,8 +5089,8 @@ app.get('/api/service-portal/data', authenticateToken, requireServiceAccess, asy
     const serviceReports = (await db.get('service_reports')) || [];
     let userReports;
 
-    if (req.user.role === 'admin' || req.user.isManager) {
-      // Super Admins and Managers see all reports
+    if (req.user.role === 'admin' || (req.user.isManager && req.user.hasServicePortalAccess)) {
+      // Super Admins and Managers with Service Portal access see all reports
       userReports = serviceReports;
     } else if (req.user.role === 'vendor') {
       // Vendors see their own reports + reports for their assigned clients
@@ -5510,11 +5510,11 @@ app.delete('/api/service-reports', authenticateToken, async (req, res) => {
 
 // ============== SERVICE REPORT ASSIGNMENTS (Manager/Admin assigns to Technician/Vendor) ==============
 
-// Create and assign service report to technician/vendor (admin/manager only)
+// Create and assign service report to technician/vendor (admin/manager with service access only)
 app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
   try {
-    // Only admins and managers can assign service reports
-    if (req.user.role !== 'admin' && !req.user.isManager) {
+    // Only admins and managers with service portal access can assign service reports
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
       return res.status(403).json({ error: 'Only admins and managers can assign service reports' });
     }
 
@@ -5586,6 +5586,7 @@ app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
       validationStartDate: '',
       validationEndDate: '',
       trainingProvided: '',
+      testProcedures: '',
       recommendations: '',
       analyzersValidated: [],
       customerSignature: null,
@@ -5668,6 +5669,7 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
       validationStartDate,
       validationEndDate,
       trainingProvided,
+      testProcedures,
       recommendations,
       analyzersValidated,
       customerSignature,
@@ -5692,6 +5694,7 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
       validationStartDate: validationStartDate || existingReport.validationStartDate,
       validationEndDate: validationEndDate || existingReport.validationEndDate,
       trainingProvided: trainingProvided || existingReport.trainingProvided,
+      testProcedures: testProcedures || existingReport.testProcedures,
       recommendations: recommendations || existingReport.recommendations,
       analyzersValidated: analyzersValidated || existingReport.analyzersValidated,
       customerSignature: customerSignature || existingReport.customerSignature,
@@ -5758,11 +5761,11 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
   }
 });
 
-// Upload photos to service report (admin/manager only)
+// Upload photos to service report (admin/manager with service access only)
 app.post('/api/service-reports/:id/photos', authenticateToken, upload.array('photos', 10), async (req, res) => {
   try {
-    // Only admins and managers can upload photos
-    if (req.user.role !== 'admin' && !req.user.isManager) {
+    // Only admins and managers with service portal access can upload photos
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
       return res.status(403).json({ error: 'Only admins and managers can upload photos' });
     }
 
@@ -5812,11 +5815,11 @@ app.post('/api/service-reports/:id/photos', authenticateToken, upload.array('pho
   }
 });
 
-// Upload client files to service report (admin/manager only)
+// Upload client files to service report (admin/manager with service access only)
 app.post('/api/service-reports/:id/files', authenticateToken, upload.array('files', 10), async (req, res) => {
   try {
-    // Only admins and managers can upload client files
-    if (req.user.role !== 'admin' && !req.user.isManager) {
+    // Only admins and managers with service portal access can upload client files
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
       return res.status(403).json({ error: 'Only admins and managers can upload client files' });
     }
 
@@ -5866,10 +5869,10 @@ app.post('/api/service-reports/:id/files', authenticateToken, upload.array('file
   }
 });
 
-// Delete photo from service report (admin/manager only)
+// Delete photo from service report (admin/manager with service access only)
 app.delete('/api/service-reports/:id/photos/:photoId', authenticateToken, async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && !req.user.isManager) {
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
       return res.status(403).json({ error: 'Only admins and managers can delete photos' });
     }
 
@@ -5902,10 +5905,10 @@ app.delete('/api/service-reports/:id/photos/:photoId', authenticateToken, async 
   }
 });
 
-// Delete client file from service report (admin/manager only)
+// Delete client file from service report (admin/manager with service access only)
 app.delete('/api/service-reports/:id/files/:fileId', authenticateToken, async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && !req.user.isManager) {
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
       return res.status(403).json({ error: 'Only admins and managers can delete files' });
     }
 
@@ -5938,10 +5941,10 @@ app.delete('/api/service-reports/:id/files/:fileId', authenticateToken, async (r
   }
 });
 
-// Update manager notes on service report (admin/manager only)
+// Update manager notes on service report (admin/manager with service access only)
 app.put('/api/service-reports/:id/manager-notes', authenticateToken, async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && !req.user.isManager) {
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
       return res.status(403).json({ error: 'Only admins and managers can update manager notes' });
     }
 
@@ -5968,7 +5971,7 @@ app.put('/api/service-reports/:id/manager-notes', authenticateToken, async (req,
 // Get service portal technicians/vendors for assignment dropdown
 app.get('/api/service-portal/technicians', authenticateToken, async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && !req.user.isManager) {
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
       return res.status(403).json({ error: 'Only admins and managers can access technician list' });
     }
 

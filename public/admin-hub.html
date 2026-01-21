@@ -1275,7 +1275,7 @@
                           <label htmlFor="clientPortalAdmin" className="text-sm font-medium text-gray-700">Client Portal Admin</label>
                         </div>
                       </div>
-                      <p className="text-xs text-gray-500 mt-2">Admins automatically have all permissions</p>
+                      <p className="text-xs text-gray-500 mt-2">Admins automatically have all permissions. Managers with Service Portal access can manage vendors and assignments.</p>
                     </div>
                   )}
 
@@ -1649,8 +1649,8 @@
         name: '', email: '', password: '', assignedClients: []
       });
       const [vendorSaving, setVendorSaving] = useState(false);
-      // Vendor Management is only visible to Managers, not Super Admins
-      const canManageVendors = user?.isManager && user?.role !== 'admin';
+      // Vendor Management is visible to Managers with Service Portal access
+      const canManageVendors = user?.isManager && user?.hasServicePortalAccess && user?.role !== 'admin';
 
       useEffect(() => {
         loadData();
@@ -2260,14 +2260,6 @@
                 className={`px-6 py-4 font-medium ${activeTab === 'validation' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500 hover:text-gray-700'}`}>
                 Validation Reports ({validationReports.length})
               </button>
-              <button onClick={() => { setActiveTab('new'); setShowNewReport(true); }}
-                className={`px-6 py-4 font-medium ${activeTab === 'new' ? 'text-green-600 border-b-2 border-green-600' : 'text-gray-500 hover:text-gray-700'}`}>
-                + Service Report
-              </button>
-              <button onClick={() => setActiveTab('assign')}
-                className={`px-6 py-4 font-medium ${activeTab === 'assign' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
-                Assign to Tech/Vendor
-              </button>
               {canManageVendors && (
                 <button onClick={() => setActiveTab('vendors')}
                   className={`px-6 py-4 font-medium ${activeTab === 'vendors' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-500 hover:text-gray-700'}`}>
@@ -2336,215 +2328,6 @@
                   <div className="text-center py-12 text-gray-500"><p>No service reports found</p></div>
                 )}
               </div>
-            )}
-
-            {/* New Report Tab */}
-            {activeTab === 'new' && (
-              <form onSubmit={handleSubmitReport} className="p-6 space-y-6">
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Client/Facility *</label>
-                    <select value={formData.clientFacilityName} onChange={(e) => { setFormData({...formData, clientFacilityName: e.target.value}); handleClientSelect(e.target.value); }}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" required>
-                      <option value="">Select a client...</option>
-                      {clients.map((c, i) => <option key={i} value={c.name || c.clientName}>{c.name || c.clientName}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Customer Name</label>
-                    <input type="text" value={formData.customerName} onChange={(e) => setFormData({...formData, customerName: e.target.value})}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Service Date *</label>
-                    <input type="date" value={formData.serviceCompletionDate} onChange={(e) => setFormData({...formData, serviceCompletionDate: e.target.value})}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" required />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Service Type *</label>
-                    <select value={formData.serviceType} onChange={(e) => setFormData({...formData, serviceType: e.target.value})}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" required>
-                      <option value="">Select type...</option>
-                      {serviceTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Analyzer Model</label>
-                    <input type="text" value={formData.analyzerModel} onChange={(e) => setFormData({...formData, analyzerModel: e.target.value})}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Serial Number</label>
-                    <input type="text" value={formData.analyzerSerialNumber} onChange={(e) => setFormData({...formData, analyzerSerialNumber: e.target.value})}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">HubSpot Ticket #</label>
-                    <input type="text" value={formData.hubspotTicketNumber} onChange={(e) => setFormData({...formData, hubspotTicketNumber: e.target.value})}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Technician</label>
-                    <input type="text" value={formData.serviceProviderName} onChange={(e) => setFormData({...formData, serviceProviderName: e.target.value})}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Description of Work *</label>
-                  <textarea value={formData.descriptionOfWork} onChange={(e) => setFormData({...formData, descriptionOfWork: e.target.value})}
-                    rows={4} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" required />
-                </div>
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Materials Used</label>
-                    <textarea value={formData.materialsUsed} onChange={(e) => setFormData({...formData, materialsUsed: e.target.value})}
-                      rows={3} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Solution</label>
-                    <textarea value={formData.solution} onChange={(e) => setFormData({...formData, solution: e.target.value})}
-                      rows={3} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Outstanding Issues / Recommendations</label>
-                  <textarea value={formData.outstandingIssues} onChange={(e) => setFormData({...formData, outstandingIssues: e.target.value})}
-                    rows={3} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
-                </div>
-                <div className="flex justify-end gap-3">
-                  <button type="button" onClick={() => setActiveTab('reports')} className="px-6 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
-                  <button type="submit" disabled={submitting} className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
-                    {submitting ? 'Submitting...' : 'Submit Report'}
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {/* Assign Report Tab */}
-            {activeTab === 'assign' && (
-              <form onSubmit={handleAssignReport} className="p-6 space-y-6">
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                  <h3 className="font-semibold text-blue-800 mb-1">Assign Service Visit to Technician/Vendor</h3>
-                  <p className="text-sm text-blue-600">Pre-fill service visit details, add photos, files, and manager notes. The assigned technician will complete the report with their findings.</p>
-                </div>
-
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Assign To *</label>
-                    <select value={assignFormData.assignedToId} onChange={(e) => setAssignFormData({...assignFormData, assignedToId: e.target.value})}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" required>
-                      <option value="">Select technician/vendor...</option>
-                      {technicians.map(t => (
-                        <option key={t.id} value={t.id}>{t.name} ({t.role === 'vendor' ? 'Vendor' : t.role === 'admin' ? 'Admin' : 'Technician'})</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Client/Facility *</label>
-                    <select value={assignFormData.clientFacilityName} onChange={(e) => { setAssignFormData({...assignFormData, clientFacilityName: e.target.value}); handleAssignClientSelect(e.target.value); }}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" required>
-                      <option value="">Select a client...</option>
-                      {clients.map((c, i) => <option key={i} value={c.name || c.clientName}>{c.name || c.clientName}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Customer Name</label>
-                    <input type="text" value={assignFormData.customerName} onChange={(e) => setAssignFormData({...assignFormData, customerName: e.target.value})}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
-                    <input type="text" value={assignFormData.address} onChange={(e) => setAssignFormData({...assignFormData, address: e.target.value})}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Service Type</label>
-                    <select value={assignFormData.serviceType} onChange={(e) => setAssignFormData({...assignFormData, serviceType: e.target.value})}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
-                      <option value="">Select type...</option>
-                      {serviceTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Service Date</label>
-                    <input type="date" value={assignFormData.serviceCompletionDate} onChange={(e) => setAssignFormData({...assignFormData, serviceCompletionDate: e.target.value})}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Analyzer Model</label>
-                    <input type="text" value={assignFormData.analyzerModel} onChange={(e) => setAssignFormData({...assignFormData, analyzerModel: e.target.value})}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Serial Number</label>
-                    <input type="text" value={assignFormData.analyzerSerialNumber} onChange={(e) => setAssignFormData({...assignFormData, analyzerSerialNumber: e.target.value})}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">HubSpot Ticket #</label>
-                    <input type="text" value={assignFormData.hubspotTicketNumber} onChange={(e) => setAssignFormData({...assignFormData, hubspotTicketNumber: e.target.value})}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" />
-                  </div>
-                </div>
-
-                {/* Manager Notes */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Manager Notes (Context for Technician)</label>
-                  <textarea value={assignFormData.managerNotes} onChange={(e) => setAssignFormData({...assignFormData, managerNotes: e.target.value})}
-                    rows={4} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="Add context, instructions, or important information for the technician..." />
-                </div>
-
-                {/* Photos Upload */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Photos (Visit Context)</label>
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
-                    <input type="file" ref={photoInputRef} onChange={handlePhotoSelect} accept="image/*" multiple className="hidden" />
-                    <div className="flex flex-wrap gap-3">
-                      {photoPreviewUrls.map((url, idx) => (
-                        <div key={idx} className="relative">
-                          <img src={url} alt={`Photo ${idx + 1}`} className="w-20 h-20 object-cover rounded-lg border" />
-                          <button type="button" onClick={() => removePhoto(idx)}
-                            className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600">×</button>
-                        </div>
-                      ))}
-                      <button type="button" onClick={() => photoInputRef.current?.click()}
-                        className="w-20 h-20 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center text-gray-400 hover:border-blue-400 hover:text-blue-400 transition">
-                        {Icons.upload}
-                        <span className="text-xs mt-1">Add</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Client Files Upload */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Client Files (Documents for Reference)</label>
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
-                    <input type="file" ref={fileInputRef} onChange={handleFileSelect} multiple className="hidden" />
-                    <div className="space-y-2">
-                      {fileNames.map((name, idx) => (
-                        <div key={idx} className="flex items-center justify-between bg-gray-50 p-2 rounded">
-                          <span className="text-sm text-gray-700 truncate">{name}</span>
-                          <button type="button" onClick={() => removeFile(idx)} className="text-red-500 hover:text-red-700 ml-2">×</button>
-                        </div>
-                      ))}
-                      <button type="button" onClick={() => fileInputRef.current?.click()}
-                        className="w-full py-3 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center gap-2 text-gray-400 hover:border-blue-400 hover:text-blue-400 transition">
-                        {Icons.upload}
-                        <span>Click to add files</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-3">
-                  <button type="button" onClick={() => setActiveTab('reports')} className="px-6 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
-                  <button type="submit" disabled={submitting} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
-                    {submitting ? 'Assigning...' : 'Assign Service Visit'}
-                  </button>
-                </div>
-              </form>
             )}
 
             {/* Validation Reports Tab */}
