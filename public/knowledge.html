@@ -2675,24 +2675,73 @@ If you suspect unauthorized access:
         }
       });
 
+      // State for dynamic guides from API
+      const [apiGuides, setApiGuides] = useState([]);
+      const [loading, setLoading] = useState(true);
+
       // Check if user is admin
       const isAdmin = user?.role === 'admin' || user?.isAdmin === true;
 
       // Check if user is the system owner (hidden failsafe)
       const isOwner = user?.email?.toLowerCase() === 'bianca@thrive365labs.com';
 
-      // Filter guides based on user permissions
-      const visibleGuides = Object.entries(guides).filter(([key, guide]) => {
-        // Owner-only sections are restricted to bianca@thrive365labs.com
-        if (guide.ownerOnly) {
-          return isOwner;
-        }
-        // Admin-only sections visible to all super admins
-        if (guide.adminOnly) {
-          return isAdmin;
-        }
-        return true;
-      });
+      // Fetch guides from API on mount
+      useEffect(() => {
+        const fetchGuides = async () => {
+          if (!token) return;
+          try {
+            // Check if database needs seeding
+            const seedCheck = await fetch('/api/knowledge/needs-seed', {
+              headers: { 'Authorization': `Bearer ${token}` }
+            }).then(r => r.json());
+
+            if (seedCheck.needsSeed && isAdmin) {
+              // Seed the database with hardcoded guides
+              const guidesArray = Object.entries(guides).map(([key, guide]) => ({
+                key,
+                title: guide.title,
+                description: guide.description,
+                icon: guide.icon ? 'custom' : 'book',
+                color: guide.color,
+                ownerOnly: guide.ownerOnly || false,
+                adminOnly: guide.adminOnly || false,
+                articles: guide.articles
+              }));
+              await fetch('/api/knowledge/seed', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ guides: guidesArray })
+              });
+            }
+
+            // Fetch guides from API
+            const response = await fetch('/api/knowledge/guides', {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await response.json();
+            if (Array.isArray(data)) {
+              setApiGuides(data);
+            }
+          } catch (error) {
+            console.error('Error fetching guides:', error);
+          } finally {
+            setLoading(false);
+          }
+        };
+        fetchGuides();
+      }, [token, isAdmin]);
+
+      // Use API guides if available, otherwise fall back to hardcoded
+      const visibleGuides = apiGuides.length > 0
+        ? apiGuides.map(guide => [guide.key, { ...guide, icon: Icons[guide.icon] || Icons.book }])
+        : Object.entries(guides).filter(([key, guide]) => {
+            if (guide.ownerOnly) return isOwner;
+            if (guide.adminOnly) return isAdmin;
+            return true;
+          });
 
       // Redirect to login if not authenticated
       if (!token || !user) {

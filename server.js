@@ -6429,6 +6429,56 @@ app.put('/api/knowledge/guides/:guideId/reorder', authenticateToken, requireAdmi
   }
 });
 
+// Check if knowledge guides need seeding (returns true if empty)
+app.get('/api/knowledge/needs-seed', authenticateToken, async (req, res) => {
+  try {
+    const guides = (await db.get('knowledge_guides')) || [];
+    res.json({ needsSeed: guides.length === 0 });
+  } catch (error) {
+    console.error('Check seed error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Seed knowledge guides from provided data (admin only, one-time)
+app.post('/api/knowledge/seed', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const existingGuides = (await db.get('knowledge_guides')) || [];
+    if (existingGuides.length > 0) {
+      return res.status(400).json({ error: 'Guides already exist. Use regular API to update.' });
+    }
+    const { guides } = req.body;
+    if (!Array.isArray(guides) || guides.length === 0) {
+      return res.status(400).json({ error: 'Guides array is required' });
+    }
+    // Transform guides to include IDs
+    const seededGuides = guides.map(guide => ({
+      id: uuidv4(),
+      key: guide.key,
+      title: guide.title,
+      description: guide.description || '',
+      icon: guide.icon || 'book',
+      color: guide.color || 'bg-gray-500',
+      ownerOnly: guide.ownerOnly || false,
+      adminOnly: guide.adminOnly || false,
+      articles: (guide.articles || []).map(article => ({
+        id: uuidv4(),
+        title: article.title,
+        content: article.content,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }));
+    await db.set('knowledge_guides', seededGuides);
+    res.json({ success: true, count: seededGuides.length });
+  } catch (error) {
+    console.error('Seed guides error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Link Directory route
 app.get('/directory', (req, res) => {
   res.sendFile(__dirname + '/public/link-directory.html');

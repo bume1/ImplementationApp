@@ -294,7 +294,8 @@
       message: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/></svg>,
       inbox: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 13.5h3.86a2.25 2.25 0 012.012 1.244l.256.512a2.25 2.25 0 002.013 1.244h3.218a2.25 2.25 0 002.013-1.244l.256-.512a2.25 2.25 0 012.013-1.244h3.859m-17.5 0a2.25 2.25 0 00-1.883 1.013A11.945 11.945 0 003 19.5h18c.844 0 1.654-.178 2.383-.5a2.25 2.25 0 00-1.883-1.013M2.25 13.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0115.686 0c1.1.128 1.907 1.077 1.907 2.185V13.5"/></svg>,
       bug: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 12.75c1.148 0 2.278.08 3.383.237 1.037.146 1.866.966 1.866 2.013 0 3.728-2.35 6.75-5.25 6.75S6.75 18.728 6.75 15c0-1.046.83-1.867 1.866-2.013A24.204 24.204 0 0112 12.75zm0 0c2.883 0 5.647.508 8.207 1.44a23.91 23.91 0 01-1.152 6.06M12 12.75c-2.883 0-5.647.508-8.208 1.44.125 2.104.52 4.136 1.153 6.06M12 12.75V8.25m0 0c1.086 0 2.152-.14 3.181-.406a1.128 1.128 0 01-.664-.814 2.999 2.999 0 00-5.034 0 1.128 1.128 0 01-.664.814A10.988 10.988 0 0012 8.25zM12 21c-.17.001-.34 0-.508-.004A23.91 23.91 0 015.793 14.69M12 21c.17.001.34 0 .508-.004a23.91 23.91 0 005.699-6.306M9 9.75h6m-3-6.75a2.25 2.25 0 012.25 2.25v.407a2.25 2.25 0 01-.664 1.591L15 9.75"/></svg>,
-      download: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+      download: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>,
+      document: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/></svg>
     };
 
     // Login Page - Modern sleek design
@@ -411,6 +412,7 @@
         { id: 'inbox', label: 'Inbox', icon: Icons.inbox, color: 'text-orange-500', superAdminOnly: true },
         { id: 'users', label: 'User Management', icon: Icons.users, color: 'text-primary-500', superAdminOnly: true },
         { id: 'service_portal', label: 'Service Portal', icon: Icons.clipboard, color: 'text-success-500', superAdminOnly: false },
+        { id: 'knowledge_hub', label: 'Knowledge Hub', icon: Icons.document, color: 'text-teal-500', superAdminOnly: true },
       ];
 
       // Filter menu items: Super Admin sees all, Manager only sees non-superAdminOnly items
@@ -2781,6 +2783,315 @@
       );
     };
 
+    // Knowledge Hub Admin Page
+    const KnowledgeHubPage = ({ token }) => {
+      const [guides, setGuides] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [selectedGuide, setSelectedGuide] = useState(null);
+      const [editingArticle, setEditingArticle] = useState(null);
+      const [showGuideForm, setShowGuideForm] = useState(false);
+      const [showArticleForm, setShowArticleForm] = useState(false);
+      const [saving, setSaving] = useState(false);
+      const [guideForm, setGuideForm] = useState({ key: '', title: '', description: '', color: 'bg-gray-500', ownerOnly: false, adminOnly: false });
+      const [articleForm, setArticleForm] = useState({ title: '', content: '' });
+
+      const colorOptions = [
+        { value: 'bg-primary-500', label: 'Blue' },
+        { value: 'bg-emerald-600', label: 'Green' },
+        { value: 'bg-purple-600', label: 'Purple' },
+        { value: 'bg-amber-500', label: 'Amber' },
+        { value: 'bg-rose-500', label: 'Rose' },
+        { value: 'bg-teal-500', label: 'Teal' },
+        { value: 'bg-indigo-600', label: 'Indigo' },
+        { value: 'bg-gray-500', label: 'Gray' }
+      ];
+
+      const loadGuides = async () => {
+        setLoading(true);
+        try {
+          const response = await fetch('/api/knowledge/guides', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await response.json();
+          if (Array.isArray(data)) setGuides(data);
+        } catch (error) {
+          console.error('Error loading guides:', error);
+        }
+        setLoading(false);
+      };
+
+      useEffect(() => { loadGuides(); }, [token]);
+
+      const handleSaveGuide = async (e) => {
+        e.preventDefault();
+        setSaving(true);
+        try {
+          const url = selectedGuide ? `/api/knowledge/guides/${selectedGuide.id}` : '/api/knowledge/guides';
+          const method = selectedGuide ? 'PUT' : 'POST';
+          await fetch(url, {
+            method,
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(guideForm)
+          });
+          loadGuides();
+          setShowGuideForm(false);
+          setSelectedGuide(null);
+          setGuideForm({ key: '', title: '', description: '', color: 'bg-gray-500', ownerOnly: false, adminOnly: false });
+        } catch (error) {
+          console.error('Error saving guide:', error);
+        }
+        setSaving(false);
+      };
+
+      const handleDeleteGuide = async (guideId) => {
+        if (!confirm('Delete this guide and all its articles?')) return;
+        await fetch(`/api/knowledge/guides/${guideId}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        loadGuides();
+        if (selectedGuide?.id === guideId) setSelectedGuide(null);
+      };
+
+      const handleSaveArticle = async (e) => {
+        e.preventDefault();
+        if (!selectedGuide) return;
+        setSaving(true);
+        try {
+          const url = editingArticle
+            ? `/api/knowledge/guides/${selectedGuide.id}/articles/${editingArticle.id}`
+            : `/api/knowledge/guides/${selectedGuide.id}/articles`;
+          const method = editingArticle ? 'PUT' : 'POST';
+          await fetch(url, {
+            method,
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(articleForm)
+          });
+          loadGuides();
+          setShowArticleForm(false);
+          setEditingArticle(null);
+          setArticleForm({ title: '', content: '' });
+        } catch (error) {
+          console.error('Error saving article:', error);
+        }
+        setSaving(false);
+      };
+
+      const handleDeleteArticle = async (articleId) => {
+        if (!confirm('Delete this article?')) return;
+        await fetch(`/api/knowledge/guides/${selectedGuide.id}/articles/${articleId}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        loadGuides();
+      };
+
+      const openEditGuide = (guide) => {
+        setGuideForm({
+          key: guide.key,
+          title: guide.title,
+          description: guide.description || '',
+          color: guide.color || 'bg-gray-500',
+          ownerOnly: guide.ownerOnly || false,
+          adminOnly: guide.adminOnly || false
+        });
+        setSelectedGuide(guide);
+        setShowGuideForm(true);
+      };
+
+      const openEditArticle = (article) => {
+        setArticleForm({ title: article.title, content: article.content });
+        setEditingArticle(article);
+        setShowArticleForm(true);
+      };
+
+      // Get the current guide data (after reload)
+      const currentGuide = guides.find(g => g.id === selectedGuide?.id);
+
+      if (loading) return (
+        <div className="flex items-center justify-center py-20">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-teal-500 border-t-transparent"></div>
+        </div>
+      );
+
+      return (
+        <div className="max-w-7xl mx-auto">
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Knowledge Hub Management</h1>
+              <p className="text-gray-500 mt-1">Manage guides and articles for the Knowledge Hub</p>
+            </div>
+            <button onClick={() => { setShowGuideForm(true); setSelectedGuide(null); setGuideForm({ key: '', title: '', description: '', color: 'bg-gray-500', ownerOnly: false, adminOnly: false }); }}
+              className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 flex items-center gap-2">
+              {Icons.plus} New Guide
+            </button>
+          </div>
+
+          <div className="grid lg:grid-cols-3 gap-6">
+            {/* Guides List */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+              <h2 className="font-semibold text-gray-800 mb-4">Guides ({guides.length})</h2>
+              <div className="space-y-2">
+                {guides.map(guide => (
+                  <div key={guide.id}
+                    onClick={() => setSelectedGuide(guide)}
+                    className={`p-3 rounded-lg border cursor-pointer transition ${selectedGuide?.id === guide.id ? 'border-teal-500 bg-teal-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                    <div className="flex items-center gap-3">
+                      <div className={`w-3 h-3 rounded-full ${guide.color}`}></div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-800 truncate">{guide.title}</p>
+                        <p className="text-xs text-gray-500">{guide.articles?.length || 0} articles</p>
+                      </div>
+                      <div className="flex gap-1">
+                        {guide.ownerOnly && <span className="px-1.5 py-0.5 bg-red-100 text-red-600 text-xs rounded">Owner</span>}
+                        {guide.adminOnly && <span className="px-1.5 py-0.5 bg-purple-100 text-purple-600 text-xs rounded">Admin</span>}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {guides.length === 0 && (
+                  <p className="text-center text-gray-400 py-8">No guides yet. Create one to get started.</p>
+                )}
+              </div>
+            </div>
+
+            {/* Articles Panel */}
+            <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+              {currentGuide ? (
+                <>
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <h2 className="font-semibold text-gray-800">{currentGuide.title}</h2>
+                      <p className="text-sm text-gray-500">{currentGuide.description}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => openEditGuide(currentGuide)} className="p-2 text-gray-500 hover:text-teal-600 hover:bg-teal-50 rounded-lg">{Icons.edit}</button>
+                      <button onClick={() => handleDeleteGuide(currentGuide.id)} className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg">{Icons.trash}</button>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center mb-3">
+                    <h3 className="text-sm font-medium text-gray-600">Articles</h3>
+                    <button onClick={() => { setShowArticleForm(true); setEditingArticle(null); setArticleForm({ title: '', content: '' }); }}
+                      className="px-3 py-1.5 bg-teal-600 text-white text-sm rounded-lg hover:bg-teal-700 flex items-center gap-1">
+                      {Icons.plus} Add Article
+                    </button>
+                  </div>
+                  <div className="space-y-2 max-h-[500px] overflow-y-auto">
+                    {(currentGuide.articles || []).map((article, idx) => (
+                      <div key={article.id} className="p-3 border border-gray-200 rounded-lg hover:border-gray-300 group">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-gray-800">{idx + 1}. {article.title}</p>
+                            <p className="text-xs text-gray-400 mt-1">Updated: {new Date(article.updatedAt).toLocaleDateString()}</p>
+                          </div>
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                            <button onClick={() => openEditArticle(article)} className="p-1.5 text-gray-400 hover:text-teal-600 hover:bg-teal-50 rounded">{Icons.edit}</button>
+                            <button onClick={() => handleDeleteArticle(article.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded">{Icons.trash}</button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {(!currentGuide.articles || currentGuide.articles.length === 0) && (
+                      <p className="text-center text-gray-400 py-8">No articles yet. Add one to get started.</p>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+                  <svg className="w-16 h-16 mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/></svg>
+                  <p>Select a guide to manage its articles</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Guide Form Modal */}
+          {showGuideForm && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+                <div className="p-4 border-b flex justify-between items-center">
+                  <h3 className="text-lg font-bold">{selectedGuide ? 'Edit Guide' : 'New Guide'}</h3>
+                  <button onClick={() => setShowGuideForm(false)} className="text-gray-400 hover:text-gray-600">{Icons.close}</button>
+                </div>
+                <form onSubmit={handleSaveGuide} className="p-4 space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Key (URL-friendly)</label>
+                    <input type="text" value={guideForm.key} onChange={(e) => setGuideForm({...guideForm, key: e.target.value.toLowerCase().replace(/\s+/g, '-')})}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500" required disabled={!!selectedGuide} placeholder="e.g., service-portal" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                    <input type="text" value={guideForm.title} onChange={(e) => setGuideForm({...guideForm, title: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500" required placeholder="e.g., Service Portal" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                    <input type="text" value={guideForm.description} onChange={(e) => setGuideForm({...guideForm, description: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500" placeholder="Brief description" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
+                    <select value={guideForm.color} onChange={(e) => setGuideForm({...guideForm, color: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500">
+                      {colorOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2">
+                      <input type="checkbox" checked={guideForm.adminOnly} onChange={(e) => setGuideForm({...guideForm, adminOnly: e.target.checked})} className="rounded" />
+                      <span className="text-sm">Admin Only</span>
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input type="checkbox" checked={guideForm.ownerOnly} onChange={(e) => setGuideForm({...guideForm, ownerOnly: e.target.checked})} className="rounded" />
+                      <span className="text-sm">Owner Only</span>
+                    </label>
+                  </div>
+                  <div className="flex gap-3 pt-2">
+                    <button type="button" onClick={() => setShowGuideForm(false)} className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
+                    <button type="submit" disabled={saving} className="flex-1 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50">
+                      {saving ? 'Saving...' : 'Save Guide'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Article Form Modal */}
+          {showArticleForm && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+                <div className="p-4 border-b flex justify-between items-center flex-shrink-0">
+                  <h3 className="text-lg font-bold">{editingArticle ? 'Edit Article' : 'New Article'}</h3>
+                  <button onClick={() => setShowArticleForm(false)} className="text-gray-400 hover:text-gray-600">{Icons.close}</button>
+                </div>
+                <form onSubmit={handleSaveArticle} className="p-4 space-y-4 overflow-y-auto flex-1">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                    <input type="text" value={articleForm.title} onChange={(e) => setArticleForm({...articleForm, title: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500" required placeholder="Article title" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Content (Markdown-style formatting supported)</label>
+                    <textarea value={articleForm.content} onChange={(e) => setArticleForm({...articleForm, content: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500 font-mono text-sm" rows="20" required
+                      placeholder="Article content. Use **bold** for headers, - for bullets, 1. for numbered lists." />
+                    <p className="text-xs text-gray-500 mt-1">Tip: **text** = bold header, - item = bullet, 1. item = numbered list</p>
+                  </div>
+                  <div className="flex gap-3 pt-2">
+                    <button type="button" onClick={() => setShowArticleForm(false)} className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
+                    <button type="submit" disabled={saving} className="flex-1 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50">
+                      {saving ? 'Saving...' : 'Save Article'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+
     // Main App
     const App = () => {
       // Check multiple token sources - admin_token or unified_token from Portal Hub
@@ -2852,6 +3163,7 @@
           case 'inbox': return <InboxPage token={token} />;
           case 'users': return <UsersPage token={token} />;
           case 'service_portal': return <ServicePortalPage token={token} user={user} />;
+          case 'knowledge_hub': return <KnowledgeHubPage token={token} />;
           default: return <DashboardPage token={token} onNavigate={handleNavigation} user={user} />;
         }
       };
