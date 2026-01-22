@@ -5392,6 +5392,57 @@ app.get('/api/service-reports', authenticateToken, requireServiceAccess, async (
   }
 });
 
+// Get assigned service reports for the current technician/vendor
+// IMPORTANT: This route must come BEFORE /:id to avoid "assigned" being treated as an ID
+app.get('/api/service-reports/assigned', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+
+    console.log('=== ASSIGNED REPORTS DEBUG ===');
+    console.log('User ID:', req.user.id, 'Type:', typeof req.user.id);
+    console.log('User Role:', req.user.role);
+    console.log('User Name:', req.user.name);
+    console.log('Total reports in DB:', serviceReports.length);
+
+    // Log all assigned reports for debugging
+    const allAssignedReports = serviceReports.filter(r => r.status === 'assigned');
+    console.log('All reports with status=assigned:', allAssignedReports.length);
+    allAssignedReports.forEach(r => {
+      console.log(`  Report ${r.id.substring(0, 8)}: assignedToId=${r.assignedToId} (type: ${typeof r.assignedToId}), client=${r.clientFacilityName}, status=${r.status}`);
+    });
+
+    // Filter reports assigned to this user that haven't been submitted yet
+    // Convert both IDs to strings to ensure proper comparison regardless of type
+    const userIdString = String(req.user.id);
+    let assignedReports = serviceReports.filter(r => {
+      const reportAssignedId = String(r.assignedToId || '');
+      const idMatch = reportAssignedId === userIdString;
+      const statusMatch = r.status === 'assigned';
+      if (r.status === 'assigned') {
+        console.log(`  Checking report ${r.id?.substring(0, 8)}: assignedToId="${r.assignedToId}" (converted: "${reportAssignedId}") === userId="${req.user.id}" (converted: "${userIdString}")? ${idMatch}, status=${r.status}==='assigned'? ${statusMatch}`);
+      }
+      return idMatch && statusMatch;
+    });
+
+    console.log('Matched reports for user:', assignedReports.length);
+
+    // NOTE: Client filtering removed - vendors should see ALL reports assigned to them
+    // The act of assigning a report to a vendor implicitly grants access to that client
+    // No additional client filtering needed
+
+    // Sort by assignment date (most recent first)
+    assignedReports.sort((a, b) => new Date(b.assignedAt) - new Date(a.assignedAt));
+
+    console.log('Final assigned reports count:', assignedReports.length);
+    console.log('=== END DEBUG ===');
+
+    res.json(assignedReports);
+  } catch (error) {
+    console.error('Get assigned service reports error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Get single service report
 app.get('/api/service-reports/:id', authenticateToken, requireServiceAccess, async (req, res) => {
   try {
@@ -5658,56 +5709,6 @@ app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
     res.json(newReport);
   } catch (error) {
     console.error('Assign service report error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Get assigned service reports for the current technician/vendor
-app.get('/api/service-reports/assigned', authenticateToken, requireServiceAccess, async (req, res) => {
-  try {
-    const serviceReports = (await db.get('service_reports')) || [];
-
-    console.log('=== ASSIGNED REPORTS DEBUG ===');
-    console.log('User ID:', req.user.id, 'Type:', typeof req.user.id);
-    console.log('User Role:', req.user.role);
-    console.log('User Name:', req.user.name);
-    console.log('Total reports in DB:', serviceReports.length);
-
-    // Log all assigned reports for debugging
-    const allAssignedReports = serviceReports.filter(r => r.status === 'assigned');
-    console.log('All reports with status=assigned:', allAssignedReports.length);
-    allAssignedReports.forEach(r => {
-      console.log(`  Report ${r.id.substring(0, 8)}: assignedToId=${r.assignedToId} (type: ${typeof r.assignedToId}), client=${r.clientFacilityName}, status=${r.status}`);
-    });
-
-    // Filter reports assigned to this user that haven't been submitted yet
-    // Convert both IDs to strings to ensure proper comparison regardless of type
-    const userIdString = String(req.user.id);
-    let assignedReports = serviceReports.filter(r => {
-      const reportAssignedId = String(r.assignedToId || '');
-      const idMatch = reportAssignedId === userIdString;
-      const statusMatch = r.status === 'assigned';
-      if (r.status === 'assigned') {
-        console.log(`  Checking report ${r.id?.substring(0, 8)}: assignedToId="${r.assignedToId}" (converted: "${reportAssignedId}") === userId="${req.user.id}" (converted: "${userIdString}")? ${idMatch}, status=${r.status}==='assigned'? ${statusMatch}`);
-      }
-      return idMatch && statusMatch;
-    });
-
-    console.log('Matched reports for user:', assignedReports.length);
-
-    // NOTE: Client filtering removed - vendors should see ALL reports assigned to them
-    // The act of assigning a report to a vendor implicitly grants access to that client
-    // No additional client filtering needed
-
-    // Sort by assignment date (most recent first)
-    assignedReports.sort((a, b) => new Date(b.assignedAt) - new Date(a.assignedAt));
-
-    console.log('Final assigned reports count:', assignedReports.length);
-    console.log('=== END DEBUG ===');
-
-    res.json(assignedReports);
-  } catch (error) {
-    console.error('Get assigned service reports error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
