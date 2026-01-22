@@ -155,12 +155,22 @@
     };
 
     const TimelineView = ({ tasks }) => {
+      const [collapsedPhases, setCollapsedPhases] = useState([]);
+
       // Extract dynamic phases from tasks
       const dynamicPhases = extractPhasesFromTasks(tasks);
       const phaseOrder = sortPhases(Object.keys(dynamicPhases));
 
       // Group tasks by phase and stage
       const groupedByPhase = organizeTasksByPhaseAndStage(tasks, phaseOrder, dynamicPhases);
+
+      const togglePhaseCollapse = (phase) => {
+        if (collapsedPhases.includes(phase)) {
+          setCollapsedPhases(collapsedPhases.filter(p => p !== phase));
+        } else {
+          setCollapsedPhases([...collapsedPhases, phase]);
+        }
+      };
 
       return (
         <div className="bg-white rounded-lg shadow-sm p-6">
@@ -172,16 +182,28 @@
               const phaseTasks = Object.values(phaseData).flat();
               const completedCount = phaseTasks.filter(t => t.completed).length;
               const totalCount = phaseTasks.length;
+              const isCollapsed = collapsedPhases.includes(phase);
 
               return (
                 <div key={phase} className={`border-l-4 ${getPhaseColor(phase, phaseIndex)} pl-6`}>
-                  <div className="mb-4">
-                    <h3 className="text-xl font-bold text-gray-900">{dynamicPhases[phase]?.name || phase}</h3>
-                    <p className="text-sm text-gray-600">
-                      {completedCount} of {totalCount} complete ({totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0}%)
-                    </p>
+                  <div
+                    className="mb-4 cursor-pointer hover:bg-gray-50 p-2 rounded transition-colors"
+                    onClick={() => togglePhaseCollapse(phase)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <h3 className="text-xl font-bold text-gray-900">{dynamicPhases[phase]?.name || phase}</h3>
+                        <p className="text-sm text-gray-600">
+                          {completedCount} of {totalCount} complete ({totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0}%)
+                        </p>
+                      </div>
+                      <div className="ml-4 text-xl text-gray-600">
+                        {isCollapsed ? '▶' : '▼'}
+                      </div>
+                    </div>
                   </div>
-                  
+
+                  {!isCollapsed && (
                   <div className="space-y-4">
                     {Object.entries(phaseData).map(([stage, stageTasks]) => {
                       // Sort tasks by due date (earliest first)
@@ -275,6 +297,7 @@
                       );
                     })}
                   </div>
+                  )}
                 </div>
               );
             })}
@@ -301,12 +324,22 @@
     };
 
     const ListView = ({ tasks }) => {
+      const [collapsedPhases, setCollapsedPhases] = useState([]);
+
       // Extract dynamic phases from tasks
       const dynamicPhases = extractPhasesFromTasks(tasks);
       const phaseOrder = sortPhases(Object.keys(dynamicPhases));
 
       // Group tasks by phase and stage
       const groupedByPhase = organizeTasksByPhaseAndStage(tasks, phaseOrder, dynamicPhases);
+
+      const togglePhaseCollapse = (phase) => {
+        if (collapsedPhases.includes(phase)) {
+          setCollapsedPhases(collapsedPhases.filter(p => p !== phase));
+        } else {
+          setCollapsedPhases([...collapsedPhases, phase]);
+        }
+      };
 
       return (
         <div className="space-y-8">
@@ -316,25 +349,36 @@
             const completedCount = phaseTasks.filter(t => t.completed).length;
             const totalCount = phaseTasks.length;
             const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+            const isCollapsed = collapsedPhases.includes(phase);
 
             return (
             <div key={phase} className="space-y-4">
-              <div className={`${getPhaseGradient(phase, phaseIndex)} p-3 rounded-lg text-white flex justify-between items-center`}>
-                <div>
+              <div
+                className={`${getPhaseGradient(phase, phaseIndex)} p-3 rounded-lg text-white flex justify-between items-center cursor-pointer hover:opacity-90 transition-opacity`}
+                onClick={() => togglePhaseCollapse(phase)}
+              >
+                <div className="flex-1">
                   <h2 className="text-lg font-bold">{dynamicPhases[phase]?.name || phase}</h2>
                   <p className="text-sm opacity-80">
                     {completedCount} of {totalCount} complete
                   </p>
                 </div>
-                {totalCount > 0 && (
-                  <div className="flex items-center gap-2">
-                    <div className="w-24 h-2 bg-white/30 rounded-full overflow-hidden">
-                      <div className="h-full bg-white rounded-full" style={{ width: `${progressPercent}%` }} />
+                <div className="flex items-center gap-3">
+                  {totalCount > 0 && (
+                    <div className="flex items-center gap-2">
+                      <div className="w-24 h-2 bg-white/30 rounded-full overflow-hidden">
+                        <div className="h-full bg-white rounded-full" style={{ width: `${progressPercent}%` }} />
+                      </div>
+                      <span className="text-sm font-bold">{progressPercent}%</span>
                     </div>
-                    <span className="text-sm font-bold">{progressPercent}%</span>
+                  )}
+                  <div className="text-xl">
+                    {isCollapsed ? '▶' : '▼'}
                   </div>
-                )}
+                </div>
               </div>
+              {!isCollapsed && (
+              <>
               {Object.entries(phaseData).map(([stageName, stageTasks]) => {
                 // Sort tasks by due date (earliest first)
                 const sortedTasks = [...stageTasks].sort((a, b) => {
@@ -435,6 +479,8 @@
                   </div>
                 );
               })}
+              </>
+              )}
             </div>
             );
           })}

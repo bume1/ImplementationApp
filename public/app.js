@@ -3213,6 +3213,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
   const [creatingTemplate, setCreatingTemplate] = useState(false);
   const [showNotesLog, setShowNotesLog] = useState(false);
   const [showEditProject, setShowEditProject] = useState(false);
+  const [collapsedPhases, setCollapsedPhases] = useState([]);
 
   const isAdmin = user.role === 'admin';
   const userAccessLevel = isAdmin ? 'edit' : ((user.projectAccessLevels || {})[project.id] || 'edit');
@@ -3717,8 +3718,17 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
       showToClient: task.showToClient || false,
       clientName: task.clientName || '',
       description: task.description || '',
-      dependencies: task.dependencies || []
+      dependencies: task.dependencies || [],
+      tags: task.tags || []
     });
+  };
+
+  const togglePhaseCollapse = (phase) => {
+    if (collapsedPhases.includes(phase)) {
+      setCollapsedPhases(collapsedPhases.filter(p => p !== phase));
+    } else {
+      setCollapsedPhases([...collapsedPhases, phase]);
+    }
   };
 
   const handleSaveEdit = async () => {
@@ -4681,14 +4691,28 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
         
         {viewType === 'list' && (
           <div className="space-y-8">
-            {PHASE_ORDER.map(phase => (
+            {PHASE_ORDER.map(phase => {
+              const isCollapsed = collapsedPhases.includes(phase);
+              return (
               <div key={phase} id={`phase-${phase}`} className="space-y-4 scroll-mt-4">
-                <div className={`${getPhaseGradient(phase)} p-3 rounded-lg text-white`}>
-                  <h2 className="text-lg font-bold">{phaseNames[phase] || phase}</h2>
-                  <p className="text-sm opacity-80">
-                    {Object.values(groupedByPhase[phase] || {}).flat().filter(t => t.completed).length} of {Object.values(groupedByPhase[phase] || {}).flat().length} complete
-                  </p>
+                <div
+                  className={`${getPhaseGradient(phase)} p-3 rounded-lg text-white cursor-pointer hover:opacity-90 transition-opacity`}
+                  onClick={() => togglePhaseCollapse(phase)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <h2 className="text-lg font-bold">{phaseNames[phase] || phase}</h2>
+                      <p className="text-sm opacity-80">
+                        {Object.values(groupedByPhase[phase] || {}).flat().filter(t => t.completed).length} of {Object.values(groupedByPhase[phase] || {}).flat().length} complete
+                      </p>
+                    </div>
+                    <div className="ml-4 text-2xl">
+                      {isCollapsed ? '▶' : '▼'}
+                    </div>
+                  </div>
                 </div>
+                {!isCollapsed && (
+                <>
                 {Object.entries(groupedByPhase[phase] || {}).map(([stageName, stageTasks]) => (
                   <div key={stageName} className={`bg-white rounded-lg shadow-sm overflow-hidden border-l-4 ${getPhaseColor(phase)}`}>
                     {stageName !== 'Tasks' && (
@@ -4839,7 +4863,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                           const newPhase = e.target.value;
                                           const newStages = STANDARD_PHASES[newPhase]?.stages || [];
                                           setEditingTask({
-                                            ...editingTask, 
+                                            ...editingTask,
                                             phase: newPhase,
                                             stage: newStages[0] || ''
                                           });
@@ -4847,7 +4871,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                         className="w-full px-3 py-2 border rounded-md"
                                       >
                                         {PHASE_ORDER.map(phase => (
-                                          <option key={phase} value={phase}>{phase}</option>
+                                          <option key={phase} value={phase}>{STANDARD_PHASES[phase]?.name || phase}</option>
                                         ))}
                                       </select>
                                     </div>
@@ -5540,8 +5564,11 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                     </div>
                   </div>
                 ))}
+                </>
+                )}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
