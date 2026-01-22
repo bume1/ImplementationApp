@@ -5567,6 +5567,7 @@ app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
       // Pre-filled info by manager
       clientFacilityName,
       customerName: customerName || '',
+      serviceProviderName: assignedUser.name,
       address: address || '',
       serviceType: serviceType || '',
       analyzerModel: analyzerModel || '',
@@ -5627,10 +5628,18 @@ app.get('/api/service-reports/assigned', authenticateToken, requireServiceAccess
   try {
     const serviceReports = (await db.get('service_reports')) || [];
 
-    // Filter reports assigned to this user that are not yet completed
-    const assignedReports = serviceReports.filter(r =>
-      r.assignedToId === req.user.id && r.status === 'assigned'
+    // Filter reports assigned to this user that haven't been submitted yet
+    // Use loose equality (==) to handle string/number ID comparisons
+    let assignedReports = serviceReports.filter(r =>
+      r.assignedToId == req.user.id && r.status === 'assigned'
     );
+
+    // For vendors, additionally filter by assigned clients (if they have any assigned)
+    if (req.user.role === 'vendor' && req.user.assignedClients && req.user.assignedClients.length > 0) {
+      assignedReports = assignedReports.filter(r =>
+        req.user.assignedClients.includes(r.clientFacilityName)
+      );
+    }
 
     // Sort by assignment date (most recent first)
     assignedReports.sort((a, b) => new Date(b.assignedAt) - new Date(a.assignedAt));
