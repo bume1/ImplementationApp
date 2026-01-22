@@ -5108,6 +5108,10 @@ app.get('/api/service-portal/data', authenticateToken, requireServiceAccess, asy
       );
     }
 
+    // Exclude assigned reports from recentReports since they're tracked separately in assignedReports
+    // This prevents double-counting in the "My Reports" counter
+    userReports = userReports.filter(r => r.status !== 'assigned');
+
     // Sort by date descending
     userReports.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
