@@ -5422,7 +5422,8 @@ app.put('/api/service-reports/:id', authenticateToken, requireServiceAccess, asy
     const existingReport = serviceReports[reportIndex];
 
     // Only allow editing own reports unless admin
-    if (req.user.role !== 'admin' && existingReport.technicianId !== req.user.id && existingReport.assignedToId !== req.user.id) {
+    // Use loose equality (!=) to handle string/number ID comparisons
+    if (req.user.role !== 'admin' && existingReport.technicianId != req.user.id && existingReport.assignedToId != req.user.id) {
       return res.status(403).json({ error: 'Not authorized to edit this report' });
     }
 
@@ -5670,15 +5671,9 @@ app.get('/api/service-reports/assigned', authenticateToken, requireServiceAccess
 
     console.log('Matched reports for user:', assignedReports.length);
 
-    // For vendors, additionally filter by assigned clients (if they have any assigned)
-    if (req.user.role === 'vendor' && req.user.assignedClients && req.user.assignedClients.length > 0) {
-      console.log('Vendor assigned clients:', req.user.assignedClients);
-      const beforeFilter = assignedReports.length;
-      assignedReports = assignedReports.filter(r =>
-        req.user.assignedClients.includes(r.clientFacilityName)
-      );
-      console.log(`After client filter: ${assignedReports.length} (was ${beforeFilter})`);
-    }
+    // NOTE: Client filtering removed - vendors should see ALL reports assigned to them
+    // The act of assigning a report to a vendor implicitly grants access to that client
+    // No additional client filtering needed
 
     // Sort by assignment date (most recent first)
     assignedReports.sort((a, b) => new Date(b.assignedAt) - new Date(a.assignedAt));
@@ -5706,7 +5701,8 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
     const existingReport = serviceReports[reportIndex];
 
     // Only the assigned technician can complete the report
-    if (existingReport.assignedToId !== req.user.id && req.user.role !== 'admin') {
+    // Use loose equality (==) to handle string/number ID comparisons
+    if (existingReport.assignedToId != req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Not authorized to complete this report' });
     }
 
