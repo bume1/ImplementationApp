@@ -5191,6 +5191,7 @@ app.post('/api/service-reports', authenticateToken, requireServiceAccess, async 
       technicianId: req.user.id,
       technicianName: req.user.name,
       createdAt: new Date().toISOString(),
+      submittedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
 
@@ -5421,8 +5422,22 @@ app.put('/api/service-reports/:id', authenticateToken, requireServiceAccess, asy
     const existingReport = serviceReports[reportIndex];
 
     // Only allow editing own reports unless admin
-    if (req.user.role !== 'admin' && existingReport.technicianId !== req.user.id) {
+    if (req.user.role !== 'admin' && existingReport.technicianId !== req.user.id && existingReport.assignedToId !== req.user.id) {
       return res.status(403).json({ error: 'Not authorized to edit this report' });
+    }
+
+    // Check 30-minute edit window for submitted reports (admins can always edit)
+    if (req.user.role !== 'admin' && existingReport.submittedAt) {
+      const submittedTime = new Date(existingReport.submittedAt);
+      const currentTime = new Date();
+      const minutesElapsed = (currentTime - submittedTime) / (1000 * 60);
+
+      if (minutesElapsed > 30) {
+        return res.status(403).json({
+          error: 'Edit window has expired. Reports can only be edited within 30 minutes of submission.',
+          minutesElapsed: Math.floor(minutesElapsed)
+        });
+      }
     }
 
     serviceReports[reportIndex] = {
@@ -5431,6 +5446,7 @@ app.put('/api/service-reports/:id', authenticateToken, requireServiceAccess, asy
       id: existingReport.id,
       technicianId: existingReport.technicianId,
       createdAt: existingReport.createdAt,
+      submittedAt: existingReport.submittedAt,
       updatedAt: new Date().toISOString()
     };
 
@@ -5567,6 +5583,7 @@ app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
       // Pre-filled info by manager
       clientFacilityName,
       customerName: customerName || '',
+      serviceProviderName: assignedUser.name,
       address: address || '',
       serviceType: serviceType || '',
       analyzerModel: analyzerModel || '',
@@ -5627,10 +5644,18 @@ app.get('/api/service-reports/assigned', authenticateToken, requireServiceAccess
   try {
     const serviceReports = (await db.get('service_reports')) || [];
 
-    // Filter reports assigned to this user that are not yet completed
-    const assignedReports = serviceReports.filter(r =>
-      r.assignedToId === req.user.id && r.status === 'assigned'
+    // Filter reports assigned to this user that haven't been submitted yet
+    // Use loose equality (==) to handle string/number ID comparisons
+    let assignedReports = serviceReports.filter(r =>
+      r.assignedToId == req.user.id && r.status === 'assigned'
     );
+
+    // For vendors, additionally filter by assigned clients (if they have any assigned)
+    if (req.user.role === 'vendor' && req.user.assignedClients && req.user.assignedClients.length > 0) {
+      assignedReports = assignedReports.filter(r =>
+        req.user.assignedClients.includes(r.clientFacilityName)
+      );
+    }
 
     // Sort by assignment date (most recent first)
     assignedReports.sort((a, b) => new Date(b.assignedAt) - new Date(a.assignedAt));
@@ -5708,6 +5733,7 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
       serviceCompletionDate: serviceCompletionDate || existingReport.serviceCompletionDate || new Date().toISOString().split('T')[0],
       serviceProviderName: req.user.name,
       completedAt: new Date().toISOString(),
+      submittedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
 
