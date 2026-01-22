@@ -5644,21 +5644,47 @@ app.get('/api/service-reports/assigned', authenticateToken, requireServiceAccess
   try {
     const serviceReports = (await db.get('service_reports')) || [];
 
+    console.log('=== ASSIGNED REPORTS DEBUG ===');
+    console.log('User ID:', req.user.id, 'Type:', typeof req.user.id);
+    console.log('User Role:', req.user.role);
+    console.log('User Name:', req.user.name);
+    console.log('Total reports in DB:', serviceReports.length);
+
+    // Log all assigned reports for debugging
+    const allAssignedReports = serviceReports.filter(r => r.status === 'assigned');
+    console.log('All reports with status=assigned:', allAssignedReports.length);
+    allAssignedReports.forEach(r => {
+      console.log(`  Report ${r.id.substring(0, 8)}: assignedToId=${r.assignedToId} (type: ${typeof r.assignedToId}), client=${r.clientFacilityName}, status=${r.status}`);
+    });
+
     // Filter reports assigned to this user that haven't been submitted yet
     // Use loose equality (==) to handle string/number ID comparisons
-    let assignedReports = serviceReports.filter(r =>
-      r.assignedToId == req.user.id && r.status === 'assigned'
-    );
+    let assignedReports = serviceReports.filter(r => {
+      const idMatch = r.assignedToId == req.user.id;
+      const statusMatch = r.status === 'assigned';
+      if (r.status === 'assigned') {
+        console.log(`  Checking report ${r.id?.substring(0, 8)}: assignedToId=${r.assignedToId} == userId=${req.user.id}? ${idMatch}, status=${r.status}==='assigned'? ${statusMatch}`);
+      }
+      return idMatch && statusMatch;
+    });
+
+    console.log('Matched reports for user:', assignedReports.length);
 
     // For vendors, additionally filter by assigned clients (if they have any assigned)
     if (req.user.role === 'vendor' && req.user.assignedClients && req.user.assignedClients.length > 0) {
+      console.log('Vendor assigned clients:', req.user.assignedClients);
+      const beforeFilter = assignedReports.length;
       assignedReports = assignedReports.filter(r =>
         req.user.assignedClients.includes(r.clientFacilityName)
       );
+      console.log(`After client filter: ${assignedReports.length} (was ${beforeFilter})`);
     }
 
     // Sort by assignment date (most recent first)
     assignedReports.sort((a, b) => new Date(b.assignedAt) - new Date(a.assignedAt));
+
+    console.log('Final assigned reports count:', assignedReports.length);
+    console.log('=== END DEBUG ===');
 
     res.json(assignedReports);
   } catch (error) {
