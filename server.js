@@ -5422,8 +5422,11 @@ app.put('/api/service-reports/:id', authenticateToken, requireServiceAccess, asy
     const existingReport = serviceReports[reportIndex];
 
     // Only allow editing own reports unless admin
-    // Use loose equality (!=) to handle string/number ID comparisons
-    if (req.user.role !== 'admin' && existingReport.technicianId != req.user.id && existingReport.assignedToId != req.user.id) {
+    // Convert to strings for reliable comparison
+    const isTechnician = String(existingReport.technicianId || '') === String(req.user.id);
+    const isAssigned = String(existingReport.assignedToId || '') === String(req.user.id);
+    if (req.user.role !== 'admin' && !isTechnician && !isAssigned) {
+      console.log(`Edit authorization failed: technicianId="${existingReport.technicianId}" and assignedToId="${existingReport.assignedToId}" don't match userId="${req.user.id}"`);
       return res.status(403).json({ error: 'Not authorized to edit this report' });
     }
 
@@ -5560,10 +5563,19 @@ app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Assigned technician and client facility name are required' });
     }
 
+    console.log('=== ASSIGN REPORT DEBUG ===');
+    console.log('assignedToId from request:', assignedToId, 'Type:', typeof assignedToId);
+
     // Verify the assigned user exists and has service access
     const users = (await db.get('users')) || [];
-    const assignedUser = users.find(u => u.id === assignedToId);
+    console.log('Total users in DB:', users.length);
+
+    // Use string comparison for finding user
+    const assignedUser = users.find(u => String(u.id) === String(assignedToId));
+    console.log('Found assigned user:', assignedUser ? assignedUser.name : 'NOT FOUND');
+
     if (!assignedUser) {
+      console.log('Available user IDs:', users.map(u => `${u.id} (${typeof u.id})`));
       return res.status(400).json({ error: 'Assigned user not found' });
     }
     if (assignedUser.role !== 'vendor' && assignedUser.role !== 'admin' && !assignedUser.hasServicePortalAccess) {
@@ -5623,6 +5635,16 @@ app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
     serviceReports.push(newReport);
     await db.set('service_reports', serviceReports);
 
+    console.log('Created report:', {
+      id: newReport.id.substring(0, 8),
+      assignedToId: newReport.assignedToId,
+      assignedToIdType: typeof newReport.assignedToId,
+      assignedToName: newReport.assignedToName,
+      status: newReport.status,
+      client: newReport.clientFacilityName
+    });
+    console.log('=== END ASSIGN DEBUG ===');
+
     // Log activity
     await logActivity(
       req.user.id,
@@ -5659,12 +5681,14 @@ app.get('/api/service-reports/assigned', authenticateToken, requireServiceAccess
     });
 
     // Filter reports assigned to this user that haven't been submitted yet
-    // Use loose equality (==) to handle string/number ID comparisons
+    // Convert both IDs to strings to ensure proper comparison regardless of type
+    const userIdString = String(req.user.id);
     let assignedReports = serviceReports.filter(r => {
-      const idMatch = r.assignedToId == req.user.id;
+      const reportAssignedId = String(r.assignedToId || '');
+      const idMatch = reportAssignedId === userIdString;
       const statusMatch = r.status === 'assigned';
       if (r.status === 'assigned') {
-        console.log(`  Checking report ${r.id?.substring(0, 8)}: assignedToId=${r.assignedToId} == userId=${req.user.id}? ${idMatch}, status=${r.status}==='assigned'? ${statusMatch}`);
+        console.log(`  Checking report ${r.id?.substring(0, 8)}: assignedToId="${r.assignedToId}" (converted: "${reportAssignedId}") === userId="${req.user.id}" (converted: "${userIdString}")? ${idMatch}, status=${r.status}==='assigned'? ${statusMatch}`);
       }
       return idMatch && statusMatch;
     });
@@ -5701,8 +5725,10 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
     const existingReport = serviceReports[reportIndex];
 
     // Only the assigned technician can complete the report
-    // Use loose equality (==) to handle string/number ID comparisons
-    if (existingReport.assignedToId != req.user.id && req.user.role !== 'admin') {
+    // Convert to strings for reliable comparison
+    const isAssignedToUser = String(existingReport.assignedToId) === String(req.user.id);
+    if (!isAssignedToUser && req.user.role !== 'admin') {
+      console.log(`Authorization failed: assignedToId="${existingReport.assignedToId}" !== userId="${req.user.id}"`);
       return res.status(403).json({ error: 'Not authorized to complete this report' });
     }
 
