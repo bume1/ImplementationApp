@@ -5758,7 +5758,8 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
       customerSignatureDate,
       technicianSignature,
       technicianSignatureDate,
-      serviceCompletionDate
+      serviceCompletionDate,
+      analyzerSerialNumber
     } = req.body;
 
     // Update the report with technician-provided info
@@ -5784,6 +5785,7 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
       technicianSignature: technicianSignature || existingReport.technicianSignature,
       technicianSignatureDate: technicianSignatureDate || existingReport.technicianSignatureDate,
       serviceCompletionDate: serviceCompletionDate || existingReport.serviceCompletionDate || new Date().toISOString().split('T')[0],
+      analyzerSerialNumber: analyzerSerialNumber || existingReport.analyzerSerialNumber,
       serviceProviderName: req.user.name,
       completedAt: new Date().toISOString(),
       submittedAt: new Date().toISOString(),

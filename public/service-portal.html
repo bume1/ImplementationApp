@@ -2138,7 +2138,8 @@
         testProcedures: '',
         recommendations: '',
         analyzersValidated: [],
-        serviceCompletionDate: assignment.serviceCompletionDate || new Date().toISOString().split('T')[0]
+        serviceCompletionDate: assignment.serviceCompletionDate || new Date().toISOString().split('T')[0],
+        analyzerSerialNumber: assignment.analyzerSerialNumber || ''
       });
       const [customerSignature, setCustomerSignature] = useState(null);
       const [technicianSignature, setTechnicianSignature] = useState(null);
@@ -2265,6 +2266,11 @@
                   <label className="block text-sm font-medium text-gray-700 mb-1">Service Date *</label>
                   <input type="date" value={formData.serviceCompletionDate} onChange={(e) => setFormData({...formData, serviceCompletionDate: e.target.value})}
                     className="input-modern w-full px-4 py-3" required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Analyzer Serial Number (S/N)</label>
+                  <input type="text" value={formData.analyzerSerialNumber} onChange={(e) => setFormData({...formData, analyzerSerialNumber: e.target.value})}
+                    className="input-modern w-full px-4 py-3" placeholder="e.g., 601744124" />
                 </div>
               </div>
 
