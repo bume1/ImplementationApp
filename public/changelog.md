@@ -4,6 +4,52 @@
 
 ---
 
+### Version 2.7.3 - January 2026
+
+#### New Features
+- Add detailed frontend console logging for assigned reports debugging
+- Add comprehensive logging and robust string-based ID comparison
+- Add debug logging to Service Portal assigned reports endpoint
+- Add 30-minute edit window for submitted service reports
+- Remove Assigned Clients section from Add New Vendor modal
+- Add collapsible phases and fix tag persistence in edit mode
+- Add debug logging to Service Portal sidebar for role visibility issue
+- Move Assign Report feature to Service Portal with Add Vendor popup
+- Add Assign Report tab to Service Portal admin and fix validation form field order
+- Add Knowledge Hub admin interface and dynamic content management
+- Add Knowledge Hub API and update guide with service admin documentation
+- Add Service Report Admin access permission for managers
+- Add service report assignment feature for managers and technicians
+
+#### Bug Fixes
+- Fix priority and pinned announcement features
+- Fix service report counter double-counting assigned reports
+- CRITICAL FIX: Move /assigned route before /:id to fix 404 error
+- Fix Knowledge Hub text formatting - properly render bold text and clean sections
+- Vendor workflow - remove broken client filtering and fix ID comparisons
+- Fix Service Portal assigned report workflow and display issues
+- Fix vendor dropdown visibility on mobile devices
+- Fix Service Portal assigned report workflow and display issues
+
+#### Improvements
+- Update Knowledge Hub Quick Tips for internal users
+- Update Service Portal and Knowledge Hub with improvements
+
+#### Changes
+- Published your App
+- Make analyzer serial number editable for technicians completing assigned reports
+- Published your App
+- Published your App
+- Published your App
+- Published your App
+- Published your App
+- Published your App
+- Published your App
+- Simplify service report admin access to use existing Service Portal checkbox
+- Published your App
+- Published your App
+
+
 ### Version 2.7.2 - January 2026
 
 #### Security Improvements
