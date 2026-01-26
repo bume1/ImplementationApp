@@ -475,15 +475,15 @@ Configure via Admin Hub > Settings > Client Portal Domain.
 
 ## Version History
 
-### Current Version: 2.7.2 (January 2026)
+### Current Version: 2.7.4 (January 2026)
 
 #### Highlights
-- **Security**: New users created by Super Admin now require password change on first login
-- **Security**: Manual password resets force users to create their own password
-- **Security**: Consistent password change enforcement across all user creation and reset flows
-- Manager permissions to edit client details in Client Portal Admin
-- Client details sync between Client Portal Admin and Admin Hub User Management
-- Enhanced Client Users page with edit functionality for Managers
+- Allow managers to add client users from Client Portal admin view
+- Add detailed frontend console logging for assigned reports debugging
+- Fix priority and pinned announcement features
+- Fix service report counter double-counting assigned reports
+- Update changelog with v2.7.3 and improve automation
+- Update Knowledge Hub Quick Tips for internal users
 
 See [CHANGELOG](/changelog) for complete version history.
 
