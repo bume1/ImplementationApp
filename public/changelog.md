@@ -4,6 +4,31 @@
 
 ---
 
+### Version 2.7.3 - January 26, 2026
+
+#### New Features
+- Allow managers to add client users from Client Portal admin view
+- Add collapsible phases feature with improved tag persistence in edit mode
+- Add 30-minute edit window for submitted service reports
+
+#### Improvements
+- Update Knowledge Hub Quick Tips for internal users
+- Enhance Knowledge Hub text formatting with proper bold text rendering
+- Add comprehensive logging for Service Portal assigned reports
+- Improve vendor workflow with ID comparison fixes
+- Remove Assigned Clients section from Add New Vendor modal for cleaner UX
+
+#### Bug Fixes
+- Fix priority and pinned announcement features
+- Make analyzer serial number editable for technicians completing assigned reports
+- Fix service report counter double-counting assigned reports
+- CRITICAL FIX: Move /assigned route before /:id to fix 404 error
+- Fix Service Portal assigned report workflow and display issues
+- Fix vendor dropdown visibility on mobile devices
+- Fix Knowledge Hub text formatting issues
+
+---
+
 ### Version 2.7.2 - January 2026
 
 #### Security Improvements

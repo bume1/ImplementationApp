@@ -141,6 +141,49 @@ function getLatestVersionTag() {
   return tags.length > 0 ? tags[0] : null;
 }
 
+// Commits to exclude from changelog (deployment, generic, noise)
+const EXCLUDED_PATTERNS = [
+  /^published your app/i,
+  /^published\s+app/i,
+  /^deploy/i,
+  /^deployment/i,
+  /^merge (branch|pull request)/i,
+  /^initial commit$/i,
+  /^wip\b/i,
+  /^work in progress/i,
+  /^\[skip ci\]/i,
+  /^\[ci skip\]/i,
+  /^update dependencies$/i,
+  /^bump version/i,
+  /^release\s+v?\d+\.\d+\.\d+$/i,
+  /^version\s+v?\d+\.\d+\.\d+$/i,
+  /^revert/i,
+  /^formatting$/i,
+  /^whitespace$/i,
+  /^typo$/i,
+  /^test$/i,
+  /^testing$/i
+];
+
+// Check if commit should be excluded
+function shouldExcludeCommit(message) {
+  const trimmed = message.trim();
+
+  // Check against exclusion patterns
+  for (const pattern of EXCLUDED_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      return true;
+    }
+  }
+
+  // Exclude very short commits (likely meaningless)
+  if (trimmed.length < 10) {
+    return true;
+  }
+
+  return false;
+}
+
 // Group commits by category
 function groupCommitsByCategory(commits) {
   const grouped = {};
@@ -151,6 +194,9 @@ function groupCommitsByCategory(commits) {
     // Skip merge commits and generic commits
     if (commit.message.toLowerCase().startsWith('merge ')) return;
     if (commit.message.toLowerCase() === 'initial commit') return;
+
+    // Skip excluded patterns (deployment, published app, etc.)
+    if (shouldExcludeCommit(commit.message)) return;
 
     if (!grouped[parsed.category]) {
       grouped[parsed.category] = {
@@ -364,7 +410,8 @@ module.exports = {
   getRecentCommits,
   generateChangelogEntry,
   updateReadmeVersion,
-  syncAllChangelogFiles
+  syncAllChangelogFiles,
+  shouldExcludeCommit
 };
 
 // CLI usage

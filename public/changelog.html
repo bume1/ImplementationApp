@@ -41,10 +41,39 @@
     // Static changelog entries (fallback and legacy)
     const staticChangelog = [
       {
+        id: 'static-273',
+        version: '2.7.3',
+        date: 'January 26, 2026',
+        isCurrent: true,
+        sections: [
+          { title: 'New Features', color: 'primary', items: [
+            'Allow managers to add client users from Client Portal admin view',
+            'Add collapsible phases feature with improved tag persistence in edit mode',
+            'Add 30-minute edit window for submitted service reports'
+          ]},
+          { title: 'Improvements', color: 'green', items: [
+            'Update Knowledge Hub Quick Tips for internal users',
+            'Enhance Knowledge Hub text formatting with proper bold text rendering',
+            'Add comprehensive logging for Service Portal assigned reports',
+            'Improve vendor workflow with ID comparison fixes',
+            'Remove Assigned Clients section from Add New Vendor modal for cleaner UX'
+          ]},
+          { title: 'Bug Fixes', color: 'red', items: [
+            'Fix priority and pinned announcement features',
+            'Make analyzer serial number editable for technicians completing assigned reports',
+            'Fix service report counter double-counting assigned reports',
+            'CRITICAL FIX: Move /assigned route before /:id to fix 404 error',
+            'Fix Service Portal assigned report workflow and display issues',
+            'Fix vendor dropdown visibility on mobile devices',
+            'Fix Knowledge Hub text formatting issues'
+          ]}
+        ]
+      },
+      {
         id: 'static-272',
         version: '2.7.2',
         date: 'January 20, 2026',
-        isCurrent: true,
+        isCurrent: false,
         sections: [
           { title: 'Security Improvements', color: 'green', items: [
             'New users created by Super Admin now require password change on first login',
