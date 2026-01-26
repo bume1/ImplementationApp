@@ -2103,7 +2103,7 @@ app.get('/api/announcements', async (req, res) => {
 // Create announcement (admin only)
 app.post('/api/announcements', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { title, content, type } = req.body;
+    const { title, content, type, priority, pinned, targetAll, targetClients, attachmentUrl, attachmentName } = req.body;
     if (!title || !content) {
       return res.status(400).json({ error: 'Title and content are required' });
     }
@@ -2113,6 +2113,12 @@ app.post('/api/announcements', authenticateToken, requireAdmin, async (req, res)
       title,
       content,
       type: type || 'info', // info, warning, success
+      priority: priority || false,
+      pinned: pinned || false,
+      targetAll: targetAll !== false,
+      targetClients: targetClients || [],
+      attachmentUrl: attachmentUrl || '',
+      attachmentName: attachmentName || '',
       createdAt: new Date().toISOString(),
       createdBy: req.user.name,
       createdById: req.user.id
@@ -2130,17 +2136,23 @@ app.post('/api/announcements', authenticateToken, requireAdmin, async (req, res)
 // Update announcement (admin only)
 app.put('/api/announcements/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { title, content, type } = req.body;
+    const { title, content, type, priority, pinned, targetAll, targetClients, attachmentUrl, attachmentName } = req.body;
     const announcements = (await db.get('announcements')) || [];
     const idx = announcements.findIndex(a => a.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'Announcement not found' });
-    
+
     if (title) announcements[idx].title = title;
     if (content) announcements[idx].content = content;
     if (type) announcements[idx].type = type;
+    if (priority !== undefined) announcements[idx].priority = priority;
+    if (pinned !== undefined) announcements[idx].pinned = pinned;
+    if (targetAll !== undefined) announcements[idx].targetAll = targetAll;
+    if (targetClients !== undefined) announcements[idx].targetClients = targetClients;
+    if (attachmentUrl !== undefined) announcements[idx].attachmentUrl = attachmentUrl;
+    if (attachmentName !== undefined) announcements[idx].attachmentName = attachmentName;
     announcements[idx].updatedAt = new Date().toISOString();
     announcements[idx].updatedBy = req.user.name;
-    
+
     await db.set('announcements', announcements);
     res.json(announcements[idx]);
   } catch (error) {
