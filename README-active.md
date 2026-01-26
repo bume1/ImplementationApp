@@ -475,15 +475,15 @@ Configure via Admin Hub > Settings > Client Portal Domain.
 
 ## Version History
 
-### Current Version: 2.7.4 (January 2026)
+### Current Version: 2.7.5 (January 2026)
 
 #### Highlights
 - Allow managers to add client users from Client Portal admin view
 - Add detailed frontend console logging for assigned reports debugging
+- Fix service report photo and file storage path mismatch
 - Fix priority and pinned announcement features
-- Fix service report counter double-counting assigned reports
+- Update changelog for Version 2.7.4 [skip ci]
 - Update changelog with v2.7.3 and improve automation
-- Update Knowledge Hub Quick Tips for internal users
 
 See [CHANGELOG](/changelog) for complete version history.
 
