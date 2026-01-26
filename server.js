@@ -5891,7 +5891,7 @@ app.post('/api/service-reports/:id/photos', authenticateToken, upload.array('pho
     const photos = report.photos || [];
 
     // Save photos to uploads directory
-    const uploadDir = path.join(__dirname, 'public', 'uploads', 'service-photos');
+    const uploadDir = path.join(__dirname, 'uploads', 'service-photos');
     await fs.mkdir(uploadDir, { recursive: true });
 
     for (const file of req.files) {
@@ -5945,7 +5945,7 @@ app.post('/api/service-reports/:id/files', authenticateToken, upload.array('file
     const clientFiles = report.clientFiles || [];
 
     // Save files to uploads directory
-    const uploadDir = path.join(__dirname, 'public', 'uploads', 'service-files');
+    const uploadDir = path.join(__dirname, 'uploads', 'service-files');
     await fs.mkdir(uploadDir, { recursive: true });
 
     for (const file of req.files) {
@@ -5996,7 +5996,7 @@ app.delete('/api/service-reports/:id/photos/:photoId', authenticateToken, async 
     if (photo) {
       // Delete file from disk
       try {
-        const filePath = path.join(__dirname, 'public', photo.url);
+        const filePath = path.join(__dirname, photo.url);
         await fs.unlink(filePath);
       } catch (e) { /* file may not exist */ }
     }
@@ -6032,7 +6032,7 @@ app.delete('/api/service-reports/:id/files/:fileId', authenticateToken, async (r
     if (file) {
       // Delete file from disk
       try {
-        const filePath = path.join(__dirname, 'public', file.url);
+        const filePath = path.join(__dirname, file.url);
         await fs.unlink(filePath);
       } catch (e) { /* file may not exist */ }
     }
