@@ -334,17 +334,27 @@ app.post('/api/auth/signup', async (req, res) => {
   }
 });
 
-// Admin create user endpoint (Super Admin only)
+// Admin create user endpoint (Super Admin or Manager for client users only)
 app.post('/api/users', authenticateToken, async (req, res) => {
   try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Super Admin access required' });
+    // Super Admin can create any user type, Managers can only create client users
+    const isSuperAdmin = req.user.role === 'admin';
+    const isManager = req.user.isManager || false;
+
+    if (!isSuperAdmin && !isManager) {
+      return res.status(403).json({ error: 'Admin or Manager access required' });
     }
     const {
       email, password, name, role, practiceName, isNewClient, assignedProjects, logo,
       hasServicePortalAccess, hasAdminHubAccess, hasImplementationsAccess, hasClientPortalAdminAccess,
       isManager, assignedClients, hubspotCompanyId, hubspotDealId, hubspotContactId, projectAccessLevels
     } = req.body;
+
+    // Managers can only create client users
+    if (isManager && !isSuperAdmin && role !== 'client') {
+      return res.status(403).json({ error: 'Managers can only create client users' });
+    }
+
     if (!email || !password || !name) {
       return res.status(400).json({ error: 'Email, password, and name are required' });
     }
