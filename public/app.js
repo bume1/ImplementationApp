@@ -930,6 +930,7 @@ const StatusBadge = ({ status }) => {
 const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates, onManageHubSpot, onViewReporting }) => {
   const [projects, setProjects] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState([]);
   const [editingProject, setEditingProject] = useState(null);
@@ -1039,9 +1040,15 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
       alert('Project name and client name are required');
       return;
     }
+    if (isCreating) return;
+    setIsCreating(true);
 
     try {
-      await api.createProject(token, newProject);
+      const result = await api.createProject(token, newProject);
+      if (result && result.error) {
+        alert(result.error);
+        return;
+      }
       setShowCreate(false);
       setNewProject({
         name: '',
@@ -1055,6 +1062,8 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
     } catch (err) {
       console.error('Failed to create project:', err);
       alert('Failed to create project');
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -1113,7 +1122,11 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
       return;
     }
     try {
-      await api.deleteProject(token, project.id);
+      const result = await api.deleteProject(token, project.id);
+      if (result && result.error) {
+        alert(result.error);
+        return;
+      }
       loadProjects();
     } catch (err) {
       console.error('Failed to delete project:', err);
@@ -1125,7 +1138,11 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
     const newName = prompt(`Enter name for the cloned project:`, `${project.name} (Copy)`);
     if (!newName) return;
     try {
-      await api.cloneProject(token, project.id, newName);
+      const result = await api.cloneProject(token, project.id, newName);
+      if (result && result.error) {
+        alert(result.error);
+        return;
+      }
       loadProjects();
       alert('Project cloned successfully!');
     } catch (err) {
@@ -3388,14 +3405,16 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
   const handleBulkComplete = async (completed) => {
     if (selectedTasks.length === 0) return;
     try {
-      await api.bulkUpdateTasks(token, project.id, selectedTasks, completed);
-      // Update local state
-      const dateCompleted = completed ? new Date().toISOString() : null;
-      setTasks(tasks.map(t => 
-        selectedTasks.includes(t.id) 
-          ? { ...t, completed, dateCompleted: completed ? (t.dateCompleted || dateCompleted) : t.dateCompleted }
-          : t
-      ));
+      const result = await api.bulkUpdateTasks(token, project.id, selectedTasks, completed);
+      if (result && result.error) {
+        alert(result.error);
+        return;
+      }
+      if (result && result.skipped && result.skipped.length > 0) {
+        alert(`${result.skipped.length} task(s) skipped: ${result.skipped.map(s => s.title).join(', ')} (incomplete subtasks)`);
+      }
+      // Reload tasks from server to reflect actual state
+      loadTasks();
       setSelectedTasks([]);
       setBulkMode(false);
     } catch (err) {
@@ -3413,7 +3432,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
       } else {
         alert(result.message);
         // Update local state
-        setTasks(tasks.filter(t => !selectedTasks.includes(t.id)));
+        setTasks(prev => prev.filter(t => !selectedTasks.includes(t.id)));
         setSelectedTasks([]);
         setBulkMode(false);
       }
@@ -3614,6 +3633,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
 
   const handleToggleComplete = async (taskId) => {
     const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
     const newCompleted = !task.completed;
     
     // Check if this task has incomplete dependencies
@@ -3661,7 +3681,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
         alert(result.error);
         return;
       }
-      setTasks(tasks.map(t => t.id === taskId ? {...t, ...updates} : t));
+      setTasks(prev => prev.map(t => t.id === taskId ? {...t, ...updates} : t));
     } catch (err) {
       console.error('Failed to update task:', err);
     }
@@ -3731,8 +3751,12 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
         updates.description = editingTask.description || '';
       }
 
-      await api.updateTask(token, project.id, editingTask.id, updates);
-      setTasks(tasks.map(t =>
+      const result = await api.updateTask(token, project.id, editingTask.id, updates);
+      if (result && result.error) {
+        alert(result.error);
+        return;
+      }
+      setTasks(prev => prev.map(t =>
         t.id === editingTask.id ? {...t, ...updates} : t
       ));
       setEditingTask(null);
@@ -3748,8 +3772,12 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
     if (!confirm('Are you sure you want to delete this task? This cannot be undone.')) return;
     
     try {
-      await api.deleteTask(token, project.id, taskId);
-      setTasks(tasks.filter(t => t.id !== taskId));
+      const result = await api.deleteTask(token, project.id, taskId);
+      if (result && result.error) {
+        alert(result.error);
+        return;
+      }
+      setTasks(prev => prev.filter(t => t.id !== taskId));
     } catch (err) {
       console.error('Failed to delete task:', err);
       alert(err.message || 'Failed to delete task. You can only delete tasks you created.');
@@ -3771,7 +3799,11 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
     if (!newNote.trim()) return;
     try {
       const note = await api.addNote(token, project.id, taskId, newNote);
-      setTasks(tasks.map(t => {
+      if (note && note.error) {
+        alert(note.error);
+        return;
+      }
+      setTasks(prev => prev.map(t => {
         if (t.id === taskId) {
           return { ...t, notes: [...(t.notes || []), note] };
         }
@@ -3815,11 +3847,11 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
         alert(result.error);
         return;
       }
-      setTasks(tasks.map(t => {
+      setTasks(prev => prev.map(t => {
         if (t.id === taskId) {
-          return { 
-            ...t, 
-            notes: (t.notes || []).filter(n => n.id !== noteId) 
+          return {
+            ...t,
+            notes: (t.notes || []).filter(n => n.id !== noteId)
           };
         }
         return t;
@@ -3837,7 +3869,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
         alert(result.error);
         return;
       }
-      setTasks(tasks.map(t => {
+      setTasks(prev => prev.map(t => {
         if (t.id === taskId) {
           return { ...t, files: [...(t.files || []), result.file] };
         }
@@ -3859,11 +3891,11 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
         alert(result.error);
         return;
       }
-      setTasks(tasks.map(t => {
+      setTasks(prev => prev.map(t => {
         if (t.id === taskId) {
-          return { 
-            ...t, 
-            files: (t.files || []).filter(f => f.id !== fileId) 
+          return {
+            ...t,
+            files: (t.files || []).filter(f => f.id !== fileId)
           };
         }
         return t;

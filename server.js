@@ -219,41 +219,51 @@ const authenticateToken = async (req, res, next) => {
   if (!token) return res.status(401).json({ error: 'Access denied' });
   jwt.verify(token, JWT_SECRET, async (err, tokenUser) => {
     if (err) return res.status(403).json({ error: 'Invalid token' });
-    // Fetch fresh user data from database to get current role and permissions
-    const users = await getUsers();
-    const freshUser = users.find(u => u.id === tokenUser.id);
-    if (!freshUser) return res.status(403).json({ error: 'User not found' });
-    // Use fresh data for all user properties to ensure permission changes take effect immediately
-    req.user = {
-      id: freshUser.id,
-      email: freshUser.email,
-      name: freshUser.name,
-      role: freshUser.role, // admin, user, client, vendor
-      assignedProjects: freshUser.assignedProjects || [],
-      projectAccessLevels: freshUser.projectAccessLevels || {},
-      // Granular permission flags
-      hasServicePortalAccess: freshUser.hasServicePortalAccess || false,
-      hasAdminHubAccess: freshUser.hasAdminHubAccess || false,
-      hasImplementationsAccess: freshUser.hasImplementationsAccess || false,
-      hasClientPortalAdminAccess: freshUser.hasClientPortalAdminAccess || false,
-      // Vendor-specific: clients they can service
-      assignedClients: freshUser.assignedClients || [],
-      // Client-specific fields
-      isNewClient: freshUser.isNewClient || false,
-      slug: freshUser.slug || null,
-      practiceName: freshUser.practiceName || null
-    };
-    next();
+    try {
+      // Fetch fresh user data from database to get current role and permissions
+      const users = await getUsers();
+      const freshUser = users.find(u => u.id === tokenUser.id);
+      if (!freshUser) return res.status(403).json({ error: 'User not found' });
+      // Use fresh data for all user properties to ensure permission changes take effect immediately
+      req.user = {
+        id: freshUser.id,
+        email: freshUser.email,
+        name: freshUser.name,
+        role: freshUser.role, // admin, user, client, vendor
+        assignedProjects: freshUser.assignedProjects || [],
+        projectAccessLevels: freshUser.projectAccessLevels || {},
+        // Granular permission flags
+        hasServicePortalAccess: freshUser.hasServicePortalAccess || false,
+        hasAdminHubAccess: freshUser.hasAdminHubAccess || false,
+        hasImplementationsAccess: freshUser.hasImplementationsAccess || false,
+        hasClientPortalAdminAccess: freshUser.hasClientPortalAdminAccess || false,
+        // Vendor-specific: clients they can service
+        assignedClients: freshUser.assignedClients || [],
+        // Client-specific fields
+        isNewClient: freshUser.isNewClient || false,
+        slug: freshUser.slug || null,
+        practiceName: freshUser.practiceName || null
+      };
+      next();
+    } catch (error) {
+      console.error('Auth middleware error:', error);
+      res.status(500).json({ error: 'Authentication error' });
+    }
   });
 };
 
 // Authorization helper to check project access
 const canAccessProject = (user, projectId) => {
   if (user.role === 'admin') return true;
-  if (user.role === 'client') {
-    return (user.assignedProjects || []).includes(projectId);
-  }
   return (user.assignedProjects || []).includes(projectId);
+};
+
+// Authorization helper to check write access to a project
+const canWriteProject = (user, projectId) => {
+  if (user.role === 'admin') return true;
+  if (!(user.assignedProjects || []).includes(projectId)) return false;
+  const level = (user.projectAccessLevels || {})[projectId];
+  return level === 'write' || level === 'admin';
 };
 
 // Generate a unique slug for client users
@@ -949,10 +959,10 @@ app.delete('/api/projects/:projectId/tasks/:taskId/subtasks/:subtaskId', authent
 app.put('/api/projects/:projectId/tasks/bulk-update', authenticateToken, async (req, res) => {
   try {
     const { projectId } = req.params;
-    
-    // Check project access
-    if (!canAccessProject(req.user, projectId)) {
-      return res.status(403).json({ error: 'Access denied to this project' });
+
+    // Check project write access
+    if (!canWriteProject(req.user, projectId)) {
+      return res.status(403).json({ error: 'Write access required for this project' });
     }
     
     const { taskIds, completed } = req.body;
@@ -968,9 +978,23 @@ app.put('/api/projects/:projectId/tasks/bulk-update', authenticateToken, async (
     const tasks = await getRawTasks(projectId);
     const updatedTasks = [];
     
+    const skippedTasks = [];
     for (const taskId of taskIds) {
       const idx = tasks.findIndex(t => t.id === parseInt(taskId) || String(t.id) === String(taskId));
       if (idx !== -1) {
+        // Check subtask completion before marking complete (same rule as single-task update)
+        if (completed && !tasks[idx].completed) {
+          const subtasks = tasks[idx].subtasks || [];
+          const incompleteSubtasks = subtasks.filter(s => {
+            const isComplete = s.completed || s.status === 'Complete' || s.status === 'completed';
+            const isNA = s.notApplicable || s.status === 'N/A' || s.status === 'not_applicable';
+            return !isComplete && !isNA;
+          });
+          if (incompleteSubtasks.length > 0) {
+            skippedTasks.push({ id: taskId, title: tasks[idx].taskTitle, reason: 'has incomplete subtasks' });
+            continue;
+          }
+        }
         tasks[idx].completed = completed;
         if (completed) {
           tasks[idx].dateCompleted = new Date().toISOString();
@@ -982,7 +1006,12 @@ app.put('/api/projects/:projectId/tasks/bulk-update', authenticateToken, async (
     }
     
     await db.set(`tasks_${projectId}`, tasks);
-    res.json({ message: `${updatedTasks.length} tasks updated`, updatedTasks });
+    const response = { message: `${updatedTasks.length} tasks updated`, updatedTasks };
+    if (skippedTasks.length > 0) {
+      response.skipped = skippedTasks;
+      response.message += `, ${skippedTasks.length} skipped (incomplete subtasks)`;
+    }
+    res.json(response);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }
@@ -992,10 +1021,10 @@ app.put('/api/projects/:projectId/tasks/bulk-update', authenticateToken, async (
 app.post('/api/projects/:projectId/tasks/bulk-delete', authenticateToken, async (req, res) => {
   try {
     const { projectId } = req.params;
-    
-    // Check project access
-    if (!canAccessProject(req.user, projectId)) {
-      return res.status(403).json({ error: 'Access denied to this project' });
+
+    // Check project write access
+    if (!canWriteProject(req.user, projectId)) {
+      return res.status(403).json({ error: 'Write access required for this project' });
     }
     
     const { taskIds } = req.body;
@@ -1406,7 +1435,7 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/api/projects', authenticateToken, async (req, res) => {
+app.post('/api/projects', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { name, clientName, projectManager, hubspotRecordId, hubspotRecordType, hubspotDealStage, template } = req.body;
     if (!name || !clientName) {
@@ -1574,7 +1603,7 @@ app.delete('/api/projects/:id', authenticateToken, async (req, res) => {
 });
 
 // Clone/Duplicate a project
-app.post('/api/projects/:id/clone', authenticateToken, async (req, res) => {
+app.post('/api/projects/:id/clone', authenticateToken, requireAdmin, async (req, res) => {
   try {
     // Check project access
     if (!canAccessProject(req.user, req.params.id)) {
@@ -1608,13 +1637,17 @@ app.post('/api/projects/:id/clone', authenticateToken, async (req, res) => {
     projects.push(newProject);
     await db.set('projects', projects);
     
-    // Clone the tasks
+    // Clone the tasks - clear state, files, HubSpot refs, and reset ownership
     const originalTasks = await getTasks(req.params.id);
     const clonedTasks = originalTasks.map(task => ({
       ...task,
       completed: false,
       dateCompleted: '',
       notes: [],
+      files: [],
+      createdBy: req.user.id,
+      hubspotTaskId: undefined,
+      hubspotSyncedAt: undefined,
       subtasks: (task.subtasks || []).map(st => ({
         ...st,
         completed: false,
@@ -1649,12 +1682,15 @@ app.get('/api/projects/:id/tasks', authenticateToken, async (req, res) => {
 
 app.post('/api/projects/:id/tasks', authenticateToken, async (req, res) => {
   try {
-    // Check project access
-    if (!canAccessProject(req.user, req.params.id)) {
-      return res.status(403).json({ error: 'Access denied to this project' });
+    // Check project write access
+    if (!canWriteProject(req.user, req.params.id)) {
+      return res.status(403).json({ error: 'Write access required for this project' });
     }
-    
+
     const { taskTitle, owner, dueDate, phase, stage, showToClient, clientName, description, notes, dependencies } = req.body;
+    if (!taskTitle || !String(taskTitle).trim()) {
+      return res.status(400).json({ error: 'Task title is required' });
+    }
     const projectId = req.params.id;
     // Use raw tasks for mutation to prevent normalization drift
     const tasks = await getRawTasks(projectId);
@@ -1689,11 +1725,11 @@ app.put('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req,
   try {
     const { projectId, taskId } = req.params;
     
-    // Check project access
-    if (!canAccessProject(req.user, projectId)) {
-      return res.status(403).json({ error: 'Access denied to this project' });
+    // Check project write access
+    if (!canWriteProject(req.user, projectId)) {
+      return res.status(403).json({ error: 'Write access required for this project' });
     }
-    
+
     const updates = req.body;
     // Use raw tasks for mutation to prevent normalization drift
     const tasks = await getRawTasks(projectId);
@@ -1820,7 +1856,14 @@ app.delete('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (r
       return res.status(403).json({ error: 'You can only delete tasks you created' });
     }
     
-    const filtered = tasks.filter(t => String(t.id) !== String(taskId));
+    const deletedId = String(taskId);
+    const filtered = tasks.filter(t => String(t.id) !== deletedId);
+    // Clean up dependency references to the deleted task
+    for (const t of filtered) {
+      if (Array.isArray(t.dependencies)) {
+        t.dependencies = t.dependencies.filter(depId => String(depId) !== deletedId);
+      }
+    }
     await db.set(`tasks_${projectId}`, filtered);
     res.json({ message: 'Task deleted' });
   } catch (error) {
@@ -5636,9 +5679,9 @@ app.post('/api/auth/admin-login', async (req, res) => {
       return res.status(400).json({ error: 'Missing credentials' });
     }
     const users = await getUsers();
-    const user = users.find(u => u.email === email && u.role === 'admin');
+    const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase() && (u.role === 'admin' || u.hasAdminHubAccess));
     if (!user || !(await bcrypt.compare(password, user.password))) {
-      return res.status(400).json({ error: 'Invalid credentials or not an admin' });
+      return res.status(400).json({ error: 'Invalid credentials' });
     }
 
     const token = jwt.sign(
