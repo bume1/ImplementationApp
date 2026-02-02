@@ -339,9 +339,9 @@ app.post('/api/users', authenticateToken, async (req, res) => {
   try {
     // Super Admin can create any user type, Managers can only create client users
     const isSuperAdmin = req.user.role === 'admin';
-    const isManager = req.user.isManager || false;
+    const isCurrentUserManager = req.user.isManager || false;
 
-    if (!isSuperAdmin && !isManager) {
+    if (!isSuperAdmin && !isCurrentUserManager) {
       return res.status(403).json({ error: 'Admin or Manager access required' });
     }
     const {
@@ -351,7 +351,7 @@ app.post('/api/users', authenticateToken, async (req, res) => {
     } = req.body;
 
     // Managers can only create client users
-    if (isManager && !isSuperAdmin && role !== 'client') {
+    if (isCurrentUserManager && !isSuperAdmin && role !== 'client') {
       return res.status(403).json({ error: 'Managers can only create client users' });
     }
 
