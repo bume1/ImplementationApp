@@ -86,14 +86,16 @@ const ensureAllPhasesAndStages = (groupedByPhase) => {
 // Helper function to handle fetch responses properly
 const handleResponse = async (response) => {
   if (!response.ok) {
-    // Try to parse error message from response
+    let errorMessage = `HTTP error ${response.status}`;
     try {
       const errorData = await response.json();
-      throw new Error(errorData.error || `HTTP error ${response.status}`);
-    } catch (e) {
-      // If parsing fails, throw generic error
-      throw new Error(`HTTP error ${response.status}`);
+      if (errorData.error) {
+        errorMessage = errorData.error;
+      }
+    } catch (parseError) {
+      // JSON parsing failed, use default HTTP error message
     }
+    throw new Error(errorMessage);
   }
   return response.json();
 };
@@ -3318,9 +3320,17 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
     setLoading(true);
     try {
       const data = await api.getTasks(token, project.id);
-      setTasks(data);
+      if (Array.isArray(data)) {
+        setTasks(data);
+      } else if (data && data.error) {
+        console.error('Failed to load tasks:', data.error);
+        setTasks([]);
+      } else {
+        setTasks([]);
+      }
     } catch (err) {
       console.error('Failed to load tasks:', err);
+      setTasks([]);
     } finally {
       setLoading(false);
     }
@@ -3867,6 +3877,10 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
     if (!newTask.taskTitle.trim()) return;
     try {
       const created = await api.createTask(token, project.id, newTask);
+      if (created.error) {
+        alert(created.error);
+        return;
+      }
       setTasks([...tasks, created]);
       setNewTask({ taskTitle: '', owner: '', secondaryOwner: '', dueDate: '', phase: 'Phase 1', stage: '', showToClient: false, clientName: '', dependencies: [] });
       setShowAddTask(false);

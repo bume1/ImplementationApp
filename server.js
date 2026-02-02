@@ -60,7 +60,8 @@ app.use('/launch', express.static('public', staticOptions));
 app.use('/thrive365labsLAUNCH', express.static('public', staticOptions));
 app.use('/thrive365labslaunch', express.static('public', staticOptions));
 app.use(express.static('public', { ...staticOptions, index: false }));
-app.use('/uploads', express.static('uploads', staticOptions));
+// Uploads require authentication - serve via authenticated route instead of open static
+app.use('/uploads', authenticateToken, express.static('uploads', staticOptions));
 
 // ============== LAUNCH ROUTES (Implementations Portal) ==============
 // Main implementations dashboard
@@ -125,6 +126,13 @@ const getProjects = async () => {
 // Get raw tasks for mutation - use this when you need to modify and save back
 const getRawTasks = async (projectId) => {
   return (await db.get(`tasks_${projectId}`)) || [];
+};
+
+// Safe next ID generator - handles mixed numeric/UUID task IDs without NaN
+const getNextNumericId = (items) => {
+  if (!items || items.length === 0) return 1;
+  const numericIds = items.map(t => typeof t.id === 'number' ? t.id : parseInt(t.id, 10)).filter(id => !isNaN(id));
+  return numericIds.length > 0 ? Math.max(...numericIds) + 1 : items.length + 1;
 };
 
 // Get normalized tasks for display - use this for read-only operations
@@ -288,20 +296,20 @@ const requireClientPortalAdmin = (req, res, next) => {
 };
 
 // ============== AUTH ROUTES ==============
-app.post('/api/auth/signup', async (req, res) => {
+app.post('/api/auth/signup', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { email, password, name } = req.body;
     if (!email || !password || !name) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
     const users = await getUsers();
-    if (users.find(u => u.email === email)) {
+    if (users.find(u => u.email?.toLowerCase() === email.toLowerCase())) {
       return res.status(400).json({ error: 'User already exists' });
     }
     const hashedPassword = await bcrypt.hash(password, 10);
     users.push({
       id: uuidv4(),
-      email,
+      email: email.toLowerCase().trim(),
       name,
       password: hashedPassword,
       role: 'user',
@@ -709,58 +717,6 @@ app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
     res.json(safeUsers);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Debug endpoint to check client users (temporary)
-app.get('/api/debug/clients', async (req, res) => {
-  try {
-    const users = await getUsers();
-    const clients = users.filter(u => u.role === 'client').map(u => ({
-      email: u.email,
-      name: u.name,
-      practiceName: u.practiceName,
-      slug: u.slug,
-      hasPassword: !!u.password,
-      passwordLength: u.password ? u.password.length : 0,
-      passwordIsHashed: u.password ? u.password.startsWith('$2') : false
-    }));
-    res.json({ totalUsers: users.length, clients });
-  } catch (error) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Debug endpoint to test login (temporary)
-app.post('/api/debug/test-login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    const users = await getUsers();
-    const user = users.find(u => u.email?.toLowerCase() === email?.toLowerCase());
-
-    if (!user) {
-      return res.json({ success: false, reason: 'User not found', emailSearched: email });
-    }
-
-    if (!user.password) {
-      return res.json({ success: false, reason: 'User has no password set', email: user.email });
-    }
-
-    const isHashed = user.password.startsWith('$2');
-    if (!isHashed) {
-      return res.json({ success: false, reason: 'Password not hashed (stored as plain text)', email: user.email });
-    }
-
-    const passwordMatch = await bcrypt.compare(password, user.password);
-    return res.json({
-      success: passwordMatch,
-      reason: passwordMatch ? 'Password matches' : 'Password does not match',
-      email: user.email,
-      role: user.role,
-      slug: user.slug
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
   }
 });
 
@@ -1703,7 +1659,7 @@ app.post('/api/projects/:id/tasks', authenticateToken, async (req, res) => {
     // Use raw tasks for mutation to prevent normalization drift
     const tasks = await getRawTasks(projectId);
     const newTask = {
-      id: tasks.length > 0 ? Math.max(...tasks.map(t => t.id)) + 1 : 1,
+      id: getNextNumericId(tasks),
       phase: phase || 'Phase 1',
       stage: stage || '',
       taskTitle,
@@ -1775,10 +1731,23 @@ app.put('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req,
       delete updates.owner;
     }
 
+    // Whitelist allowed fields to prevent overwriting protected fields (id, createdBy, files, subtasks, hubspotTaskId, etc.)
+    const taskUpdateAllowedFields = [
+      'taskTitle', 'owner', 'secondaryOwner', 'dueDate', 'startDate', 'phase', 'stage',
+      'completed', 'dateCompleted', 'description', 'showToClient', 'clientName',
+      'dependencies', 'tags', 'notes', 'duration'
+    ];
+    const sanitizedUpdates = {};
+    for (const key of taskUpdateAllowedFields) {
+      if (updates[key] !== undefined) {
+        sanitizedUpdates[key] = updates[key];
+      }
+    }
+
     const wasCompleted = task.completed;
-    
+
     // Server-side validation: Check for incomplete subtasks before allowing completion
-    if (updates.completed && !task.completed) {
+    if (sanitizedUpdates.completed && !task.completed) {
       const subtasks = task.subtasks || [];
       // Check for both new format (completed boolean) and old format (status string)
       const incompleteSubtasks = subtasks.filter(s => {
@@ -1787,14 +1756,14 @@ app.put('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req,
         return !isComplete && !isNotApplicable;
       });
       if (incompleteSubtasks.length > 0) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: 'Cannot complete task with pending subtasks',
           incompleteSubtasks: incompleteSubtasks.map(s => s.title)
         });
       }
     }
-    
-    tasks[idx] = { ...tasks[idx], ...updates };
+
+    tasks[idx] = { ...tasks[idx], ...sanitizedUpdates };
     await db.set(`tasks_${projectId}`, tasks);
     
     // Log activity for task updates
@@ -2175,8 +2144,12 @@ app.get('/api/client-documents', authenticateToken, async (req, res) => {
 });
 
 // Get documents for a specific slug (client portal)
-app.get('/api/client-documents/:slug', async (req, res) => {
+app.get('/api/client-documents/:slug', authenticateToken, async (req, res) => {
   try {
+    // Clients can only access their own slug's documents
+    if (req.user.role === 'client' && req.user.slug !== req.params.slug) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
     const documents = (await db.get('client_documents')) || [];
     const clientDocs = documents.filter(d => d.slug === req.params.slug && d.active);
     res.json(clientDocs);
@@ -4163,7 +4136,7 @@ app.get('/api/projects/:id/export', authenticateToken, async (req, res) => {
       t.dateCompleted || '',
       Array.isArray(t.tags) ? t.tags.join(';') : '',
       Array.isArray(t.dependencies) ? t.dependencies.join(';') : '',
-      Array.isArray(t.notes) ? t.notes.map(n => n.text || n).join(' | ') : ''
+      Array.isArray(t.notes) ? t.notes.map(n => n.content || n.text || '').join(' | ') : ''
     ].map(escapeCSV));
     
     const csv = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
@@ -4322,7 +4295,7 @@ app.post('/api/templates/:id/import-csv', authenticateToken, requireAdmin, async
     }
     
     // Generate new IDs for imported tasks and create ID mapping
-    const maxId = template.tasks.length > 0 ? Math.max(...template.tasks.map(t => t.id)) : 0;
+    const maxId = getNextNumericId(template.tasks) - 1;
     const idMapping = {};
     
     const newTasks = csvData.map((row, index) => {
@@ -4408,7 +4381,7 @@ app.post('/api/projects/:id/import-csv', authenticateToken, async (req, res) => 
     
     // Use raw tasks for mutation to prevent normalization drift
     const tasks = await getRawTasks(req.params.id);
-    const maxId = tasks.length > 0 ? Math.max(...tasks.map(t => t.id)) : 0;
+    const maxId = getNextNumericId(tasks) - 1;
     
     // Separate parent tasks and subtasks
     const parentRows = csvData.filter(row => {
@@ -5488,19 +5461,11 @@ app.get('/api/changelog/preview', authenticateToken, requireAdmin, async (req, r
 
 // ============== PASSWORD MANAGEMENT ==============
 
-// Generate temp password based on user type
+// Generate cryptographically random temp password
 function generateTempPassword(user) {
-  // For clients: ClientName2026!
-  // For users: FirstLastName2026!
-  if (user.role === 'client') {
-    const clientName = (user.practiceName || user.name || 'Client').replace(/[^a-zA-Z0-9]/g, '');
-    return `${clientName}2026!`;
-  } else {
-    const nameParts = (user.name || 'User').split(' ');
-    const firstName = (nameParts[0] || '').replace(/[^a-zA-Z0-9]/g, '');
-    const lastName = (nameParts[nameParts.length - 1] || '').replace(/[^a-zA-Z0-9]/g, '');
-    return `${firstName}${lastName}2026!`;
-  }
+  const crypto = require('crypto');
+  const randomPart = crypto.randomBytes(4).toString('hex');
+  return `Temp${randomPart}!`;
 }
 
 // Bulk password reset for all users (admin only)

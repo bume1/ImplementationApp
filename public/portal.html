@@ -2697,7 +2697,15 @@
               <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
                 <span>📝</span> Additional Upload Options
               </h2>
-              <div dangerouslySetInnerHTML={{ __html: settings.filesFormEmbed }} />
+              <div dangerouslySetInnerHTML={{ __html: (() => {
+                // Sanitize embed HTML: strip script tags and event handlers
+                let html = settings.filesFormEmbed;
+                html = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+                html = html.replace(/\son\w+\s*=\s*["'][^"']*["']/gi, '');
+                html = html.replace(/\son\w+\s*=\s*[^\s>]*/gi, '');
+                html = html.replace(/javascript\s*:/gi, '');
+                return html;
+              })() }} />
             </div>
           )}
         </div>
