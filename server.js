@@ -218,7 +218,7 @@ function getDefaultPollingConfig() {
     resolvedStageIds: [],
     stageIdsCachedAt: null,
     filter: {
-      mode: 'keyword',       // 'keyword' | 'property' | 'all'
+      mode: 'property',       // 'keyword' | 'property' | 'all'
       subjectKeyword: '[SR]', // For keyword mode: only tickets with this in subject
       propertyName: 'create_service_report', // For property mode: HubSpot custom property name
       propertyValue: 'true'   // For property mode: expected value
@@ -572,7 +572,7 @@ async function initializeTicketPolling() {
     if (!config) {
       config = getDefaultPollingConfig();
       await db.set('ticket_polling_config', config);
-      console.log('[HubSpot Poll] Initialized default config (enabled, 60s, keyword filter "[SR]")');
+      console.log('[HubSpot Poll] Initialized default config (enabled, 60s, property filter "create_service_report")');
     }
 
     if (config.enabled) {
