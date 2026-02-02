@@ -2787,6 +2787,234 @@ app.post('/api/webhook/hubspot/ticket-created', async (req, res) => {
   }
 });
 
+// Webhook endpoint for HubSpot ticket stage changes
+// HubSpot workflow should trigger this when ticket moves to "Assigned" or "Vendor Escalation" stage
+app.post('/api/webhook/hubspot/ticket-stage-change', async (req, res) => {
+  try {
+    const { ticketId, stageId, stageName } = req.body;
+
+    if (!ticketId) {
+      return res.status(400).json({ error: 'ticketId is required' });
+    }
+
+    console.log(`🎫 Ticket stage change webhook: ${ticketId} -> ${stageName || stageId}`);
+
+    // Check if the stage is one we should process
+    const targetStages = ['assigned', 'vendor escalation', 'vendor_escalation'];
+    const stageNameLower = (stageName || '').toLowerCase();
+    const shouldProcess = targetStages.some(stage => stageNameLower.includes(stage));
+
+    if (!shouldProcess) {
+      return res.json({
+        message: 'Stage not configured for auto-assignment',
+        ticketId,
+        stageName
+      });
+    }
+
+    // Fetch the ticket from HubSpot
+    let ticket;
+    try {
+      ticket = await hubspot.getTicketById(ticketId);
+    } catch (err) {
+      console.error(`Failed to fetch ticket ${ticketId}:`, err.message);
+      return res.status(404).json({
+        error: 'Ticket not found in HubSpot',
+        ticketId,
+        details: err.message
+      });
+    }
+
+    // Check if service report already exists for this ticket
+    const serviceReports = (await db.get('service_reports')) || [];
+    const existingReport = serviceReports.find(r =>
+      r.hubspotTicketNumber === ticketId || r.hubspotTicketNumber === String(ticketId)
+    );
+
+    if (existingReport) {
+      console.log(`Service report already exists for ticket ${ticketId}`);
+      return res.json({
+        message: 'Service report already exists for this ticket',
+        ticketId,
+        reportId: existingReport.id
+      });
+    }
+
+    // Map HubSpot owner ID to internal user
+    let assignedToId = null;
+    let assignedToName = null;
+    const users = (await db.get('users')) || [];
+
+    if (ticket.ownerId) {
+      try {
+        const owners = await hubspot.getOwners();
+        const hubspotOwner = owners.find(o => String(o.id) === String(ticket.ownerId));
+
+        if (hubspotOwner) {
+          // Try to match by email first
+          if (hubspotOwner.email) {
+            const userByEmail = users.find(u =>
+              u.email && u.email.toLowerCase() === hubspotOwner.email.toLowerCase() &&
+              (u.role === 'vendor' || u.role === 'admin' || u.hasServicePortalAccess)
+            );
+            if (userByEmail) {
+              assignedToId = userByEmail.id;
+              assignedToName = userByEmail.name;
+            }
+          }
+
+          // If no match by email, try by name
+          if (!assignedToId && hubspotOwner.firstName && hubspotOwner.lastName) {
+            const fullName = `${hubspotOwner.firstName} ${hubspotOwner.lastName}`;
+            const userByName = users.find(u =>
+              u.name && u.name.toLowerCase() === fullName.toLowerCase() &&
+              (u.role === 'vendor' || u.role === 'admin' || u.hasServicePortalAccess)
+            );
+            if (userByName) {
+              assignedToId = userByName.id;
+              assignedToName = userByName.name;
+            }
+          }
+        }
+      } catch (ownerErr) {
+        console.log('Could not match HubSpot owner to internal user:', ownerErr.message);
+      }
+    }
+
+    // If no assignee found, we cannot auto-create the service report
+    if (!assignedToId) {
+      console.log(`Cannot auto-create service report: No internal user found for HubSpot owner ${ticket.ownerId}`);
+      return res.json({
+        message: 'Ticket owner not matched to internal user - manual assignment required',
+        ticketId,
+        hubspotOwnerId: ticket.ownerId,
+        requiresManualAssignment: true
+      });
+    }
+
+    // Map Service Type from Issue Category
+    const serviceTypeMapping = {
+      'analyzer hardware': 'Analyzer Hardware',
+      'inventory': 'Inventory',
+      'lis/emr': 'LIS/EMR',
+      'lis': 'LIS/EMR',
+      'emr': 'LIS/EMR',
+      'billing & fees': 'Billing & Fees',
+      'billing': 'Billing & Fees',
+      'compliance': 'Compliance',
+      'training': 'Training',
+      'validations': 'Validations',
+      'validation': 'Validations'
+    };
+
+    const issueCategoryLower = (ticket.issueCategory || '').toLowerCase();
+    const serviceType = serviceTypeMapping[issueCategoryLower] || '';
+
+    // Combine ticket description and notes into manager notes
+    let managerNotes = '';
+    if (ticket.description) {
+      managerNotes += `**Ticket Description:**\n${ticket.description}\n\n`;
+    }
+    if (ticket.notes && ticket.notes.length > 0) {
+      managerNotes += `**Ticket Notes:**\n`;
+      ticket.notes.forEach((note, index) => {
+        const timestamp = note.timestamp ? new Date(parseInt(note.timestamp)).toLocaleString() : '';
+        managerNotes += `\n[${timestamp}]\n${note.body}\n`;
+        if (note.attachmentIds) {
+          managerNotes += `(Attachments: ${note.attachmentIds})\n`;
+        }
+      });
+    }
+
+    // Create the service report
+    const newReport = {
+      id: uuidv4(),
+      // Assignment info
+      status: 'assigned',
+      assignedToId,
+      assignedToName,
+      assignedById: 'system', // System-generated from webhook
+      assignedByName: 'HubSpot Automation',
+      assignedAt: new Date().toISOString(),
+      // Pre-filled info from HubSpot ticket
+      clientFacilityName: ticket.companyName || '',
+      customerName: ticket.submittedBy || '',
+      serviceProviderName: assignedToName,
+      address: '',
+      serviceType: serviceType,
+      analyzerModel: '',
+      analyzerSerialNumber: ticket.serialNumber || '',
+      hubspotTicketNumber: String(ticket.id),
+      hubspotCompanyId: ticket.companyId || '',
+      hubspotDealId: '',
+      serviceCompletionDate: new Date().toISOString().split('T')[0],
+      // Manager-only fields
+      managerNotes: managerNotes.trim(),
+      photos: [],
+      clientFiles: [],
+      // Technician fields (to be filled when completing)
+      technicianId: null,
+      technicianName: null,
+      descriptionOfWork: '',
+      materialsUsed: '',
+      solution: '',
+      outstandingIssues: '',
+      validationResults: '',
+      validationStartDate: '',
+      validationEndDate: '',
+      trainingProvided: '',
+      testProcedures: '',
+      recommendations: '',
+      analyzersValidated: [],
+      customerSignature: null,
+      customerSignatureDate: null,
+      technicianSignature: null,
+      technicianSignatureDate: null,
+      // Metadata
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      createdViaWebhook: true
+    };
+
+    serviceReports.push(newReport);
+    await db.set('service_reports', serviceReports);
+
+    console.log(`✅ Auto-created service report ${newReport.id} from ticket ${ticketId}`);
+
+    // Log activity (skip if system user doesn't exist)
+    try {
+      await logActivity(
+        'system',
+        'HubSpot Automation',
+        'service_report_auto_assigned',
+        'service_report',
+        newReport.id,
+        {
+          ticketId,
+          assignedTo: assignedToName,
+          clientName: ticket.companyName
+        }
+      );
+    } catch (logErr) {
+      console.log('Could not log activity:', logErr.message);
+    }
+
+    res.json({
+      success: true,
+      message: 'Service report auto-created from ticket',
+      ticketId,
+      reportId: newReport.id,
+      assignedTo: assignedToName
+    });
+  } catch (error) {
+    console.error('Error processing ticket stage change webhook:', error);
+    res.status(500).json({
+      error: 'Failed to process webhook',
+      details: error.message
+    });
+  }
+});
+
 // Admin endpoint to view/manage portal tickets
 app.get('/api/admin/portal-tickets', authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -5610,6 +5838,128 @@ app.delete('/api/service-reports', authenticateToken, async (req, res) => {
 });
 
 // ============== SERVICE REPORT ASSIGNMENTS (Manager/Admin assigns to Technician/Vendor) ==============
+
+// Fetch HubSpot ticket and map to service report fields
+app.get('/api/hubspot/ticket/:ticketId/map-to-service-report', authenticateToken, async (req, res) => {
+  try {
+    // Only admins and managers with service portal access can use this endpoint
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
+      return res.status(403).json({ error: 'Only admins and managers can import from HubSpot' });
+    }
+
+    const ticketId = req.params.ticketId;
+
+    // Fetch ticket from HubSpot
+    const ticket = await hubspot.getTicketById(ticketId);
+
+    // Map HubSpot owner ID to internal user
+    let assignedToId = null;
+    let assignedToName = null;
+    if (ticket.ownerId) {
+      const users = (await db.get('users')) || [];
+
+      // Try to find user by matching HubSpot owner ID
+      // First, get the HubSpot owner details
+      try {
+        const owners = await hubspot.getOwners();
+        const hubspotOwner = owners.find(o => String(o.id) === String(ticket.ownerId));
+
+        if (hubspotOwner) {
+          // Try to match by email first
+          if (hubspotOwner.email) {
+            const userByEmail = users.find(u =>
+              u.email && u.email.toLowerCase() === hubspotOwner.email.toLowerCase()
+            );
+            if (userByEmail) {
+              assignedToId = userByEmail.id;
+              assignedToName = userByEmail.name;
+            }
+          }
+
+          // If no match by email, try by name
+          if (!assignedToId && hubspotOwner.firstName && hubspotOwner.lastName) {
+            const fullName = `${hubspotOwner.firstName} ${hubspotOwner.lastName}`;
+            const userByName = users.find(u =>
+              u.name && u.name.toLowerCase() === fullName.toLowerCase()
+            );
+            if (userByName) {
+              assignedToId = userByName.id;
+              assignedToName = userByName.name;
+            }
+          }
+        }
+      } catch (ownerErr) {
+        console.log('Could not match HubSpot owner to internal user:', ownerErr.message);
+      }
+    }
+
+    // Map Service Type from Issue Category
+    const serviceTypeMapping = {
+      'analyzer hardware': 'Analyzer Hardware',
+      'inventory': 'Inventory',
+      'lis/emr': 'LIS/EMR',
+      'lis': 'LIS/EMR',
+      'emr': 'LIS/EMR',
+      'billing & fees': 'Billing & Fees',
+      'billing': 'Billing & Fees',
+      'compliance': 'Compliance',
+      'training': 'Training',
+      'validations': 'Validations',
+      'validation': 'Validations'
+    };
+
+    const issueCategoryLower = (ticket.issueCategory || '').toLowerCase();
+    const serviceType = serviceTypeMapping[issueCategoryLower] || '';
+
+    // Combine ticket description and notes into manager notes
+    let managerNotes = '';
+    if (ticket.description) {
+      managerNotes += `**Ticket Description:**\n${ticket.description}\n\n`;
+    }
+    if (ticket.notes && ticket.notes.length > 0) {
+      managerNotes += `**Ticket Notes:**\n`;
+      ticket.notes.forEach((note, index) => {
+        const timestamp = note.timestamp ? new Date(parseInt(note.timestamp)).toLocaleString() : '';
+        managerNotes += `\n[${timestamp}]\n${note.body}\n`;
+        if (note.attachmentIds) {
+          managerNotes += `(Attachments: ${note.attachmentIds})\n`;
+        }
+      });
+    }
+
+    // Build the mapped service report data
+    const mappedData = {
+      // HubSpot ticket info
+      ticketId: ticket.id,
+      ticketSubject: ticket.subject,
+      ticketStage: ticket.stage,
+
+      // Mapped fields for service report
+      assignedToId: assignedToId,
+      assignedToName: assignedToName,
+      clientFacilityName: ticket.companyName || '',
+      customerName: ticket.submittedBy || '',
+      serviceType: serviceType,
+      analyzerSerialNumber: ticket.serialNumber || '',
+      hubspotTicketNumber: ticket.id,
+      hubspotCompanyId: ticket.companyId || '',
+      managerNotes: managerNotes.trim(),
+      serviceCompletionDate: new Date().toISOString().split('T')[0], // Today's date
+
+      // Additional info
+      hubspotOwnerNotMatched: ticket.ownerId && !assignedToId,
+      hubspotOwnerId: ticket.ownerId
+    };
+
+    res.json(mappedData);
+  } catch (error) {
+    console.error('Error mapping HubSpot ticket to service report:', error);
+    res.status(500).json({
+      error: 'Failed to fetch ticket from HubSpot',
+      details: error.message
+    });
+  }
+});
 
 // Create and assign service report to technician/vendor (admin/manager with service access only)
 app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
