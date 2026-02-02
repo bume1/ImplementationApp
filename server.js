@@ -312,6 +312,18 @@ app.post('/api/auth/signup', authenticateToken, requireAdmin, async (req, res) =
     if (!email || !password || !name) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+    // Validate password strength (min 8 chars, at least one uppercase, one lowercase, one number)
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters long' });
+    }
+    if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
+      return res.status(400).json({ error: 'Password must contain at least one uppercase letter, one lowercase letter, and one number' });
+    }
     const users = await getUsers();
     if (users.find(u => u.email?.toLowerCase() === email.toLowerCase())) {
       return res.status(400).json({ error: 'User already exists' });
@@ -495,7 +507,7 @@ app.post('/api/auth/client-login', async (req, res) => {
     }
     const users = await getUsers();
     // Allow both clients and admins to log into the portal
-    const user = users.find(u => u.email === email && (u.role === 'client' || u.role === 'admin'));
+    const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase() && (u.role === 'client' || u.role === 'admin'));
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
@@ -536,16 +548,16 @@ app.post('/api/auth/forgot-password', async (req, res) => {
       return res.status(400).json({ error: 'Email is required' });
     }
     const users = await getUsers();
-    const user = users.find(u => u.email === email);
+    const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase());
     if (!user) {
       return res.json({ message: 'Your request has been submitted. An administrator will reach out to you shortly to help reset your password.' });
     }
-    
+
     // Store password reset request for admin to handle
     const resetRequests = await db.get('password_reset_requests') || [];
-    
+
     // Check if there's already a pending request for this user
-    const existingIdx = resetRequests.findIndex(r => r.email === email && r.status === 'pending');
+    const existingIdx = resetRequests.findIndex(r => r.email?.toLowerCase() === email.toLowerCase() && r.status === 'pending');
     if (existingIdx !== -1) {
       return res.json({ message: 'Your request has been submitted. An administrator will reach out to you shortly to help reset your password.' });
     }
@@ -823,11 +835,12 @@ app.get('/api/team-members', authenticateToken, async (req, res) => {
     const { projectId } = req.query;
     const users = await getUsers();
     
-    // If projectId is provided, filter to only users assigned to that project (or admins)
-    let filteredUsers = users;
+    // Filter to team members (admins + users), exclude clients and vendors
+    let filteredUsers = users.filter(u => u.role === 'admin' || u.role === 'user');
     if (projectId) {
-      filteredUsers = users.filter(u => 
-        u.role === 'admin' || 
+      // Further filter to only users assigned to that project (or admins)
+      filteredUsers = filteredUsers.filter(u =>
+        u.role === 'admin' ||
         (u.assignedProjects && u.assignedProjects.includes(projectId))
       );
     }
@@ -861,12 +874,14 @@ app.post('/api/projects/:projectId/tasks/:taskId/subtasks', authenticateToken, a
     const idx = tasks.findIndex(t => t.id === parseInt(taskId) || String(t.id) === String(taskId));
     if (idx === -1) return res.status(404).json({ error: 'Task not found' });
     
+    // Inherit showToClient from parent task if not explicitly provided
+    const parentShowToClient = tasks[idx].showToClient || false;
     const subtask = {
       id: uuidv4(),
       title,
       owner: owner || '',
       dueDate: dueDate || '',
-      showToClient: showToClient !== false,
+      showToClient: showToClient !== undefined ? showToClient : parentShowToClient,
       completed: false,
       createdAt: new Date().toISOString(),
       createdBy: req.user.id
@@ -1534,13 +1549,29 @@ app.put('/api/projects/:id', authenticateToken, async (req, res) => {
     const idx = projects.findIndex(p => p.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'Project not found' });
     
+    // Validate project status against allowed values
+    if (req.body.status !== undefined) {
+      const validStatuses = ['active', 'paused', 'completed'];
+      if (!validStatuses.includes(req.body.status)) {
+        return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
+      }
+    }
+
+    // Validate name and clientName are not empty if provided
+    if (req.body.name !== undefined && !String(req.body.name).trim()) {
+      return res.status(400).json({ error: 'Project name cannot be empty' });
+    }
+    if (req.body.clientName !== undefined && !String(req.body.clientName).trim()) {
+      return res.status(400).json({ error: 'Client name cannot be empty' });
+    }
+
     // Require Soft-Pilot Checklist before marking project as completed
     if (req.body.status === 'completed' && !projects[idx].softPilotChecklistSubmitted) {
-      return res.status(400).json({ 
-        error: 'The Soft-Pilot Checklist must be submitted before marking this project as completed.' 
+      return res.status(400).json({
+        error: 'The Soft-Pilot Checklist must be submitted before marking this project as completed.'
       });
     }
-    
+
     const allowedFields = ['name', 'clientName', 'projectManager', 'hubspotRecordId', 'hubspotRecordType', 'status', 'clientPortalDomain', 'goLiveDate'];
     
     // Check if client name is being changed - regenerate slug
@@ -1797,6 +1828,15 @@ app.put('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req,
           incompleteSubtasks: incompleteSubtasks.map(s => s.title)
         });
       }
+    }
+
+    // Auto-set dateCompleted when marking task as completed (server-side guarantee)
+    if (sanitizedUpdates.completed && !task.completed && !sanitizedUpdates.dateCompleted) {
+      sanitizedUpdates.dateCompleted = new Date().toISOString();
+    }
+    // Clear dateCompleted when un-completing a task
+    if (sanitizedUpdates.completed === false && task.completed) {
+      sanitizedUpdates.dateCompleted = '';
     }
 
     tasks[idx] = { ...tasks[idx], ...sanitizedUpdates };
@@ -2819,6 +2859,9 @@ app.get('/api/inventory/template', async (req, res) => {
 app.put('/api/inventory/template', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { template } = req.body;
+    if (!template || typeof template !== 'object') {
+      return res.status(400).json({ error: 'Invalid template data. Must be a non-empty object.' });
+    }
     await db.set('inventory_template', template);
     res.json({ success: true });
   } catch (error) {
@@ -4217,7 +4260,7 @@ app.get('/api/templates', authenticateToken, async (req, res) => {
       id: t.id,
       name: t.name,
       description: t.description,
-      taskCount: t.tasks.length,
+      taskCount: Array.isArray(t.tasks) ? t.tasks.length : 0,
       createdAt: t.createdAt,
       isDefault: t.isDefault
     }));
@@ -4667,7 +4710,7 @@ app.post('/api/auth/service-login', async (req, res) => {
       return res.status(400).json({ error: 'Missing credentials' });
     }
     const users = await getUsers();
-    const user = users.find(u => u.email === email);
+    const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase());
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
@@ -5047,12 +5090,25 @@ app.put('/api/service-reports/:id', authenticateToken, requireServiceAccess, asy
       return res.status(403).json({ error: 'Not authorized to edit this report' });
     }
 
+    // Whitelist allowed fields for service report updates
+    const serviceReportAllowedFields = [
+      'clientSlug', 'clientName', 'visitDate', 'visitType', 'status',
+      'equipmentType', 'serialNumber', 'modelNumber', 'location',
+      'issueDescription', 'workPerformed', 'partsUsed', 'recommendations',
+      'followUpRequired', 'followUpDate', 'followUpNotes',
+      'technicianNotes', 'clientSignature', 'technicianSignature',
+      'photos', 'attachments', 'readings', 'testResults'
+    ];
+    const sanitizedReportUpdates = {};
+    for (const key of serviceReportAllowedFields) {
+      if (req.body[key] !== undefined) {
+        sanitizedReportUpdates[key] = req.body[key];
+      }
+    }
+
     serviceReports[reportIndex] = {
       ...existingReport,
-      ...req.body,
-      id: existingReport.id,
-      technicianId: existingReport.technicianId,
-      createdAt: existingReport.createdAt,
+      ...sanitizedReportUpdates,
       updatedAt: new Date().toISOString()
     };
 
@@ -5267,12 +5323,24 @@ app.put('/api/validation-reports/:id', authenticateToken, requireServiceAccess, 
       return res.status(403).json({ error: 'Not authorized to edit this report' });
     }
 
+    // Whitelist allowed fields for validation report updates
+    const validationReportAllowedFields = [
+      'clientSlug', 'clientName', 'validationDate', 'validationType', 'status',
+      'equipmentType', 'serialNumber', 'modelNumber', 'location',
+      'testResults', 'readings', 'calibrationData', 'observations',
+      'passFailStatus', 'recommendations', 'followUpRequired',
+      'technicianNotes', 'signatures', 'attachments', 'photos'
+    ];
+    const sanitizedValidationUpdates = {};
+    for (const key of validationReportAllowedFields) {
+      if (req.body[key] !== undefined) {
+        sanitizedValidationUpdates[key] = req.body[key];
+      }
+    }
+
     validationReports[reportIndex] = {
       ...existingReport,
-      ...req.body,
-      id: existingReport.id,
-      technicianId: existingReport.technicianId,
-      createdAt: existingReport.createdAt,
+      ...sanitizedValidationUpdates,
       updatedAt: new Date().toISOString()
     };
 
@@ -5611,7 +5679,7 @@ app.post('/api/admin/reset-user-password/:userId', authenticateToken, requireAdm
 
     res.json({
       message: 'Password reset successfully',
-      tempPassword: customPassword ? undefined : newPassword,
+      ...(customPassword ? {} : { tempPassword: newPassword }),
       requirePasswordChange: users[userIndex].requirePasswordChange
     });
   } catch (error) {

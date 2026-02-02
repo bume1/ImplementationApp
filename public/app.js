@@ -86,6 +86,19 @@ const ensureAllPhasesAndStages = (groupedByPhase) => {
 // Helper function to handle fetch responses properly
 const handleResponse = async (response) => {
   if (!response.ok) {
+    // Auto-redirect to login on auth failure (expired/invalid token)
+    if (response.status === 401 || response.status === 403) {
+      const isAuthError = response.status === 401 ||
+        (response.status === 403 && await response.clone().json().then(d => d.error === 'Invalid token' || d.error === 'User not found').catch(() => false));
+      if (isAuthError) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        localStorage.removeItem('unified_token');
+        localStorage.removeItem('unified_user');
+        window.location.href = '/';
+        throw new Error('Session expired. Redirecting to login...');
+      }
+    }
     let errorMessage = `HTTP error ${response.status}`;
     try {
       const errorData = await response.json();
@@ -3194,7 +3207,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
   const [teamMembers, setTeamMembers] = useState([]);
   const [selectedTasks, setSelectedTasks] = useState([]);
   const [bulkMode, setBulkMode] = useState(false);
-  const [newSubtask, setNewSubtask] = useState({ taskId: null, title: '', owner: '', dueDate: '' });
+  const [newSubtask, setNewSubtask] = useState({ taskId: null, title: '', owner: '', dueDate: '', showToClient: undefined });
   const [editingSubtask, setEditingSubtask] = useState(null);
   const [expandedSubtasksId, setExpandedSubtasksId] = useState(null);
   const [clientPortalDomain, setClientPortalDomain] = useState('');
@@ -3357,9 +3370,17 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
     try {
       // Pass project ID to filter team members to only those assigned to this project
       const data = await api.getTeamMembers(token, project.id);
-      setTeamMembers(data);
+      if (Array.isArray(data)) {
+        setTeamMembers(data);
+      } else if (data && data.error) {
+        console.error('Failed to load team members:', data.error);
+        setTeamMembers([]);
+      } else {
+        setTeamMembers([]);
+      }
     } catch (err) {
       console.error('Failed to load team members:', err);
+      setTeamMembers([]);
     }
   };
 
@@ -5571,14 +5592,16 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                     <label className="block text-sm font-medium mb-1">Phase</label>
                     <select
                       value={newTask.phase}
-                      onChange={(e) => setNewTask({...newTask, phase: e.target.value})}
+                      onChange={(e) => {
+                        const newPhase = e.target.value;
+                        const newStages = STANDARD_PHASES[newPhase]?.stages || [];
+                        setNewTask({...newTask, phase: newPhase, stage: newStages[0] || ''});
+                      }}
                       className="w-full px-3 py-2 border rounded-md"
                     >
-                      <option value="Phase 0">Phase 0: Contract Signature</option>
-                      <option value="Phase 1">Phase 1: Pre-Launch</option>
-                      <option value="Phase 2">Phase 2: Implementation Sprints</option>
-                      <option value="Phase 3">Phase 3: Go-Live</option>
-                      <option value="Phase 4">Phase 4: Post-Launch Optimization</option>
+                      {PHASE_ORDER.map(phase => (
+                        <option key={phase} value={phase}>{STANDARD_PHASES[phase]?.name || phase}</option>
+                      ))}
                     </select>
                   </div>
                   <div>
@@ -5589,16 +5612,9 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                       className="w-full px-3 py-2 border rounded-md"
                     >
                       <option value="">-- Select Stage --</option>
-                      <option value="Contract Signature">Contract Signature</option>
-                      <option value="Project Kick Off & Stakeholder Alignment">Project Kick Off & Stakeholder Alignment</option>
-                      <option value="Launch Data & Systems Prep">Launch Data & Systems Prep</option>
-                      <option value="Sprint 1: Core System Setups">Sprint 1: Core System Setups</option>
-                      <option value="Sprint 2: Lab & QUA Pilot Prep">Sprint 2: Lab & QUA Pilot Prep</option>
-                      <option value="Sprint 3: Soft-Pilot">Sprint 3: Soft-Pilot</option>
-                      <option value="Training/Validation">Training/Validation</option>
-                      <option value="Go-Live">Go-Live</option>
-                      <option value="KPIs">KPIs</option>
-                      <option value="Monitoring & Customer Support">Monitoring & Customer Support</option>
+                      {(STANDARD_PHASES[newTask.phase]?.stages || []).map(stage => (
+                        <option key={stage} value={stage}>{stage}</option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -7718,10 +7734,17 @@ const App = () => {
     setUser(null);
     setSelectedProject(null);
     setView('list');
+    // Clear all portal token keys to prevent stale sessions across portals
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     localStorage.removeItem('unified_token');
     localStorage.removeItem('unified_user');
+    localStorage.removeItem('admin_token');
+    localStorage.removeItem('admin_user');
+    localStorage.removeItem('portal_token');
+    localStorage.removeItem('portal_user');
+    localStorage.removeItem('service_token');
+    localStorage.removeItem('service_user');
     window.location.href = '/';
   };
 

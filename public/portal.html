@@ -65,11 +65,28 @@
     // Helper function to handle fetch responses properly
     const handleResponse = async (response) => {
       if (!response.ok) {
+        // Auto-redirect to login on auth failure (expired/invalid token)
+        if (response.status === 401 || response.status === 403) {
+          try {
+            const errData = await response.clone().json();
+            if (errData.error === 'Invalid token' || errData.error === 'User not found' || response.status === 401) {
+              localStorage.removeItem('portal_token');
+              localStorage.removeItem('portal_user');
+              localStorage.removeItem('unified_token');
+              localStorage.removeItem('unified_user');
+              window.location.href = '/';
+              throw new Error('Session expired. Redirecting to login...');
+            }
+          } catch (redirectErr) {
+            if (redirectErr.message.includes('Session expired')) throw redirectErr;
+          }
+        }
         // Try to parse error message from response
         try {
           const errorData = await response.json();
           throw new Error(errorData.error || `HTTP error ${response.status}`);
         } catch (e) {
+          if (e.message.includes('Session expired')) throw e;
           // If parsing fails, throw generic error
           throw new Error(`HTTP error ${response.status}`);
         }
@@ -421,6 +438,12 @@
                   localStorage.removeItem('portal_user');
                   localStorage.removeItem('unified_token');
                   localStorage.removeItem('unified_user');
+                  localStorage.removeItem('token');
+                  localStorage.removeItem('user');
+                  localStorage.removeItem('admin_token');
+                  localStorage.removeItem('admin_user');
+                  localStorage.removeItem('service_token');
+                  localStorage.removeItem('service_user');
                   window.location.href = '/';
                 }}
                 className="w-full text-left px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2"
