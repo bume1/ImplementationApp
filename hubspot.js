@@ -1256,6 +1256,85 @@ async function getTicketById(ticketId) {
   }
 }
 
+/**
+ * Search for tickets in specific pipeline stages, optionally filtered by modification date.
+ * Uses HubSpot CRM Search API with the Private App token.
+ * @param {string[]} stageIds - Array of pipeline stage IDs to search for
+ * @param {string|null} modifiedAfter - ISO timestamp - only return tickets modified after this time
+ * @param {string[]} additionalProperties - Extra property names to include in results
+ * @param {number} limit - Maximum results to return (default 100)
+ * @returns {object[]} Array of raw ticket objects from HubSpot search API
+ */
+async function searchTicketsByStage(stageIds, modifiedAfter = null, additionalProperties = [], limit = 100) {
+  const privateAppToken = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
+  if (!privateAppToken) {
+    throw new Error('HubSpot Private App token not configured');
+  }
+
+  if (!stageIds || stageIds.length === 0) {
+    return [];
+  }
+
+  const axios = require('axios');
+
+  // Build filters - ANDed within a single filter group
+  const filters = [
+    {
+      propertyName: 'hs_pipeline_stage',
+      operator: 'IN',
+      values: stageIds
+    }
+  ];
+
+  // Add time filter to only get recently modified tickets
+  if (modifiedAfter) {
+    filters.push({
+      propertyName: 'hs_lastmodifieddate',
+      operator: 'GTE',
+      value: String(new Date(modifiedAfter).getTime())
+    });
+  }
+
+  // Standard properties + any additional ones requested (e.g. custom trigger property)
+  const properties = [
+    'subject',
+    'content',
+    'hs_pipeline',
+    'hs_pipeline_stage',
+    'hs_ticket_priority',
+    'createdate',
+    'hs_lastmodifieddate',
+    'hubspot_owner_id',
+    'issue_category',
+    'serial_number',
+    'submitted_by',
+    ...additionalProperties
+  ];
+
+  try {
+    const response = await axios.post(
+      'https://api.hubapi.com/crm/v3/objects/tickets/search',
+      {
+        filterGroups: [{ filters }],
+        properties: [...new Set(properties)], // deduplicate
+        sorts: [{ propertyName: 'hs_lastmodifieddate', direction: 'DESCENDING' }],
+        limit
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${privateAppToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    return response.data?.results || [];
+  } catch (error) {
+    console.error('Error searching tickets by stage:', error.response?.data || error.message);
+    throw error;
+  }
+}
+
 module.exports = {
   getHubSpotClient,
   getPipelines,
@@ -1276,5 +1355,6 @@ module.exports = {
   getTicketsForContact,
   getTicketsForDeal,
   createTicketWithFile,
-  getTicketById
+  getTicketById,
+  searchTicketsByStage
 };

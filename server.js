@@ -21,6 +21,9 @@ const upload = multer({
 const app = express();
 const db = new Database();
 const PORT = process.env.PORT || 3000;
+
+// HubSpot ticket polling timer reference
+let hubspotPollingTimer = null;
 const JWT_SECRET = process.env.JWT_SECRET || 'thrive365-secret-change-in-production';
 
 app.use(cors());
@@ -197,6 +200,390 @@ async function loadTemplate() {
   } catch (err) {
     console.error('Error loading template:', err);
     return [];
+  }
+}
+
+// ===== HubSpot Ticket Polling Engine =====
+// Polls HubSpot for tickets in target stages and creates service reports
+// Workaround for when HubSpot webhooks are not available
+
+function getDefaultPollingConfig() {
+  return {
+    enabled: true,
+    intervalSeconds: 60,
+    startedAt: new Date().toISOString(),
+    lastPollTime: null,
+    processedTicketIds: [],
+    targetStages: ['assigned', 'vendor escalation'],
+    resolvedStageIds: [],
+    stageIdsCachedAt: null,
+    filter: {
+      mode: 'keyword',       // 'keyword' | 'property' | 'all'
+      subjectKeyword: '[SR]', // For keyword mode: only tickets with this in subject
+      propertyName: 'create_service_report', // For property mode: HubSpot custom property name
+      propertyValue: 'true'   // For property mode: expected value
+    },
+    stats: {
+      totalPolls: 0,
+      totalReportsCreated: 0,
+      lastSuccessfulPoll: null,
+      lastError: null,
+      lastErrorTime: null
+    },
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+}
+
+async function pollHubSpotTickets() {
+  try {
+    const config = await db.get('ticket_polling_config');
+    if (!config || !config.enabled) return;
+
+    console.log('[HubSpot Poll] Starting poll cycle...');
+
+    // Resolve stage IDs from labels if not cached or cache is stale (refresh every hour)
+    const cacheAge = config.stageIdsCachedAt
+      ? Date.now() - new Date(config.stageIdsCachedAt).getTime()
+      : Infinity;
+
+    if (!config.resolvedStageIds || !config.resolvedStageIds.length || cacheAge > 3600000) {
+      try {
+        const pipelines = await hubspot.getTicketPipelines();
+        const targetLabels = config.targetStages.map(s => s.toLowerCase());
+        const stageIds = [];
+        for (const pipeline of pipelines) {
+          for (const stage of pipeline.stages) {
+            if (targetLabels.some(t => stage.label.toLowerCase().includes(t))) {
+              stageIds.push(stage.id);
+            }
+          }
+        }
+        config.resolvedStageIds = stageIds;
+        config.stageIdsCachedAt = new Date().toISOString();
+        await db.set('ticket_polling_config', config);
+        console.log(`[HubSpot Poll] Resolved ${stageIds.length} target stage ID(s).`);
+      } catch (pipelineErr) {
+        console.error('[HubSpot Poll] Failed to resolve stage IDs:', pipelineErr.message);
+        config.stats.lastError = 'Failed to resolve stage IDs: ' + pipelineErr.message;
+        config.stats.lastErrorTime = new Date().toISOString();
+        await db.set('ticket_polling_config', config);
+        return;
+      }
+    }
+
+    if (!config.resolvedStageIds.length) {
+      console.log('[HubSpot Poll] No target stage IDs resolved. Check targetStages config.');
+      return;
+    }
+
+    // Use lastPollTime if available, otherwise startedAt (first poll = fresh start)
+    const sinceTime = config.lastPollTime || config.startedAt;
+
+    // Include custom property in search if using property filter mode
+    const additionalProps = [];
+    if (config.filter.mode === 'property' && config.filter.propertyName) {
+      additionalProps.push(config.filter.propertyName);
+    }
+
+    // Search HubSpot for tickets in target stages modified since last poll
+    let candidates;
+    try {
+      candidates = await hubspot.searchTicketsByStage(
+        config.resolvedStageIds,
+        sinceTime,
+        additionalProps
+      );
+    } catch (searchErr) {
+      console.error('[HubSpot Poll] Search failed:', searchErr.message);
+      config.stats.lastError = 'Search failed: ' + searchErr.message;
+      config.stats.lastErrorTime = new Date().toISOString();
+      config.stats.totalPolls++;
+      await db.set('ticket_polling_config', config);
+      return;
+    }
+
+    if (!candidates.length) {
+      config.lastPollTime = new Date().toISOString();
+      config.stats.totalPolls++;
+      config.stats.lastSuccessfulPoll = new Date().toISOString();
+      config.stats.lastError = null;
+      await db.set('ticket_polling_config', config);
+      return;
+    }
+
+    console.log(`[HubSpot Poll] Found ${candidates.length} candidate ticket(s).`);
+
+    // Filter out already-processed tickets
+    const processedIds = new Set(config.processedTicketIds || []);
+    let filteredCandidates = candidates.filter(t => !processedIds.has(String(t.id)));
+
+    // Apply the configured filter mode
+    if (config.filter.mode === 'keyword') {
+      const keyword = (config.filter.subjectKeyword || '').toLowerCase();
+      if (keyword) {
+        filteredCandidates = filteredCandidates.filter(t => {
+          const subject = (t.properties?.subject || '').toLowerCase();
+          return subject.includes(keyword);
+        });
+      }
+    } else if (config.filter.mode === 'property') {
+      const propName = config.filter.propertyName;
+      const propValue = (config.filter.propertyValue || '').toLowerCase();
+      if (propName && propValue) {
+        filteredCandidates = filteredCandidates.filter(t => {
+          const val = (t.properties?.[propName] || '').toLowerCase();
+          return val === propValue;
+        });
+      }
+    }
+    // mode === 'all' means no additional filtering
+
+    if (!filteredCandidates.length) {
+      config.lastPollTime = new Date().toISOString();
+      config.stats.totalPolls++;
+      config.stats.lastSuccessfulPoll = new Date().toISOString();
+      config.stats.lastError = null;
+      await db.set('ticket_polling_config', config);
+      return;
+    }
+
+    console.log(`[HubSpot Poll] ${filteredCandidates.length} ticket(s) passed filter. Processing...`);
+
+    // Load existing service reports and users for duplicate check and owner mapping
+    const serviceReports = (await db.get('service_reports')) || [];
+    const existingTicketIds = new Set(
+      serviceReports.map(r => String(r.hubspotTicketNumber)).filter(Boolean)
+    );
+    const users = (await db.get('users')) || [];
+
+    const serviceTypeMapping = {
+      'analyzer hardware': 'Analyzer Hardware',
+      'inventory': 'Inventory',
+      'lis/emr': 'LIS/EMR',
+      'lis': 'LIS/EMR',
+      'emr': 'LIS/EMR',
+      'billing & fees': 'Billing & Fees',
+      'billing': 'Billing & Fees',
+      'compliance': 'Compliance',
+      'training': 'Training',
+      'validations': 'Validations',
+      'validation': 'Validations'
+    };
+
+    let reportsCreated = 0;
+
+    for (const candidate of filteredCandidates) {
+      const ticketId = String(candidate.id);
+
+      // Skip if service report already exists for this ticket
+      if (existingTicketIds.has(ticketId)) {
+        console.log(`[HubSpot Poll] Service report already exists for ticket ${ticketId}, skipping.`);
+        processedIds.add(ticketId);
+        continue;
+      }
+
+      // Fetch full ticket details (company, contact, notes)
+      let ticket;
+      try {
+        ticket = await hubspot.getTicketById(ticketId);
+      } catch (fetchErr) {
+        console.error(`[HubSpot Poll] Failed to fetch ticket ${ticketId}:`, fetchErr.message);
+        continue;
+      }
+
+      // Map HubSpot owner to internal user (same logic as webhook handler)
+      let assignedToId = null;
+      let assignedToName = null;
+
+      if (ticket.ownerId) {
+        try {
+          const owners = await hubspot.getOwners();
+          const hubspotOwner = owners.find(o => String(o.id) === String(ticket.ownerId));
+
+          if (hubspotOwner) {
+            // Try email match first
+            if (hubspotOwner.email) {
+              const userByEmail = users.find(u =>
+                u.email && u.email.toLowerCase() === hubspotOwner.email.toLowerCase() &&
+                (u.role === 'vendor' || u.role === 'admin' || u.hasServicePortalAccess)
+              );
+              if (userByEmail) {
+                assignedToId = userByEmail.id;
+                assignedToName = userByEmail.name;
+              }
+            }
+            // Fall back to name match
+            if (!assignedToId && hubspotOwner.firstName && hubspotOwner.lastName) {
+              const fullName = `${hubspotOwner.firstName} ${hubspotOwner.lastName}`;
+              const userByName = users.find(u =>
+                u.name && u.name.toLowerCase() === fullName.toLowerCase() &&
+                (u.role === 'vendor' || u.role === 'admin' || u.hasServicePortalAccess)
+              );
+              if (userByName) {
+                assignedToId = userByName.id;
+                assignedToName = userByName.name;
+              }
+            }
+          }
+        } catch (ownerErr) {
+          console.log(`[HubSpot Poll] Could not match owner for ticket ${ticketId}:`, ownerErr.message);
+        }
+      }
+
+      if (!assignedToId) {
+        console.log(`[HubSpot Poll] No internal user match for ticket ${ticketId} (owner ${ticket.ownerId}). Skipping.`);
+        processedIds.add(ticketId);
+        continue;
+      }
+
+      // Map service type from issue category
+      const issueCategoryLower = (ticket.issueCategory || '').toLowerCase();
+      const serviceType = serviceTypeMapping[issueCategoryLower] || '';
+
+      // Build manager notes from ticket description and notes
+      let managerNotes = '';
+      if (ticket.description) {
+        managerNotes += `**Ticket Description:**\n${ticket.description}\n\n`;
+      }
+      if (ticket.notes && ticket.notes.length > 0) {
+        managerNotes += `**Ticket Notes:**\n`;
+        ticket.notes.forEach((note) => {
+          const timestamp = note.timestamp ? new Date(parseInt(note.timestamp)).toLocaleString() : '';
+          managerNotes += `\n[${timestamp}]\n${note.body}\n`;
+          if (note.attachmentIds) {
+            managerNotes += `(Attachments: ${note.attachmentIds})\n`;
+          }
+        });
+      }
+
+      // Create the service report
+      const newReport = {
+        id: uuidv4(),
+        status: 'assigned',
+        assignedToId,
+        assignedToName,
+        assignedById: 'system',
+        assignedByName: 'HubSpot Polling',
+        assignedAt: new Date().toISOString(),
+        clientFacilityName: ticket.companyName || '',
+        customerName: ticket.submittedBy || '',
+        serviceProviderName: assignedToName,
+        address: '',
+        serviceType,
+        analyzerModel: '',
+        analyzerSerialNumber: ticket.serialNumber || '',
+        hubspotTicketNumber: String(ticket.id),
+        hubspotCompanyId: ticket.companyId || '',
+        hubspotDealId: '',
+        serviceCompletionDate: new Date().toISOString().split('T')[0],
+        managerNotes: managerNotes.trim(),
+        photos: [],
+        clientFiles: [],
+        technicianId: null,
+        technicianName: null,
+        descriptionOfWork: '',
+        materialsUsed: '',
+        solution: '',
+        outstandingIssues: '',
+        validationResults: '',
+        validationStartDate: '',
+        validationEndDate: '',
+        trainingProvided: '',
+        testProcedures: '',
+        recommendations: '',
+        analyzersValidated: [],
+        customerSignature: null,
+        customerSignatureDate: null,
+        technicianSignature: null,
+        technicianSignatureDate: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        createdViaWebhook: true,
+        createdViaPolling: true
+      };
+
+      serviceReports.push(newReport);
+      existingTicketIds.add(ticketId);
+      processedIds.add(ticketId);
+      reportsCreated++;
+
+      console.log(`[HubSpot Poll] Created service report ${newReport.id} from ticket ${ticketId} -> ${assignedToName}`);
+
+      // Log activity
+      try {
+        await logActivity(
+          'system',
+          'HubSpot Polling',
+          'service_report_auto_assigned',
+          'service_report',
+          newReport.id,
+          {
+            ticketId,
+            assignedTo: assignedToName,
+            clientName: ticket.companyName,
+            source: 'polling'
+          }
+        );
+      } catch (logErr) {
+        console.log('[HubSpot Poll] Could not log activity:', logErr.message);
+      }
+    }
+
+    // Persist all new service reports
+    if (reportsCreated > 0) {
+      await db.set('service_reports', serviceReports);
+    }
+
+    // Update polling config state
+    config.processedTicketIds = Array.from(processedIds);
+    // Trim to last 500 IDs to prevent unbounded growth
+    if (config.processedTicketIds.length > 500) {
+      config.processedTicketIds = config.processedTicketIds.slice(-500);
+    }
+    config.lastPollTime = new Date().toISOString();
+    config.stats.totalPolls++;
+    config.stats.totalReportsCreated += reportsCreated;
+    config.stats.lastSuccessfulPoll = new Date().toISOString();
+    config.stats.lastError = null;
+    config.stats.lastErrorTime = null;
+    await db.set('ticket_polling_config', config);
+
+    console.log(`[HubSpot Poll] Cycle complete. Created ${reportsCreated} report(s).`);
+  } catch (error) {
+    console.error('[HubSpot Poll] Unexpected error:', error.message);
+    try {
+      const config = await db.get('ticket_polling_config');
+      if (config) {
+        config.stats.lastError = error.message;
+        config.stats.lastErrorTime = new Date().toISOString();
+        config.stats.totalPolls++;
+        await db.set('ticket_polling_config', config);
+      }
+    } catch (dbErr) {
+      console.error('[HubSpot Poll] Could not persist error state:', dbErr.message);
+    }
+  }
+}
+
+async function initializeTicketPolling() {
+  try {
+    let config = await db.get('ticket_polling_config');
+    if (!config) {
+      config = getDefaultPollingConfig();
+      await db.set('ticket_polling_config', config);
+      console.log('[HubSpot Poll] Initialized default config (enabled, 60s, keyword filter "[SR]")');
+    }
+
+    if (config.enabled) {
+      const interval = (config.intervalSeconds || 60) * 1000;
+      hubspotPollingTimer = setInterval(pollHubSpotTickets, interval);
+      console.log(`[HubSpot Poll] Polling started (every ${config.intervalSeconds || 60}s, filter: ${config.filter?.mode || 'keyword'})`);
+    } else {
+      console.log('[HubSpot Poll] Polling is disabled in config.');
+    }
+  } catch (err) {
+    console.error('[HubSpot Poll] Failed to initialize:', err.message);
   }
 }
 
@@ -3033,6 +3420,136 @@ app.delete('/api/admin/portal-tickets', authenticateToken, requireAdmin, async (
     res.json({ message: 'Portal tickets cleared', cleared: old.length });
   } catch (error) {
     res.status(500).json({ error: 'Failed to clear portal tickets' });
+  }
+});
+
+// ===== HubSpot Ticket Polling Admin Endpoints =====
+
+// Get polling configuration
+app.get('/api/admin/ticket-polling/config', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const config = (await db.get('ticket_polling_config')) || getDefaultPollingConfig();
+    res.json(config);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch polling config' });
+  }
+});
+
+// Update polling configuration
+app.put('/api/admin/ticket-polling/config', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const config = (await db.get('ticket_polling_config')) || getDefaultPollingConfig();
+    const updates = req.body;
+
+    // Update allowed fields
+    if (updates.enabled !== undefined) config.enabled = Boolean(updates.enabled);
+    if (updates.intervalSeconds !== undefined) {
+      config.intervalSeconds = Math.max(30, Math.min(3600, Number(updates.intervalSeconds)));
+    }
+    if (updates.targetStages) config.targetStages = updates.targetStages;
+
+    // Update filter settings
+    if (updates.filter) {
+      if (updates.filter.mode && ['keyword', 'property', 'all'].includes(updates.filter.mode)) {
+        config.filter.mode = updates.filter.mode;
+      }
+      if (updates.filter.subjectKeyword !== undefined) {
+        config.filter.subjectKeyword = String(updates.filter.subjectKeyword);
+      }
+      if (updates.filter.propertyName !== undefined) {
+        config.filter.propertyName = String(updates.filter.propertyName);
+      }
+      if (updates.filter.propertyValue !== undefined) {
+        config.filter.propertyValue = String(updates.filter.propertyValue);
+      }
+    }
+
+    // Clear resolved stage IDs if target stages changed (force re-resolution)
+    if (updates.targetStages) {
+      config.resolvedStageIds = [];
+      config.stageIdsCachedAt = null;
+    }
+
+    config.updatedAt = new Date().toISOString();
+    await db.set('ticket_polling_config', config);
+
+    // Restart polling timer with new settings
+    if (hubspotPollingTimer) {
+      clearInterval(hubspotPollingTimer);
+      hubspotPollingTimer = null;
+    }
+    if (config.enabled) {
+      hubspotPollingTimer = setInterval(pollHubSpotTickets, config.intervalSeconds * 1000);
+    }
+
+    res.json({ success: true, config });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update polling config', details: error.message });
+  }
+});
+
+// Get polling status summary
+app.get('/api/admin/ticket-polling/status', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const config = await db.get('ticket_polling_config');
+    res.json({
+      enabled: config?.enabled || false,
+      running: !!hubspotPollingTimer,
+      intervalSeconds: config?.intervalSeconds || 60,
+      filterMode: config?.filter?.mode || 'keyword',
+      filterDetail: config?.filter?.mode === 'keyword'
+        ? `Subject contains "${config?.filter?.subjectKeyword || '[SR]'}"`
+        : config?.filter?.mode === 'property'
+        ? `${config?.filter?.propertyName} = ${config?.filter?.propertyValue}`
+        : 'All tickets (no filter)',
+      lastPollTime: config?.lastPollTime || null,
+      startedAt: config?.startedAt || null,
+      processedTicketCount: config?.processedTicketIds?.length || 0,
+      resolvedStageIds: config?.resolvedStageIds || [],
+      stats: config?.stats || {}
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch polling status' });
+  }
+});
+
+// Manually trigger a poll cycle
+app.post('/api/admin/ticket-polling/trigger', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await pollHubSpotTickets();
+    const config = await db.get('ticket_polling_config');
+    res.json({
+      success: true,
+      message: 'Poll cycle completed',
+      lastPollTime: config?.lastPollTime,
+      stats: config?.stats
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to trigger poll', details: error.message });
+  }
+});
+
+// Reset polling state (clear processed tickets, reset stats)
+app.post('/api/admin/ticket-polling/reset', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const config = (await db.get('ticket_polling_config')) || getDefaultPollingConfig();
+    config.processedTicketIds = [];
+    config.resolvedStageIds = [];
+    config.stageIdsCachedAt = null;
+    config.startedAt = new Date().toISOString();
+    config.lastPollTime = null;
+    config.stats = {
+      totalPolls: 0,
+      totalReportsCreated: 0,
+      lastSuccessfulPoll: null,
+      lastError: null,
+      lastErrorTime: null
+    };
+    config.updatedAt = new Date().toISOString();
+    await db.set('ticket_polling_config', config);
+    res.json({ success: true, message: 'Polling state reset', config });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to reset polling state' });
   }
 });
 
@@ -7465,4 +7982,7 @@ app.get('/:slug', async (req, res, next) => {
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
   console.log(`🔐 Admin login: bianca@thrive365labs.com / Thrive2025!`);
+
+  // Start HubSpot ticket polling (webhook workaround)
+  initializeTicketPolling();
 });
