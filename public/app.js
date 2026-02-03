@@ -1928,9 +1928,9 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
                           <div key={day} className={`bg-white p-2 min-h-[120px] ${isToday ? 'ring-2 ring-primary ring-inset' : ''}`}>
                             <div className={`text-sm font-medium mb-2 ${isToday ? 'text-primary' : 'text-gray-700'}`}>{day}</div>
                             <div className="space-y-1 overflow-y-auto max-h-[200px]">
-                              {entries.map((entry, idx) => (
-                                <div 
-                                  key={idx} 
+                              {entries.map((entry) => (
+                                <div
+                                  key={entry.id || `${entry.type}-${entry.label}`}
                                   className={`text-xs p-1.5 rounded cursor-pointer hover:opacity-80 ${
                                     entry.type === 'training' ? 'bg-purple-100 text-purple-700' :
                                     entry.type === 'golive-completed' ? 'bg-green-100 text-green-700' :
@@ -2726,13 +2726,13 @@ const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
             ))}
           </div>
           <div className="grid grid-cols-7 gap-2">
-            {weekDates.map((date, idx) => {
+            {weekDates.map((date) => {
               const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
               const dayTasks = getTasksForDateStr(dateStr);
               const isToday = new Date().toDateString() === date.toDateString();
               return (
                 <div
-                  key={idx}
+                  key={dateStr}
                   onClick={() => {
                     setSelectedDate(date);
                     setCalendarMode('day');
@@ -6976,8 +6976,8 @@ const Reporting = ({ token, user, onBack, onLogout }) => {
                 <p className="text-gray-500 text-center py-4">No completed launches with timeline data available</p>
               ) : (
                 <div className="space-y-3">
-                  {timelines.map((project, idx) => (
-                    <div key={idx} className="flex items-center gap-4">
+                  {timelines.map((project) => (
+                    <div key={project.id || project.name} className="flex items-center gap-4">
                       <div className="w-48 text-sm">
                         <div className="font-medium truncate" title={project.name}>{project.name}</div>
                         <div className="text-gray-500 text-xs truncate" title={project.clientName}>{project.clientName}</div>

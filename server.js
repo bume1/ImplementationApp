@@ -13,15 +13,36 @@ const googledrive = require('./googledrive');
 const pdfGenerator = require('./pdf-generator');
 const changelogGenerator = require('./changelog-generator');
 
-const upload = multer({ 
+const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }
 });
+
+// Concurrent upload limiter to prevent memory exhaustion (Gotcha #12)
+// Files are memory-only (10MB each); limit concurrent uploads to prevent OOM
+const MAX_CONCURRENT_UPLOADS = 5;
+let _activeUploads = 0;
+
+const uploadLimiter = (req, res, next) => {
+  if (_activeUploads >= MAX_CONCURRENT_UPLOADS) {
+    return res.status(503).json({ error: 'Server busy processing uploads. Please try again in a moment.' });
+  }
+  _activeUploads++;
+  res.on('finish', () => { _activeUploads--; });
+  res.on('close', () => { _activeUploads--; });
+  next();
+};
 
 const app = express();
 const db = new Database();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'thrive365-secret-change-in-production';
+
+// Startup security warnings
+if (!process.env.JWT_SECRET) {
+  console.warn('⚠️  WARNING: JWT_SECRET environment variable not set. Using weak default secret.');
+  console.warn('   This is a SECURITY RISK in production. Set JWT_SECRET to a strong random value.');
+}
 
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
@@ -99,6 +120,7 @@ app.get('/thrive365labslaunch', (req, res) => {
         createdAt: new Date().toISOString()
       });
       await db.set('users', users);
+    invalidateUsersCache();
       console.log('✅ Admin user created: bianca@thrive365labs.com / Thrive2025!');
     }
   } catch (err) {
@@ -107,8 +129,31 @@ app.get('/thrive365labslaunch', (req, res) => {
 })();
 
 // Helper functions
-const getUsers = async () => (await db.get('users')) || [];
-const getProjects = async () => {
+
+// Short-lived user cache to reduce DB reads on every authenticated request (Gotcha #6)
+// 5-second TTL ensures permission changes take effect within seconds while reducing O(n) lookups
+let _usersCache = { data: null, lastRefresh: 0 };
+const USERS_CACHE_TTL = 5000; // 5 seconds
+
+const getUsers = async () => {
+  const now = Date.now();
+  if (_usersCache.data && (now - _usersCache.lastRefresh < USERS_CACHE_TTL)) {
+    return _usersCache.data;
+  }
+  const users = (await db.get('users')) || [];
+  _usersCache = { data: users, lastRefresh: now };
+  return users;
+};
+
+// Invalidate user cache after writes (called after db.set('users', ...))
+const invalidateUsersCache = () => {
+  _usersCache = { data: null, lastRefresh: 0 };
+};
+// Run legacy migration once at startup instead of on every read (Gotcha #15)
+let _projectsMigrated = false;
+
+const migrateProjects = async () => {
+  if (_projectsMigrated) return;
   const projects = (await db.get('projects')) || [];
   let needsSave = false;
   for (const project of projects) {
@@ -120,9 +165,15 @@ const getProjects = async () => {
   }
   if (needsSave) {
     await db.set('projects', projects);
+    console.log('Migrated hubspotDealId -> hubspotRecordId for legacy projects');
   }
-  return projects;
+  _projectsMigrated = true;
 };
+
+// Run migration immediately on startup
+migrateProjects().catch(err => console.error('Project migration error:', err));
+
+const getProjects = async () => (await db.get('projects')) || [];
 // Get raw tasks for mutation - use this when you need to modify and save back
 const getRawTasks = async (projectId) => {
   return (await db.get(`tasks_${projectId}`)) || [];
@@ -154,6 +205,8 @@ const getTasks = async (projectId) => {
 };
 
 // Activity logging helper
+const ACTIVITY_LOG_MAX = 2000;
+
 const logActivity = async (userId, userName, action, entityType, entityId, details, projectId = null) => {
   try {
     const activities = (await db.get('activity_log')) || [];
@@ -169,8 +222,12 @@ const logActivity = async (userId, userName, action, entityType, entityId, detai
       timestamp: new Date().toISOString()
     };
     activities.unshift(activity);
-    // Keep only last 500 activities to prevent unbounded growth
-    if (activities.length > 500) activities.length = 500;
+    // Keep only last ACTIVITY_LOG_MAX activities to prevent unbounded growth
+    if (activities.length > ACTIVITY_LOG_MAX) {
+      const droppedCount = activities.length - ACTIVITY_LOG_MAX;
+      console.warn(`Activity log exceeded ${ACTIVITY_LOG_MAX} entries, dropping ${droppedCount} oldest entries`);
+      activities.length = ACTIVITY_LOG_MAX;
+    }
     await db.set('activity_log', activities);
   } catch (err) {
     console.error('Failed to log activity:', err);
@@ -338,6 +395,7 @@ app.post('/api/auth/signup', authenticateToken, requireAdmin, async (req, res) =
       createdAt: new Date().toISOString()
     });
     await db.set('users', users);
+    invalidateUsersCache();
     res.json({ message: 'Account created successfully' });
   } catch (error) {
     console.error('Signup error:', error);
@@ -407,6 +465,7 @@ app.post('/api/users', authenticateToken, async (req, res) => {
 
     users.push(newUser);
     await db.set('users', users);
+    invalidateUsersCache();
     res.json({
       id: newUser.id,
       email: newUser.email,
@@ -481,6 +540,7 @@ app.post('/api/auth/login', async (req, res) => {
         if (userIndex !== -1) {
           users[userIndex].slug = generatedSlug;
           await db.set('users', users);
+    invalidateUsersCache();
         }
         userResponse.slug = generatedSlug;
       } else {
@@ -776,8 +836,17 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
       users[idx].practiceName = practiceName;
       // Regenerate slug if practice name changes and user is a client
       if (users[idx].role === 'client' && practiceName) {
+        const oldSlug = users[idx].slug;
         const existingSlugs = users.filter((u, i) => i !== idx && u.slug).map(u => u.slug);
-        users[idx].slug = generateClientSlug(practiceName, existingSlugs);
+        const newSlug = generateClientSlug(practiceName, existingSlugs);
+        if (oldSlug && oldSlug !== newSlug) {
+          // Preserve old slug for redirect lookups so existing portal URLs keep working
+          if (!users[idx].previousSlugs) users[idx].previousSlugs = [];
+          if (!users[idx].previousSlugs.includes(oldSlug)) {
+            users[idx].previousSlugs.push(oldSlug);
+          }
+        }
+        users[idx].slug = newSlug;
       }
     }
     if (isNewClient !== undefined) users[idx].isNewClient = isNewClient;
@@ -789,6 +858,7 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
     if (hubspotContactId !== undefined) users[idx].hubspotContactId = hubspotContactId;
 
     await db.set('users', users);
+    invalidateUsersCache();
     res.json({
       id: users[idx].id,
       email: users[idx].email,
@@ -823,6 +893,7 @@ app.delete('/api/users/:userId', authenticateToken, requireAdmin, async (req, re
     }
     const filtered = users.filter(u => u.id !== userId);
     await db.set('users', filtered);
+    invalidateUsersCache();
     res.json({ message: 'User deleted' });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
@@ -1052,23 +1123,36 @@ app.post('/api/projects/:projectId/tasks/bulk-delete', authenticateToken, async 
     const tasks = await getRawTasks(projectId);
     const taskIdsSet = new Set(taskIds.map(id => String(id)));
     
-    // Check permissions - user can only delete tasks they created (unless admin)
-    const users = await db.get('users') || [];
-    const user = users.find(u => u.id === req.user.id);
-    const isAdmin = user && user.role === 'admin';
-    
+    // Check permissions - partial success: delete what user has access to, skip the rest
+    const isAdmin = req.user.role === 'admin';
+
     const tasksToDelete = tasks.filter(t => taskIdsSet.has(String(t.id)));
+    const deletableIds = new Set();
+    const skippedTasks = [];
+
     for (const task of tasksToDelete) {
-      if (!isAdmin && task.createdBy !== req.user.id) {
-        return res.status(403).json({ error: `You can only delete tasks you created. Task "${task.taskTitle}" was created by someone else.` });
+      if (!isAdmin && task.createdBy && task.createdBy !== req.user.id) {
+        skippedTasks.push({ id: task.id, title: task.taskTitle, reason: 'created by another user' });
+      } else {
+        deletableIds.add(String(task.id));
       }
     }
-    
-    const remainingTasks = tasks.filter(t => !taskIdsSet.has(String(t.id)));
-    const deletedCount = tasks.length - remainingTasks.length;
-    
+
+    // Clean up dependency references pointing to deleted tasks
+    const remainingTasks = tasks.filter(t => !deletableIds.has(String(t.id)));
+    for (const t of remainingTasks) {
+      if (Array.isArray(t.dependencies)) {
+        t.dependencies = t.dependencies.filter(depId => !deletableIds.has(String(depId)));
+      }
+    }
+
     await db.set(`tasks_${projectId}`, remainingTasks);
-    res.json({ message: `${deletedCount} tasks deleted` });
+    const response = { message: `${deletableIds.size} tasks deleted` };
+    if (skippedTasks.length > 0) {
+      response.skipped = skippedTasks;
+      response.message += `, ${skippedTasks.length} skipped (no permission)`;
+    }
+    res.json(response);
   } catch (error) {
     console.error('Bulk delete error:', error);
     res.status(500).json({ error: 'Server error' });
@@ -1247,7 +1331,7 @@ const ALLOWED_FILE_TYPES = [
 ];
 
 // Upload file to task (admin only)
-app.post('/api/projects/:projectId/tasks/:taskId/files', authenticateToken, requireAdmin, upload.single('file'), async (req, res) => {
+app.post('/api/projects/:projectId/tasks/:taskId/files', authenticateToken, requireAdmin, uploadLimiter, upload.single('file'), async (req, res) => {
   try {
     
     const { projectId, taskId } = req.params;
@@ -1595,11 +1679,20 @@ app.put('/api/projects/:id', authenticateToken, async (req, res) => {
     
     // Regenerate clientLinkSlug when clientName changes
     if (newClientName && newClientName !== oldClientName) {
+      const oldProjectSlug = projects[idx].clientLinkSlug;
       const existingSlugs = projects
         .filter(p => p.id !== projects[idx].id)
         .map(p => p.clientLinkSlug)
         .filter(Boolean);
-      projects[idx].clientLinkSlug = generateClientSlug(newClientName, existingSlugs);
+      const newProjectSlug = generateClientSlug(newClientName, existingSlugs);
+      if (oldProjectSlug && oldProjectSlug !== newProjectSlug) {
+        // Preserve old slug for redirect lookups so existing URLs keep working
+        if (!projects[idx].previousSlugs) projects[idx].previousSlugs = [];
+        if (!projects[idx].previousSlugs.includes(oldProjectSlug)) {
+          projects[idx].previousSlugs.push(oldProjectSlug);
+        }
+      }
+      projects[idx].clientLinkSlug = newProjectSlug;
     }
     
     await db.set('projects', projects);
@@ -2331,7 +2424,7 @@ app.delete('/api/client-documents/:slug/:docId', authenticateToken, requireAdmin
 });
 
 // Upload file as client document (admin only) - stores file and creates document entry
-app.post('/api/client-documents/:slug/upload', authenticateToken, requireAdmin, upload.single('file'), async (req, res) => {
+app.post('/api/client-documents/:slug/upload', authenticateToken, requireAdmin, uploadLimiter, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file provided' });
@@ -2383,7 +2476,7 @@ app.post('/api/client-documents/:slug/upload', authenticateToken, requireAdmin, 
 
 // ============== HUBSPOT FILE UPLOAD ==============
 // Upload file to HubSpot and attach to a deal record (admin only)
-app.post('/api/hubspot/upload-to-deal', authenticateToken, requireAdmin, upload.single('file'), async (req, res) => {
+app.post('/api/hubspot/upload-to-deal', authenticateToken, requireAdmin, uploadLimiter, upload.single('file'), async (req, res) => {
   try {
     const { dealId, noteText, category } = req.body;
     
@@ -2458,7 +2551,7 @@ app.get('/api/hubspot/deals', authenticateToken, requireAdmin, async (req, res) 
 
 // ============== CLIENT HUBSPOT FILE UPLOAD ==============
 // Client uploads file to their account's HubSpot records (Company, Deal, Contact)
-app.post('/api/client/hubspot/upload', authenticateToken, upload.single('file'), async (req, res) => {
+app.post('/api/client/hubspot/upload', authenticateToken, uploadLimiter, upload.single('file'), async (req, res) => {
   try {
     // Only clients can use this endpoint
     if (req.user.role !== 'client') {
@@ -2751,6 +2844,12 @@ app.get('/api/client/hubspot/file/:fileId', authenticateToken, async (req, res) 
 // ============== HUBSPOT WEBHOOKS ==============
 const HUBSPOT_WEBHOOK_SECRET = process.env.HUBSPOT_WEBHOOK_SECRET;
 
+// Startup warning for missing webhook secret (Gotcha #18)
+if (!HUBSPOT_WEBHOOK_SECRET) {
+  console.warn('⚠️  WARNING: HUBSPOT_WEBHOOK_SECRET not set. Webhook endpoint will accept ALL requests without validation.');
+  console.warn('   Set HUBSPOT_WEBHOOK_SECRET to enable webhook authentication.');
+}
+
 app.post('/api/webhooks/hubspot', async (req, res) => {
   try {
     if (HUBSPOT_WEBHOOK_SECRET) {
@@ -2993,15 +3092,22 @@ app.get('/api/inventory/export-all', authenticateToken, requireAdmin, async (req
   }
 });
 
+// Normalize inventory data to batch format (Gotcha #13)
+// Logs a warning when auto-wrapping occurs to aid debugging
 const normalizeInventoryData = (data) => {
   const normalized = {};
+  let wrappedCount = 0;
   Object.entries(data || {}).forEach(([key, value]) => {
-    if (value && value.batches) {
+    if (value && Array.isArray(value.batches)) {
       normalized[key] = value;
     } else {
+      wrappedCount++;
       normalized[key] = { batches: [value || {}] };
     }
   });
+  if (wrappedCount > 0) {
+    console.warn(`Inventory data auto-wrapped: ${wrappedCount} item(s) were not in { batches: [...] } format and were converted automatically.`);
+  }
   return normalized;
 };
 
@@ -3726,7 +3832,12 @@ const normalizeDate = (dateStr) => {
     month = month.padStart(2, '0');
     day = day.padStart(2, '0');
     if (year.length === 2) {
-      year = parseInt(year) > 50 ? '19' + year : '20' + year;
+      // Use current year as reference: if 2-digit year would be >10 years in the future, assume 1900s
+      // This is future-proof unlike a fixed threshold (Gotcha #14)
+      const currentCentury = Math.floor(new Date().getFullYear() / 100) * 100;
+      const currentYearTwoDigit = new Date().getFullYear() % 100;
+      const twoDigitYear = parseInt(year);
+      year = twoDigitYear <= (currentYearTwoDigit + 10) ? String(currentCentury + twoDigitYear) : String(currentCentury - 100 + twoDigitYear);
     }
     return `${year}-${month}-${day}`;
   }
@@ -5631,6 +5742,7 @@ app.post('/api/admin/bulk-password-reset', authenticateToken, requireAdmin, asyn
     }
 
     await db.set('users', users);
+    invalidateUsersCache();
 
     // Log activity
     await logActivity(
@@ -5676,6 +5788,7 @@ app.post('/api/admin/reset-user-password/:userId', authenticateToken, requireAdm
     users[userIndex].lastPasswordReset = new Date().toISOString();
 
     await db.set('users', users);
+    invalidateUsersCache();
 
     res.json({
       message: 'Password reset successfully',
@@ -5724,6 +5837,7 @@ app.post('/api/auth/change-password', authenticateToken, async (req, res) => {
     users[userIndex].lastPasswordChange = new Date().toISOString();
 
     await db.set('users', users);
+    invalidateUsersCache();
 
     res.json({ message: 'Password changed successfully' });
   } catch (error) {
@@ -5815,15 +5929,24 @@ app.get('/portal', (req, res) => {
   res.sendFile(__dirname + '/public/portal.html');
 });
 
+// Helper to find client user by slug (checks current slug first, then previousSlugs for redirects)
+const findClientBySlugOrRedirect = async (slug, res) => {
+  const users = await getUsers();
+  // Check current slug first
+  const currentMatch = users.find(u => u.role === 'client' && u.slug === slug);
+  if (currentMatch) return { user: currentMatch, redirect: false };
+  // Check previousSlugs for redirect (slug was changed, old URL still in use)
+  const previousMatch = users.find(u => u.role === 'client' && Array.isArray(u.previousSlugs) && u.previousSlugs.includes(slug));
+  if (previousMatch) return { user: previousMatch, redirect: true, newSlug: previousMatch.slug };
+  return null;
+};
+
 // Client portal login page: /portal/:slug/login
 app.get('/portal/:slug/login', async (req, res) => {
-  const users = await getUsers();
-  const clientUser = users.find(u => u.role === 'client' && u.slug === req.params.slug);
-  if (clientUser) {
-    res.sendFile(__dirname + '/public/portal.html');
-  } else {
-    res.status(404).send('Portal not found');
-  }
+  const result = await findClientBySlugOrRedirect(req.params.slug, res);
+  if (!result) return res.status(404).send('Portal not found');
+  if (result.redirect) return res.redirect(302, `/portal/${result.newSlug}/login`);
+  res.sendFile(__dirname + '/public/portal.html');
 });
 
 // Client portal pages: /portal/:slug, /portal/:slug/*
@@ -5832,13 +5955,10 @@ app.get('/portal/:slug', async (req, res) => {
   if (req.params.slug === 'admin') {
     return res.sendFile(__dirname + '/public/portal.html');
   }
-  const users = await getUsers();
-  const clientUser = users.find(u => u.role === 'client' && u.slug === req.params.slug);
-  if (clientUser) {
-    res.sendFile(__dirname + '/public/portal.html');
-  } else {
-    res.status(404).send('Portal not found');
-  }
+  const result = await findClientBySlugOrRedirect(req.params.slug, res);
+  if (!result) return res.status(404).send('Portal not found');
+  if (result.redirect) return res.redirect(302, `/portal/${result.newSlug}`);
+  res.sendFile(__dirname + '/public/portal.html');
 });
 
 app.get('/portal/:slug/*', async (req, res) => {
@@ -5846,14 +5966,35 @@ app.get('/portal/:slug/*', async (req, res) => {
   if (req.params.slug === 'admin') {
     return res.sendFile(__dirname + '/public/portal.html');
   }
-  const users = await getUsers();
-  const clientUser = users.find(u => u.role === 'client' && u.slug === req.params.slug);
-  if (clientUser) {
-    res.sendFile(__dirname + '/public/portal.html');
-  } else {
-    res.status(404).send('Portal not found');
+  const result = await findClientBySlugOrRedirect(req.params.slug, res);
+  if (!result) return res.status(404).send('Portal not found');
+  if (result.redirect) {
+    const remainingPath = req.params[0] || '';
+    return res.redirect(302, `/portal/${result.newSlug}/${remainingPath}`);
   }
+  res.sendFile(__dirname + '/public/portal.html');
 });
+
+// In-memory cache for project slug lookups (avoids DB hit on every root-level request)
+let _projectSlugCache = { slugs: new Set(), previousSlugs: new Map(), lastRefresh: 0 };
+const PROJECT_SLUG_CACHE_TTL = 30000; // 30 seconds
+
+const refreshProjectSlugCache = async () => {
+  const now = Date.now();
+  if (now - _projectSlugCache.lastRefresh < PROJECT_SLUG_CACHE_TTL) return;
+  const projects = await getProjects();
+  const slugs = new Set();
+  const previousSlugsMap = new Map();
+  for (const p of projects) {
+    if (p.clientLinkSlug) slugs.add(p.clientLinkSlug);
+    if (Array.isArray(p.previousSlugs)) {
+      for (const oldSlug of p.previousSlugs) {
+        previousSlugsMap.set(oldSlug, p.clientLinkSlug);
+      }
+    }
+  }
+  _projectSlugCache = { slugs, previousSlugs: previousSlugsMap, lastRefresh: now };
+};
 
 // Legacy root-level route - redirect old project slugs to /launch
 app.get('/:slug', async (req, res, next) => {
@@ -5862,18 +6003,39 @@ app.get('/:slug', async (req, res, next) => {
     return next();
   }
 
-  // Check if this slug matches a project - redirect to /launch
-  const projects = await getProjects();
-  const project = projects.find(p => p.clientLinkSlug === req.params.slug);
+  // Use cached slug lookup to avoid DB hit on every root-level request
+  await refreshProjectSlugCache();
+  const slug = req.params.slug;
 
-  if (project) {
-    res.redirect(301, `/launch/${req.params.slug}`);
+  if (_projectSlugCache.slugs.has(slug)) {
+    // Use 302 (temporary) instead of 301 (permanent) to avoid browser caching issues
+    res.redirect(302, `/launch/${slug}`);
+  } else if (_projectSlugCache.previousSlugs.has(slug)) {
+    // Redirect old slug to current slug
+    res.redirect(302, `/launch/${_projectSlugCache.previousSlugs.get(slug)}`);
   } else {
     next();
   }
 });
 
+// Global error handling middleware (Gotcha #11)
+// Must be defined after all routes - Express identifies error handlers by 4-argument signature
+app.use((err, req, res, next) => {
+  console.error('Unhandled route error:', err.stack || err.message || err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: 'An unexpected error occurred' });
+});
+
+// Process-level error handlers to prevent crashes from unhandled async errors
+process.on('uncaughtException', (err) => {
+  console.error('FATAL: Uncaught exception:', err.stack || err.message || err);
+  // In production, graceful shutdown is preferred; for now, log and continue
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled promise rejection:', reason);
+});
+
 app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
-  console.log(`🔐 Admin login: bianca@thrive365labs.com / Thrive2025!`);
+  console.log(`Server running on port ${PORT}`);
 });
