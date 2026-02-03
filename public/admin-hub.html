@@ -66,11 +66,24 @@
 
     const handleResponse = async (response) => {
       if (!response.ok) {
+        // Auto-redirect to login on auth failure (expired/invalid token)
+        if (response.status === 401 || response.status === 403) {
+          try {
+            const errData = await response.clone().json();
+            if (errData.error === 'Invalid token' || errData.error === 'User not found' || response.status === 401) {
+              localStorage.clear();
+              window.location.href = '/';
+              throw new Error('Session expired. Redirecting to login...');
+            }
+          } catch (redirectErr) {
+            if (redirectErr.message.includes('Session expired')) throw redirectErr;
+          }
+        }
         try {
           const errorData = await response.json();
           throw new Error(errorData.error || `HTTP error ${response.status}`);
         } catch (e) {
-          if (e.message.includes('HTTP error')) throw e;
+          if (e.message.includes('HTTP error') || e.message.includes('Session expired')) throw e;
           throw new Error(`HTTP error ${response.status}`);
         }
       }
