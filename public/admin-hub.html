@@ -97,9 +97,9 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, password })
         }).then(handleResponse).then(result => {
-          // Verify user has admin hub access
-          if (result.user && result.user.role !== 'admin' && !result.user.hasAdminHubAccess) {
-            return { error: 'Access denied. Admin privileges required.' };
+          // Verify user has admin hub access (super admins, managers, or users with hasAdminHubAccess)
+          if (result.user && result.user.role !== 'admin' && !result.user.isManager && !result.user.hasAdminHubAccess) {
+            return { error: 'Access denied. Admin Hub access required.' };
           }
           return result;
         }).catch(err => ({ error: err.message })),
@@ -157,6 +157,13 @@
           headers: { 'Authorization': `Bearer ${token}` }
         }).then(handleResponse).catch(err => ({ error: err.message })),
 
+      bulkPasswordReset: (token, userType = 'all') =>
+        fetch(`${API_URL}/api/admin/bulk-password-reset`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userType })
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
       getServiceReports: (token) =>
         fetch(`${API_URL}/api/service-reports`, {
           headers: { 'Authorization': `Bearer ${token}` }
@@ -173,6 +180,58 @@
           method: 'POST',
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
           body: JSON.stringify(reportData)
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      // Service Report Assignment APIs
+      getTechnicians: (token) =>
+        fetch(`${API_URL}/api/service-portal/technicians`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      assignServiceReport: (token, reportData) =>
+        fetch(`${API_URL}/api/service-reports/assign`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(reportData)
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      uploadServiceReportPhotos: (token, reportId, files) => {
+        const formData = new FormData();
+        files.forEach(file => formData.append('photos', file));
+        return fetch(`${API_URL}/api/service-reports/${reportId}/photos`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: formData
+        }).then(handleResponse).catch(err => ({ error: err.message }));
+      },
+
+      uploadServiceReportFiles: (token, reportId, files) => {
+        const formData = new FormData();
+        files.forEach(file => formData.append('files', file));
+        return fetch(`${API_URL}/api/service-reports/${reportId}/files`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: formData
+        }).then(handleResponse).catch(err => ({ error: err.message }));
+      },
+
+      updateManagerNotes: (token, reportId, managerNotes) =>
+        fetch(`${API_URL}/api/service-reports/${reportId}/manager-notes`, {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ managerNotes })
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      deleteServiceReportPhoto: (token, reportId, photoId) =>
+        fetch(`${API_URL}/api/service-reports/${reportId}/photos/${photoId}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      deleteServiceReportFile: (token, reportId, fileId) =>
+        fetch(`${API_URL}/api/service-reports/${reportId}/files/${fileId}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
         }).then(handleResponse).catch(err => ({ error: err.message })),
 
       // Client Portal APIs
@@ -248,7 +307,8 @@
       message: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/></svg>,
       inbox: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 13.5h3.86a2.25 2.25 0 012.012 1.244l.256.512a2.25 2.25 0 002.013 1.244h3.218a2.25 2.25 0 002.013-1.244l.256-.512a2.25 2.25 0 012.013-1.244h3.859m-17.5 0a2.25 2.25 0 00-1.883 1.013A11.945 11.945 0 003 19.5h18c.844 0 1.654-.178 2.383-.5a2.25 2.25 0 00-1.883-1.013M2.25 13.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0115.686 0c1.1.128 1.907 1.077 1.907 2.185V13.5"/></svg>,
       bug: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 12.75c1.148 0 2.278.08 3.383.237 1.037.146 1.866.966 1.866 2.013 0 3.728-2.35 6.75-5.25 6.75S6.75 18.728 6.75 15c0-1.046.83-1.867 1.866-2.013A24.204 24.204 0 0112 12.75zm0 0c2.883 0 5.647.508 8.207 1.44a23.91 23.91 0 01-1.152 6.06M12 12.75c-2.883 0-5.647.508-8.208 1.44.125 2.104.52 4.136 1.153 6.06M12 12.75V8.25m0 0c1.086 0 2.152-.14 3.181-.406a1.128 1.128 0 01-.664-.814 2.999 2.999 0 00-5.034 0 1.128 1.128 0 01-.664.814A10.988 10.988 0 0012 8.25zM12 21c-.17.001-.34 0-.508-.004A23.91 23.91 0 015.793 14.69M12 21c.17.001.34 0 .508-.004a23.91 23.91 0 005.699-6.306M9 9.75h6m-3-6.75a2.25 2.25 0 012.25 2.25v.407a2.25 2.25 0 01-.664 1.591L15 9.75"/></svg>,
-      download: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+      download: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>,
+      document: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/></svg>
     };
 
     // Login Page - Modern sleek design
@@ -353,12 +413,32 @@
 
     // Sidebar with portal access - Modern design
     const Sidebar = ({ activePage, onNavigate, user, token, isMobileOpen, onClose }) => {
-      const menuItems = [
-        { id: 'dashboard', label: 'Dashboard', icon: Icons.home, color: 'text-primary-500' },
-        { id: 'inbox', label: 'Inbox', icon: Icons.inbox, color: 'text-orange-500' },
-        { id: 'users', label: 'User Management', icon: Icons.users, color: 'text-primary-500' },
-        { id: 'service_portal', label: 'Service Portal', icon: Icons.clipboard, color: 'text-success-500' },
+      // Check if user is a Super Admin (role === 'admin')
+      const isSuperAdmin = user?.role === 'admin';
+      // Check if user is a Manager
+      const isManager = user?.isManager && !isSuperAdmin;
+
+      // Build menu items based on user permissions
+      // Managers can only see Dashboard and Service Portal (no Inbox or User Management)
+      const allMenuItems = [
+        { id: 'dashboard', label: 'Dashboard', icon: Icons.home, color: 'text-primary-500', superAdminOnly: false },
+        { id: 'inbox', label: 'Inbox', icon: Icons.inbox, color: 'text-orange-500', superAdminOnly: true },
+        { id: 'users', label: 'User Management', icon: Icons.users, color: 'text-primary-500', superAdminOnly: true },
+        { id: 'service_portal', label: 'Service Portal', icon: Icons.clipboard, color: 'text-success-500', superAdminOnly: false },
+        { id: 'knowledge_hub', label: 'Knowledge Hub', icon: Icons.document, color: 'text-teal-500', superAdminOnly: true },
       ];
+
+      // Filter menu items: Super Admin sees all, Manager only sees non-superAdminOnly items
+      const menuItems = isSuperAdmin
+        ? allMenuItems
+        : allMenuItems.filter(item => !item.superAdminOnly);
+
+      // Determine user role label
+      const getRoleLabel = () => {
+        if (isSuperAdmin) return 'Super Admin';
+        if (isManager) return 'Manager';
+        return 'Admin Hub User';
+      };
 
       // External links with token passing
       const openExternalApp = (path) => {
@@ -384,7 +464,7 @@
                   {user?.name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0,2)}
                 </div>
                 <div>
-                  <p className="text-xs opacity-75">Administrator</p>
+                  <p className="text-xs opacity-75">{getRoleLabel()}</p>
                   <p className="font-semibold text-sm">{user?.name}</p>
                 </div>
               </div>
@@ -437,7 +517,8 @@
     };
 
     // Dashboard Page - Modern design
-    const DashboardPage = ({ token, onNavigate }) => {
+    const DashboardPage = ({ token, onNavigate, user }) => {
+      const isManager = user?.isManager && user?.role !== 'admin';
       const [stats, setStats] = useState(null);
       const [loading, setLoading] = useState(true);
 
@@ -457,9 +538,15 @@
         </div>
       );
 
-      const statCards = [
+      // Different stat cards for Manager vs Super Admin
+      const statCards = isManager ? [
         { label: 'Total Users', value: stats?.totalUsers || 0, color: 'from-primary-500 to-primary-700', icon: Icons.users },
-        { label: 'Administrators', value: stats?.adminUsers || 0, color: 'from-accent to-primary-900', icon: Icons.cog },
+        { label: 'New Launches', value: stats?.activeProjects || 0, color: 'from-warning-500 to-warning-600', icon: Icons.rocket },
+        { label: 'Service Portal', value: stats?.servicePortalUsers || 0, color: 'from-success-500 to-success-600', icon: Icons.clipboard },
+        { label: 'Client Accounts', value: stats?.clientUsers || 0, color: 'from-warning-500 to-warning-600', icon: Icons.folder },
+      ] : [
+        { label: 'Total Users', value: stats?.totalUsers || 0, color: 'from-primary-500 to-primary-700', icon: Icons.users },
+        { label: 'New Launches', value: stats?.activeProjects || 0, color: 'from-accent to-primary-900', icon: Icons.rocket },
         { label: 'Service Portal', value: stats?.servicePortalUsers || 0, color: 'from-success-500 to-success-600', icon: Icons.clipboard },
         { label: 'Client Accounts', value: stats?.clientUsers || 0, color: 'from-warning-500 to-warning-600', icon: Icons.folder },
       ];
@@ -525,13 +612,6 @@
                 Quick Stats
               </h2>
               <div className="space-y-3">
-                <div className="flex justify-between items-center p-4 bg-gray-50 rounded-xl">
-                  <div className="flex items-center gap-3">
-                    <span className="w-8 h-8 rounded-lg bg-warning-50 text-warning-600 flex items-center justify-center">{Icons.rocket}</span>
-                    <span className="text-gray-700">New Launches</span>
-                  </div>
-                  <span className="text-xl font-bold text-warning-600">{stats?.activeProjects || 0}</span>
-                </div>
                 <div className="flex justify-between items-center p-4 bg-gray-50 rounded-xl">
                   <div className="flex items-center gap-3">
                     <span className="w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center">{Icons.chat}</span>
@@ -796,10 +876,15 @@
       const [message, setMessage] = useState('');
       const [activeTab, setActiveTab] = useState('list');
       const [saving, setSaving] = useState(false);
+      const [showBulkReset, setShowBulkReset] = useState(false);
+      const [bulkResetType, setBulkResetType] = useState('all');
+      const [bulkResetResults, setBulkResetResults] = useState(null);
+      const [bulkResetLoading, setBulkResetLoading] = useState(false);
       const logoInputRef = useRef(null);
 
       const defaultFormData = {
         name: '', email: '', password: '', role: 'user',
+        isManager: false, // Manager flag - limited admin access (no inbox/user management)
         hasServicePortalAccess: false, hasAdminHubAccess: false,
         hasImplementationsAccess: false, hasClientPortalAdminAccess: false,
         practiceName: '', isNewClient: false,
@@ -865,6 +950,7 @@
           email: user.email || '',
           password: '',
           role: user.role || 'user',
+          isManager: user.isManager || false,
           hasServicePortalAccess: user.hasServicePortalAccess || false,
           hasAdminHubAccess: user.hasAdminHubAccess || false,
           hasImplementationsAccess: user.hasImplementationsAccess || false,
@@ -942,13 +1028,50 @@
         loadData();
       };
 
+      const handleBulkReset = async () => {
+        if (!confirm(`Are you sure you want to reset passwords for ${bulkResetType === 'all' ? 'ALL non-admin users' : bulkResetType === 'clients' ? 'all CLIENT users' : 'all TEAM MEMBER users'}? They will be required to change their password on next login.`)) return;
+        setBulkResetLoading(true);
+        setBulkResetResults(null);
+        try {
+          const response = await fetch('/api/admin/bulk-password-reset', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ userType: bulkResetType })
+          });
+          const result = await response.json();
+          if (result.error) {
+            setMessage(`Error: ${result.error}`);
+          } else {
+            setBulkResetResults(result.results);
+            setMessage(result.message);
+            loadData();
+          }
+        } catch (err) {
+          setMessage(`Error: ${err.message || 'Network error'}`);
+        }
+        setBulkResetLoading(false);
+      };
+
       // Export users to xlsx
       const exportUsersToXlsx = () => {
         // Prepare data for export
+        const getRoleDisplay = (user) => {
+          if (user.role === 'admin') return 'Super Admin';
+          if (user.isManager) return 'Manager';
+          if (user.role === 'user') return 'Team Member';
+          if (user.role === 'client') return 'Client';
+          if (user.role === 'vendor') return 'Vendor';
+          return user.role || '';
+        };
+
         const exportData = users.map(user => ({
           'Name': user.name || '',
           'Email': user.email || '',
-          'Role': user.role === 'user' ? 'Team Member' : user.role === 'admin' ? 'Admin' : user.role === 'client' ? 'Client' : user.role === 'vendor' ? 'Vendor' : user.role || '',
+          'Role': getRoleDisplay(user),
+          'Is Manager': user.isManager ? 'Yes' : 'No',
           'Practice/Company': user.practiceName || '',
           'Service Portal Access': user.hasServicePortalAccess ? 'Yes' : 'No',
           'Admin Hub Access': user.hasAdminHubAccess ? 'Yes' : 'No',
@@ -1008,10 +1131,14 @@
                 <h1 className="text-2xl font-bold text-accent">User Management</h1>
                 <p className="text-gray-600 mt-1">Manage all users, roles, and portal access</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <button onClick={exportUsersToXlsx}
                   className="px-4 py-2 rounded-lg font-medium flex items-center gap-2 shadow-sm hover:shadow-md transition-all border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
                   {Icons.download} Export
+                </button>
+                <button onClick={() => { setShowBulkReset(true); setBulkResetResults(null); }}
+                  className="px-4 py-2 rounded-lg font-medium flex items-center gap-2 shadow-sm hover:shadow-md transition-all border border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100">
+                  {Icons.key} Bulk Reset
                 </button>
                 <button onClick={() => { setShowForm(true); setEditingUser(null); setFormData(defaultFormData); }}
                   className="px-4 py-2 rounded-lg font-medium flex items-center gap-2 shadow-sm hover:shadow-md transition-all"
@@ -1114,10 +1241,18 @@
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                      <select value={formData.role} onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                      <select value={formData.role === 'user' && formData.isManager ? 'manager' : formData.role} onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === 'manager') {
+                            setFormData({ ...formData, role: 'user', isManager: true });
+                          } else {
+                            setFormData({ ...formData, role: val, isManager: false });
+                          }
+                        }}
                         className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary">
                         <option value="user">Team Member</option>
-                        <option value="admin">Admin</option>
+                        <option value="manager">Manager</option>
+                        <option value="admin">Super Admin</option>
                         <option value="client">Client</option>
                         <option value="vendor">External Vendor</option>
                       </select>
@@ -1128,6 +1263,7 @@
                   {(formData.role === 'user' || formData.role === 'admin') && (
                     <div className="border-t pt-4">
                       <h3 className="font-medium text-gray-800 mb-3">Access Permissions</h3>
+
                       <div className="grid md:grid-cols-2 gap-3">
                         <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg">
                           <input type="checkbox" id="serviceAccess" checked={formData.hasServicePortalAccess}
@@ -1154,7 +1290,7 @@
                           <label htmlFor="clientPortalAdmin" className="text-sm font-medium text-gray-700">Client Portal Admin</label>
                         </div>
                       </div>
-                      <p className="text-xs text-gray-500 mt-2">Admins automatically have all permissions</p>
+                      <p className="text-xs text-gray-500 mt-2">Admins automatically have all permissions. Managers with Service Portal access can manage vendors and assignments.</p>
                     </div>
                   )}
 
@@ -1291,6 +1427,112 @@
             </div>
           )}
 
+          {/* Bulk Password Reset Modal */}
+          {showBulkReset && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+                <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
+                  <h2 className="text-lg font-bold text-accent flex items-center gap-2">{Icons.key} Bulk Password Reset</h2>
+                  <button onClick={() => setShowBulkReset(false)} className="text-gray-400 hover:text-gray-600">
+                    {Icons.close}
+                  </button>
+                </div>
+                <div className="p-6 space-y-6">
+                  {!bulkResetResults ? (
+                    <>
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                        <p className="text-yellow-800 text-sm">
+                          <strong>Warning:</strong> This will reset passwords for selected users. They will be required to change their password on their next login.
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Select User Type</label>
+                        <select value={bulkResetType} onChange={(e) => setBulkResetType(e.target.value)}
+                          className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-primary">
+                          <option value="all">All Users (excludes admins)</option>
+                          <option value="clients">Clients Only</option>
+                          <option value="users">Team Members Only (non-clients)</option>
+                        </select>
+                      </div>
+
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <p className="text-sm text-gray-600">
+                          <strong>Password Format:</strong><br/>
+                          - Clients: <code className="bg-gray-200 px-1 rounded">PracticeName2026!</code><br/>
+                          - Team Members: <code className="bg-gray-200 px-1 rounded">FirstNameLastName2026!</code>
+                        </p>
+                      </div>
+
+                      <div className="flex justify-end gap-3 pt-4 border-t">
+                        <button onClick={() => setShowBulkReset(false)} className="px-6 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 font-medium">
+                          Cancel
+                        </button>
+                        <button onClick={handleBulkReset} disabled={bulkResetLoading}
+                          className="px-6 py-2.5 rounded-lg font-medium flex items-center gap-2 bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-50">
+                          {bulkResetLoading && <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></span>}
+                          {bulkResetLoading ? 'Resetting...' : 'Reset Passwords'}
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className={`rounded-lg p-4 ${bulkResetResults.total > 0 ? 'bg-green-50 border border-green-200' : 'bg-yellow-50 border border-yellow-200'}`}>
+                        <p className={`font-medium ${bulkResetResults.total > 0 ? 'text-green-800' : 'text-yellow-800'}`}>
+                          {bulkResetResults.total > 0 ? `Successfully reset passwords for ${bulkResetResults.total} user(s).` : 'No users were reset. This may be because all users are admins (excluded) or no users matched the selected type.'}
+                        </p>
+                      </div>
+
+                      {bulkResetResults.total > 0 && (
+                        <div>
+                          <h3 className="font-medium text-gray-700 mb-2">Reset Users & Temporary Passwords:</h3>
+                          <div className="max-h-60 overflow-y-auto border rounded-lg">
+                            <table className="w-full text-sm">
+                              <thead className="bg-gray-50 sticky top-0">
+                                <tr>
+                                  <th className="px-3 py-2 text-left font-medium text-gray-600">User</th>
+                                  <th className="px-3 py-2 text-left font-medium text-gray-600">Temp Password</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y">
+                                {bulkResetResults.reset.map(u => (
+                                  <tr key={u.id} className="hover:bg-gray-50">
+                                    <td className="px-3 py-2">
+                                      <div className="font-medium">{u.name}</div>
+                                      <div className="text-xs text-gray-500">{u.email}</div>
+                                    </td>
+                                    <td className="px-3 py-2 font-mono text-xs bg-gray-100 rounded">{u.tempPassword}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+
+                      {bulkResetResults.skipped?.length > 0 && (
+                        <div>
+                          <h3 className="font-medium text-gray-700 mb-2">Skipped ({bulkResetResults.skipped.length}):</h3>
+                          <div className="text-sm text-gray-500 space-y-1">
+                            {bulkResetResults.skipped.map((s, i) => (
+                              <div key={i}>{s.email} - {s.reason}</div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex justify-end pt-4 border-t">
+                        <button onClick={() => setShowBulkReset(false)} className="px-6 py-2.5 rounded-lg font-medium bg-primary text-white hover:bg-primary/90">
+                          Done
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Users List */}
           {activeTab === 'list' && (
             <div className="bg-white rounded-xl shadow-sm overflow-hidden">
@@ -1321,11 +1563,19 @@
                               </div>
                             </div>
                           </td>
-                          <td className="px-4 py-4">
-                            <span className={`px-2 py-1 text-xs rounded-full font-medium ${
+                          <td className="px-4 py-4 text-center">
+                            <span className={`inline-block px-3 py-1 text-xs rounded-full font-medium text-center ${
                               user.role === 'admin' ? 'bg-purple-100 text-purple-700' :
-                              user.role === 'client' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'
-                            }`}>{user.role}</span>
+                              user.isManager ? 'bg-indigo-100 text-indigo-700' :
+                              user.role === 'client' ? 'bg-blue-100 text-blue-700' :
+                              user.role === 'vendor' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+                            }`}>{
+                              user.role === 'admin' ? 'Super Admin' :
+                              user.isManager ? 'Manager' :
+                              user.role === 'client' ? 'Client' :
+                              user.role === 'vendor' ? 'Vendor' :
+                              user.role === 'user' ? 'Team Member' : user.role
+                            }</span>
                           </td>
                           <td className="px-4 py-4">
                             <div className="flex flex-wrap gap-1 justify-center">
@@ -1366,6 +1616,7 @@
       const [reports, setReports] = useState([]);
       const [validationReports, setValidationReports] = useState([]);
       const [clients, setClients] = useState([]);
+      const [technicians, setTechnicians] = useState([]);
       const [loading, setLoading] = useState(true);
       const [searchTerm, setSearchTerm] = useState('');
       const [viewingReport, setViewingReport] = useState(null);
@@ -1388,7 +1639,33 @@
         trainingProvided: '', validationResults: '', outstandingItems: '', nextSteps: ''
       });
 
-      const serviceTypes = ['Analyzer Hardware', 'Inventory', 'LIS/EMR', 'Billing & Fees', 'Compliance', 'Training'];
+      // Assignment form state
+      const [assignFormData, setAssignFormData] = useState({
+        assignedToId: '', clientFacilityName: '', customerName: '', address: '',
+        serviceType: '', analyzerModel: '', analyzerSerialNumber: '',
+        hubspotTicketNumber: '', hubspotCompanyId: '', serviceCompletionDate: '',
+        managerNotes: ''
+      });
+      const [assignedPhotos, setAssignedPhotos] = useState([]);
+      const [assignedFiles, setAssignedFiles] = useState([]);
+      const [photoPreviewUrls, setPhotoPreviewUrls] = useState([]);
+      const [fileNames, setFileNames] = useState([]);
+      const photoInputRef = React.useRef(null);
+      const fileInputRef = React.useRef(null);
+
+      const serviceTypes = ['Analyzer Hardware', 'Inventory', 'LIS/EMR', 'Billing & Fees', 'Compliance', 'Training', 'Validations'];
+
+      // Vendor Management State (for admins and managers)
+      const [vendors, setVendors] = useState([]);
+      const [allClients, setAllClients] = useState([]);
+      const [showVendorForm, setShowVendorForm] = useState(false);
+      const [editingVendor, setEditingVendor] = useState(null);
+      const [vendorFormData, setVendorFormData] = useState({
+        name: '', email: '', password: '', assignedClients: []
+      });
+      const [vendorSaving, setVendorSaving] = useState(false);
+      // Vendor Management is visible to Managers with Service Portal access
+      const canManageVendors = user?.isManager && user?.hasServicePortalAccess && user?.role !== 'admin';
 
       useEffect(() => {
         loadData();
@@ -1396,11 +1673,22 @@
 
       const loadData = async () => {
         setLoading(true);
-        const [reportsData, validationData, clientsData] = await Promise.all([
+        const [reportsData, validationData, clientsData, usersData, allClientsData, techniciansData] = await Promise.all([
           api.getServiceReports(token),
           fetch('/api/validation-reports', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).catch(() => []),
-          api.getServiceClients(token)
+          api.getServiceClients(token),
+          canManageVendors ? api.getUsers(token) : Promise.resolve([]),
+          canManageVendors ? fetch('/api/clients', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).catch(() => []) : Promise.resolve([]),
+          api.getTechnicians(token)
         ]);
+        if (!techniciansData.error) setTechnicians(techniciansData);
+        // Load vendors from users
+        if (Array.isArray(usersData)) {
+          setVendors(usersData.filter(u => u.role === 'vendor'));
+        }
+        if (Array.isArray(allClientsData)) {
+          setAllClients(allClientsData);
+        }
         if (!reportsData.error) {
           // Separate service reports from validation service reports
           const serviceReportsOnly = reportsData.filter(r => r.serviceType !== 'Validations');
@@ -1518,11 +1806,156 @@
         setSubmitting(false);
       };
 
-      const filteredReports = reports.filter(r =>
+      // Assignment handlers
+      const handlePhotoSelect = (e) => {
+        const files = Array.from(e.target.files || []);
+        if (files.length > 0) {
+          setAssignedPhotos(prev => [...prev, ...files]);
+          const newPreviews = files.map(file => URL.createObjectURL(file));
+          setPhotoPreviewUrls(prev => [...prev, ...newPreviews]);
+        }
+      };
+
+      const handleFileSelect = (e) => {
+        const files = Array.from(e.target.files || []);
+        if (files.length > 0) {
+          setAssignedFiles(prev => [...prev, ...files]);
+          setFileNames(prev => [...prev, ...files.map(f => f.name)]);
+        }
+      };
+
+      const removePhoto = (idx) => {
+        setAssignedPhotos(prev => prev.filter((_, i) => i !== idx));
+        setPhotoPreviewUrls(prev => prev.filter((_, i) => i !== idx));
+      };
+
+      const removeFile = (idx) => {
+        setAssignedFiles(prev => prev.filter((_, i) => i !== idx));
+        setFileNames(prev => prev.filter((_, i) => i !== idx));
+      };
+
+      const handleAssignClientSelect = (clientName) => {
+        const client = clients.find(c => c.name === clientName || c.clientName === clientName);
+        if (client) {
+          setAssignFormData(prev => ({
+            ...prev,
+            clientFacilityName: client.name || client.clientName || '',
+            address: client.address || '',
+            hubspotCompanyId: client.hubspotCompanyId || ''
+          }));
+        }
+      };
+
+      const handleAssignReport = async (e) => {
+        e.preventDefault();
+        if (!assignFormData.assignedToId || !assignFormData.clientFacilityName) {
+          alert('Please select a technician/vendor and client');
+          return;
+        }
+        setSubmitting(true);
+        try {
+          // First create the assigned report
+          const result = await api.assignServiceReport(token, assignFormData);
+          if (result.error) {
+            alert('Error: ' + result.error);
+            setSubmitting(false);
+            return;
+          }
+
+          // Upload photos if any
+          if (assignedPhotos.length > 0) {
+            await api.uploadServiceReportPhotos(token, result.id, assignedPhotos);
+          }
+
+          // Upload files if any
+          if (assignedFiles.length > 0) {
+            await api.uploadServiceReportFiles(token, result.id, assignedFiles);
+          }
+
+          // Reset form
+          setAssignFormData({
+            assignedToId: '', clientFacilityName: '', customerName: '', address: '',
+            serviceType: '', analyzerModel: '', analyzerSerialNumber: '',
+            hubspotTicketNumber: '', hubspotCompanyId: '', serviceCompletionDate: '',
+            managerNotes: ''
+          });
+          setAssignedPhotos([]);
+          setAssignedFiles([]);
+          setPhotoPreviewUrls([]);
+          setFileNames([]);
+          setActiveTab('reports');
+          loadData();
+          alert('Service report assigned successfully!');
+        } catch (err) {
+          alert('Error assigning report: ' + err.message);
+        }
+        setSubmitting(false);
+      };
+
+      // Include all reports (submitted and assigned)
+      const allReports = reports;
+      const filteredReports = allReports.filter(r =>
         r.clientFacilityName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         r.serviceType?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         r.technicianName?.toLowerCase().includes(searchTerm.toLowerCase())
       );
+
+      // Vendor Management Functions
+      const handleEditVendor = (vendor) => {
+        setEditingVendor(vendor);
+        setVendorFormData({
+          name: vendor.name || '',
+          email: vendor.email || '',
+          password: '',
+          assignedClients: vendor.assignedClients || []
+        });
+        setShowVendorForm(true);
+      };
+
+      const handleVendorSubmit = async (e) => {
+        e.preventDefault();
+        if (!vendorFormData.name || !vendorFormData.email) {
+          alert('Please fill in name and email');
+          return;
+        }
+        setVendorSaving(true);
+        try {
+          let result;
+          if (editingVendor) {
+            const updateData = { ...vendorFormData, role: 'vendor' };
+            if (!updateData.password) delete updateData.password;
+            result = await api.updateUser(token, editingVendor.id, updateData);
+          } else {
+            if (!vendorFormData.password) {
+              alert('Password is required for new vendors');
+              setVendorSaving(false);
+              return;
+            }
+            result = await api.createUser(token, { ...vendorFormData, role: 'vendor' });
+          }
+          if (result.error) {
+            alert('Error: ' + result.error);
+          } else {
+            setShowVendorForm(false);
+            setEditingVendor(null);
+            setVendorFormData({ name: '', email: '', password: '', assignedClients: [] });
+            loadData();
+          }
+        } catch (err) {
+          alert('Error saving vendor: ' + err.message);
+        }
+        setVendorSaving(false);
+      };
+
+      const handleDeleteVendor = async (vendorId) => {
+        if (!confirm('Are you sure you want to delete this vendor?')) return;
+        const result = await api.deleteUser(token, vendorId);
+        if (result.error) {
+          alert('Error: ' + result.error);
+        } else {
+          loadData();
+        }
+      };
 
       // View single validation report
       if (viewingValidation) {
@@ -1690,6 +2123,7 @@
 
       // View single report
       if (viewingReport) {
+        const isAssigned = viewingReport.status === 'assigned';
         return (
           <div className="space-y-6">
             <button onClick={() => setViewingReport(null)} className="flex items-center gap-2 text-primary hover:text-accent">
@@ -1697,49 +2131,123 @@
               Back to Service Portal
             </button>
             <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-              <div className="bg-gradient-to-r from-green-600 to-green-800 text-white p-6">
-                <h1 className="text-2xl font-bold">Service Report Details</h1>
+              <div className={`${isAssigned ? 'bg-gradient-to-r from-yellow-500 to-yellow-600' : 'bg-gradient-to-r from-green-600 to-green-800'} text-white p-6`}>
+                <div className="flex items-center gap-3 mb-2">
+                  <h1 className="text-2xl font-bold">Service Report Details</h1>
+                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${isAssigned ? 'bg-white/20' : 'bg-white/20'}`}>
+                    {isAssigned ? 'Assigned - Awaiting Completion' : 'Submitted'}
+                  </span>
+                </div>
                 <p className="opacity-90">Report ID: {viewingReport.id}</p>
+                {isAssigned && viewingReport.assignedByName && (
+                  <p className="opacity-90 mt-1">Assigned by: {viewingReport.assignedByName} to {viewingReport.assignedToName}</p>
+                )}
               </div>
-              <div className="p-6 grid md:grid-cols-2 gap-6">
-                <div>
-                  <h3 className="font-bold text-accent mb-3">Client Information</h3>
-                  <div className="space-y-2 text-sm">
-                    <p><span className="text-gray-500">Facility:</span> {viewingReport.clientFacilityName}</p>
-                    <p><span className="text-gray-500">Customer:</span> {viewingReport.customerName || '-'}</p>
-                    <p><span className="text-gray-500">Address:</span> {viewingReport.address || '-'}</p>
-                    <p><span className="text-gray-500">Service Date:</span> {viewingReport.serviceCompletionDate}</p>
-                    <p><span className="text-gray-500">Analyzer:</span> {viewingReport.analyzerModel || '-'} (S/N: {viewingReport.analyzerSerialNumber || '-'})</p>
-                    <p><span className="text-gray-500">HubSpot Ticket:</span> {viewingReport.hubspotTicketNumber || '-'}</p>
-                  </div>
-                </div>
-                <div>
-                  <h3 className="font-bold text-accent mb-3">Service Details</h3>
-                  <div className="space-y-2 text-sm">
-                    <p><span className="text-gray-500">Service Type:</span> <span className="px-2 py-1 bg-green-100 text-green-700 rounded">{viewingReport.serviceType}</span></p>
-                    <p><span className="text-gray-500">Technician:</span> {viewingReport.serviceProviderName || viewingReport.technicianName}</p>
-                  </div>
-                </div>
-                <div className="md:col-span-2">
-                  <h3 className="font-bold text-accent mb-3">Work Performed</h3>
-                  <p className="text-sm bg-gray-50 p-3 rounded-lg whitespace-pre-wrap">{viewingReport.descriptionOfWork}</p>
-                </div>
-                {viewingReport.materialsUsed && (
-                  <div className="md:col-span-2">
-                    <h3 className="font-bold text-accent mb-3">Materials Used</h3>
-                    <p className="text-sm bg-gray-50 p-3 rounded-lg">{viewingReport.materialsUsed}</p>
+              <div className="p-6 space-y-6">
+                {/* Assignment Info for assigned reports */}
+                {isAssigned && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                    <h3 className="font-semibold text-yellow-800 mb-2">Assignment Details</h3>
+                    <div className="grid md:grid-cols-2 gap-4 text-sm">
+                      <p><span className="text-yellow-700">Assigned To:</span> <span className="font-medium">{viewingReport.assignedToName}</span></p>
+                      <p><span className="text-yellow-700">Assigned By:</span> <span className="font-medium">{viewingReport.assignedByName}</span></p>
+                      <p><span className="text-yellow-700">Assigned At:</span> {new Date(viewingReport.assignedAt).toLocaleString()}</p>
+                    </div>
                   </div>
                 )}
-                {viewingReport.solution && (
-                  <div className="md:col-span-2">
-                    <h3 className="font-bold text-accent mb-3">Solution</h3>
-                    <p className="text-sm bg-gray-50 p-3 rounded-lg whitespace-pre-wrap">{viewingReport.solution}</p>
+
+                {/* Manager Notes */}
+                {viewingReport.managerNotes && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <h3 className="font-semibold text-blue-800 mb-2">Manager Notes</h3>
+                    <p className="text-sm text-blue-900 whitespace-pre-wrap">{viewingReport.managerNotes}</p>
                   </div>
                 )}
-                {viewingReport.outstandingIssues && (
-                  <div className="md:col-span-2">
-                    <h3 className="font-bold text-accent mb-3">Outstanding Issues / Recommendations</h3>
-                    <p className="text-sm bg-gray-50 p-3 rounded-lg whitespace-pre-wrap">{viewingReport.outstandingIssues}</p>
+
+                {/* Photos */}
+                {viewingReport.photos && viewingReport.photos.length > 0 && (
+                  <div>
+                    <h3 className="font-bold text-accent mb-3">Photos</h3>
+                    <div className="flex flex-wrap gap-3">
+                      {viewingReport.photos.map((photo, idx) => (
+                        <a key={photo.id || idx} href={photo.url} target="_blank" rel="noopener noreferrer" className="block">
+                          <img src={photo.url} alt={photo.name} className="w-24 h-24 object-cover rounded-lg border hover:opacity-80 transition" />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Client Files */}
+                {viewingReport.clientFiles && viewingReport.clientFiles.length > 0 && (
+                  <div>
+                    <h3 className="font-bold text-accent mb-3">Client Files</h3>
+                    <div className="space-y-2">
+                      {viewingReport.clientFiles.map((file, idx) => (
+                        <a key={file.id || idx} href={file.url} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition">
+                          {Icons.folder}
+                          <span className="text-sm text-primary hover:underline">{file.name}</span>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div>
+                    <h3 className="font-bold text-accent mb-3">Client Information</h3>
+                    <div className="space-y-2 text-sm">
+                      <p><span className="text-gray-500">Facility:</span> {viewingReport.clientFacilityName}</p>
+                      <p><span className="text-gray-500">Customer:</span> {viewingReport.customerName || '-'}</p>
+                      <p><span className="text-gray-500">Address:</span> {viewingReport.address || '-'}</p>
+                      <p><span className="text-gray-500">Service Date:</span> {viewingReport.serviceCompletionDate || '-'}</p>
+                      <p><span className="text-gray-500">Analyzer:</span> {viewingReport.analyzerModel || '-'} (S/N: {viewingReport.analyzerSerialNumber || '-'})</p>
+                      <p><span className="text-gray-500">HubSpot Ticket:</span> {viewingReport.hubspotTicketNumber || '-'}</p>
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-accent mb-3">Service Details</h3>
+                    <div className="space-y-2 text-sm">
+                      <p><span className="text-gray-500">Service Type:</span> <span className="px-2 py-1 bg-green-100 text-green-700 rounded">{viewingReport.serviceType || '-'}</span></p>
+                      <p><span className="text-gray-500">Technician:</span> {viewingReport.serviceProviderName || viewingReport.technicianName || (isAssigned ? 'Pending' : '-')}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Only show technician-provided details if submitted */}
+                {!isAssigned && (
+                  <>
+                    {viewingReport.descriptionOfWork && (
+                      <div>
+                        <h3 className="font-bold text-accent mb-3">Work Performed</h3>
+                        <p className="text-sm bg-gray-50 p-3 rounded-lg whitespace-pre-wrap">{viewingReport.descriptionOfWork}</p>
+                      </div>
+                    )}
+                    {viewingReport.materialsUsed && (
+                      <div>
+                        <h3 className="font-bold text-accent mb-3">Materials Used</h3>
+                        <p className="text-sm bg-gray-50 p-3 rounded-lg">{viewingReport.materialsUsed}</p>
+                      </div>
+                    )}
+                    {viewingReport.solution && (
+                      <div>
+                        <h3 className="font-bold text-accent mb-3">Solution</h3>
+                        <p className="text-sm bg-gray-50 p-3 rounded-lg whitespace-pre-wrap">{viewingReport.solution}</p>
+                      </div>
+                    )}
+                    {viewingReport.outstandingIssues && (
+                      <div>
+                        <h3 className="font-bold text-accent mb-3">Outstanding Issues / Recommendations</h3>
+                        <p className="text-sm bg-gray-50 p-3 rounded-lg whitespace-pre-wrap">{viewingReport.outstandingIssues}</p>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {isAssigned && (
+                  <div className="bg-gray-50 rounded-lg p-4 text-center text-gray-500">
+                    <p>Technician details will appear here once the report is submitted.</p>
                   </div>
                 )}
               </div>
@@ -1767,10 +2275,12 @@
                 className={`px-6 py-4 font-medium ${activeTab === 'validation' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500 hover:text-gray-700'}`}>
                 Validation Reports ({validationReports.length})
               </button>
-              <button onClick={() => { setActiveTab('new'); setShowNewReport(true); }}
-                className={`px-6 py-4 font-medium ${activeTab === 'new' ? 'text-green-600 border-b-2 border-green-600' : 'text-gray-500 hover:text-gray-700'}`}>
-                + Service Report
-              </button>
+              {canManageVendors && (
+                <button onClick={() => setActiveTab('vendors')}
+                  className={`px-6 py-4 font-medium ${activeTab === 'vendors' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-500 hover:text-gray-700'}`}>
+                  Vendors ({vendors.length})
+                </button>
+              )}
             </div>
 
             {/* Reports Tab */}
@@ -1787,10 +2297,11 @@
                     <table className="w-full">
                       <thead className="bg-gray-50 border-b">
                         <tr>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Status</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Date</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Client</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Service Type</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Technician</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Assigned To / Technician</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Ticket #</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Actions</th>
                         </tr>
@@ -1798,12 +2309,25 @@
                       <tbody className="divide-y divide-gray-200">
                         {filteredReports.map(report => (
                           <tr key={report.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3">
+                              {report.status === 'assigned' ? (
+                                <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-700 rounded font-medium">Assigned</span>
+                              ) : (
+                                <span className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded font-medium">Submitted</span>
+                              )}
+                            </td>
                             <td className="px-4 py-3 text-sm">{new Date(report.serviceCompletionDate || report.createdAt).toLocaleDateString()}</td>
                             <td className="px-4 py-3">
                               <div className="font-medium text-gray-900">{report.clientFacilityName}</div>
                             </td>
-                            <td className="px-4 py-3"><span className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded">{report.serviceType}</span></td>
-                            <td className="px-4 py-3 text-sm">{report.serviceProviderName || report.technicianName}</td>
+                            <td className="px-4 py-3"><span className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded">{report.serviceType || '-'}</span></td>
+                            <td className="px-4 py-3 text-sm">
+                              {report.status === 'assigned' ? (
+                                <span className="text-yellow-700">{report.assignedToName}</span>
+                              ) : (
+                                report.serviceProviderName || report.technicianName || '-'
+                              )}
+                            </td>
                             <td className="px-4 py-3 text-sm text-gray-500">{report.hubspotTicketNumber || '-'}</td>
                             <td className="px-4 py-3">
                               <button onClick={() => setViewingReport(report)} className="flex items-center gap-1 text-green-600 hover:text-green-800">
@@ -1819,88 +2343,6 @@
                   <div className="text-center py-12 text-gray-500"><p>No service reports found</p></div>
                 )}
               </div>
-            )}
-
-            {/* New Report Tab */}
-            {activeTab === 'new' && (
-              <form onSubmit={handleSubmitReport} className="p-6 space-y-6">
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Client/Facility *</label>
-                    <select value={formData.clientFacilityName} onChange={(e) => { setFormData({...formData, clientFacilityName: e.target.value}); handleClientSelect(e.target.value); }}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" required>
-                      <option value="">Select a client...</option>
-                      {clients.map((c, i) => <option key={i} value={c.name || c.clientName}>{c.name || c.clientName}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Customer Name</label>
-                    <input type="text" value={formData.customerName} onChange={(e) => setFormData({...formData, customerName: e.target.value})}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Service Date *</label>
-                    <input type="date" value={formData.serviceCompletionDate} onChange={(e) => setFormData({...formData, serviceCompletionDate: e.target.value})}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" required />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Service Type *</label>
-                    <select value={formData.serviceType} onChange={(e) => setFormData({...formData, serviceType: e.target.value})}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" required>
-                      <option value="">Select type...</option>
-                      {serviceTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Analyzer Model</label>
-                    <input type="text" value={formData.analyzerModel} onChange={(e) => setFormData({...formData, analyzerModel: e.target.value})}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Serial Number</label>
-                    <input type="text" value={formData.analyzerSerialNumber} onChange={(e) => setFormData({...formData, analyzerSerialNumber: e.target.value})}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">HubSpot Ticket #</label>
-                    <input type="text" value={formData.hubspotTicketNumber} onChange={(e) => setFormData({...formData, hubspotTicketNumber: e.target.value})}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Technician</label>
-                    <input type="text" value={formData.serviceProviderName} onChange={(e) => setFormData({...formData, serviceProviderName: e.target.value})}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Description of Work *</label>
-                  <textarea value={formData.descriptionOfWork} onChange={(e) => setFormData({...formData, descriptionOfWork: e.target.value})}
-                    rows={4} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" required />
-                </div>
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Materials Used</label>
-                    <textarea value={formData.materialsUsed} onChange={(e) => setFormData({...formData, materialsUsed: e.target.value})}
-                      rows={3} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Solution</label>
-                    <textarea value={formData.solution} onChange={(e) => setFormData({...formData, solution: e.target.value})}
-                      rows={3} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Outstanding Issues / Recommendations</label>
-                  <textarea value={formData.outstandingIssues} onChange={(e) => setFormData({...formData, outstandingIssues: e.target.value})}
-                    rows={3} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
-                </div>
-                <div className="flex justify-end gap-3">
-                  <button type="button" onClick={() => setActiveTab('reports')} className="px-6 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
-                  <button type="submit" disabled={submitting} className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
-                    {submitting ? 'Submitting...' : 'Submit Report'}
-                  </button>
-                </div>
-              </form>
             )}
 
             {/* Validation Reports Tab */}
@@ -1960,6 +2402,143 @@
                   <div className="text-center py-12 text-gray-500">
                     <p>No validation reports found</p>
                     <p className="text-sm mt-2">Validation reports are submitted by service technicians through the Service Portal</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Vendors Tab */}
+            {activeTab === 'vendors' && canManageVendors && (
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">External Vendors</h3>
+                    <p className="text-sm text-gray-500">Manage service vendors and their client assignments</p>
+                  </div>
+                  <button onClick={() => { setEditingVendor(null); setVendorFormData({ name: '', email: '', password: '', assignedClients: [] }); setShowVendorForm(true); }}
+                    className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 flex items-center gap-2">
+                    {Icons.plus} Add Vendor
+                  </button>
+                </div>
+
+                {/* Vendor Form Modal */}
+                {showVendorForm && (
+                  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
+                      <div className="p-6 border-b flex justify-between items-center">
+                        <h3 className="text-xl font-bold">{editingVendor ? 'Edit Vendor' : 'Add New Vendor'}</h3>
+                        <button onClick={() => { setShowVendorForm(false); setEditingVendor(null); }} className="text-gray-400 hover:text-gray-600">{Icons.close}</button>
+                      </div>
+                      <form onSubmit={handleVendorSubmit} className="p-6 space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                          <input type="text" value={vendorFormData.name} onChange={(e) => setVendorFormData({...vendorFormData, name: e.target.value})}
+                            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500" required />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                          <input type="email" value={vendorFormData.email} onChange={(e) => setVendorFormData({...vendorFormData, email: e.target.value})}
+                            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500" required />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Password {editingVendor ? '(leave blank to keep)' : '*'}</label>
+                          <input type="password" value={vendorFormData.password} onChange={(e) => setVendorFormData({...vendorFormData, password: e.target.value})}
+                            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500" {...(!editingVendor && { required: true })} />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Assigned Clients</label>
+                          <p className="text-xs text-gray-500 mb-2">Vendors can submit service reports and view reports for their assigned clients</p>
+                          <div className="max-h-48 overflow-y-auto border rounded-lg p-2 space-y-2">
+                            {allClients.length > 0 ? allClients.map((client, idx) => {
+                              const clientName = client.name || client.clientName;
+                              const isAssigned = (vendorFormData.assignedClients || []).includes(clientName);
+                              return (
+                                <div key={idx} className={`flex items-center p-2 rounded ${isAssigned ? 'bg-orange-50' : 'bg-gray-50'}`}>
+                                  <label className="flex items-center gap-2 cursor-pointer flex-1">
+                                    <input type="checkbox" checked={isAssigned}
+                                      onChange={() => {
+                                        const current = vendorFormData.assignedClients || [];
+                                        setVendorFormData({
+                                          ...vendorFormData,
+                                          assignedClients: isAssigned
+                                            ? current.filter(c => c !== clientName)
+                                            : [...current, clientName]
+                                        });
+                                      }}
+                                      className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500" />
+                                    <span className="text-sm">{clientName}</span>
+                                  </label>
+                                </div>
+                              );
+                            }) : <p className="text-sm text-gray-500 text-center py-4">No clients available</p>}
+                          </div>
+                        </div>
+                        <div className="flex gap-3 pt-4">
+                          <button type="button" onClick={() => { setShowVendorForm(false); setEditingVendor(null); }}
+                            className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
+                          <button type="submit" disabled={vendorSaving}
+                            className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50">
+                            {vendorSaving ? 'Saving...' : (editingVendor ? 'Update Vendor' : 'Create Vendor')}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
+
+                {/* Vendors List */}
+                {vendors.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 border-b">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Vendor</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Email</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Assigned Clients</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {vendors.map(vendor => (
+                          <tr key={vendor.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center text-sm font-medium">
+                                  {(vendor.name || 'V').charAt(0).toUpperCase()}
+                                </div>
+                                <span className="font-medium text-gray-900">{vendor.name}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600">{vendor.email}</td>
+                            <td className="px-4 py-3">
+                              {vendor.assignedClients?.length > 0 ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {vendor.assignedClients.slice(0, 3).map((c, i) => (
+                                    <span key={i} className="px-2 py-0.5 bg-orange-50 text-orange-700 text-xs rounded">{c}</span>
+                                  ))}
+                                  {vendor.assignedClients.length > 3 && (
+                                    <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded">+{vendor.assignedClients.length - 3} more</span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-sm text-gray-400">No clients assigned</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex gap-2">
+                                <button onClick={() => handleEditVendor(vendor)} className="p-1 text-orange-600 hover:bg-orange-50 rounded" title="Edit">{Icons.edit}</button>
+                                <button onClick={() => handleDeleteVendor(vendor.id)} className="p-1 text-red-600 hover:bg-red-50 rounded" title="Delete">{Icons.trash}</button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-center py-12 text-gray-500">
+                    <p>No external vendors yet</p>
+                    <p className="text-sm mt-2">Click "Add Vendor" to create your first vendor account</p>
                   </div>
                 )}
               </div>
@@ -2217,6 +2796,315 @@
       );
     };
 
+    // Knowledge Hub Admin Page
+    const KnowledgeHubPage = ({ token }) => {
+      const [guides, setGuides] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [selectedGuide, setSelectedGuide] = useState(null);
+      const [editingArticle, setEditingArticle] = useState(null);
+      const [showGuideForm, setShowGuideForm] = useState(false);
+      const [showArticleForm, setShowArticleForm] = useState(false);
+      const [saving, setSaving] = useState(false);
+      const [guideForm, setGuideForm] = useState({ key: '', title: '', description: '', color: 'bg-gray-500', ownerOnly: false, adminOnly: false });
+      const [articleForm, setArticleForm] = useState({ title: '', content: '' });
+
+      const colorOptions = [
+        { value: 'bg-primary-500', label: 'Blue' },
+        { value: 'bg-emerald-600', label: 'Green' },
+        { value: 'bg-purple-600', label: 'Purple' },
+        { value: 'bg-amber-500', label: 'Amber' },
+        { value: 'bg-rose-500', label: 'Rose' },
+        { value: 'bg-teal-500', label: 'Teal' },
+        { value: 'bg-indigo-600', label: 'Indigo' },
+        { value: 'bg-gray-500', label: 'Gray' }
+      ];
+
+      const loadGuides = async () => {
+        setLoading(true);
+        try {
+          const response = await fetch('/api/knowledge/guides', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await response.json();
+          if (Array.isArray(data)) setGuides(data);
+        } catch (error) {
+          console.error('Error loading guides:', error);
+        }
+        setLoading(false);
+      };
+
+      useEffect(() => { loadGuides(); }, [token]);
+
+      const handleSaveGuide = async (e) => {
+        e.preventDefault();
+        setSaving(true);
+        try {
+          const url = selectedGuide ? `/api/knowledge/guides/${selectedGuide.id}` : '/api/knowledge/guides';
+          const method = selectedGuide ? 'PUT' : 'POST';
+          await fetch(url, {
+            method,
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(guideForm)
+          });
+          loadGuides();
+          setShowGuideForm(false);
+          setSelectedGuide(null);
+          setGuideForm({ key: '', title: '', description: '', color: 'bg-gray-500', ownerOnly: false, adminOnly: false });
+        } catch (error) {
+          console.error('Error saving guide:', error);
+        }
+        setSaving(false);
+      };
+
+      const handleDeleteGuide = async (guideId) => {
+        if (!confirm('Delete this guide and all its articles?')) return;
+        await fetch(`/api/knowledge/guides/${guideId}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        loadGuides();
+        if (selectedGuide?.id === guideId) setSelectedGuide(null);
+      };
+
+      const handleSaveArticle = async (e) => {
+        e.preventDefault();
+        if (!selectedGuide) return;
+        setSaving(true);
+        try {
+          const url = editingArticle
+            ? `/api/knowledge/guides/${selectedGuide.id}/articles/${editingArticle.id}`
+            : `/api/knowledge/guides/${selectedGuide.id}/articles`;
+          const method = editingArticle ? 'PUT' : 'POST';
+          await fetch(url, {
+            method,
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(articleForm)
+          });
+          loadGuides();
+          setShowArticleForm(false);
+          setEditingArticle(null);
+          setArticleForm({ title: '', content: '' });
+        } catch (error) {
+          console.error('Error saving article:', error);
+        }
+        setSaving(false);
+      };
+
+      const handleDeleteArticle = async (articleId) => {
+        if (!confirm('Delete this article?')) return;
+        await fetch(`/api/knowledge/guides/${selectedGuide.id}/articles/${articleId}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        loadGuides();
+      };
+
+      const openEditGuide = (guide) => {
+        setGuideForm({
+          key: guide.key,
+          title: guide.title,
+          description: guide.description || '',
+          color: guide.color || 'bg-gray-500',
+          ownerOnly: guide.ownerOnly || false,
+          adminOnly: guide.adminOnly || false
+        });
+        setSelectedGuide(guide);
+        setShowGuideForm(true);
+      };
+
+      const openEditArticle = (article) => {
+        setArticleForm({ title: article.title, content: article.content });
+        setEditingArticle(article);
+        setShowArticleForm(true);
+      };
+
+      // Get the current guide data (after reload)
+      const currentGuide = guides.find(g => g.id === selectedGuide?.id);
+
+      if (loading) return (
+        <div className="flex items-center justify-center py-20">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-teal-500 border-t-transparent"></div>
+        </div>
+      );
+
+      return (
+        <div className="max-w-7xl mx-auto">
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Knowledge Hub Management</h1>
+              <p className="text-gray-500 mt-1">Manage guides and articles for the Knowledge Hub</p>
+            </div>
+            <button onClick={() => { setShowGuideForm(true); setSelectedGuide(null); setGuideForm({ key: '', title: '', description: '', color: 'bg-gray-500', ownerOnly: false, adminOnly: false }); }}
+              className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 flex items-center gap-2">
+              {Icons.plus} New Guide
+            </button>
+          </div>
+
+          <div className="grid lg:grid-cols-3 gap-6">
+            {/* Guides List */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+              <h2 className="font-semibold text-gray-800 mb-4">Guides ({guides.length})</h2>
+              <div className="space-y-2">
+                {guides.map(guide => (
+                  <div key={guide.id}
+                    onClick={() => setSelectedGuide(guide)}
+                    className={`p-3 rounded-lg border cursor-pointer transition ${selectedGuide?.id === guide.id ? 'border-teal-500 bg-teal-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                    <div className="flex items-center gap-3">
+                      <div className={`w-3 h-3 rounded-full ${guide.color}`}></div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-800 truncate">{guide.title}</p>
+                        <p className="text-xs text-gray-500">{guide.articles?.length || 0} articles</p>
+                      </div>
+                      <div className="flex gap-1">
+                        {guide.ownerOnly && <span className="px-1.5 py-0.5 bg-red-100 text-red-600 text-xs rounded">Owner</span>}
+                        {guide.adminOnly && <span className="px-1.5 py-0.5 bg-purple-100 text-purple-600 text-xs rounded">Admin</span>}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {guides.length === 0 && (
+                  <p className="text-center text-gray-400 py-8">No guides yet. Create one to get started.</p>
+                )}
+              </div>
+            </div>
+
+            {/* Articles Panel */}
+            <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+              {currentGuide ? (
+                <>
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <h2 className="font-semibold text-gray-800">{currentGuide.title}</h2>
+                      <p className="text-sm text-gray-500">{currentGuide.description}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => openEditGuide(currentGuide)} className="p-2 text-gray-500 hover:text-teal-600 hover:bg-teal-50 rounded-lg">{Icons.edit}</button>
+                      <button onClick={() => handleDeleteGuide(currentGuide.id)} className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg">{Icons.trash}</button>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center mb-3">
+                    <h3 className="text-sm font-medium text-gray-600">Articles</h3>
+                    <button onClick={() => { setShowArticleForm(true); setEditingArticle(null); setArticleForm({ title: '', content: '' }); }}
+                      className="px-3 py-1.5 bg-teal-600 text-white text-sm rounded-lg hover:bg-teal-700 flex items-center gap-1">
+                      {Icons.plus} Add Article
+                    </button>
+                  </div>
+                  <div className="space-y-2 max-h-[500px] overflow-y-auto">
+                    {(currentGuide.articles || []).map((article, idx) => (
+                      <div key={article.id} className="p-3 border border-gray-200 rounded-lg hover:border-gray-300 group">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-gray-800">{idx + 1}. {article.title}</p>
+                            <p className="text-xs text-gray-400 mt-1">Updated: {new Date(article.updatedAt).toLocaleDateString()}</p>
+                          </div>
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                            <button onClick={() => openEditArticle(article)} className="p-1.5 text-gray-400 hover:text-teal-600 hover:bg-teal-50 rounded">{Icons.edit}</button>
+                            <button onClick={() => handleDeleteArticle(article.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded">{Icons.trash}</button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {(!currentGuide.articles || currentGuide.articles.length === 0) && (
+                      <p className="text-center text-gray-400 py-8">No articles yet. Add one to get started.</p>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+                  <svg className="w-16 h-16 mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/></svg>
+                  <p>Select a guide to manage its articles</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Guide Form Modal */}
+          {showGuideForm && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+                <div className="p-4 border-b flex justify-between items-center">
+                  <h3 className="text-lg font-bold">{selectedGuide ? 'Edit Guide' : 'New Guide'}</h3>
+                  <button onClick={() => setShowGuideForm(false)} className="text-gray-400 hover:text-gray-600">{Icons.close}</button>
+                </div>
+                <form onSubmit={handleSaveGuide} className="p-4 space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Key (URL-friendly)</label>
+                    <input type="text" value={guideForm.key} onChange={(e) => setGuideForm({...guideForm, key: e.target.value.toLowerCase().replace(/\s+/g, '-')})}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500" required disabled={!!selectedGuide} placeholder="e.g., service-portal" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                    <input type="text" value={guideForm.title} onChange={(e) => setGuideForm({...guideForm, title: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500" required placeholder="e.g., Service Portal" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                    <input type="text" value={guideForm.description} onChange={(e) => setGuideForm({...guideForm, description: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500" placeholder="Brief description" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
+                    <select value={guideForm.color} onChange={(e) => setGuideForm({...guideForm, color: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500">
+                      {colorOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2">
+                      <input type="checkbox" checked={guideForm.adminOnly} onChange={(e) => setGuideForm({...guideForm, adminOnly: e.target.checked})} className="rounded" />
+                      <span className="text-sm">Admin Only</span>
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input type="checkbox" checked={guideForm.ownerOnly} onChange={(e) => setGuideForm({...guideForm, ownerOnly: e.target.checked})} className="rounded" />
+                      <span className="text-sm">Owner Only</span>
+                    </label>
+                  </div>
+                  <div className="flex gap-3 pt-2">
+                    <button type="button" onClick={() => setShowGuideForm(false)} className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
+                    <button type="submit" disabled={saving} className="flex-1 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50">
+                      {saving ? 'Saving...' : 'Save Guide'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Article Form Modal */}
+          {showArticleForm && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+                <div className="p-4 border-b flex justify-between items-center flex-shrink-0">
+                  <h3 className="text-lg font-bold">{editingArticle ? 'Edit Article' : 'New Article'}</h3>
+                  <button onClick={() => setShowArticleForm(false)} className="text-gray-400 hover:text-gray-600">{Icons.close}</button>
+                </div>
+                <form onSubmit={handleSaveArticle} className="p-4 space-y-4 overflow-y-auto flex-1">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                    <input type="text" value={articleForm.title} onChange={(e) => setArticleForm({...articleForm, title: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500" required placeholder="Article title" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Content (Markdown-style formatting supported)</label>
+                    <textarea value={articleForm.content} onChange={(e) => setArticleForm({...articleForm, content: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500 font-mono text-sm" rows="20" required
+                      placeholder="Article content. Use **bold** for headers, - for bullets, 1. for numbered lists." />
+                    <p className="text-xs text-gray-500 mt-1">Tip: **text** = bold header, - item = bullet, 1. item = numbered list</p>
+                  </div>
+                  <div className="flex gap-3 pt-2">
+                    <button type="button" onClick={() => setShowArticleForm(false)} className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
+                    <button type="submit" disabled={saving} className="flex-1 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50">
+                      {saving ? 'Saving...' : 'Save Article'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+
     // Main App
     const App = () => {
       // Check multiple token sources - admin_token or unified_token from Portal Hub
@@ -2234,6 +3122,27 @@
       const [activePage, setActivePage] = useState('dashboard');
       const [isMobileOpen, setIsMobileOpen] = useState(false);
 
+      // Handle browser back/forward cache (bfcache) - re-validate auth when page is restored
+      useEffect(() => {
+        const handlePageShow = (event) => {
+          // Check if page was restored from bfcache
+          if (event.persisted) {
+            // Re-check localStorage for valid tokens
+            const storedToken = localStorage.getItem('admin_token') || localStorage.getItem('unified_token');
+            const storedUserData = localStorage.getItem('admin_user') || localStorage.getItem('unified_user');
+
+            if (!storedToken || !storedUserData) {
+              // Tokens were cleared (user logged out), update React state
+              setToken(null);
+              setUser(null);
+            }
+          }
+        };
+
+        window.addEventListener('pageshow', handlePageShow);
+        return () => window.removeEventListener('pageshow', handlePageShow);
+      }, []);
+
       const handleLogin = (newToken, newUser) => {
         setToken(newToken);
         setUser(newUser);
@@ -2241,19 +3150,40 @@
 
       if (!token || !user) return <LoginPage onLogin={handleLogin} />;
 
+      // Check if user is a Super Admin (role === 'admin') - full access
+      const isSuperAdmin = user?.role === 'admin';
+      // Check if user is a Manager - limited access (no inbox/user management)
+      const isManager = user?.isManager && !isSuperAdmin;
+
+      // Navigation guard: Managers cannot access inbox or users pages
+      const handleNavigation = (page) => {
+        if (isManager && (page === 'inbox' || page === 'users')) {
+          // Redirect managers to dashboard if they try to access restricted pages
+          setActivePage('dashboard');
+        } else {
+          setActivePage(page);
+        }
+      };
+
       const renderPage = () => {
+        // Additional protection: if manager somehow gets to restricted page, show dashboard
+        if (isManager && (activePage === 'inbox' || activePage === 'users')) {
+          return <DashboardPage token={token} onNavigate={handleNavigation} user={user} />;
+        }
+
         switch (activePage) {
-          case 'dashboard': return <DashboardPage token={token} onNavigate={setActivePage} />;
+          case 'dashboard': return <DashboardPage token={token} onNavigate={handleNavigation} user={user} />;
           case 'inbox': return <InboxPage token={token} />;
           case 'users': return <UsersPage token={token} />;
           case 'service_portal': return <ServicePortalPage token={token} user={user} />;
-          default: return <DashboardPage token={token} onNavigate={setActivePage} />;
+          case 'knowledge_hub': return <KnowledgeHubPage token={token} />;
+          default: return <DashboardPage token={token} onNavigate={handleNavigation} user={user} />;
         }
       };
 
       return (
         <div className="min-h-screen bg-gray-50">
-          <Sidebar activePage={activePage} onNavigate={setActivePage} user={user} token={token} isMobileOpen={isMobileOpen} onClose={() => setIsMobileOpen(false)} />
+          <Sidebar activePage={activePage} onNavigate={handleNavigation} user={user} token={token} isMobileOpen={isMobileOpen} onClose={() => setIsMobileOpen(false)} />
           <div className="lg:hidden bg-white border-b p-4 flex items-center justify-between sticky top-0 z-30">
             <button onClick={() => setIsMobileOpen(true)} className="text-gray-600">{Icons.menu}</button>
             <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-8" />

@@ -41,8 +41,8 @@
     // Static changelog entries (fallback and legacy)
     const staticChangelog = [
       {
-        id: 'static-271',
-        version: '2.7.1',
+        id: 'static-274',
+        version: '2.7.4',
         date: 'February 3, 2026',
         isCurrent: true,
         sections: [
@@ -108,6 +108,74 @@
             'Project slug changes likewise track previous slugs for redirect lookups',
             'Portal routes check previousSlugs and issue 302 redirects to updated URLs',
             'Changed bulk delete from all-or-nothing to partial success with skipped task reporting'
+          ]}
+        ]
+      },
+      {
+        id: 'static-272',
+        version: '2.7.2',
+        date: 'January 20, 2026',
+        isCurrent: false,
+        sections: [
+          { title: 'Security Improvements', color: 'green', items: [
+            'New users created by Super Admin now require password change on first login',
+            'Manual password resets by Super Admin now force users to create their own password',
+            'Consistent password change enforcement across all user creation and reset flows'
+          ]}
+        ]
+      },
+      {
+        id: 'static-271',
+        version: '2.7.1',
+        date: 'January 19, 2026',
+        isCurrent: false,
+        sections: [
+          { title: 'New Features', color: 'primary', items: [
+            'Add Manager permissions to edit client details in Client Portal Admin',
+            'Client details edited by Managers sync with Admin Hub User Management',
+            'Enhanced Client Users page in Client Portal Admin with edit functionality'
+          ]},
+          { title: 'Improvements', color: 'green', items: [
+            'Managers can now update: Practice Name, Logo, HubSpot Company/Deal/Contact IDs',
+            'All client detail changes are logged in activity log'
+          ]},
+          { title: 'Planned Features (Future Rollout)', color: 'purple', items: [
+            'Customer Support Pipeline Enhancement: Hide HubSpot pipeline view and show only portal-submitted tickets',
+            'Benefits: Cleaner client experience, privacy, focused support view',
+            'See README.md "Future Features" section for implementation details'
+          ]}
+        ]
+      },
+      {
+        id: 'static-270',
+        version: '2.7.0',
+        date: 'January 2026',
+        sections: [
+          { title: 'Portal Enhancements', color: 'primary', items: [
+            'Add Knowledge Hub module to Portal Hub with guides and documentation',
+            'Add URL routing for portal deep linking',
+            'Add token fallback for seamless Portal Hub navigation across all apps'
+          ]},
+          { title: 'Service Portal Updates', color: 'primary', items: [
+            'Add PDF generation for service/validation reports',
+            'Enhanced service portal forms and workflows'
+          ]},
+          { title: 'HubSpot Integration', color: 'primary', items: [
+            'Add HubSpot chatbot to Live Chat tab in Customer Support',
+            'Add readable stage labels for HubSpot tickets',
+            'Add debug logging for HubSpot ticket fetch and deal ID support'
+          ]},
+          { title: 'Admin Hub Improvements', color: 'primary', items: [
+            'Simplify admin dashboard: rename to Quick Stats, keep only New Launches and Open Tickets',
+            'Add bulk password reset system with first-login change prompt',
+            'Add automatic changelog management system',
+            'Remove unused New Client checkbox from user management'
+          ]},
+          { title: 'Technical Improvements', color: 'green', items: [
+            'Add comprehensive changelog with HTML viewer and downloadable MD file',
+            'Remove blue icon boxes from login pages',
+            'Add /login route for unified login portal',
+            'Add granular permissions and validation reports'
           ]}
         ]
       },

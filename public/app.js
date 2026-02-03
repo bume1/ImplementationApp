@@ -1,31 +1,51 @@
 const { useState, useEffect, useMemo } = React;
 const API_URL = window.location.origin;
 
-// ============== STANDARD PHASES AND STAGES (Always visible) ==============
+// ============== STANDARD PHASES (Phase-only structure) ==============
 const STANDARD_PHASES = {
-  'Phase 0': {
-    name: 'Phase 0: Contract Signature',
-    stages: ['Contract Signature']
-  },
   'Phase 1': {
-    name: 'Phase 1: Pre-Launch',
-    stages: ['Project Kick Off & Stakeholder Alignment', 'Launch Data & Systems Prep']
+    name: 'Phase 1: Contract & Initial Setup',
+    stages: ['Tasks']
   },
   'Phase 2': {
-    name: 'Phase 2: Implementation Sprints',
-    stages: ['Sprint 1: Core System Setups', 'Sprint 2: Lab & QUA Pilot Prep', 'Sprint 3: Soft-Pilot']
+    name: 'Phase 2: Billing, CLIA & Hiring',
+    stages: ['Tasks']
   },
   'Phase 3': {
-    name: 'Phase 3: Go-Live',
-    stages: ['Training/Validation', 'Go-Live']
+    name: 'Phase 3: Tech Infrastructure & LIS Integration',
+    stages: ['Tasks']
   },
   'Phase 4': {
-    name: 'Phase 4: Post-Launch Optimization',
-    stages: ['KPIs', 'Monitoring & Customer Support']
+    name: 'Phase 4: Inventory Forecasting & Procurement',
+    stages: ['Tasks']
+  },
+  'Phase 5': {
+    name: 'Phase 5: Supply Orders & Logistics',
+    stages: ['Tasks']
+  },
+  'Phase 6': {
+    name: 'Phase 6: Onboarding & Welcome Calls',
+    stages: ['Tasks']
+  },
+  'Phase 7': {
+    name: 'Phase 7: Virtual Soft Pilot & Prep',
+    stages: ['Tasks']
+  },
+  'Phase 8': {
+    name: 'Phase 8: Training & Full Validation',
+    stages: ['Tasks']
+  },
+  'Phase 9': {
+    name: 'Phase 9: Go-Live',
+    stages: ['Tasks']
+  },
+  'Phase 10': {
+    name: 'Phase 10: Post-Launch Support & Optimization',
+    stages: ['Tasks']
   }
 };
 
-const PHASE_ORDER = ['Phase 0', 'Phase 1', 'Phase 2', 'Phase 3', 'Phase 4'];
+const PHASE_ORDER = ['Phase 1', 'Phase 2', 'Phase 3', 'Phase 4', 'Phase 5', 'Phase 6', 'Phase 7', 'Phase 8', 'Phase 9', 'Phase 10'];
 
 // Helper to format date for display (handles ISO, YYYY-MM-DD, and locale formats)
 const formatDateForDisplay = (dateStr) => {
@@ -1081,12 +1101,12 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
   };
 
   const getBaseUrl = (domain) => {
-    if (!domain) return 'https://deapps.pro';
+    if (!domain) return 'https://thrive365labs.live';
     try {
       const url = new URL(domain);
       return url.origin;
     } catch {
-      return 'https://deapps.pro';
+      return 'https://thrive365labs.live';
     }
   };
 
@@ -1255,12 +1275,17 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
                 
                 <section>
                   <h3 className="text-lg font-bold text-primary mb-3">Project Phases</h3>
-                  <div className="space-y-2 text-gray-600">
-                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-purple-500 rounded"></div><span><strong>Phase 0:</strong> Contract Signature</span></div>
-                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-blue-500 rounded"></div><span><strong>Phase 1:</strong> Pre-Launch (Kick Off, Data Systems Prep)</span></div>
-                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-green-500 rounded"></div><span><strong>Phase 2:</strong> Implementation Sprints (Soft-Pilot, System Setup)</span></div>
-                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-orange-500 rounded"></div><span><strong>Phase 3:</strong> Go-Live (Validation, Live Operations)</span></div>
-                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-pink-500 rounded"></div><span><strong>Phase 4:</strong> Post-Launch Optimization</span></div>
+                  <div className="space-y-2 text-gray-600 text-sm">
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-blue-500 rounded"></div><span><strong>Phase 1:</strong> Contract & Initial Setup</span></div>
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-indigo-500 rounded"></div><span><strong>Phase 2:</strong> Billing, CLIA & Hiring</span></div>
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-cyan-500 rounded"></div><span><strong>Phase 3:</strong> Tech Infrastructure & LIS Integration</span></div>
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-yellow-500 rounded"></div><span><strong>Phase 4:</strong> Inventory Forecasting & Procurement</span></div>
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-green-500 rounded"></div><span><strong>Phase 5:</strong> Supply Orders & Logistics</span></div>
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-teal-500 rounded"></div><span><strong>Phase 6:</strong> Onboarding & Welcome Calls</span></div>
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-purple-500 rounded"></div><span><strong>Phase 7:</strong> Virtual Soft Pilot & Prep</span></div>
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-orange-500 rounded"></div><span><strong>Phase 8:</strong> Training & Full Validation</span></div>
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-red-500 rounded"></div><span><strong>Phase 9:</strong> Go-Live</span></div>
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-pink-500 rounded"></div><span><strong>Phase 10:</strong> Post-Launch Support & Optimization</span></div>
                   </div>
                 </section>
 
@@ -1289,7 +1314,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
                   <h3 className="text-lg font-bold text-primary mb-3">Client Portal</h3>
                   <ul className="list-disc ml-5 text-gray-600 space-y-1">
                     <li>Each project has a shareable client link for external stakeholders</li>
-                    <li>Client portal URL format: <code className="bg-gray-100 px-1 rounded">https://deapps.pro/launch/client-name</code></li>
+                    <li>Client portal URL format: <code className="bg-gray-100 px-1 rounded">https://thrive365labs.live/launch/client-name</code></li>
                     <li>Click "Copy Client Link" on project cards to share with clients</li>
                     <li>Clients can view progress without logging in</li>
                   </ul>
@@ -2164,12 +2189,12 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
                 <div>
                   <label className="block text-sm font-medium mb-1">Custom Domain URL</label>
                   <input
-                    placeholder="e.g., https://deapps.pro"
+                    placeholder="e.g., https://thrive365labs.live"
                     value={newDomain}
                     onChange={(e) => setNewDomain(e.target.value)}
                     className="w-full px-3 py-2 border rounded-md"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Include https:// (e.g., https://deapps.pro)</p>
+                  <p className="text-xs text-gray-500 mt-1">Include https:// (e.g., https://thrive365labs.live)</p>
                 </div>
               </div>
               <div className="flex gap-2 mt-6">
@@ -2365,11 +2390,16 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
 
 // ============== TIMELINE VIEW COMPONENT (Phase/Stage Grouped) ==============
 const phaseNames = {
-  'Phase 0': 'Phase 0: Contract Signature',
-  'Phase 1': 'Phase 1: Pre-Launch',
-  'Phase 2': 'Phase 2: Implementation Sprints',
-  'Phase 3': 'Phase 3: Go-Live',
-  'Phase 4': 'Phase 4: Post-Launch Optimization'
+  'Phase 1': 'Phase 1: Contract & Initial Setup',
+  'Phase 2': 'Phase 2: Billing, CLIA & Hiring',
+  'Phase 3': 'Phase 3: Tech Infrastructure & LIS Integration',
+  'Phase 4': 'Phase 4: Inventory Forecasting & Procurement',
+  'Phase 5': 'Phase 5: Supply Orders & Logistics',
+  'Phase 6': 'Phase 6: Onboarding & Welcome Calls',
+  'Phase 7': 'Phase 7: Virtual Soft Pilot & Prep',
+  'Phase 8': 'Phase 8: Training & Full Validation',
+  'Phase 9': 'Phase 9: Go-Live',
+  'Phase 10': 'Phase 10: Post-Launch Support & Optimization'
 };
 
 const TimelineView = ({ tasks, getPhaseColor, viewMode }) => {
@@ -3215,6 +3245,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
   const [creatingTemplate, setCreatingTemplate] = useState(false);
   const [showNotesLog, setShowNotesLog] = useState(false);
   const [showEditProject, setShowEditProject] = useState(false);
+  const [collapsedPhases, setCollapsedPhases] = useState([]);
 
   const isAdmin = user.role === 'admin';
   const userAccessLevel = isAdmin ? 'edit' : ((user.projectAccessLevels || {})[project.id] || 'edit');
@@ -3738,8 +3769,17 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
       showToClient: task.showToClient || false,
       clientName: task.clientName || '',
       description: task.description || '',
-      dependencies: task.dependencies || []
+      dependencies: task.dependencies || [],
+      tags: task.tags || []
     });
+  };
+
+  const togglePhaseCollapse = (phase) => {
+    if (collapsedPhases.includes(phase)) {
+      setCollapsedPhases(collapsedPhases.filter(p => p !== phase));
+    } else {
+      setCollapsedPhases([...collapsedPhases, phase]);
+    }
   };
 
   const handleSaveEdit = async () => {
@@ -3972,12 +4012,12 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
   };
 
   const getBaseUrlForProject = (domain) => {
-    if (!domain) return 'https://deapps.pro';
+    if (!domain) return 'https://thrive365labs.live';
     try {
       const url = new URL(domain);
       return url.origin;
     } catch {
-      return 'https://deapps.pro';
+      return 'https://thrive365labs.live';
     }
   };
 
@@ -3995,33 +4035,48 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
 
   const getPhaseColor = (phase) => {
     const colors = {
-      'Phase 0': 'border-purple-500',
       'Phase 1': 'border-blue-500',
-      'Phase 2': 'border-green-500',
-      'Phase 3': 'border-orange-500',
-      'Phase 4': 'border-pink-500'
+      'Phase 2': 'border-indigo-500',
+      'Phase 3': 'border-cyan-500',
+      'Phase 4': 'border-yellow-500',
+      'Phase 5': 'border-green-500',
+      'Phase 6': 'border-teal-500',
+      'Phase 7': 'border-purple-500',
+      'Phase 8': 'border-orange-500',
+      'Phase 9': 'border-red-500',
+      'Phase 10': 'border-pink-500'
     };
     return colors[phase] || 'border-gray-500';
   };
 
   const getPhaseBackground = (phase) => {
     const colors = {
-      'Phase 0': 'bg-purple-500',
       'Phase 1': 'bg-blue-500',
-      'Phase 2': 'bg-green-500',
-      'Phase 3': 'bg-orange-500',
-      'Phase 4': 'bg-pink-500'
+      'Phase 2': 'bg-indigo-500',
+      'Phase 3': 'bg-cyan-500',
+      'Phase 4': 'bg-yellow-500',
+      'Phase 5': 'bg-green-500',
+      'Phase 6': 'bg-teal-500',
+      'Phase 7': 'bg-purple-500',
+      'Phase 8': 'bg-orange-500',
+      'Phase 9': 'bg-red-500',
+      'Phase 10': 'bg-pink-500'
     };
     return colors[phase] || 'bg-gray-500';
   };
 
   const getPhaseGradient = (phase) => {
     const gradients = {
-      'Phase 0': 'bg-gradient-to-r from-purple-600 to-purple-700',
       'Phase 1': 'bg-gradient-to-r from-blue-600 to-blue-700',
-      'Phase 2': 'bg-gradient-to-r from-green-600 to-green-700',
-      'Phase 3': 'bg-gradient-to-r from-orange-600 to-orange-700',
-      'Phase 4': 'bg-gradient-to-r from-pink-600 to-pink-700'
+      'Phase 2': 'bg-gradient-to-r from-indigo-600 to-indigo-700',
+      'Phase 3': 'bg-gradient-to-r from-cyan-600 to-cyan-700',
+      'Phase 4': 'bg-gradient-to-r from-yellow-600 to-yellow-700',
+      'Phase 5': 'bg-gradient-to-r from-green-600 to-green-700',
+      'Phase 6': 'bg-gradient-to-r from-teal-600 to-teal-700',
+      'Phase 7': 'bg-gradient-to-r from-purple-600 to-purple-700',
+      'Phase 8': 'bg-gradient-to-r from-orange-600 to-orange-700',
+      'Phase 9': 'bg-gradient-to-r from-red-600 to-red-700',
+      'Phase 10': 'bg-gradient-to-r from-pink-600 to-pink-700'
     };
     return gradients[phase] || 'bg-gradient-to-r from-gray-600 to-gray-700';
   };
@@ -4667,42 +4722,17 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
         </div>
 
         <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
-          <div className="flex flex-wrap gap-4 text-sm">
-            <button
-              onClick={() => document.getElementById('phase-Phase 0')?.scrollIntoView({ behavior: 'smooth' })}
-              className="flex items-center gap-2 hover:bg-purple-50 px-2 py-1 rounded transition-colors cursor-pointer"
-            >
-              <div className="w-3 h-3 bg-purple-500 rounded"></div>
-              <span>Phase 0: Contract Signature</span>
-            </button>
-            <button
-              onClick={() => document.getElementById('phase-Phase 1')?.scrollIntoView({ behavior: 'smooth' })}
-              className="flex items-center gap-2 hover:bg-blue-50 px-2 py-1 rounded transition-colors cursor-pointer"
-            >
-              <div className="w-3 h-3 bg-blue-500 rounded"></div>
-              <span>Phase 1: Pre-Launch</span>
-            </button>
-            <button
-              onClick={() => document.getElementById('phase-Phase 2')?.scrollIntoView({ behavior: 'smooth' })}
-              className="flex items-center gap-2 hover:bg-green-50 px-2 py-1 rounded transition-colors cursor-pointer"
-            >
-              <div className="w-3 h-3 bg-green-500 rounded"></div>
-              <span>Phase 2: Implementation Sprints</span>
-            </button>
-            <button
-              onClick={() => document.getElementById('phase-Phase 3')?.scrollIntoView({ behavior: 'smooth' })}
-              className="flex items-center gap-2 hover:bg-orange-50 px-2 py-1 rounded transition-colors cursor-pointer"
-            >
-              <div className="w-3 h-3 bg-orange-500 rounded"></div>
-              <span>Phase 3: Go-Live</span>
-            </button>
-            <button
-              onClick={() => document.getElementById('phase-Phase 4')?.scrollIntoView({ behavior: 'smooth' })}
-              className="flex items-center gap-2 hover:bg-pink-50 px-2 py-1 rounded transition-colors cursor-pointer"
-            >
-              <div className="w-3 h-3 bg-pink-500 rounded"></div>
-              <span>Phase 4: Post-Launch Optimization</span>
-            </button>
+          <div className="flex flex-wrap gap-2 text-xs">
+            {PHASE_ORDER.map(phase => (
+              <button
+                key={phase}
+                onClick={() => document.getElementById(`phase-${phase}`)?.scrollIntoView({ behavior: 'smooth' })}
+                className={`flex items-center gap-1 hover:opacity-80 px-2 py-1 rounded transition-colors cursor-pointer ${getPhaseColor(phase).replace('border-', 'bg-').replace('-500', '-100')}`}
+              >
+                <div className={`w-2 h-2 rounded ${getPhaseColor(phase).replace('border-', 'bg-')}`}></div>
+                <span className="whitespace-nowrap">{phaseNames[phase] || phase}</span>
+              </button>
+            ))}
           </div>
         </div>
 
@@ -4728,16 +4758,31 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
         
         {viewType === 'list' && (
           <div className="space-y-8">
-            {PHASE_ORDER.map(phase => (
+            {PHASE_ORDER.map(phase => {
+              const isCollapsed = collapsedPhases.includes(phase);
+              return (
               <div key={phase} id={`phase-${phase}`} className="space-y-4 scroll-mt-4">
-                <div className={`${getPhaseGradient(phase)} p-3 rounded-lg text-white`}>
-                  <h2 className="text-lg font-bold">{phaseNames[phase] || phase}</h2>
-                  <p className="text-sm opacity-80">
-                    {Object.values(groupedByPhase[phase] || {}).flat().filter(t => t.completed).length} of {Object.values(groupedByPhase[phase] || {}).flat().length} complete
-                  </p>
+                <div
+                  className={`${getPhaseGradient(phase)} p-3 rounded-lg text-white cursor-pointer hover:opacity-90 transition-opacity`}
+                  onClick={() => togglePhaseCollapse(phase)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <h2 className="text-lg font-bold">{phaseNames[phase] || phase}</h2>
+                      <p className="text-sm opacity-80">
+                        {Object.values(groupedByPhase[phase] || {}).flat().filter(t => t.completed).length} of {Object.values(groupedByPhase[phase] || {}).flat().length} complete
+                      </p>
+                    </div>
+                    <div className="ml-4 text-2xl">
+                      {isCollapsed ? '▶' : '▼'}
+                    </div>
+                  </div>
                 </div>
+                {!isCollapsed && (
+                <>
                 {Object.entries(groupedByPhase[phase] || {}).map(([stageName, stageTasks]) => (
                   <div key={stageName} className={`bg-white rounded-lg shadow-sm overflow-hidden border-l-4 ${getPhaseColor(phase)}`}>
+                    {stageName !== 'Tasks' && (
                     <div className="bg-gray-50 p-3 border-b flex justify-between items-center">
                       <div>
                         <h3 className="font-semibold text-gray-700">{stageName}</h3>
@@ -4789,6 +4834,24 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                         )}
                       </div>
                     </div>
+                    )}
+                    {stageName === 'Tasks' && viewMode === 'internal' && canEdit && (
+                      <div className="bg-gray-50 p-2 border-b flex justify-end">
+                        <button
+                          onClick={() => {
+                            setNewTask({
+                              ...newTask,
+                              phase: phase,
+                              stage: stageName
+                            });
+                            setShowAddTask(true);
+                          }}
+                          className="text-primary hover:text-accent text-sm font-medium"
+                        >
+                          + Add Task
+                        </button>
+                      </div>
+                    )}
                     <div className="divide-y divide-gray-200">
                       {stageTasks.length === 0 ? (
                         <div className="p-4 text-gray-400 text-sm italic">No tasks in this stage</div>
@@ -4867,7 +4930,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                           const newPhase = e.target.value;
                                           const newStages = STANDARD_PHASES[newPhase]?.stages || [];
                                           setEditingTask({
-                                            ...editingTask, 
+                                            ...editingTask,
                                             phase: newPhase,
                                             stage: newStages[0] || ''
                                           });
@@ -4875,7 +4938,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                         className="w-full px-3 py-2 border rounded-md"
                                       >
                                         {PHASE_ORDER.map(phase => (
-                                          <option key={phase} value={phase}>{phase}</option>
+                                          <option key={phase} value={phase}>{STANDARD_PHASES[phase]?.name || phase}</option>
                                         ))}
                                       </select>
                                     </div>
@@ -5568,8 +5631,11 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                     </div>
                   </div>
                 ))}
+                </>
+                )}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -5592,30 +5658,29 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                     <label className="block text-sm font-medium mb-1">Phase</label>
                     <select
                       value={newTask.phase}
-                      onChange={(e) => {
-                        const newPhase = e.target.value;
-                        const newStages = STANDARD_PHASES[newPhase]?.stages || [];
-                        setNewTask({...newTask, phase: newPhase, stage: newStages[0] || ''});
-                      }}
+                      onChange={(e) => setNewTask({...newTask, phase: e.target.value, stage: 'Tasks'})}
                       className="w-full px-3 py-2 border rounded-md"
                     >
-                      {PHASE_ORDER.map(phase => (
-                        <option key={phase} value={phase}>{STANDARD_PHASES[phase]?.name || phase}</option>
-                      ))}
+                      <option value="Phase 1">Phase 1: Contract & Initial Setup</option>
+                      <option value="Phase 2">Phase 2: Billing, CLIA & Hiring</option>
+                      <option value="Phase 3">Phase 3: Tech Infrastructure & LIS</option>
+                      <option value="Phase 4">Phase 4: Inventory Forecasting</option>
+                      <option value="Phase 5">Phase 5: Supply Orders & Logistics</option>
+                      <option value="Phase 6">Phase 6: Onboarding & Welcome Calls</option>
+                      <option value="Phase 7">Phase 7: Virtual Soft Pilot & Prep</option>
+                      <option value="Phase 8">Phase 8: Training & Full Validation</option>
+                      <option value="Phase 9">Phase 9: Go-Live</option>
+                      <option value="Phase 10">Phase 10: Post-Launch Support</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">Stage</label>
-                    <select
-                      value={newTask.stage}
-                      onChange={(e) => setNewTask({...newTask, stage: e.target.value})}
-                      className="w-full px-3 py-2 border rounded-md"
-                    >
-                      <option value="">-- Select Stage --</option>
-                      {(STANDARD_PHASES[newTask.phase]?.stages || []).map(stage => (
-                        <option key={stage} value={stage}>{stage}</option>
-                      ))}
-                    </select>
+                    <label className="block text-sm font-medium mb-1 text-gray-400">Stage (Auto)</label>
+                    <input
+                      type="text"
+                      value="Tasks"
+                      disabled
+                      className="w-full px-3 py-2 border rounded-md bg-gray-100 text-gray-500"
+                    />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
@@ -7734,17 +7799,7 @@ const App = () => {
     setUser(null);
     setSelectedProject(null);
     setView('list');
-    // Clear all portal token keys to prevent stale sessions across portals
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    localStorage.removeItem('unified_token');
-    localStorage.removeItem('unified_user');
-    localStorage.removeItem('admin_token');
-    localStorage.removeItem('admin_user');
-    localStorage.removeItem('portal_token');
-    localStorage.removeItem('portal_user');
-    localStorage.removeItem('service_token');
-    localStorage.removeItem('service_user');
+    localStorage.clear();
     window.location.href = '/';
   };
 

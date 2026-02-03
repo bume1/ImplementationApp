@@ -282,18 +282,24 @@ const authenticateToken = async (req, res, next) => {
       const freshUser = users.find(u => u.id === tokenUser.id);
       if (!freshUser) return res.status(403).json({ error: 'User not found' });
       // Use fresh data for all user properties to ensure permission changes take effect immediately
+      // Determine if user is a manager (has limited admin access)
+      const isManager = freshUser.isManager || false;
+
       req.user = {
         id: freshUser.id,
         email: freshUser.email,
         name: freshUser.name,
-        role: freshUser.role, // admin, user, client, vendor
+        role: freshUser.role, // admin (super admin), user, client, vendor
         assignedProjects: freshUser.assignedProjects || [],
         projectAccessLevels: freshUser.projectAccessLevels || {},
+        // Manager flag - provides limited admin access (client portal admin + service portal in admin hub)
+        isManager: isManager,
         // Granular permission flags
         hasServicePortalAccess: freshUser.hasServicePortalAccess || false,
         hasAdminHubAccess: freshUser.hasAdminHubAccess || false,
         hasImplementationsAccess: freshUser.hasImplementationsAccess || false,
-        hasClientPortalAdminAccess: freshUser.hasClientPortalAdminAccess || false,
+        // Managers automatically get client portal admin access
+        hasClientPortalAdminAccess: freshUser.hasClientPortalAdminAccess || isManager || false,
         // Vendor-specific: clients they can service
         assignedClients: freshUser.assignedClients || [],
         // Client-specific fields
@@ -330,19 +336,32 @@ const generateClientUserSlug = async (practiceName) => {
   return generateClientSlug(practiceName, existingSlugs);
 };
 
+// Super Admin access - full system access (role === 'admin')
 const requireAdmin = (req, res, next) => {
   if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Admin access required' });
+    return res.status(403).json({ error: 'Super Admin access required' });
   }
   next();
 };
 
-// Require Admin Hub access (admins or users with hasAdminHubAccess)
+// Alias for clarity - Super Admin only routes
+const requireSuperAdmin = requireAdmin;
+
+// Require Admin Hub access (super admins, managers, or users with hasAdminHubAccess)
+// Note: Managers can access Admin Hub but only Service Portal section (UI handles section visibility)
 const requireAdminHubAccess = (req, res, next) => {
-  if (req.user.role === 'admin' || req.user.hasAdminHubAccess) {
+  if (req.user.role === 'admin' || req.user.isManager || req.user.hasAdminHubAccess) {
     return next();
   }
   return res.status(403).json({ error: 'Admin Hub access required' });
+};
+
+// Require Super Admin for sensitive Admin Hub operations (Inbox, User Management)
+const requireAdminHubFullAccess = (req, res, next) => {
+  if (req.user.role === 'admin') {
+    return next();
+  }
+  return res.status(403).json({ error: 'Super Admin access required for this operation' });
 };
 
 // Require Implementations App access
@@ -354,9 +373,9 @@ const requireImplementationsAccess = (req, res, next) => {
   return res.status(403).json({ error: 'Implementations App access required' });
 };
 
-// Require Client Portal Admin access
+// Require Client Portal Admin access (super admins, managers, or users with hasClientPortalAdminAccess)
 const requireClientPortalAdmin = (req, res, next) => {
-  if (req.user.role === 'admin' || req.user.hasClientPortalAdminAccess) {
+  if (req.user.role === 'admin' || req.user.isManager || req.user.hasClientPortalAdminAccess) {
     return next();
   }
   return res.status(403).json({ error: 'Client Portal admin access required' });
@@ -403,16 +422,16 @@ app.post('/api/auth/signup', authenticateToken, requireAdmin, async (req, res) =
   }
 });
 
-// Admin create user endpoint
+// Admin create user endpoint (Super Admin only)
 app.post('/api/users', authenticateToken, async (req, res) => {
   try {
     if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Admin access required' });
+      return res.status(403).json({ error: 'Super Admin access required' });
     }
     const {
       email, password, name, role, practiceName, isNewClient, assignedProjects, logo,
       hasServicePortalAccess, hasAdminHubAccess, hasImplementationsAccess, hasClientPortalAdminAccess,
-      assignedClients, hubspotCompanyId, hubspotDealId, hubspotContactId, projectAccessLevels
+      isManager, assignedClients, hubspotCompanyId, hubspotDealId, hubspotContactId, projectAccessLevels
     } = req.body;
     if (!email || !password || !name) {
       return res.status(400).json({ error: 'Email, password, and name are required' });
@@ -427,13 +446,18 @@ app.post('/api/users', authenticateToken, async (req, res) => {
       email,
       name,
       password: hashedPassword,
-      role: role || 'user', // admin, user, client, vendor
+      role: role || 'user', // admin (super admin), user, client, vendor
+      // Manager flag - provides limited admin access
+      isManager: isManager || false,
       // Permission flags
       hasServicePortalAccess: hasServicePortalAccess || false,
       hasAdminHubAccess: hasAdminHubAccess || false,
       hasImplementationsAccess: hasImplementationsAccess || false,
       hasClientPortalAdminAccess: hasClientPortalAdminAccess || false,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      // Force new users to change their password on first login
+      requirePasswordChange: true,
+      lastPasswordReset: new Date().toISOString()
     };
 
     // Client-specific fields
@@ -455,6 +479,8 @@ app.post('/api/users', authenticateToken, async (req, res) => {
     // Vendor-specific fields
     if (role === 'vendor') {
       newUser.assignedClients = assignedClients || [];
+      // Vendors automatically get service portal access
+      newUser.hasServicePortalAccess = true;
     }
 
     // User/team member fields
@@ -471,6 +497,7 @@ app.post('/api/users', authenticateToken, async (req, res) => {
       email: newUser.email,
       name: newUser.name,
       role: newUser.role,
+      isManager: newUser.isManager,
       hasServicePortalAccess: newUser.hasServicePortalAccess,
       hasAdminHubAccess: newUser.hasAdminHubAccess,
       hasImplementationsAccess: newUser.hasImplementationsAccess,
@@ -512,16 +539,20 @@ app.post('/api/auth/login', async (req, res) => {
       JWT_SECRET,
       { expiresIn: '24h' }
     );
+    const isManager = user.isManager || false;
     const userResponse = {
       id: user.id,
       email: user.email,
       name: user.name,
       role: user.role,
+      // Manager flag - provides limited admin access
+      isManager: isManager,
       // Include permission flags for all users
       hasServicePortalAccess: user.hasServicePortalAccess || false,
       hasAdminHubAccess: user.hasAdminHubAccess || false,
       hasImplementationsAccess: user.hasImplementationsAccess || false,
-      hasClientPortalAdminAccess: user.hasClientPortalAdminAccess || false,
+      // Managers automatically get client portal admin access
+      hasClientPortalAdminAccess: user.hasClientPortalAdminAccess || isManager || false,
       assignedProjects: user.assignedProjects || [],
       assignedClients: user.assignedClients || [],
       // Password reset flag
@@ -558,7 +589,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// Client portal login endpoint (also supports admin access to portal management)
+// Client portal login endpoint (supports admin, manager, and client access)
 app.post('/api/auth/client-login', async (req, res) => {
   try {
     const { email, password, slug } = req.body;
@@ -566,8 +597,8 @@ app.post('/api/auth/client-login', async (req, res) => {
       return res.status(400).json({ error: 'Missing credentials' });
     }
     const users = await getUsers();
-    // Allow both clients and admins to log into the portal
-    const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase() && (u.role === 'client' || u.role === 'admin'));
+    // Allow clients, admins (super admin), and managers to log into the portal
+    const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase() && (u.role === 'client' || u.role === 'admin' || u.isManager));
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
@@ -580,16 +611,21 @@ app.post('/api/auth/client-login', async (req, res) => {
       JWT_SECRET,
       { expiresIn: '24h' }
     );
-    res.json({ 
-      token, 
-      user: { 
-        id: user.id, 
-        email: user.email, 
-        name: user.name, 
+    const isManager = user.isManager || false;
+    // Admin and Manager get 'admin' slug for portal admin access
+    const effectiveSlug = (user.role === 'admin' || isManager) ? 'admin' : user.slug;
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
         role: user.role,
+        isManager: isManager,
+        hasClientPortalAdminAccess: user.hasClientPortalAdminAccess || isManager || user.role === 'admin',
         practiceName: user.practiceName,
         isNewClient: user.isNewClient,
-        slug: user.role === 'admin' ? 'admin' : user.slug,
+        slug: effectiveSlug,
         logo: user.logo || '',
         assignedProjects: user.assignedProjects || []
       }
@@ -766,8 +802,12 @@ app.get('/api/admin/activity-log', authenticateToken, requireAdmin, async (req, 
   }
 });
 
-// ============== USER MANAGEMENT (Admin Only) ==============
-app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
+// ============== USER MANAGEMENT (Super Admin, Manager, and Client Portal Admin) ==============
+app.get('/api/users', authenticateToken, async (req, res) => {
+  // Allow super admins, managers, and client portal admins to view users
+  if (req.user.role !== 'admin' && !req.user.isManager && !req.user.hasClientPortalAdminAccess) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
   try {
     const users = await getUsers();
     const safeUsers = users.map(u => ({
@@ -776,6 +816,8 @@ app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
       name: u.name,
       role: u.role,
       createdAt: u.createdAt,
+      // Manager flag
+      isManager: u.isManager || false,
       // Permission flags
       hasServicePortalAccess: u.hasServicePortalAccess || false,
       hasAdminHubAccess: u.hasAdminHubAccess || false,
@@ -809,7 +851,7 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
       name, email, role, password, assignedProjects, projectAccessLevels,
       practiceName, isNewClient, logo, hubspotCompanyId, hubspotDealId, hubspotContactId,
       hasServicePortalAccess, hasAdminHubAccess, hasImplementationsAccess, hasClientPortalAdminAccess,
-      assignedClients
+      isManager, assignedClients
     } = req.body;
     const users = await getUsers();
     const idx = users.findIndex(u => u.id === userId);
@@ -818,9 +860,16 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
     if (name) users[idx].name = name;
     if (email) users[idx].email = email;
     if (role) users[idx].role = role;
-    if (password) users[idx].password = await bcrypt.hash(password, 10);
+    if (password) {
+      users[idx].password = await bcrypt.hash(password, 10);
+      users[idx].requirePasswordChange = true;
+      users[idx].lastPasswordReset = new Date().toISOString();
+    }
     if (assignedProjects !== undefined) users[idx].assignedProjects = assignedProjects;
     if (projectAccessLevels !== undefined) users[idx].projectAccessLevels = projectAccessLevels;
+
+    // Manager flag - provides limited admin access
+    if (isManager !== undefined) users[idx].isManager = isManager;
 
     // Permission flags
     if (hasServicePortalAccess !== undefined) users[idx].hasServicePortalAccess = hasServicePortalAccess;
@@ -864,6 +913,7 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
       email: users[idx].email,
       name: users[idx].name,
       role: users[idx].role,
+      isManager: users[idx].isManager || false,
       hasServicePortalAccess: users[idx].hasServicePortalAccess || false,
       hasAdminHubAccess: users[idx].hasAdminHubAccess || false,
       hasImplementationsAccess: users[idx].hasImplementationsAccess || false,
@@ -896,6 +946,75 @@ app.delete('/api/users/:userId', authenticateToken, requireAdmin, async (req, re
     invalidateUsersCache();
     res.json({ message: 'User deleted' });
   } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============== CLIENT DETAILS (Manager-restricted) ==============
+// This endpoint allows Managers and Client Portal Admins to update ONLY client details
+// without access to sensitive fields like role, permissions, or passwords.
+// Changes sync with the main user record visible in Admin Hub User Management.
+app.put('/api/client-portal/clients/:clientId', authenticateToken, requireClientPortalAdmin, async (req, res) => {
+  try {
+    const { clientId } = req.params;
+    const { practiceName, logo, hubspotCompanyId, hubspotDealId, hubspotContactId } = req.body;
+
+    const users = await getUsers();
+    const idx = users.findIndex(u => u.id === clientId);
+
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+
+    // Only allow editing client users
+    if (users[idx].role !== 'client') {
+      return res.status(403).json({ error: 'Can only edit client users through this endpoint' });
+    }
+
+    // Update only allowed client details fields
+    if (practiceName !== undefined) {
+      users[idx].practiceName = practiceName;
+      // Regenerate slug if practice name changes
+      if (practiceName) {
+        const existingSlugs = users.filter((u, i) => i !== idx && u.slug).map(u => u.slug);
+        users[idx].slug = generateClientSlug(practiceName, existingSlugs);
+      }
+    }
+    if (logo !== undefined) users[idx].logo = logo;
+    if (hubspotCompanyId !== undefined) users[idx].hubspotCompanyId = hubspotCompanyId;
+    if (hubspotDealId !== undefined) users[idx].hubspotDealId = hubspotDealId;
+    if (hubspotContactId !== undefined) users[idx].hubspotContactId = hubspotContactId;
+
+    // Track modification
+    users[idx].updatedAt = new Date().toISOString();
+    users[idx].updatedBy = req.user.id;
+
+    await db.set('users', users);
+
+    // Log the activity
+    await logActivity(
+      req.user.id,
+      req.user.name,
+      'update_client_details',
+      'user',
+      clientId,
+      `Updated client details for ${users[idx].name} (${users[idx].practiceName || 'No practice name'})`
+    );
+
+    res.json({
+      id: users[idx].id,
+      name: users[idx].name,
+      email: users[idx].email,
+      practiceName: users[idx].practiceName || null,
+      slug: users[idx].slug || null,
+      logo: users[idx].logo || '',
+      hubspotCompanyId: users[idx].hubspotCompanyId || '',
+      hubspotDealId: users[idx].hubspotDealId || '',
+      hubspotContactId: users[idx].hubspotContactId || '',
+      updatedAt: users[idx].updatedAt
+    });
+  } catch (error) {
+    console.error('Error updating client details:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2129,7 +2248,7 @@ app.get('/api/announcements', async (req, res) => {
 // Create announcement (admin only)
 app.post('/api/announcements', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { title, content, type } = req.body;
+    const { title, content, type, priority, pinned, targetAll, targetClients, attachmentUrl, attachmentName } = req.body;
     if (!title || !content) {
       return res.status(400).json({ error: 'Title and content are required' });
     }
@@ -2139,6 +2258,12 @@ app.post('/api/announcements', authenticateToken, requireAdmin, async (req, res)
       title,
       content,
       type: type || 'info', // info, warning, success
+      priority: priority || false,
+      pinned: pinned || false,
+      targetAll: targetAll !== false,
+      targetClients: targetClients || [],
+      attachmentUrl: attachmentUrl || '',
+      attachmentName: attachmentName || '',
       createdAt: new Date().toISOString(),
       createdBy: req.user.name,
       createdById: req.user.id
@@ -2156,17 +2281,23 @@ app.post('/api/announcements', authenticateToken, requireAdmin, async (req, res)
 // Update announcement (admin only)
 app.put('/api/announcements/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { title, content, type } = req.body;
+    const { title, content, type, priority, pinned, targetAll, targetClients, attachmentUrl, attachmentName } = req.body;
     const announcements = (await db.get('announcements')) || [];
     const idx = announcements.findIndex(a => a.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'Announcement not found' });
-    
+
     if (title) announcements[idx].title = title;
     if (content) announcements[idx].content = content;
     if (type) announcements[idx].type = type;
+    if (priority !== undefined) announcements[idx].priority = priority;
+    if (pinned !== undefined) announcements[idx].pinned = pinned;
+    if (targetAll !== undefined) announcements[idx].targetAll = targetAll;
+    if (targetClients !== undefined) announcements[idx].targetClients = targetClients;
+    if (attachmentUrl !== undefined) announcements[idx].attachmentUrl = attachmentUrl;
+    if (attachmentName !== undefined) announcements[idx].attachmentName = attachmentName;
     announcements[idx].updatedAt = new Date().toISOString();
     announcements[idx].updatedBy = req.user.name;
-    
+
     await db.set('announcements', announcements);
     res.json(announcements[idx]);
   } catch (error) {
@@ -2183,6 +2314,35 @@ app.delete('/api/announcements/:id', authenticateToken, requireAdmin, async (req
     res.json({ message: 'Announcement deleted' });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Reset test data (admin only) - clears inventory submissions and announcements
+app.delete('/api/admin/reset-test-data', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { resetSubmissions, resetAnnouncements } = req.body || { resetSubmissions: true, resetAnnouncements: true };
+    const results = {};
+
+    if (resetSubmissions !== false) {
+      const oldSubmissions = (await db.get('inventory_submissions')) || [];
+      await db.set('inventory_submissions', []);
+      results.submissionsCleared = oldSubmissions.length;
+    }
+
+    if (resetAnnouncements !== false) {
+      const oldAnnouncements = (await db.get('announcements')) || [];
+      await db.set('announcements', []);
+      results.announcementsCleared = oldAnnouncements.length;
+    }
+
+    console.log(`[ADMIN] Test data reset by ${req.user.email}:`, results);
+    res.json({
+      message: 'Test data reset successfully',
+      ...results
+    });
+  } catch (error) {
+    console.error('Error resetting test data:', error);
+    res.status(500).json({ error: 'Failed to reset test data' });
   }
 });
 
@@ -2305,13 +2465,15 @@ app.put('/api/portal-settings', authenticateToken, requireAdmin, async (req, res
 app.get('/api/client-documents', authenticateToken, async (req, res) => {
   try {
     const documents = (await db.get('client_documents')) || [];
-    
+
     if (req.user.role === 'client') {
-      // Clients only see documents for their slug
-      const clientDocs = documents.filter(d => d.slug === req.user.slug && d.active);
+      // Clients see documents for their slug OR documents shared with all clients
+      const clientDocs = documents.filter(d =>
+        d.active && (d.slug === req.user.slug || d.shareWithAll === true)
+      );
       return res.json(clientDocs);
     }
-    
+
     // Admins see all documents
     res.json(documents);
   } catch (error) {
@@ -2327,7 +2489,10 @@ app.get('/api/client-documents/:slug', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
     const documents = (await db.get('client_documents')) || [];
-    const clientDocs = documents.filter(d => d.slug === req.params.slug && d.active);
+    // Include documents for specific slug OR documents shared with all clients
+    const clientDocs = documents.filter(d =>
+      d.active && (d.slug === req.params.slug || d.shareWithAll === true)
+    );
     res.json(clientDocs);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
@@ -2337,33 +2502,38 @@ app.get('/api/client-documents/:slug', authenticateToken, async (req, res) => {
 // Add a document for a client (admin only)
 app.post('/api/client-documents', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { slug, title, description, url, category } = req.body;
-    if (!slug || !title || !url) {
-      return res.status(400).json({ error: 'Missing required fields (slug, title, url)' });
+    const { slug, title, description, url, category, shareWithAll } = req.body;
+    // slug is not required if shareWithAll is true
+    if (!title || !url) {
+      return res.status(400).json({ error: 'Missing required fields (title, url)' });
     }
-    
+    if (!shareWithAll && !slug) {
+      return res.status(400).json({ error: 'Either slug or shareWithAll must be provided' });
+    }
+
     const documents = (await db.get('client_documents')) || [];
     const newDoc = {
       id: require('uuid').v4(),
-      slug,
+      slug: shareWithAll ? null : slug,
       title,
       description: description || '',
       url,
       category: category || 'General',
+      shareWithAll: shareWithAll || false,
       active: true,
       createdAt: new Date().toISOString(),
       createdBy: req.user.name
     };
-    
+
     documents.push(newDoc);
     await db.set('client_documents', documents);
-    
+
     // Log activity
     await logActivity(null, 'document_added', req.user.name, {
       documentTitle: title,
-      clientSlug: slug
+      clientSlug: shareWithAll ? 'ALL CLIENTS' : slug
     });
-    
+
     res.json(newDoc);
   } catch (error) {
     console.error('Add document error:', error);
@@ -2379,8 +2549,8 @@ app.put('/api/client-documents/:id', authenticateToken, requireAdmin, async (req
     if (idx === -1) {
       return res.status(404).json({ error: 'Document not found' });
     }
-    
-    const { title, description, url, category, active } = req.body;
+
+    const { title, description, url, category, active, shareWithAll, slug } = req.body;
     documents[idx] = {
       ...documents[idx],
       title: title || documents[idx].title,
@@ -2388,10 +2558,12 @@ app.put('/api/client-documents/:id', authenticateToken, requireAdmin, async (req
       url: url || documents[idx].url,
       category: category || documents[idx].category,
       active: active !== undefined ? active : documents[idx].active,
+      shareWithAll: shareWithAll !== undefined ? shareWithAll : documents[idx].shareWithAll,
+      slug: shareWithAll ? null : (slug !== undefined ? slug : documents[idx].slug),
       updatedAt: new Date().toISOString(),
       updatedBy: req.user.name
     };
-    
+
     await db.set('client_documents', documents);
     res.json(documents[idx]);
   } catch (error) {
@@ -2424,35 +2596,38 @@ app.delete('/api/client-documents/:slug/:docId', authenticateToken, requireAdmin
 });
 
 // Upload file as client document (admin only) - stores file and creates document entry
+// Use slug="all" to upload to all clients (shareWithAll)
 app.post('/api/client-documents/:slug/upload', authenticateToken, requireAdmin, uploadLimiter, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file provided' });
     }
-    
+
     const { title, description, category } = req.body;
-    const slug = req.params.slug;
-    
+    const slugParam = req.params.slug;
+    const isAllClients = slugParam === 'all';
+
     // Create a unique filename
     const ext = require('path').extname(req.file.originalname);
     const uniqueName = `${uuidv4()}${ext}`;
     const uploadsDir = require('path').join(__dirname, 'uploads', 'documents');
-    
+
     // Ensure uploads directory exists
     const fs = require('fs');
     if (!fs.existsSync(uploadsDir)) {
       fs.mkdirSync(uploadsDir, { recursive: true });
     }
-    
+
     // Save the file
     const filePath = require('path').join(uploadsDir, uniqueName);
     fs.writeFileSync(filePath, req.file.buffer);
-    
+
     // Create the document entry with a URL pointing to the file
     const documents = (await db.get('client_documents')) || [];
     const newDoc = {
       id: uuidv4(),
-      slug: slug,
+      slug: isAllClients ? null : slugParam,
+      shareWithAll: isAllClients,
       title: title || req.file.originalname,
       description: description || '',
       category: category || 'General',
@@ -2463,10 +2638,16 @@ app.post('/api/client-documents/:slug/upload', authenticateToken, requireAdmin, 
       createdAt: new Date().toISOString(),
       createdBy: req.user.name
     };
-    
+
     documents.push(newDoc);
     await db.set('client_documents', documents);
-    
+
+    // Log activity
+    await logActivity(null, 'document_added', req.user.name, {
+      documentTitle: newDoc.title,
+      clientSlug: isAllClients ? 'ALL CLIENTS' : slugParam
+    });
+
     res.json(newDoc);
   } catch (error) {
     console.error('Document upload error:', error);
@@ -2704,7 +2885,70 @@ app.post('/api/client/hubspot/upload', authenticateToken, uploadLimiter, upload.
 });
 
 // ============== CLIENT HUBSPOT TICKETS ==============
+
+// Webhook endpoint for HubSpot to register portal-created tickets
+// HubSpot workflow should call this when a ticket is created from the portal form
+app.post('/api/webhook/hubspot/ticket-created', async (req, res) => {
+  try {
+    const { ticketId, contactEmail, companyId, subject } = req.body;
+
+    if (!ticketId) {
+      return res.status(400).json({ error: 'ticketId is required' });
+    }
+
+    // Get or create portal_tickets collection
+    const portalTickets = (await db.get('portal_tickets')) || [];
+
+    // Check if already registered
+    if (portalTickets.find(t => t.ticketId === ticketId)) {
+      return res.json({ message: 'Ticket already registered', ticketId });
+    }
+
+    // Add the ticket to portal tracking
+    portalTickets.push({
+      ticketId: String(ticketId),
+      contactEmail: contactEmail || '',
+      companyId: companyId || '',
+      subject: subject || '',
+      registeredAt: new Date().toISOString()
+    });
+
+    // Keep only last 1000 portal tickets
+    if (portalTickets.length > 1000) portalTickets.length = 1000;
+
+    await db.set('portal_tickets', portalTickets);
+    console.log(`🎫 Portal ticket registered: ${ticketId} for ${contactEmail || companyId}`);
+
+    res.json({ success: true, ticketId, message: 'Ticket registered for portal display' });
+  } catch (error) {
+    console.error('Error registering portal ticket:', error);
+    res.status(500).json({ error: 'Failed to register ticket' });
+  }
+});
+
+// Admin endpoint to view/manage portal tickets
+app.get('/api/admin/portal-tickets', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const portalTickets = (await db.get('portal_tickets')) || [];
+    res.json({ tickets: portalTickets, count: portalTickets.length });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch portal tickets' });
+  }
+});
+
+// Admin endpoint to clear portal tickets (for testing)
+app.delete('/api/admin/portal-tickets', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const old = (await db.get('portal_tickets')) || [];
+    await db.set('portal_tickets', []);
+    res.json({ message: 'Portal tickets cleared', cleared: old.length });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to clear portal tickets' });
+  }
+});
+
 // Fetch support tickets from HubSpot for the logged-in client
+// Only shows tickets that were created through the portal (tracked in portal_tickets)
 app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
   try {
     // Only clients can use this endpoint
@@ -2735,6 +2979,11 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
       console.log(`🎫 No HubSpot IDs configured for ${clientUser.username}`);
       return res.json({ tickets: [], message: 'No HubSpot account linked' });
     }
+
+    // Get portal-tracked ticket IDs (only show tickets created through portal)
+    let portalTickets = (await db.get('portal_tickets')) || [];
+    let portalTicketIds = new Set(portalTickets.map(t => String(t.ticketId)));
+    console.log(`🎫 Portal has ${portalTicketIds.size} tracked tickets`);
 
     let tickets = [];
 
@@ -2778,6 +3027,42 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
       }
     }
 
+    // Auto-register form-submitted tickets that aren't already in portal_tickets
+    // This allows tickets created via HubSpot forms to appear without needing the automation webhook
+    const formSources = ['FORM', 'FORMS', 'Form submission'];
+    const unregisteredFormTickets = tickets.filter(t => {
+      const isFormSubmitted = formSources.includes(t.source) ||
+                              (t.sourceLabel && t.sourceLabel.toLowerCase().includes('form'));
+      const notRegistered = !portalTicketIds.has(String(t.id));
+      return isFormSubmitted && notRegistered;
+    });
+
+    if (unregisteredFormTickets.length > 0) {
+      console.log(`🎫 Auto-registering ${unregisteredFormTickets.length} form-submitted tickets`);
+      for (const ticket of unregisteredFormTickets) {
+        portalTickets.unshift({
+          ticketId: String(ticket.id),
+          companyId: hubspotCompanyId || null,
+          contactEmail: clientUser.email || clientUser.username,
+          registeredAt: new Date().toISOString(),
+          autoRegistered: true,
+          source: ticket.source || 'FORM'
+        });
+        console.log(`   - Registered ticket ${ticket.id} (source: ${ticket.source || ticket.sourceLabel})`);
+      }
+      // Keep only last 1000 portal tickets
+      if (portalTickets.length > 1000) portalTickets.length = 1000;
+      await db.set('portal_tickets', portalTickets);
+      // Update the set for filtering
+      portalTicketIds = new Set(portalTickets.map(t => String(t.ticketId)));
+    }
+
+    // Filter to only show tickets created through the portal
+    // (tickets must be registered via the webhook from HubSpot workflow OR auto-registered from form submissions)
+    const totalFetched = tickets.length;
+    tickets = tickets.filter(t => portalTicketIds.has(String(t.id)));
+    console.log(`🎫 Filtered ${totalFetched} -> ${tickets.length} portal-only tickets`);
+
     // Sort by creation date, newest first
     tickets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
@@ -2786,6 +3071,77 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error fetching client tickets:', error);
     res.status(500).json({ error: error.message || 'Failed to fetch tickets' });
+  }
+});
+
+// Get service reports for clients (Service History)
+app.get('/api/client/service-reports', authenticateToken, async (req, res) => {
+  try {
+    // Only clients can use this endpoint
+    if (req.user.role !== 'client') {
+      return res.status(403).json({ error: 'Client access required' });
+    }
+
+    // Get fresh user data with HubSpot IDs
+    const users = await getUsers();
+    const clientUser = users.find(u => u.id === req.user.id);
+
+    if (!clientUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const hubspotCompanyId = clientUser.hubspotCompanyId || '';
+    const clientSlug = clientUser.slug || '';
+    const practiceName = clientUser.practiceName || clientUser.name || '';
+
+    console.log(`📋 Service reports fetch for ${clientUser.username}:`);
+    console.log(`   - Company ID: "${hubspotCompanyId}"`);
+    console.log(`   - Slug: "${clientSlug}"`);
+    console.log(`   - Practice: "${practiceName}"`);
+
+    // Fetch all service reports
+    const serviceReports = (await db.get('service_reports')) || [];
+
+    // Filter reports for this client by:
+    // 1. Matching hubspotCompanyId
+    // 2. Or matching client name/practice name (fallback)
+    const clientReports = serviceReports.filter(report => {
+      if (hubspotCompanyId && report.hubspotCompanyId === hubspotCompanyId) {
+        return true;
+      }
+      // Fallback: match by client name
+      const reportClient = (report.clientFacilityName || '').toLowerCase();
+      const userPractice = practiceName.toLowerCase();
+      if (userPractice && reportClient.includes(userPractice)) {
+        return true;
+      }
+      return false;
+    });
+
+    // Sort by creation date, newest first
+    clientReports.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    console.log(`📋 Found ${clientReports.length} service reports for ${clientUser.username}`);
+
+    // Map to a cleaner format for the frontend
+    const reports = clientReports.map(r => ({
+      id: r.id,
+      subject: `${r.serviceType} - ${r.clientFacilityName}`,
+      serviceType: r.serviceType,
+      technicianName: r.technicianName || r.serviceProviderName,
+      ticketNumber: r.hubspotTicketId || r.hubspotTicketNumber || null,
+      createdAt: r.createdAt,
+      completedAt: r.serviceCompletionDate || r.createdAt,
+      status: 'Completed',
+      description: r.descriptionOfWork || r.validationResults || '',
+      pdfUrl: r.pdfUrl || null,
+      driveFileId: r.driveFileId || null
+    }));
+
+    res.json({ reports, count: reports.length });
+  } catch (error) {
+    console.error('Error fetching client service reports:', error);
+    res.status(500).json({ error: error.message || 'Failed to fetch service reports' });
   }
 });
 
@@ -3178,6 +3534,49 @@ app.post('/api/inventory/submit', authenticateToken, async (req, res) => {
   }
 });
 
+// Delete inventory submissions (Super Admin & Manager only)
+app.delete('/api/inventory/submissions', authenticateToken, async (req, res) => {
+  try {
+    // Only allow Super Admins and Managers
+    if (req.user.role !== 'admin' && !req.user.isManager) {
+      return res.status(403).json({ error: 'Access denied. Only Super Admins and Managers can delete submissions.' });
+    }
+
+    const { submissionIds, slug } = req.body;
+
+    if (!submissionIds || !Array.isArray(submissionIds) || submissionIds.length === 0) {
+      return res.status(400).json({ error: 'submissionIds array is required' });
+    }
+
+    const allSubmissions = (await db.get('inventory_submissions')) || [];
+    const idsToDelete = new Set(submissionIds);
+
+    // Filter out submissions that match the IDs and optionally the slug
+    const remainingSubmissions = allSubmissions.filter(s => {
+      if (slug && s.slug !== slug) return true; // Keep submissions from other clients
+      return !idsToDelete.has(s.id);
+    });
+
+    const deletedCount = allSubmissions.length - remainingSubmissions.length;
+
+    await db.set('inventory_submissions', remainingSubmissions);
+
+    await logActivity(
+      req.user.id || null,
+      req.user.name || req.user.email,
+      'inventory_submissions_deleted',
+      'inventory',
+      null,
+      { slug, deletedCount, submissionIds }
+    );
+
+    res.json({ success: true, deletedCount });
+  } catch (error) {
+    console.error('Delete submissions error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.get('/api/inventory/report/:slug', authenticateToken, async (req, res) => {
   try {
     const { slug } = req.params;
@@ -3349,7 +3748,8 @@ app.get('/api/inventory/report/:slug', authenticateToken, async (req, res) => {
 });
 
 // ============== ADMIN AGGREGATE INVENTORY REPORT ==============
-app.get('/api/inventory/report-all', authenticateToken, requireAdmin, async (req, res) => {
+// Allow Super Admins, Managers, and Client Portal Admins to access
+app.get('/api/inventory/report-all', authenticateToken, requireClientPortalAdmin, async (req, res) => {
   try {
     const allSubmissions = (await db.get('inventory_submissions')) || [];
     const users = await getUsers();
@@ -4854,8 +5254,10 @@ app.post('/api/auth/service-login', async (req, res) => {
 
 // Middleware to check service portal access
 const requireServiceAccess = (req, res, next) => {
-  // Admins always have access
+  // Super Admins always have access
   if (req.user.role === 'admin') return next();
+  // Managers have access to service portal (part of their Admin Hub access)
+  if (req.user.isManager) return next();
   // Vendors always have service portal access
   if (req.user.role === 'vendor') return next();
   // Users with explicit service portal access
@@ -4869,20 +5271,28 @@ app.get('/api/service-portal/data', authenticateToken, requireServiceAccess, asy
     const serviceReports = (await db.get('service_reports')) || [];
     let userReports;
 
-    if (req.user.role === 'admin') {
-      // Admins see all reports
+    if (req.user.role === 'admin' || (req.user.isManager && req.user.hasServicePortalAccess)) {
+      // Super Admins and Managers with Service Portal access see all reports
       userReports = serviceReports;
     } else if (req.user.role === 'vendor') {
-      // Vendors see their own reports + reports for their assigned clients
+      // Vendors see their own reports + reports assigned to them + reports for their assigned clients
       const assignedClients = req.user.assignedClients || [];
       userReports = serviceReports.filter(r =>
         r.technicianId === req.user.id ||
+        r.assignedToId === req.user.id ||
         assignedClients.includes(r.clientFacilityName)
       );
     } else {
-      // Regular users with service access see only their own reports
-      userReports = serviceReports.filter(r => r.technicianId === req.user.id);
+      // Regular users with service access see their own reports + reports assigned to them
+      userReports = serviceReports.filter(r =>
+        r.technicianId === req.user.id ||
+        r.assignedToId === req.user.id
+      );
     }
+
+    // Exclude assigned reports from recentReports since they're tracked separately in assignedReports
+    // This prevents double-counting in the "My Reports" counter
+    userReports = userReports.filter(r => r.status !== 'assigned');
 
     // Sort by date descending
     userReports.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -4967,6 +5377,7 @@ app.post('/api/service-reports', authenticateToken, requireServiceAccess, async 
       technicianId: req.user.id,
       technicianName: req.user.name,
       createdAt: new Date().toISOString(),
+      submittedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
 
@@ -5167,6 +5578,57 @@ app.get('/api/service-reports', authenticateToken, requireServiceAccess, async (
   }
 });
 
+// Get assigned service reports for the current technician/vendor
+// IMPORTANT: This route must come BEFORE /:id to avoid "assigned" being treated as an ID
+app.get('/api/service-reports/assigned', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+
+    console.log('=== ASSIGNED REPORTS DEBUG ===');
+    console.log('User ID:', req.user.id, 'Type:', typeof req.user.id);
+    console.log('User Role:', req.user.role);
+    console.log('User Name:', req.user.name);
+    console.log('Total reports in DB:', serviceReports.length);
+
+    // Log all assigned reports for debugging
+    const allAssignedReports = serviceReports.filter(r => r.status === 'assigned');
+    console.log('All reports with status=assigned:', allAssignedReports.length);
+    allAssignedReports.forEach(r => {
+      console.log(`  Report ${r.id.substring(0, 8)}: assignedToId=${r.assignedToId} (type: ${typeof r.assignedToId}), client=${r.clientFacilityName}, status=${r.status}`);
+    });
+
+    // Filter reports assigned to this user that haven't been submitted yet
+    // Convert both IDs to strings to ensure proper comparison regardless of type
+    const userIdString = String(req.user.id);
+    let assignedReports = serviceReports.filter(r => {
+      const reportAssignedId = String(r.assignedToId || '');
+      const idMatch = reportAssignedId === userIdString;
+      const statusMatch = r.status === 'assigned';
+      if (r.status === 'assigned') {
+        console.log(`  Checking report ${r.id?.substring(0, 8)}: assignedToId="${r.assignedToId}" (converted: "${reportAssignedId}") === userId="${req.user.id}" (converted: "${userIdString}")? ${idMatch}, status=${r.status}==='assigned'? ${statusMatch}`);
+      }
+      return idMatch && statusMatch;
+    });
+
+    console.log('Matched reports for user:', assignedReports.length);
+
+    // NOTE: Client filtering removed - vendors should see ALL reports assigned to them
+    // The act of assigning a report to a vendor implicitly grants access to that client
+    // No additional client filtering needed
+
+    // Sort by assignment date (most recent first)
+    assignedReports.sort((a, b) => new Date(b.assignedAt) - new Date(a.assignedAt));
+
+    console.log('Final assigned reports count:', assignedReports.length);
+    console.log('=== END DEBUG ===');
+
+    res.json(assignedReports);
+  } catch (error) {
+    console.error('Get assigned service reports error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Get single service report
 app.get('/api/service-reports/:id', authenticateToken, requireServiceAccess, async (req, res) => {
   try {
@@ -5197,8 +5659,26 @@ app.put('/api/service-reports/:id', authenticateToken, requireServiceAccess, asy
     const existingReport = serviceReports[reportIndex];
 
     // Only allow editing own reports unless admin
-    if (req.user.role !== 'admin' && existingReport.technicianId !== req.user.id) {
+    // Convert to strings for reliable comparison
+    const isTechnician = String(existingReport.technicianId || '') === String(req.user.id);
+    const isAssigned = String(existingReport.assignedToId || '') === String(req.user.id);
+    if (req.user.role !== 'admin' && !isTechnician && !isAssigned) {
+      console.log(`Edit authorization failed: technicianId="${existingReport.technicianId}" and assignedToId="${existingReport.assignedToId}" don't match userId="${req.user.id}"`);
       return res.status(403).json({ error: 'Not authorized to edit this report' });
+    }
+
+    // Check 30-minute edit window for submitted reports (admins can always edit)
+    if (req.user.role !== 'admin' && existingReport.submittedAt) {
+      const submittedTime = new Date(existingReport.submittedAt);
+      const currentTime = new Date();
+      const minutesElapsed = (currentTime - submittedTime) / (1000 * 60);
+
+      if (minutesElapsed > 30) {
+        return res.status(403).json({
+          error: 'Edit window has expired. Reports can only be edited within 30 minutes of submission.',
+          minutesElapsed: Math.floor(minutesElapsed)
+        });
+      }
     }
 
     // Whitelist allowed fields for service report updates
@@ -5247,6 +5727,549 @@ app.delete('/api/service-reports/:id', authenticateToken, requireAdmin, async (r
     res.json({ message: 'Report deleted successfully' });
   } catch (error) {
     console.error('Delete service report error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Batch delete service reports (Super Admin can delete any, Service Technicians can delete their own)
+app.delete('/api/service-reports', authenticateToken, async (req, res) => {
+  try {
+    const { reportIds } = req.body;
+    const isSuperAdmin = req.user.role === 'admin';
+    const isServiceTechnician = req.user.role === 'vendor' || req.user.hasServicePortalAccess;
+
+    // Only Super Admins and Service Technicians can delete
+    if (!isSuperAdmin && !isServiceTechnician) {
+      return res.status(403).json({ error: 'Access denied. Only Super Admins and Service Technicians can delete reports.' });
+    }
+
+    if (!reportIds || !Array.isArray(reportIds) || reportIds.length === 0) {
+      return res.status(400).json({ error: 'reportIds array is required' });
+    }
+
+    let serviceReports = (await db.get('service_reports')) || [];
+    const idsToDelete = new Set(reportIds);
+    const initialCount = serviceReports.length;
+
+    // For service technicians, only allow deleting their own reports
+    if (!isSuperAdmin) {
+      const reportsToDelete = serviceReports.filter(r => idsToDelete.has(r.id));
+      const unauthorizedReports = reportsToDelete.filter(r => r.technicianId !== req.user.id);
+      if (unauthorizedReports.length > 0) {
+        return res.status(403).json({ error: 'You can only delete your own reports.' });
+      }
+    }
+
+    serviceReports = serviceReports.filter(r => !idsToDelete.has(r.id));
+    const deletedCount = initialCount - serviceReports.length;
+
+    await db.set('service_reports', serviceReports);
+
+    await logActivity(
+      req.user.id || null,
+      req.user.name || req.user.email,
+      'service_reports_deleted',
+      'service_reports',
+      null,
+      { deletedCount, reportIds }
+    );
+
+    res.json({ success: true, deletedCount });
+  } catch (error) {
+    console.error('Batch delete service reports error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============== SERVICE REPORT ASSIGNMENTS (Manager/Admin assigns to Technician/Vendor) ==============
+
+// Create and assign service report to technician/vendor (admin/manager with service access only)
+app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
+  try {
+    // Only admins and managers with service portal access can assign service reports
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
+      return res.status(403).json({ error: 'Only admins and managers can assign service reports' });
+    }
+
+    const {
+      assignedToId,
+      clientFacilityName,
+      customerName,
+      address,
+      serviceType,
+      analyzerModel,
+      analyzerSerialNumber,
+      hubspotTicketNumber,
+      hubspotCompanyId,
+      hubspotDealId,
+      managerNotes,
+      photos,
+      clientFiles,
+      serviceCompletionDate
+    } = req.body;
+
+    if (!assignedToId || !clientFacilityName) {
+      return res.status(400).json({ error: 'Assigned technician and client facility name are required' });
+    }
+
+    console.log('=== ASSIGN REPORT DEBUG ===');
+    console.log('assignedToId from request:', assignedToId, 'Type:', typeof assignedToId);
+
+    // Verify the assigned user exists and has service access
+    const users = (await db.get('users')) || [];
+    console.log('Total users in DB:', users.length);
+
+    // Use string comparison for finding user
+    const assignedUser = users.find(u => String(u.id) === String(assignedToId));
+    console.log('Found assigned user:', assignedUser ? assignedUser.name : 'NOT FOUND');
+
+    if (!assignedUser) {
+      console.log('Available user IDs:', users.map(u => `${u.id} (${typeof u.id})`));
+      return res.status(400).json({ error: 'Assigned user not found' });
+    }
+    if (assignedUser.role !== 'vendor' && assignedUser.role !== 'admin' && !assignedUser.hasServicePortalAccess) {
+      return res.status(400).json({ error: 'Assigned user does not have service portal access' });
+    }
+
+    const serviceReports = (await db.get('service_reports')) || [];
+
+    const newReport = {
+      id: uuidv4(),
+      // Assignment info
+      status: 'assigned',
+      assignedToId,
+      assignedToName: assignedUser.name,
+      assignedById: req.user.id,
+      assignedByName: req.user.name,
+      assignedAt: new Date().toISOString(),
+      // Pre-filled info by manager
+      clientFacilityName,
+      customerName: customerName || '',
+      serviceProviderName: assignedUser.name,
+      address: address || '',
+      serviceType: serviceType || '',
+      analyzerModel: analyzerModel || '',
+      analyzerSerialNumber: analyzerSerialNumber || '',
+      hubspotTicketNumber: hubspotTicketNumber || '',
+      hubspotCompanyId: hubspotCompanyId || '',
+      hubspotDealId: hubspotDealId || '',
+      serviceCompletionDate: serviceCompletionDate || '',
+      // Manager-only fields
+      managerNotes: managerNotes || '',
+      photos: photos || [], // Array of { id, url, name, uploadedAt }
+      clientFiles: clientFiles || [], // Array of { id, url, name, uploadedAt }
+      // Technician fields (to be filled when completing)
+      technicianId: null,
+      technicianName: null,
+      descriptionOfWork: '',
+      materialsUsed: '',
+      solution: '',
+      outstandingIssues: '',
+      validationResults: '',
+      validationStartDate: '',
+      validationEndDate: '',
+      trainingProvided: '',
+      testProcedures: '',
+      recommendations: '',
+      analyzersValidated: [],
+      customerSignature: null,
+      customerSignatureDate: null,
+      technicianSignature: null,
+      technicianSignatureDate: null,
+      // Metadata
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    serviceReports.push(newReport);
+    await db.set('service_reports', serviceReports);
+
+    console.log('Created report:', {
+      id: newReport.id.substring(0, 8),
+      assignedToId: newReport.assignedToId,
+      assignedToIdType: typeof newReport.assignedToId,
+      assignedToName: newReport.assignedToName,
+      status: newReport.status,
+      client: newReport.clientFacilityName
+    });
+    console.log('=== END ASSIGN DEBUG ===');
+
+    // Log activity
+    await logActivity(
+      req.user.id,
+      req.user.name,
+      'service_report_assigned',
+      'service_report',
+      newReport.id,
+      { clientName: clientFacilityName, assignedTo: assignedUser.name }
+    );
+
+    res.json(newReport);
+  } catch (error) {
+    console.error('Assign service report error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Complete an assigned service report (technician/vendor submits their portion)
+app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const existingReport = serviceReports[reportIndex];
+
+    // Only the assigned technician can complete the report
+    // Convert to strings for reliable comparison
+    const isAssignedToUser = String(existingReport.assignedToId) === String(req.user.id);
+    if (!isAssignedToUser && req.user.role !== 'admin') {
+      console.log(`Authorization failed: assignedToId="${existingReport.assignedToId}" !== userId="${req.user.id}"`);
+      return res.status(403).json({ error: 'Not authorized to complete this report' });
+    }
+
+    // Verify it's an assigned report
+    if (existingReport.status !== 'assigned') {
+      return res.status(400).json({ error: 'This report is not in assigned status' });
+    }
+
+    const {
+      descriptionOfWork,
+      materialsUsed,
+      solution,
+      outstandingIssues,
+      validationResults,
+      validationStartDate,
+      validationEndDate,
+      trainingProvided,
+      testProcedures,
+      recommendations,
+      analyzersValidated,
+      customerSignature,
+      customerSignatureDate,
+      technicianSignature,
+      technicianSignatureDate,
+      serviceCompletionDate,
+      analyzerSerialNumber
+    } = req.body;
+
+    // Update the report with technician-provided info
+    serviceReports[reportIndex] = {
+      ...existingReport,
+      status: 'submitted',
+      technicianId: req.user.id,
+      technicianName: req.user.name,
+      // Technician-editable fields
+      descriptionOfWork: descriptionOfWork || existingReport.descriptionOfWork,
+      materialsUsed: materialsUsed || existingReport.materialsUsed,
+      solution: solution || existingReport.solution,
+      outstandingIssues: outstandingIssues || existingReport.outstandingIssues,
+      validationResults: validationResults || existingReport.validationResults,
+      validationStartDate: validationStartDate || existingReport.validationStartDate,
+      validationEndDate: validationEndDate || existingReport.validationEndDate,
+      trainingProvided: trainingProvided || existingReport.trainingProvided,
+      testProcedures: testProcedures || existingReport.testProcedures,
+      recommendations: recommendations || existingReport.recommendations,
+      analyzersValidated: analyzersValidated || existingReport.analyzersValidated,
+      customerSignature: customerSignature || existingReport.customerSignature,
+      customerSignatureDate: customerSignatureDate || existingReport.customerSignatureDate,
+      technicianSignature: technicianSignature || existingReport.technicianSignature,
+      technicianSignatureDate: technicianSignatureDate || existingReport.technicianSignatureDate,
+      serviceCompletionDate: serviceCompletionDate || existingReport.serviceCompletionDate || new Date().toISOString().split('T')[0],
+      analyzerSerialNumber: analyzerSerialNumber || existingReport.analyzerSerialNumber,
+      serviceProviderName: req.user.name,
+      completedAt: new Date().toISOString(),
+      submittedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    await db.set('service_reports', serviceReports);
+
+    const completedReport = serviceReports[reportIndex];
+
+    // Log activity
+    await logActivity(
+      req.user.id,
+      req.user.name,
+      'service_report_completed',
+      'service_report',
+      completedReport.id,
+      { clientName: completedReport.clientFacilityName, serviceType: completedReport.serviceType }
+    );
+
+    // Upload to HubSpot if company ID is available
+    if (completedReport.hubspotCompanyId && hubspot.isValidRecordId(completedReport.hubspotCompanyId)) {
+      try {
+        const reportDate = new Date(completedReport.serviceCompletionDate || completedReport.createdAt).toLocaleDateString();
+        console.log(`📄 Generating PDF for completed assigned service report: ${completedReport.clientFacilityName}`);
+        const pdfBuffer = await pdfGenerator.generateServiceReportPDF(completedReport, req.user.name);
+
+        const fileName = `Service_Report_${completedReport.clientFacilityName.replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate.replace(/\//g, '-')}.pdf`;
+        const noteText = `Service Report Completed\n\nClient: ${completedReport.clientFacilityName}\nService Type: ${completedReport.serviceType}\nTechnician: ${req.user.name}\nTicket #: ${completedReport.hubspotTicketNumber || 'N/A'}`;
+
+        const uploadResult = await hubspot.uploadFileAndAttachToRecord(
+          completedReport.hubspotCompanyId,
+          pdfBuffer.toString('base64'),
+          fileName,
+          noteText,
+          {
+            recordType: 'companies',
+            folderPath: '/service-reports',
+            notePrefix: '[Service Portal]',
+            isBase64: true
+          }
+        );
+
+        serviceReports[reportIndex].hubspotFileId = uploadResult.fileId;
+        serviceReports[reportIndex].hubspotNoteId = uploadResult.noteId;
+        await db.set('service_reports', serviceReports);
+
+        console.log(`✅ Completed service report PDF uploaded to HubSpot for company ${completedReport.hubspotCompanyId}`);
+      } catch (hubspotError) {
+        console.error('HubSpot upload error (non-blocking):', hubspotError.message);
+      }
+    }
+
+    res.json(serviceReports[reportIndex]);
+  } catch (error) {
+    console.error('Complete service report error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Upload photos to service report (admin/manager with service access only)
+app.post('/api/service-reports/:id/photos', authenticateToken, upload.array('photos', 10), async (req, res) => {
+  try {
+    // Only admins and managers with service portal access can upload photos
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
+      return res.status(403).json({ error: 'Only admins and managers can upload photos' });
+    }
+
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'No photos provided' });
+    }
+
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = serviceReports[reportIndex];
+    const photos = report.photos || [];
+
+    // Save photos to uploads directory
+    const uploadDir = path.join(__dirname, 'public', 'uploads', 'service-photos');
+    await fs.mkdir(uploadDir, { recursive: true });
+
+    for (const file of req.files) {
+      const fileId = uuidv4();
+      const ext = path.extname(file.originalname) || '.jpg';
+      const fileName = `${fileId}${ext}`;
+      const filePath = path.join(uploadDir, fileName);
+
+      await fs.writeFile(filePath, file.buffer);
+
+      photos.push({
+        id: fileId,
+        name: file.originalname,
+        url: `/uploads/service-photos/${fileName}`,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: req.user.name
+      });
+    }
+
+    serviceReports[reportIndex].photos = photos;
+    serviceReports[reportIndex].updatedAt = new Date().toISOString();
+    await db.set('service_reports', serviceReports);
+
+    res.json({ photos: serviceReports[reportIndex].photos });
+  } catch (error) {
+    console.error('Upload photos error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Upload client files to service report (admin/manager with service access only)
+app.post('/api/service-reports/:id/files', authenticateToken, upload.array('files', 10), async (req, res) => {
+  try {
+    // Only admins and managers with service portal access can upload client files
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
+      return res.status(403).json({ error: 'Only admins and managers can upload client files' });
+    }
+
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'No files provided' });
+    }
+
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = serviceReports[reportIndex];
+    const clientFiles = report.clientFiles || [];
+
+    // Save files to uploads directory
+    const uploadDir = path.join(__dirname, 'public', 'uploads', 'service-files');
+    await fs.mkdir(uploadDir, { recursive: true });
+
+    for (const file of req.files) {
+      const fileId = uuidv4();
+      const ext = path.extname(file.originalname) || '';
+      const fileName = `${fileId}${ext}`;
+      const filePath = path.join(uploadDir, fileName);
+
+      await fs.writeFile(filePath, file.buffer);
+
+      clientFiles.push({
+        id: fileId,
+        name: file.originalname,
+        url: `/uploads/service-files/${fileName}`,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: req.user.name
+      });
+    }
+
+    serviceReports[reportIndex].clientFiles = clientFiles;
+    serviceReports[reportIndex].updatedAt = new Date().toISOString();
+    await db.set('service_reports', serviceReports);
+
+    res.json({ clientFiles: serviceReports[reportIndex].clientFiles });
+  } catch (error) {
+    console.error('Upload client files error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete photo from service report (admin/manager with service access only)
+app.delete('/api/service-reports/:id/photos/:photoId', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
+      return res.status(403).json({ error: 'Only admins and managers can delete photos' });
+    }
+
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = serviceReports[reportIndex];
+    const photo = (report.photos || []).find(p => p.id === req.params.photoId);
+
+    if (photo) {
+      // Delete file from disk
+      try {
+        const filePath = path.join(__dirname, 'public', photo.url);
+        await fs.unlink(filePath);
+      } catch (e) { /* file may not exist */ }
+    }
+
+    serviceReports[reportIndex].photos = (report.photos || []).filter(p => p.id !== req.params.photoId);
+    serviceReports[reportIndex].updatedAt = new Date().toISOString();
+    await db.set('service_reports', serviceReports);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete photo error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete client file from service report (admin/manager with service access only)
+app.delete('/api/service-reports/:id/files/:fileId', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
+      return res.status(403).json({ error: 'Only admins and managers can delete files' });
+    }
+
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = serviceReports[reportIndex];
+    const file = (report.clientFiles || []).find(f => f.id === req.params.fileId);
+
+    if (file) {
+      // Delete file from disk
+      try {
+        const filePath = path.join(__dirname, 'public', file.url);
+        await fs.unlink(filePath);
+      } catch (e) { /* file may not exist */ }
+    }
+
+    serviceReports[reportIndex].clientFiles = (report.clientFiles || []).filter(f => f.id !== req.params.fileId);
+    serviceReports[reportIndex].updatedAt = new Date().toISOString();
+    await db.set('service_reports', serviceReports);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete client file error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update manager notes on service report (admin/manager with service access only)
+app.put('/api/service-reports/:id/manager-notes', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
+      return res.status(403).json({ error: 'Only admins and managers can update manager notes' });
+    }
+
+    const { managerNotes } = req.body;
+
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    serviceReports[reportIndex].managerNotes = managerNotes || '';
+    serviceReports[reportIndex].updatedAt = new Date().toISOString();
+    await db.set('service_reports', serviceReports);
+
+    res.json(serviceReports[reportIndex]);
+  } catch (error) {
+    console.error('Update manager notes error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get service portal technicians/vendors for assignment dropdown
+app.get('/api/service-portal/technicians', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
+      return res.status(403).json({ error: 'Only admins and managers can access technician list' });
+    }
+
+    const users = (await db.get('users')) || [];
+
+    // Filter users with service portal access
+    const technicians = users.filter(u =>
+      u.role === 'vendor' || u.role === 'admin' || u.hasServicePortalAccess
+    ).map(u => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      role: u.role,
+      assignedClients: u.assignedClients || []
+    }));
+
+    res.json(technicians);
+  } catch (error) {
+    console.error('Get technicians error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -5471,6 +6494,280 @@ app.get('/service-portal', (req, res) => {
 // Knowledge Hub route
 app.get('/knowledge', (req, res) => {
   res.sendFile(__dirname + '/public/knowledge.html');
+});
+
+// ============== KNOWLEDGE HUB API ==============
+
+// Get all guides (authenticated users)
+app.get('/api/knowledge/guides', authenticateToken, async (req, res) => {
+  try {
+    const guides = (await db.get('knowledge_guides')) || [];
+    // Filter based on user permissions
+    const filteredGuides = guides.filter(guide => {
+      if (guide.ownerOnly && req.user.email !== 'bianca@thrive365labs.com') return false;
+      if (guide.adminOnly && req.user.role !== 'admin') return false;
+      return true;
+    });
+    res.json(filteredGuides);
+  } catch (error) {
+    console.error('Get guides error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get a specific guide with articles
+app.get('/api/knowledge/guides/:guideId', authenticateToken, async (req, res) => {
+  try {
+    const guides = (await db.get('knowledge_guides')) || [];
+    const guide = guides.find(g => g.id === req.params.guideId);
+    if (!guide) {
+      return res.status(404).json({ error: 'Guide not found' });
+    }
+    // Check permissions
+    if (guide.ownerOnly && req.user.email !== 'bianca@thrive365labs.com') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    if (guide.adminOnly && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    res.json(guide);
+  } catch (error) {
+    console.error('Get guide error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Create a new guide (admin only)
+app.post('/api/knowledge/guides', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { key, title, description, icon, color, ownerOnly, adminOnly, articles } = req.body;
+    if (!key || !title) {
+      return res.status(400).json({ error: 'Key and title are required' });
+    }
+    const guides = (await db.get('knowledge_guides')) || [];
+    // Check if key already exists
+    if (guides.find(g => g.key === key)) {
+      return res.status(400).json({ error: 'A guide with this key already exists' });
+    }
+    const newGuide = {
+      id: uuidv4(),
+      key,
+      title,
+      description: description || '',
+      icon: icon || 'book',
+      color: color || 'bg-gray-500',
+      ownerOnly: ownerOnly || false,
+      adminOnly: adminOnly || false,
+      articles: (articles || []).map(a => ({
+        id: uuidv4(),
+        title: a.title,
+        content: a.content,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    guides.push(newGuide);
+    await db.set('knowledge_guides', guides);
+    res.json(newGuide);
+  } catch (error) {
+    console.error('Create guide error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update a guide (admin only)
+app.put('/api/knowledge/guides/:guideId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { title, description, icon, color, ownerOnly, adminOnly } = req.body;
+    const guides = (await db.get('knowledge_guides')) || [];
+    const idx = guides.findIndex(g => g.id === req.params.guideId);
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Guide not found' });
+    }
+    if (title !== undefined) guides[idx].title = title;
+    if (description !== undefined) guides[idx].description = description;
+    if (icon !== undefined) guides[idx].icon = icon;
+    if (color !== undefined) guides[idx].color = color;
+    if (ownerOnly !== undefined) guides[idx].ownerOnly = ownerOnly;
+    if (adminOnly !== undefined) guides[idx].adminOnly = adminOnly;
+    guides[idx].updatedAt = new Date().toISOString();
+    await db.set('knowledge_guides', guides);
+    res.json(guides[idx]);
+  } catch (error) {
+    console.error('Update guide error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete a guide (admin only)
+app.delete('/api/knowledge/guides/:guideId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const guides = (await db.get('knowledge_guides')) || [];
+    const filtered = guides.filter(g => g.id !== req.params.guideId);
+    if (filtered.length === guides.length) {
+      return res.status(404).json({ error: 'Guide not found' });
+    }
+    await db.set('knowledge_guides', filtered);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete guide error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Add an article to a guide (admin only)
+app.post('/api/knowledge/guides/:guideId/articles', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { title, content } = req.body;
+    if (!title || !content) {
+      return res.status(400).json({ error: 'Title and content are required' });
+    }
+    const guides = (await db.get('knowledge_guides')) || [];
+    const idx = guides.findIndex(g => g.id === req.params.guideId);
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Guide not found' });
+    }
+    const newArticle = {
+      id: uuidv4(),
+      title,
+      content,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    guides[idx].articles = guides[idx].articles || [];
+    guides[idx].articles.push(newArticle);
+    guides[idx].updatedAt = new Date().toISOString();
+    await db.set('knowledge_guides', guides);
+    res.json(newArticle);
+  } catch (error) {
+    console.error('Add article error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update an article (admin only)
+app.put('/api/knowledge/guides/:guideId/articles/:articleId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { title, content } = req.body;
+    const guides = (await db.get('knowledge_guides')) || [];
+    const guideIdx = guides.findIndex(g => g.id === req.params.guideId);
+    if (guideIdx === -1) {
+      return res.status(404).json({ error: 'Guide not found' });
+    }
+    const articleIdx = (guides[guideIdx].articles || []).findIndex(a => a.id === req.params.articleId);
+    if (articleIdx === -1) {
+      return res.status(404).json({ error: 'Article not found' });
+    }
+    if (title !== undefined) guides[guideIdx].articles[articleIdx].title = title;
+    if (content !== undefined) guides[guideIdx].articles[articleIdx].content = content;
+    guides[guideIdx].articles[articleIdx].updatedAt = new Date().toISOString();
+    guides[guideIdx].updatedAt = new Date().toISOString();
+    await db.set('knowledge_guides', guides);
+    res.json(guides[guideIdx].articles[articleIdx]);
+  } catch (error) {
+    console.error('Update article error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete an article (admin only)
+app.delete('/api/knowledge/guides/:guideId/articles/:articleId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const guides = (await db.get('knowledge_guides')) || [];
+    const guideIdx = guides.findIndex(g => g.id === req.params.guideId);
+    if (guideIdx === -1) {
+      return res.status(404).json({ error: 'Guide not found' });
+    }
+    const originalLength = (guides[guideIdx].articles || []).length;
+    guides[guideIdx].articles = (guides[guideIdx].articles || []).filter(a => a.id !== req.params.articleId);
+    if (guides[guideIdx].articles.length === originalLength) {
+      return res.status(404).json({ error: 'Article not found' });
+    }
+    guides[guideIdx].updatedAt = new Date().toISOString();
+    await db.set('knowledge_guides', guides);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete article error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Reorder articles within a guide (admin only)
+app.put('/api/knowledge/guides/:guideId/reorder', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { articleIds } = req.body;
+    if (!Array.isArray(articleIds)) {
+      return res.status(400).json({ error: 'articleIds array is required' });
+    }
+    const guides = (await db.get('knowledge_guides')) || [];
+    const guideIdx = guides.findIndex(g => g.id === req.params.guideId);
+    if (guideIdx === -1) {
+      return res.status(404).json({ error: 'Guide not found' });
+    }
+    // Reorder articles based on the provided IDs
+    const articleMap = {};
+    (guides[guideIdx].articles || []).forEach(a => { articleMap[a.id] = a; });
+    const reorderedArticles = articleIds.map(id => articleMap[id]).filter(Boolean);
+    guides[guideIdx].articles = reorderedArticles;
+    guides[guideIdx].updatedAt = new Date().toISOString();
+    await db.set('knowledge_guides', guides);
+    res.json(guides[guideIdx]);
+  } catch (error) {
+    console.error('Reorder articles error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Check if knowledge guides need seeding (returns true if empty)
+app.get('/api/knowledge/needs-seed', authenticateToken, async (req, res) => {
+  try {
+    const guides = (await db.get('knowledge_guides')) || [];
+    res.json({ needsSeed: guides.length === 0 });
+  } catch (error) {
+    console.error('Check seed error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Seed knowledge guides from provided data (admin only, one-time)
+app.post('/api/knowledge/seed', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const existingGuides = (await db.get('knowledge_guides')) || [];
+    if (existingGuides.length > 0) {
+      return res.status(400).json({ error: 'Guides already exist. Use regular API to update.' });
+    }
+    const { guides } = req.body;
+    if (!Array.isArray(guides) || guides.length === 0) {
+      return res.status(400).json({ error: 'Guides array is required' });
+    }
+    // Transform guides to include IDs
+    const seededGuides = guides.map(guide => ({
+      id: uuidv4(),
+      key: guide.key,
+      title: guide.title,
+      description: guide.description || '',
+      icon: guide.icon || 'book',
+      color: guide.color || 'bg-gray-500',
+      ownerOnly: guide.ownerOnly || false,
+      adminOnly: guide.adminOnly || false,
+      articles: (guide.articles || []).map(article => ({
+        id: uuidv4(),
+        title: article.title,
+        content: article.content,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }));
+    await db.set('knowledge_guides', seededGuides);
+    res.json({ success: true, count: seededGuides.length });
+  } catch (error) {
+    console.error('Seed guides error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 // Link Directory route
@@ -5756,6 +7053,7 @@ app.post('/api/admin/bulk-password-reset', authenticateToken, requireAdmin, asyn
 
     res.json({
       message: `Successfully reset passwords for ${results.total} users`,
+      total: results.total, // Include at top level for backward compatibility
       results
     });
   } catch (error) {
@@ -5887,27 +7185,33 @@ app.post('/api/auth/admin-login', async (req, res) => {
 });
 
 // Admin hub dashboard data
-app.get('/api/admin-hub/dashboard', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin-hub/dashboard', authenticateToken, requireAdminHubAccess, async (req, res) => {
   try {
     const users = await getUsers();
     const projects = await getProjects();
     const serviceReports = (await db.get('service_reports')) || [];
 
-    // Get feedback/requests for admin inbox
+    // Get all open tickets across the app (feedback requests + password reset requests)
     const feedbackRequests = (await db.get('feedback_requests')) || [];
     const openFeedback = feedbackRequests.filter(f => f.status !== 'resolved').length;
+    const passwordResetRequests = (await db.get('password_reset_requests')) || [];
+    const pendingPasswordResets = passwordResetRequests.filter(r => r.status === 'pending').length;
+    const totalOpenTickets = openFeedback + pendingPasswordResets;
 
     // Calculate statistics
     const stats = {
       totalUsers: users.length,
+      // adminUsers kept for backward compatibility (super admins)
       adminUsers: users.filter(u => u.role === 'admin').length,
+      superAdminUsers: users.filter(u => u.role === 'admin').length,
+      managerUsers: users.filter(u => u.isManager).length,
       clientUsers: users.filter(u => u.role === 'client').length,
-      servicePortalUsers: users.filter(u => u.hasServicePortalAccess).length,
+      servicePortalUsers: users.filter(u => u.hasServicePortalAccess || u.role === 'vendor').length,
       totalProjects: projects.length,
       activeProjects: projects.filter(p => p.status !== 'completed').length,
       totalServiceReports: serviceReports.length,
       recentServiceReports: serviceReports.slice(0, 5),
-      openTickets: openFeedback
+      openTickets: totalOpenTickets
     };
 
     res.json(stats);
