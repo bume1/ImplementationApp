@@ -81,8 +81,7 @@ app.use('/launch', express.static('public', staticOptions));
 app.use('/thrive365labsLAUNCH', express.static('public', staticOptions));
 app.use('/thrive365labslaunch', express.static('public', staticOptions));
 app.use(express.static('public', { ...staticOptions, index: false }));
-// Uploads require authentication - serve via authenticated route instead of open static
-app.use('/uploads', authenticateToken, express.static('uploads', staticOptions));
+// NOTE: Authenticated /uploads static middleware is registered after authenticateToken is defined (see below)
 
 // ============== LAUNCH ROUTES (Implementations Portal) ==============
 // Main implementations dashboard
@@ -380,6 +379,9 @@ const requireClientPortalAdmin = (req, res, next) => {
   }
   return res.status(403).json({ error: 'Client Portal admin access required' });
 };
+
+// Uploads require authentication - registered here after authenticateToken is defined
+app.use('/uploads', authenticateToken, express.static('uploads', staticOptions));
 
 // ============== AUTH ROUTES ==============
 app.post('/api/auth/signup', authenticateToken, requireAdmin, async (req, res) => {
