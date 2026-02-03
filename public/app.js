@@ -106,14 +106,29 @@ const ensureAllPhasesAndStages = (groupedByPhase) => {
 // Helper function to handle fetch responses properly
 const handleResponse = async (response) => {
   if (!response.ok) {
-    // Try to parse error message from response
+    // Auto-redirect to login on auth failure (expired/invalid token)
+    if (response.status === 401 || response.status === 403) {
+      const isAuthError = response.status === 401 ||
+        (response.status === 403 && await response.clone().json().then(d => d.error === 'Invalid token' || d.error === 'User not found').catch(() => false));
+      if (isAuthError) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        localStorage.removeItem('unified_token');
+        localStorage.removeItem('unified_user');
+        window.location.href = '/';
+        throw new Error('Session expired. Redirecting to login...');
+      }
+    }
+    let errorMessage = `HTTP error ${response.status}`;
     try {
       const errorData = await response.json();
-      throw new Error(errorData.error || `HTTP error ${response.status}`);
-    } catch (e) {
-      // If parsing fails, throw generic error
-      throw new Error(`HTTP error ${response.status}`);
+      if (errorData.error) {
+        errorMessage = errorData.error;
+      }
+    } catch (parseError) {
+      // JSON parsing failed, use default HTTP error message
     }
+    throw new Error(errorMessage);
   }
   return response.json();
 };
@@ -948,6 +963,7 @@ const StatusBadge = ({ status }) => {
 const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates, onManageHubSpot, onViewReporting }) => {
   const [projects, setProjects] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState([]);
   const [editingProject, setEditingProject] = useState(null);
@@ -1057,9 +1073,15 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
       alert('Project name and client name are required');
       return;
     }
+    if (isCreating) return;
+    setIsCreating(true);
 
     try {
-      await api.createProject(token, newProject);
+      const result = await api.createProject(token, newProject);
+      if (result && result.error) {
+        alert(result.error);
+        return;
+      }
       setShowCreate(false);
       setNewProject({
         name: '',
@@ -1073,6 +1095,8 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
     } catch (err) {
       console.error('Failed to create project:', err);
       alert('Failed to create project');
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -1131,7 +1155,11 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
       return;
     }
     try {
-      await api.deleteProject(token, project.id);
+      const result = await api.deleteProject(token, project.id);
+      if (result && result.error) {
+        alert(result.error);
+        return;
+      }
       loadProjects();
     } catch (err) {
       console.error('Failed to delete project:', err);
@@ -1143,7 +1171,11 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
     const newName = prompt(`Enter name for the cloned project:`, `${project.name} (Copy)`);
     if (!newName) return;
     try {
-      await api.cloneProject(token, project.id, newName);
+      const result = await api.cloneProject(token, project.id, newName);
+      if (result && result.error) {
+        alert(result.error);
+        return;
+      }
       loadProjects();
       alert('Project cloned successfully!');
     } catch (err) {
@@ -1921,9 +1953,9 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
                           <div key={day} className={`bg-white p-2 min-h-[120px] ${isToday ? 'ring-2 ring-primary ring-inset' : ''}`}>
                             <div className={`text-sm font-medium mb-2 ${isToday ? 'text-primary' : 'text-gray-700'}`}>{day}</div>
                             <div className="space-y-1 overflow-y-auto max-h-[200px]">
-                              {entries.map((entry, idx) => (
-                                <div 
-                                  key={idx} 
+                              {entries.map((entry) => (
+                                <div
+                                  key={entry.id || `${entry.type}-${entry.label}`}
                                   className={`text-xs p-1.5 rounded cursor-pointer hover:opacity-80 ${
                                     entry.type === 'training' ? 'bg-purple-100 text-purple-700' :
                                     entry.type === 'golive-completed' ? 'bg-green-100 text-green-700' :
@@ -2724,13 +2756,13 @@ const CalendarView = ({ tasks, viewMode, onScrollToTask }) => {
             ))}
           </div>
           <div className="grid grid-cols-7 gap-2">
-            {weekDates.map((date, idx) => {
+            {weekDates.map((date) => {
               const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
               const dayTasks = getTasksForDateStr(dateStr);
               const isToday = new Date().toDateString() === date.toDateString();
               return (
                 <div
-                  key={idx}
+                  key={dateStr}
                   onClick={() => {
                     setSelectedDate(date);
                     setCalendarMode('day');
@@ -3205,7 +3237,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
   const [teamMembers, setTeamMembers] = useState([]);
   const [selectedTasks, setSelectedTasks] = useState([]);
   const [bulkMode, setBulkMode] = useState(false);
-  const [newSubtask, setNewSubtask] = useState({ taskId: null, title: '', owner: '', dueDate: '' });
+  const [newSubtask, setNewSubtask] = useState({ taskId: null, title: '', owner: '', dueDate: '', showToClient: undefined });
   const [editingSubtask, setEditingSubtask] = useState(null);
   const [expandedSubtasksId, setExpandedSubtasksId] = useState(null);
   const [clientPortalDomain, setClientPortalDomain] = useState('');
@@ -3349,9 +3381,17 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
     setLoading(true);
     try {
       const data = await api.getTasks(token, project.id);
-      setTasks(data);
+      if (Array.isArray(data)) {
+        setTasks(data);
+      } else if (data && data.error) {
+        console.error('Failed to load tasks:', data.error);
+        setTasks([]);
+      } else {
+        setTasks([]);
+      }
     } catch (err) {
       console.error('Failed to load tasks:', err);
+      setTasks([]);
     } finally {
       setLoading(false);
     }
@@ -3361,9 +3401,17 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
     try {
       // Pass project ID to filter team members to only those assigned to this project
       const data = await api.getTeamMembers(token, project.id);
-      setTeamMembers(data);
+      if (Array.isArray(data)) {
+        setTeamMembers(data);
+      } else if (data && data.error) {
+        console.error('Failed to load team members:', data.error);
+        setTeamMembers([]);
+      } else {
+        setTeamMembers([]);
+      }
     } catch (err) {
       console.error('Failed to load team members:', err);
+      setTeamMembers([]);
     }
   };
 
@@ -3409,14 +3457,16 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
   const handleBulkComplete = async (completed) => {
     if (selectedTasks.length === 0) return;
     try {
-      await api.bulkUpdateTasks(token, project.id, selectedTasks, completed);
-      // Update local state
-      const dateCompleted = completed ? new Date().toISOString() : null;
-      setTasks(tasks.map(t => 
-        selectedTasks.includes(t.id) 
-          ? { ...t, completed, dateCompleted: completed ? (t.dateCompleted || dateCompleted) : t.dateCompleted }
-          : t
-      ));
+      const result = await api.bulkUpdateTasks(token, project.id, selectedTasks, completed);
+      if (result && result.error) {
+        alert(result.error);
+        return;
+      }
+      if (result && result.skipped && result.skipped.length > 0) {
+        alert(`${result.skipped.length} task(s) skipped: ${result.skipped.map(s => s.title).join(', ')} (incomplete subtasks)`);
+      }
+      // Reload tasks from server to reflect actual state
+      loadTasks();
       setSelectedTasks([]);
       setBulkMode(false);
     } catch (err) {
@@ -3434,7 +3484,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
       } else {
         alert(result.message);
         // Update local state
-        setTasks(tasks.filter(t => !selectedTasks.includes(t.id)));
+        setTasks(prev => prev.filter(t => !selectedTasks.includes(t.id)));
         setSelectedTasks([]);
         setBulkMode(false);
       }
@@ -3635,6 +3685,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
 
   const handleToggleComplete = async (taskId) => {
     const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
     const newCompleted = !task.completed;
     
     // Check if this task has incomplete dependencies
@@ -3682,7 +3733,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
         alert(result.error);
         return;
       }
-      setTasks(tasks.map(t => t.id === taskId ? {...t, ...updates} : t));
+      setTasks(prev => prev.map(t => t.id === taskId ? {...t, ...updates} : t));
     } catch (err) {
       console.error('Failed to update task:', err);
     }
@@ -3761,8 +3812,12 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
         updates.description = editingTask.description || '';
       }
 
-      await api.updateTask(token, project.id, editingTask.id, updates);
-      setTasks(tasks.map(t =>
+      const result = await api.updateTask(token, project.id, editingTask.id, updates);
+      if (result && result.error) {
+        alert(result.error);
+        return;
+      }
+      setTasks(prev => prev.map(t =>
         t.id === editingTask.id ? {...t, ...updates} : t
       ));
       setEditingTask(null);
@@ -3778,8 +3833,12 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
     if (!confirm('Are you sure you want to delete this task? This cannot be undone.')) return;
     
     try {
-      await api.deleteTask(token, project.id, taskId);
-      setTasks(tasks.filter(t => t.id !== taskId));
+      const result = await api.deleteTask(token, project.id, taskId);
+      if (result && result.error) {
+        alert(result.error);
+        return;
+      }
+      setTasks(prev => prev.filter(t => t.id !== taskId));
     } catch (err) {
       console.error('Failed to delete task:', err);
       alert(err.message || 'Failed to delete task. You can only delete tasks you created.');
@@ -3801,7 +3860,11 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
     if (!newNote.trim()) return;
     try {
       const note = await api.addNote(token, project.id, taskId, newNote);
-      setTasks(tasks.map(t => {
+      if (note && note.error) {
+        alert(note.error);
+        return;
+      }
+      setTasks(prev => prev.map(t => {
         if (t.id === taskId) {
           return { ...t, notes: [...(t.notes || []), note] };
         }
@@ -3845,11 +3908,11 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
         alert(result.error);
         return;
       }
-      setTasks(tasks.map(t => {
+      setTasks(prev => prev.map(t => {
         if (t.id === taskId) {
-          return { 
-            ...t, 
-            notes: (t.notes || []).filter(n => n.id !== noteId) 
+          return {
+            ...t,
+            notes: (t.notes || []).filter(n => n.id !== noteId)
           };
         }
         return t;
@@ -3867,7 +3930,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
         alert(result.error);
         return;
       }
-      setTasks(tasks.map(t => {
+      setTasks(prev => prev.map(t => {
         if (t.id === taskId) {
           return { ...t, files: [...(t.files || []), result.file] };
         }
@@ -3889,11 +3952,11 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
         alert(result.error);
         return;
       }
-      setTasks(tasks.map(t => {
+      setTasks(prev => prev.map(t => {
         if (t.id === taskId) {
-          return { 
-            ...t, 
-            files: (t.files || []).filter(f => f.id !== fileId) 
+          return {
+            ...t,
+            files: (t.files || []).filter(f => f.id !== fileId)
           };
         }
         return t;
@@ -3907,6 +3970,10 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
     if (!newTask.taskTitle.trim()) return;
     try {
       const created = await api.createTask(token, project.id, newTask);
+      if (created.error) {
+        alert(created.error);
+        return;
+      }
       setTasks([...tasks, created]);
       setNewTask({ taskTitle: '', owner: '', secondaryOwner: '', dueDate: '', phase: 'Phase 1', stage: '', showToClient: false, clientName: '', dependencies: [] });
       setShowAddTask(false);
@@ -6974,8 +7041,8 @@ const Reporting = ({ token, user, onBack, onLogout }) => {
                 <p className="text-gray-500 text-center py-4">No completed launches with timeline data available</p>
               ) : (
                 <div className="space-y-3">
-                  {timelines.map((project, idx) => (
-                    <div key={idx} className="flex items-center gap-4">
+                  {timelines.map((project) => (
+                    <div key={project.id || project.name} className="flex items-center gap-4">
                       <div className="w-48 text-sm">
                         <div className="font-medium truncate" title={project.name}>{project.name}</div>
                         <div className="text-gray-500 text-xs truncate" title={project.clientName}>{project.clientName}</div>
