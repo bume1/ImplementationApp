@@ -7732,7 +7732,10 @@ const App = () => {
     setUser(null);
     setSelectedProject(null);
     setView('list');
-    localStorage.clear();
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('unified_token');
+    localStorage.removeItem('unified_user');
     window.location.href = '/';
   };
 
