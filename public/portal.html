@@ -631,11 +631,11 @@
       };
       
       const STANDARD_PHASES = {
-        'Phase 0': { name: 'Phase 0: Contract Signature', stages: ['Contract Signature'] },
-        'Phase 1': { name: 'Phase 1: Pre-Launch', stages: ['Project Kick Off & Stakeholder Alignment', 'Launch Data & Systems Prep'] },
-        'Phase 2': { name: 'Phase 2: Implementation Sprints', stages: ['Sprint 1: Core System Setups', 'Sprint 2: Lab & QUA Pilot Prep', 'Sprint 3: Soft-Pilot'] },
-        'Phase 3': { name: 'Phase 3: Go-Live', stages: ['Training/Validation', 'Go-Live'] },
-        'Phase 4': { name: 'Phase 4: Post-Launch Optimization', stages: ['KPIs', 'Monitoring & Customer Support'] }
+        'Phase 0': { name: 'Contract Signature', stages: ['Contract Signature'] },
+        'Phase 1': { name: 'Pre-Launch', stages: ['Project Kick Off & Stakeholder Alignment', 'Launch Data & Systems Prep'] },
+        'Phase 2': { name: 'Implementation Sprints', stages: ['Sprint 1: Core System Setups', 'Sprint 2: Lab & QUA Pilot Prep', 'Sprint 3: Soft-Pilot'] },
+        'Phase 3': { name: 'Go-Live', stages: ['Training/Validation', 'Go-Live'] },
+        'Phase 4': { name: 'Post-Launch Optimization', stages: ['KPIs', 'Monitoring & Customer Support'] }
       };
       
       const getPhaseColor = (phase) => {
@@ -690,7 +690,7 @@
               <div className={`${getPhaseGradient(phase)} p-4 rounded-lg text-white shadow-md`}>
                 <div className="flex items-center justify-between">
                   <div>
-                    <h2 className="text-lg font-bold">{STANDARD_PHASES[phase]?.name || phase}</h2>
+                    <h2 className="text-lg font-bold">{STANDARD_PHASES[phase]?.name || phase.replace(/^Phase\s*\d+\s*:\s*/i, '')}</h2>
                     <p className="text-sm opacity-90 mt-1">
                       {phaseTotal > 0 ? `${phaseCompleted} of ${phaseTotal} complete` : 'No tasks assigned yet'}
                     </p>
@@ -815,7 +815,7 @@
               return (
                 <div key={phase} className={`border-l-4 ${getPhaseColor(phase)} pl-6`}>
                   <div className="mb-4">
-                    <h3 className="text-xl font-bold text-gray-900">{STANDARD_PHASES[phase]?.name || phase}</h3>
+                    <h3 className="text-xl font-bold text-gray-900">{STANDARD_PHASES[phase]?.name || phase.replace(/^Phase\s*\d+\s*:\s*/i, '')}</h3>
                     <p className="text-sm text-gray-600">{completedCount} of {phaseTasks.length} complete ({phaseTasks.length > 0 ? Math.round((completedCount / phaseTasks.length) * 100) : 0}%)</p>
                   </div>
                   <div className="space-y-4">
