@@ -119,8 +119,10 @@
       getAnnouncements: () =>
         fetch(`${API_URL}/api/announcements`).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
-      getClientDocuments: (slug) =>
-        fetch(`${API_URL}/api/client-documents/${slug}`).then(handleResponse).catch(err => ({ error: err.message || 'Network error' }))
+      getClientDocuments: (slug, token) =>
+        fetch(`${API_URL}/api/client-documents/${slug}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' }))
     };
     
     const LoginPage = ({ slug, onLogin }) => {
@@ -2439,7 +2441,9 @@
       const refreshDocuments = async () => {
         if (!slug) return;
         try {
-          const response = await fetch(`${API_URL}/api/client-documents/${slug}`);
+          const response = await fetch(`${API_URL}/api/client-documents/${slug}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
           const data = await response.json();
           setDocuments(data || []);
         } catch (err) {
@@ -3196,7 +3200,7 @@
                 const data = await res.json();
                 setDocuments(Array.isArray(data) ? data.filter(d => d.shareWithAll === true) : []);
               } else {
-                const res = await fetch(`${API_URL}/api/client-documents/${selectedClient}`);
+                const res = await fetch(`${API_URL}/api/client-documents/${selectedClient}`, { headers: { 'Authorization': `Bearer ${token}` } });
                 const data = await res.json();
                 setDocuments(Array.isArray(data) ? data : []);
               }
@@ -3234,7 +3238,7 @@
                 const data = await fetch(`${API_URL}/api/client-documents`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json());
                 setDocuments(Array.isArray(data) ? data.filter(d => d.shareWithAll === true) : []);
               } else {
-                const data = await fetch(`${API_URL}/api/client-documents/${selectedClient}`).then(r => r.json());
+                const data = await fetch(`${API_URL}/api/client-documents/${selectedClient}`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json());
                 setDocuments(Array.isArray(data) ? data : []);
               }
             }
@@ -3258,7 +3262,7 @@
                 const data = await fetch(`${API_URL}/api/client-documents`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json());
                 setDocuments(Array.isArray(data) ? data.filter(d => d.shareWithAll === true) : []);
               } else {
-                const data = await fetch(`${API_URL}/api/client-documents/${selectedClient}`).then(r => r.json());
+                const data = await fetch(`${API_URL}/api/client-documents/${selectedClient}`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json());
                 setDocuments(Array.isArray(data) ? data : []);
               }
             }
@@ -3287,7 +3291,7 @@
             const data = await fetch(`${API_URL}/api/client-documents`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json());
             setDocuments(Array.isArray(data) ? data.filter(d => d.shareWithAll === true) : []);
           } else {
-            const data = await fetch(`${API_URL}/api/client-documents/${selectedClient}`).then(r => r.json());
+            const data = await fetch(`${API_URL}/api/client-documents/${selectedClient}`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json());
             setDocuments(Array.isArray(data) ? data : []);
           }
         } catch (err) {
@@ -3803,7 +3807,7 @@
               api.getPortalData(token),
               api.getPortalSettings(),
               api.getAnnouncements(),
-              api.getClientDocuments(slug)
+              api.getClientDocuments(slug, token)
             ]);
             setData(portalData);
             setSettings(portalSettings);
