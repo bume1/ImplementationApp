@@ -4,76 +4,10 @@
 
 ---
 
-### Version 2.7.4 - February 2026
-
-#### Security Fixes
-- Removed debug endpoints that leaked user emails, names, and password hash info
-- Added authentication to `/uploads` static path and client documents endpoint
-- Added field whitelist on task updates to prevent property injection via API
-- Added field whitelist on service report and validation report updates
-- Randomized temporary passwords for admin resets (was predictable pattern)
-- Added XSS sanitization on client portal `filesFormEmbed` HTML injection
-- Locked signup endpoint behind admin authentication
-- Added startup warning when `JWT_SECRET` environment variable is not set
-- Added startup warning when `HUBSPOT_WEBHOOK_SECRET` is not configured
-- Added email format validation and password strength requirements on signup
-
-#### Authorization & Access Control
-- Enforced project-level write access (`projectAccessLevels`) on task mutations
-- Added `requireAdmin` middleware to project create and clone endpoints
-- Fixed admin login to accept users with `hasAdminHubAccess` permission flag
-- Team members endpoint now filters out client and vendor users
-- Case-insensitive email matching on all login endpoints (client, service, forgot-password)
-
-#### Bug Fixes
-- Fixed `handleResponse` in app.js to properly surface server error messages to users
-- Fixed task ID generation crash when project has UUID-based task IDs (NaN from Math.max)
-- Fixed CSV export note field using wrong property name (`n.text` vs `n.content`)
-- Fixed project clone leaking files, HubSpot IDs, and completion status from original
-- Fixed task deletion not cleaning up dangling dependency references
-- Fixed bulk update not validating subtask completion before marking task complete
-- Fixed password reset API response referencing undefined variable (duplicate field)
-- Fixed template listing crash when a template has undefined tasks array
-- Fixed inventory template update accepting null/undefined values
-- Fixed project status accepting arbitrary strings (now validates active/paused/completed)
-- Fixed project update allowing empty name and clientName values
-- Fixed task completion not auto-setting `dateCompleted` server-side
-- Fixed subtask `showToClient` defaulting to true instead of inheriting from parent task
-- Fixed new task stage selector showing all stages regardless of selected phase
-- Fixed `loadTeamMembers` not checking for error response before updating state
-
-#### Frontend Stability
-- Added error checking to all major handlers: create, delete, clone, save, toggle, notes, files
-- Fixed stale closure bugs in 8 state updaters using functional updaters (`setTasks(prev => ...)`)
-- Added double-click protection on project creation
-- Added null guard in `handleToggleComplete` for missing task
-- Added array validation in `loadTasks` before setting state
-- All portals auto-redirect to login on expired token (401/403) instead of showing empty data
-- Logout now clears all 10 localStorage token keys across all portals consistently
-- Fixed React index-as-key anti-pattern in calendar, timeline, and changelog components
-
-#### Performance & Reliability
-- Added 5-second TTL user cache to reduce O(n) database lookups on every authenticated request
-- Added 30-second in-memory cache for project slug lookups in root-level catch-all route
-- Changed root-level slug redirects from 301 (permanent) to 302 (temporary) to prevent browser caching
-- Moved legacy `hubspotDealId` migration from every `getProjects()` call to one-time startup
-- Increased activity log capacity from 500 to 2000 entries with overflow warning
-- Added concurrent upload limiter (max 5) to prevent memory exhaustion from parallel file uploads
-- Added global Express error middleware and process-level `uncaughtException`/`unhandledRejection` handlers
-- Fixed date parsing year threshold to use dynamic current-year reference instead of fixed 2050 cutoff
-- Added logging when inventory data is auto-wrapped to non-batch format for debugging visibility
-
-#### URL Stability
-- Client portal slug changes now preserve old slugs in `previousSlugs` array
-- Project slug changes likewise track previous slugs for redirect lookups
-- Portal routes check `previousSlugs` and issue 302 redirects to updated URLs
-- Changed bulk delete from all-or-nothing to partial success with skipped task reporting
-
----
-
-### Version 2.7.3 - January 2026
+### Version 2.7.5 - January 2026
 
 #### New Features
+- Allow managers to add client users from Client Portal admin view
 - Add detailed frontend console logging for assigned reports debugging
 - Add comprehensive logging and robust string-based ID comparison
 - Add debug logging to Service Portal assigned reports endpoint
@@ -87,6 +21,63 @@
 - Add Knowledge Hub API and update guide with service admin documentation
 - Add Service Report Admin access permission for managers
 - Add service report assignment feature for managers and technicians
+- Add full phase titles to client portal and client view
+- Update task template and project phases for new launch structure
+- Update project tasks and UI to reflect new phase structure
+- Add client-facing README for Thrive 365 Labs
+- Force password change for new users created by super admin
+
+#### Bug Fixes
+- Fix service report photo and file storage path mismatch
+- Fix priority and pinned announcement features
+- Fix service report counter double-counting assigned reports
+- CRITICAL FIX: Move /assigned route before /:id to fix 404 error
+- Fix Knowledge Hub text formatting - properly render bold text and clean sections
+- Vendor workflow - remove broken client filtering and fix ID comparisons
+- Fix Service Portal assigned report workflow and display issues
+- Fix vendor dropdown visibility on mobile devices
+- Fix Service Portal assigned report workflow and display issues
+- Fix browser back button auth bypass and enhance Knowledge Hub
+- Fix blank Service Reports page caused by JavaScript errors
+
+#### Improvements
+- Update changelog for Version 2.7.4 [skip ci]
+- Update changelog with v2.7.3 and improve automation
+- Update Knowledge Hub Quick Tips for internal users
+- Update Service Portal and Knowledge Hub with improvements
+- Update all phase labels to accurately reflect the project's 10 phases
+- Update README to v2.7.2 with security improvements
+
+#### Changes
+- Make analyzer serial number editable for technicians completing assigned reports
+- Simplify service report admin access to use existing Service Portal checkbox
+- Sync client views with internal project board phases
+- Remove redundant Submission History section from Reports view
+- Remove Replit references from README for white-labeling
+
+
+### Version 2.7.4 - January 2026
+
+#### New Features
+- Allow managers to add client users from Client Portal admin view
+- Add detailed frontend console logging for assigned reports debugging
+- Add comprehensive logging and robust string-based ID comparison
+- Add debug logging to Service Portal assigned reports endpoint
+- Add 30-minute edit window for submitted service reports
+- Remove Assigned Clients section from Add New Vendor modal
+- Add collapsible phases and fix tag persistence in edit mode
+- Add debug logging to Service Portal sidebar for role visibility issue
+- Move Assign Report feature to Service Portal with Add Vendor popup
+- Add Assign Report tab to Service Portal admin and fix validation form field order
+- Add Knowledge Hub admin interface and dynamic content management
+- Add Knowledge Hub API and update guide with service admin documentation
+- Add Service Report Admin access permission for managers
+- Add service report assignment feature for managers and technicians
+- Add full phase titles to client portal and client view
+- Update task template and project phases for new launch structure
+- Update project tasks and UI to reflect new phase structure
+- Add client-facing README for Thrive 365 Labs
+- Force password change for new users created by super admin
 
 #### Bug Fixes
 - Fix priority and pinned announcement features
@@ -97,15 +88,48 @@
 - Fix Service Portal assigned report workflow and display issues
 - Fix vendor dropdown visibility on mobile devices
 - Fix Service Portal assigned report workflow and display issues
+- Fix browser back button auth bypass and enhance Knowledge Hub
+- Fix blank Service Reports page caused by JavaScript errors
 
 #### Improvements
+- Update changelog with v2.7.3 and improve automation
 - Update Knowledge Hub Quick Tips for internal users
 - Update Service Portal and Knowledge Hub with improvements
+- Update all phase labels to accurately reflect the project's 10 phases
+- Update README to v2.7.2 with security improvements
 
 #### Changes
 - Make analyzer serial number editable for technicians completing assigned reports
 - Simplify service report admin access to use existing Service Portal checkbox
+- Sync client views with internal project board phases
+- Remove redundant Submission History section from Reports view
+- Remove Replit references from README for white-labeling
 
+
+### Version 2.7.3 - January 26, 2026
+
+#### New Features
+- Allow managers to add client users from Client Portal admin view
+- Add collapsible phases feature with improved tag persistence in edit mode
+- Add 30-minute edit window for submitted service reports
+
+#### Improvements
+- Update Knowledge Hub Quick Tips for internal users
+- Enhance Knowledge Hub text formatting with proper bold text rendering
+- Add comprehensive logging for Service Portal assigned reports
+- Improve vendor workflow with ID comparison fixes
+- Remove Assigned Clients section from Add New Vendor modal for cleaner UX
+
+#### Bug Fixes
+- Fix priority and pinned announcement features
+- Make analyzer serial number editable for technicians completing assigned reports
+- Fix service report counter double-counting assigned reports
+- CRITICAL FIX: Move /assigned route before /:id to fix 404 error
+- Fix Service Portal assigned report workflow and display issues
+- Fix vendor dropdown visibility on mobile devices
+- Fix Knowledge Hub text formatting issues
+
+---
 
 ### Version 2.7.2 - January 2026
 

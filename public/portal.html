@@ -449,7 +449,10 @@
               )}
               <button
                 onClick={() => {
-                  localStorage.clear();
+                  localStorage.removeItem('portal_token');
+                  localStorage.removeItem('portal_user');
+                  localStorage.removeItem('unified_token');
+                  localStorage.removeItem('unified_user');
                   window.location.href = '/';
                 }}
                 className="w-full text-left px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2"
@@ -3494,6 +3497,17 @@
       const [editForm, setEditForm] = useState({});
       const [saving, setSaving] = useState(false);
       const [message, setMessage] = useState(null);
+      const [showCreateForm, setShowCreateForm] = useState(false);
+      const [createForm, setCreateForm] = useState({
+        email: '',
+        name: '',
+        password: '',
+        practiceName: '',
+        logo: '',
+        hubspotCompanyId: '',
+        hubspotDealId: '',
+        hubspotContactId: ''
+      });
 
       // Get current user to check if Super Admin
       const currentUser = JSON.parse(localStorage.getItem('portal_user') || localStorage.getItem('admin_user') || '{}');
@@ -3563,11 +3577,70 @@
         }
       };
 
+      const handleCreate = async () => {
+        setSaving(true);
+        setMessage(null);
+
+        // Validate required fields
+        if (!createForm.email || !createForm.name || !createForm.password || !createForm.practiceName) {
+          setMessage({ type: 'error', text: 'Email, name, password, and practice name are required' });
+          setSaving(false);
+          return;
+        }
+
+        try {
+          const res = await fetch(`${API_URL}/api/users`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              ...createForm,
+              role: 'client'
+            })
+          });
+          const data = await res.json();
+          if (res.ok) {
+            setMessage({ type: 'success', text: 'Client user created successfully!' });
+            // Refresh client list
+            await loadClients();
+            // Reset and close form
+            setShowCreateForm(false);
+            setCreateForm({
+              email: '',
+              name: '',
+              password: '',
+              practiceName: '',
+              logo: '',
+              hubspotCompanyId: '',
+              hubspotDealId: '',
+              hubspotContactId: ''
+            });
+          } else {
+            setMessage({ type: 'error', text: data.error || 'Failed to create client' });
+          }
+        } catch (err) {
+          console.error('Error creating client:', err);
+          setMessage({ type: 'error', text: 'Network error. Please try again.' });
+        } finally {
+          setSaving(false);
+        }
+      };
+
       return (
         <div className="space-y-6">
-          <div className="bg-white p-6 rounded-xl shadow-sm">
-            <h1 className="text-2xl font-bold text-accent mb-2">Client Users</h1>
-            <p className="text-gray-600">View and edit client portal user details</p>
+          <div className="bg-white p-6 rounded-xl shadow-sm flex justify-between items-start">
+            <div>
+              <h1 className="text-2xl font-bold text-accent mb-2">Client Users</h1>
+              <p className="text-gray-600">View and edit client portal user details</p>
+            </div>
+            <button
+              onClick={() => setShowCreateForm(true)}
+              className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-accent font-medium flex items-center gap-2"
+            >
+              <span>+</span> Add Client User
+            </button>
           </div>
 
           {message && (
@@ -3634,6 +3707,145 @@
               </div>
             )}
           </div>
+
+          {/* Create Modal */}
+          {showCreateForm && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+                <div className="p-6 border-b">
+                  <h2 className="text-xl font-bold text-accent">Add New Client User</h2>
+                  <p className="text-sm text-gray-500 mt-1">Create a new client portal account (syncs with Admin Hub)</p>
+                </div>
+                <div className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Email <span className="text-red-500">*</span></label>
+                    <input
+                      type="email"
+                      value={createForm.email}
+                      onChange={(e) => setCreateForm({...createForm, email: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      placeholder="user@example.com"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Name <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={createForm.name}
+                      onChange={(e) => setCreateForm({...createForm, name: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      placeholder="John Doe"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Password <span className="text-red-500">*</span></label>
+                    <input
+                      type="password"
+                      value={createForm.password}
+                      onChange={(e) => setCreateForm({...createForm, password: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      placeholder="Temporary password"
+                      required
+                    />
+                    <p className="text-xs text-gray-400 mt-1">User will be required to change password on first login</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Practice Name <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={createForm.practiceName}
+                      onChange={(e) => setCreateForm({...createForm, practiceName: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      placeholder="e.g., ABC Medical Labs"
+                      required
+                    />
+                    <p className="text-xs text-gray-400 mt-1">Will auto-generate portal URL slug</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Logo URL</label>
+                    <input
+                      type="text"
+                      value={createForm.logo}
+                      onChange={(e) => setCreateForm({...createForm, logo: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      placeholder="https://example.com/logo.png"
+                    />
+                    {createForm.logo && (
+                      <div className="mt-2 p-2 bg-gray-50 rounded flex items-center gap-2">
+                        <img src={createForm.logo} alt="Preview" className="h-8 object-contain" onError={(e) => e.target.style.display='none'} />
+                        <span className="text-xs text-gray-500">Preview</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="border-t pt-4">
+                    <p className="text-sm font-medium text-gray-700 mb-3">HubSpot Integration IDs (Optional)</p>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Company ID</label>
+                        <input
+                          type="text"
+                          value={createForm.hubspotCompanyId}
+                          onChange={(e) => setCreateForm({...createForm, hubspotCompanyId: e.target.value})}
+                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                          placeholder="e.g., 12345678"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Deal ID</label>
+                        <input
+                          type="text"
+                          value={createForm.hubspotDealId}
+                          onChange={(e) => setCreateForm({...createForm, hubspotDealId: e.target.value})}
+                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                          placeholder="e.g., 87654321"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Contact ID</label>
+                        <input
+                          type="text"
+                          value={createForm.hubspotContactId}
+                          onChange={(e) => setCreateForm({...createForm, hubspotContactId: e.target.value})}
+                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                          placeholder="e.g., 11223344"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
+                  <button
+                    onClick={() => {
+                      setShowCreateForm(false);
+                      setCreateForm({
+                        email: '',
+                        name: '',
+                        password: '',
+                        practiceName: '',
+                        logo: '',
+                        hubspotCompanyId: '',
+                        hubspotDealId: '',
+                        hubspotContactId: ''
+                      });
+                    }}
+                    className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium"
+                    disabled={saving}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCreate}
+                    disabled={saving}
+                    className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-accent font-medium disabled:opacity-50"
+                  >
+                    {saving ? 'Creating...' : 'Create Client User'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Edit Modal */}
           {editingClient && (
@@ -3728,7 +3940,7 @@
           )}
 
           <div className="bg-blue-50 p-4 rounded-lg text-sm text-blue-700">
-            <p><strong>Note:</strong> Changes made here sync with the Admin Hub. {!isSuperAdmin && 'To add new users or edit permissions, contact a Super Admin.'}</p>
+            <p><strong>Note:</strong> Changes made here sync with the Admin Hub. {!isSuperAdmin && 'To edit advanced permissions, contact a Super Admin.'}</p>
           </div>
         </div>
       );
