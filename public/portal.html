@@ -2995,9 +2995,13 @@
             setEditingId(null);
             setFormData({ title: '', content: '', type: 'info', priority: false, pinned: false, targetAll: true, targetClients: [], attachmentUrl: '', attachmentName: '' });
             loadAnnouncements();
+          } else {
+            const errData = await res.json().catch(() => ({}));
+            alert(errData.error || 'Failed to save announcement');
           }
         } catch (err) {
           console.error('Failed to save:', err);
+          alert('Failed to save announcement. Please try again.');
         }
       };
 
