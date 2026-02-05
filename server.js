@@ -6588,17 +6588,18 @@ app.put('/api/service-reports/:id', authenticateToken, requireServiceAccess, asy
 
     const existingReport = serviceReports[reportIndex];
 
-    // Only allow editing own reports unless admin
+    // Only allow editing own reports unless admin or assigning manager
     // Convert to strings for reliable comparison
     const isTechnician = String(existingReport.technicianId || '') === String(req.user.id);
     const isAssigned = String(existingReport.assignedToId || '') === String(req.user.id);
-    if (req.user.role !== 'admin' && !isTechnician && !isAssigned) {
+    const isAssigningManager = req.user.isManager && String(existingReport.assignedById || '') === String(req.user.id);
+    if (req.user.role !== 'admin' && !isAssigningManager && !isTechnician && !isAssigned) {
       console.log(`Edit authorization failed: technicianId="${existingReport.technicianId}" and assignedToId="${existingReport.assignedToId}" don't match userId="${req.user.id}"`);
       return res.status(403).json({ error: 'Not authorized to edit this report' });
     }
 
-    // Check 30-minute edit window for submitted reports (admins can always edit)
-    if (req.user.role !== 'admin' && existingReport.submittedAt) {
+    // Check 30-minute edit window for submitted reports (admins and assigning managers can always edit)
+    if (req.user.role !== 'admin' && !isAssigningManager && existingReport.submittedAt) {
       const submittedTime = new Date(existingReport.submittedAt);
       const currentTime = new Date();
       const minutesElapsed = (currentTime - submittedTime) / (1000 * 60);
