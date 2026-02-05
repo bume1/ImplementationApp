@@ -1792,7 +1792,7 @@
                             {Icons.eye}
                             <span className="text-sm">View</span>
                           </button>
-                          {onEditReport && currentUser && (currentUser.role === 'admin' || (currentUser.isManager && String(report.assignedById || '') === String(currentUser.id))) && (
+                          {onEditReport && currentUser && (currentUser.role === 'admin' || currentUser.isManager) && (
                             <button
                               onClick={() => onEditReport(report)}
                               className="text-amber-600 hover:text-amber-800 flex items-center gap-1"
@@ -1852,10 +1852,10 @@
     const ViewReportPage = ({ report, onBack, onEdit, user }) => {
       const token = localStorage.getItem('service_token') || localStorage.getItem('token') || localStorage.getItem('unified_token');
 
-      // Check if user can edit this report (admin or assigning manager)
+      // Check if user can edit this report (admin or manager)
       const canEdit = user && (
         user.role === 'admin' ||
-        (user.isManager && String(report.assignedById || '') === String(user.id))
+        user.isManager
       );
 
       const handleDownloadPDF = () => {
