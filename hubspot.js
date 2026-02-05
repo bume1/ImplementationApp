@@ -569,7 +569,7 @@ async function getTicketsForCompany(companyId) {
       'https://api.hubapi.com/crm/v3/objects/tickets/batch/read',
       {
         inputs: ticketIds.map(id => ({ id })),
-        properties: ['subject', 'content', 'hs_pipeline', 'hs_pipeline_stage', 'hs_ticket_priority', 'createdate', 'hs_lastmodifieddate', 'closed_date', 'hs_resolution', 'hs_object_source', 'hs_object_source_label', 'internal_vs__external_support_ticket']
+        properties: ['subject', 'content', 'hs_pipeline', 'hs_pipeline_stage', 'hs_ticket_priority', 'createdate', 'hs_lastmodifieddate', 'closed_date', 'hs_resolution', 'hs_object_source', 'hs_object_source_label', 'internal_vs_external_ticket']
       },
       {
         headers: {
@@ -660,7 +660,7 @@ async function getTicketsForCompany(companyId) {
         attachments: attachments,
         source: props.hs_object_source || '',
         sourceLabel: props.hs_object_source_label || '',
-        ticketType: props.internal_vs__external_support_ticket || ''
+        ticketType: props.internal_vs_external_ticket || ''
       };
     }) || []);
 
@@ -713,7 +713,7 @@ async function getTicketsForContact(contactId) {
       'https://api.hubapi.com/crm/v3/objects/tickets/batch/read',
       {
         inputs: ticketIds.map(id => ({ id })),
-        properties: ['subject', 'content', 'hs_pipeline', 'hs_pipeline_stage', 'hs_ticket_priority', 'createdate', 'hs_lastmodifieddate', 'closed_date', 'hs_resolution', 'hs_object_source', 'hs_object_source_label', 'internal_vs__external_support_ticket']
+        properties: ['subject', 'content', 'hs_pipeline', 'hs_pipeline_stage', 'hs_ticket_priority', 'createdate', 'hs_lastmodifieddate', 'closed_date', 'hs_resolution', 'hs_object_source', 'hs_object_source_label', 'internal_vs_external_ticket']
       },
       {
         headers: {
@@ -802,7 +802,7 @@ async function getTicketsForContact(contactId) {
         attachments: attachments,
         source: props.hs_object_source || '',
         sourceLabel: props.hs_object_source_label || '',
-        ticketType: props.internal_vs__external_support_ticket || ''
+        ticketType: props.internal_vs_external_ticket || ''
       };
     }) || []);
 
@@ -854,7 +854,7 @@ async function getTicketsForDeal(dealId) {
       'https://api.hubapi.com/crm/v3/objects/tickets/batch/read',
       {
         inputs: ticketIds.map(id => ({ id })),
-        properties: ['subject', 'content', 'hs_pipeline', 'hs_pipeline_stage', 'hs_ticket_priority', 'createdate', 'hs_lastmodifieddate', 'closed_date', 'hs_resolution', 'hs_object_source', 'hs_object_source_label', 'internal_vs__external_support_ticket']
+        properties: ['subject', 'content', 'hs_pipeline', 'hs_pipeline_stage', 'hs_ticket_priority', 'createdate', 'hs_lastmodifieddate', 'closed_date', 'hs_resolution', 'hs_object_source', 'hs_object_source_label', 'internal_vs_external_ticket']
       },
       {
         headers: {
@@ -936,7 +936,7 @@ async function getTicketsForDeal(dealId) {
         attachments: attachments,
         source: props.hs_object_source || '',
         sourceLabel: props.hs_object_source_label || '',
-        ticketType: props.internal_vs__external_support_ticket || ''
+        ticketType: props.internal_vs_external_ticket || ''
       };
     }) || []);
 

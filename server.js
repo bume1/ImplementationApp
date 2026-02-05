@@ -3001,7 +3001,7 @@ app.delete('/api/admin/portal-tickets', authenticateToken, requireAdmin, async (
 });
 
 // Fetch support tickets from HubSpot for the logged-in client
-// Shows internal tickets only (filtered by internal_vs__external_support_ticket field)
+// Shows internal tickets only (filtered by internal_vs_external_ticket field)
 // Attaches matching service reports to each ticket
 app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
   try {
@@ -3070,7 +3070,7 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
     }
 
     // Filter to only show tickets marked as "Internal" in HubSpot
-    // The custom property internal_vs__external_support_ticket must be "Internal" (case-insensitive)
+    // The custom property internal_vs_external_ticket must be "Internal" (case-insensitive)
     const beforeFilter = tickets.length;
     tickets = tickets.filter(t => {
       const typeVal = (t.ticketType || '').toLowerCase().trim();
@@ -3192,6 +3192,62 @@ app.get('/api/client/service-reports', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error fetching client service reports:', error);
     res.status(500).json({ error: error.message || 'Failed to fetch service reports' });
+  }
+});
+
+// Download service report PDF for clients
+// Generates the PDF on-the-fly from stored report data
+app.get('/api/client/service-reports/:id/pdf', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'client' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const serviceReports = (await db.get('service_reports')) || [];
+    const report = serviceReports.find(r => r.id === req.params.id);
+
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    // For clients, verify the report belongs to them
+    if (req.user.role === 'client') {
+      const users = await getUsers();
+      const clientUser = users.find(u => u.id === req.user.id);
+      if (!clientUser) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      const hubspotCompanyId = clientUser.hubspotCompanyId || '';
+      const practiceName = (clientUser.practiceName || clientUser.name || '').toLowerCase();
+      const reportClient = (report.clientFacilityName || '').toLowerCase();
+
+      const isMatch = (hubspotCompanyId && report.hubspotCompanyId === hubspotCompanyId) ||
+                      (practiceName && reportClient.includes(practiceName));
+
+      if (!isMatch) {
+        return res.status(403).json({ error: 'Not authorized to access this report' });
+      }
+    }
+
+    // If report has a Google Drive download link, redirect to it
+    if (report.driveWebContentLink) {
+      return res.redirect(report.driveWebContentLink);
+    }
+
+    // Generate PDF on-the-fly
+    const pdfBuffer = await pdfGenerator.generateServiceReportPDF(report, report.technicianName || report.serviceProviderName || 'N/A');
+
+    const reportDate = new Date(report.serviceCompletionDate || report.createdAt || Date.now()).toLocaleDateString().replace(/\//g, '-');
+    const fileName = `Service_Report_${(report.clientFacilityName || 'Report').replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error('Error generating service report PDF:', error);
+    res.status(500).json({ error: 'Failed to generate PDF' });
   }
 });
 
@@ -5531,6 +5587,28 @@ app.post('/api/service-reports', authenticateToken, requireServiceAccess, async 
       }
     }
 
+    // Upload PDF to Google Drive
+    try {
+      const reportDate = new Date(reportData.serviceCompletionDate || newReport.createdAt).toLocaleDateString();
+      const driveFileName = `Service_Report_${reportData.clientFacilityName.replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate.replace(/\//g, '-')}.pdf`;
+      const drivePdfBuffer = await pdfGenerator.generateServiceReportPDF({ ...reportData, id: newReport.id }, req.user.name);
+
+      const driveResult = await googledrive.uploadServiceReportPDF(
+        reportData.clientFacilityName || 'Unknown Client',
+        driveFileName,
+        drivePdfBuffer
+      );
+
+      newReport.driveFileId = driveResult.fileId;
+      newReport.driveWebViewLink = driveResult.webViewLink;
+      newReport.driveWebContentLink = driveResult.webContentLink;
+      await db.set('service_reports', serviceReports);
+
+      console.log(`✅ Service report PDF uploaded to Google Drive: ${driveResult.fileName}`);
+    } catch (driveError) {
+      console.error('Google Drive upload error (non-blocking):', driveError.message);
+    }
+
     // Auto-add service reports to client's Files section under "Service Reports" category
     try {
       const users = (await db.get('users')) || [];
@@ -5561,6 +5639,8 @@ app.post('/api/service-reports', authenticateToken, requireServiceAccess, async 
           category: 'Service Reports',
           serviceReportId: newReport.id,
           serviceType: reportData.serviceType,
+          driveWebViewLink: newReport.driveWebViewLink || null,
+          driveWebContentLink: newReport.driveWebContentLink || null,
           createdAt: new Date().toISOString(),
           uploadedBy: 'system',
           uploadedByName: 'Thrive 365 Labs'
@@ -5682,6 +5762,32 @@ app.get('/api/service-reports/assigned', authenticateToken, requireServiceAccess
   } catch (error) {
     console.error('Get assigned service reports error:', error);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Download service report PDF (service portal users)
+app.get('/api/service-reports/:id/pdf', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    const report = serviceReports.find(r => r.id === req.params.id);
+
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    // Generate PDF
+    const pdfBuffer = await pdfGenerator.generateServiceReportPDF(report, report.technicianName || report.serviceProviderName || 'N/A');
+
+    const reportDate = new Date(report.serviceCompletionDate || report.createdAt || Date.now()).toLocaleDateString().replace(/\//g, '-');
+    const fileName = `Service_Report_${(report.clientFacilityName || 'Report').replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error('Error generating service report PDF:', error);
+    res.status(500).json({ error: 'Failed to generate PDF' });
   }
 });
 
@@ -6089,6 +6195,28 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
       }
     }
 
+    // Upload PDF to Google Drive
+    try {
+      const driveReportDate = new Date(completedReport.serviceCompletionDate || completedReport.createdAt).toLocaleDateString();
+      const driveFileName = `Service_Report_${completedReport.clientFacilityName.replace(/[^a-zA-Z0-9]/g, '_')}_${driveReportDate.replace(/\//g, '-')}.pdf`;
+      const drivePdfBuffer = await pdfGenerator.generateServiceReportPDF(completedReport, req.user.name);
+
+      const driveResult = await googledrive.uploadServiceReportPDF(
+        completedReport.clientFacilityName || 'Unknown Client',
+        driveFileName,
+        drivePdfBuffer
+      );
+
+      serviceReports[reportIndex].driveFileId = driveResult.fileId;
+      serviceReports[reportIndex].driveWebViewLink = driveResult.webViewLink;
+      serviceReports[reportIndex].driveWebContentLink = driveResult.webContentLink;
+      await db.set('service_reports', serviceReports);
+
+      console.log(`✅ Completed service report PDF uploaded to Google Drive: ${driveResult.fileName}`);
+    } catch (driveError) {
+      console.error('Google Drive upload error (non-blocking):', driveError.message);
+    }
+
     // Auto-add completed assigned report to client's Files section under "Service Reports" category
     try {
       const users = (await db.get('users')) || [];
@@ -6121,6 +6249,8 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
             category: 'Service Reports',
             serviceReportId: completedReport.id,
             serviceType: completedReport.serviceType,
+            driveWebViewLink: serviceReports[reportIndex].driveWebViewLink || null,
+            driveWebContentLink: serviceReports[reportIndex].driveWebContentLink || null,
             createdAt: new Date().toISOString(),
             uploadedBy: 'system',
             uploadedByName: 'Thrive 365 Labs'

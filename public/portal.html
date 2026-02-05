@@ -2402,7 +2402,7 @@
                                   <p className="text-xs font-medium text-gray-500 mb-2">Service Report:</p>
                                   <div className="bg-white rounded-lg border p-3">
                                     <div className="flex items-start justify-between">
-                                      <div>
+                                      <div className="flex-1">
                                         <p className="font-medium text-sm text-gray-800">{ticket.serviceReport.serviceType}</p>
                                         <p className="text-xs text-gray-500 mt-1">
                                           Technician: {ticket.serviceReport.technicianName} &middot; Completed: {formatDate(ticket.serviceReport.completedAt)}
@@ -2411,8 +2411,34 @@
                                           <p className="text-xs text-gray-500 mt-1 line-clamp-2">{ticket.serviceReport.description}</p>
                                         )}
                                       </div>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          fetch(`${API_URL}/api/client/service-reports/${ticket.serviceReport.id}/pdf`, {
+                                            headers: { 'Authorization': `Bearer ${token}` }
+                                          })
+                                          .then(resp => {
+                                            if (!resp.ok) throw new Error('Download failed');
+                                            return resp.blob();
+                                          })
+                                          .then(blob => {
+                                            const url = window.URL.createObjectURL(blob);
+                                            const a = document.createElement('a');
+                                            a.href = url;
+                                            a.download = `Service_Report_${ticket.serviceReport.serviceType || 'Report'}.pdf`;
+                                            document.body.appendChild(a);
+                                            a.click();
+                                            window.URL.revokeObjectURL(url);
+                                            a.remove();
+                                          })
+                                          .catch(err => alert('Failed to download report: ' + err.message));
+                                        }}
+                                        className="ml-3 flex items-center gap-1 px-3 py-1.5 bg-primary text-white text-xs font-medium rounded-lg hover:bg-accent transition whitespace-nowrap"
+                                      >
+                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                        Download PDF
+                                      </button>
                                     </div>
-                                    <p className="text-xs text-gray-400 mt-2">Full report available in your Files section under Service Reports.</p>
                                   </div>
                                 </div>
                               )}
@@ -2563,24 +2589,56 @@
                   <div key={cat}>
                     <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">{cat}</h3>
                     <div className="space-y-2">
-                      {docs.map(doc => (
-                        <a
-                          key={doc.id}
-                          href={doc.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-3 p-3 rounded-lg border hover:bg-gray-50 transition group"
-                        >
-                          <span className="text-2xl">📄</span>
-                          <div className="flex-1">
-                            <p className="font-medium text-gray-800 group-hover:text-primary">{doc.title}</p>
-                            {doc.description && (
-                              <p className="text-sm text-gray-500">{doc.description}</p>
-                            )}
-                          </div>
-                          <span className="text-primary text-sm">Download →</span>
-                        </a>
-                      ))}
+                      {docs.map(doc => {
+                        const downloadUrl = doc.serviceReportId
+                          ? `${API_URL}/api/client/service-reports/${doc.serviceReportId}/pdf`
+                          : doc.url;
+                        const handleDownload = (e) => {
+                          if (doc.serviceReportId) {
+                            e.preventDefault();
+                            fetch(`${API_URL}/api/client/service-reports/${doc.serviceReportId}/pdf`, {
+                              headers: { 'Authorization': `Bearer ${token}` }
+                            })
+                            .then(resp => {
+                              if (!resp.ok) throw new Error('Download failed');
+                              return resp.blob();
+                            })
+                            .then(blob => {
+                              const url = window.URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = doc.title.replace(/[^a-zA-Z0-9\s-]/g, '') + '.pdf';
+                              document.body.appendChild(a);
+                              a.click();
+                              window.URL.revokeObjectURL(url);
+                              a.remove();
+                            })
+                            .catch(err => alert('Failed to download report: ' + err.message));
+                          }
+                        };
+                        return (
+                          <a
+                            key={doc.id}
+                            href={downloadUrl || '#'}
+                            target={doc.serviceReportId ? undefined : '_blank'}
+                            rel={doc.serviceReportId ? undefined : 'noopener noreferrer'}
+                            onClick={handleDownload}
+                            className="flex items-center gap-3 p-3 rounded-lg border hover:bg-gray-50 transition group cursor-pointer"
+                          >
+                            <span className="text-2xl">{doc.serviceReportId ? '📋' : '📄'}</span>
+                            <div className="flex-1">
+                              <p className="font-medium text-gray-800 group-hover:text-primary">{doc.title}</p>
+                              {doc.description && (
+                                <p className="text-sm text-gray-500">{doc.description}</p>
+                              )}
+                            </div>
+                            <span className="text-primary text-sm font-medium flex items-center gap-1">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                              Download PDF
+                            </span>
+                          </a>
+                        );
+                      })}
                     </div>
                   </div>
                 ))}
