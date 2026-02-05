@@ -334,9 +334,12 @@
       // Debug logging
       console.log('Sidebar user data:', { role: user?.role, isManager: user?.isManager, hasServicePortalAccess: user?.hasServicePortalAccess, canAssignReports });
 
+      // Admins and managers don't submit reports - they view and assign them
+      const isAdminOrManager = user?.role === 'admin' || user?.isManager;
+
       const baseMenuItems = [
         { id: 'home', label: 'Dashboard', icon: Icons.home },
-        { id: 'new_report', label: 'New Service Report', icon: Icons.plus },
+        ...(!isAdminOrManager ? [{ id: 'new_report', label: 'New Service Report', icon: Icons.plus }] : []),
         { id: 'reports', label: 'Service Reports', icon: Icons.folder }
       ];
 
@@ -491,17 +494,20 @@
           )}
 
           {/* Quick Actions */}
-          <div className="grid md:grid-cols-3 gap-5">
-            <button
-              onClick={() => onNavigate('new_report')}
-              className="card-modern p-6 text-left group hover:border-primary-200 transition-all"
-            >
-              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white mb-4 shadow-md group-hover:scale-105 transition-transform">
-                {React.cloneElement(Icons.plus, { className: 'w-7 h-7' })}
-              </div>
-              <h3 className="font-semibold text-gray-900">New Service Report</h3>
-              <p className="text-sm text-gray-500 mt-1">Submit a new service report</p>
-            </button>
+          <div className={`grid ${user?.role === 'admin' || user?.isManager ? 'md:grid-cols-2' : 'md:grid-cols-3'} gap-5`}>
+            {/* New Service Report - only for vendors/technicians, not admins/managers */}
+            {user?.role !== 'admin' && !user?.isManager && (
+              <button
+                onClick={() => onNavigate('new_report')}
+                className="card-modern p-6 text-left group hover:border-primary-200 transition-all"
+              >
+                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white mb-4 shadow-md group-hover:scale-105 transition-transform">
+                  {React.cloneElement(Icons.plus, { className: 'w-7 h-7' })}
+                </div>
+                <h3 className="font-semibold text-gray-900">New Service Report</h3>
+                <p className="text-sm text-gray-500 mt-1">Submit a new service report</p>
+              </button>
+            )}
             <button
               onClick={() => onNavigate('reports')}
               className="card-modern p-6 text-left group hover:border-purple-200 transition-all"
