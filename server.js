@@ -2222,20 +2222,26 @@ app.get('/api/client/:linkId', async (req, res) => {
     if (!project) return res.status(404).json({ error: 'Project not found' });
     const allTasks = await getTasks(project.id);
     const clientTasks = allTasks.filter(t => t.showToClient);
-    
+
+    // Calculate overall progress from ALL tasks (matches admin dashboard)
+    const totalAllTasks = allTasks.length;
+    const completedAllTasks = allTasks.filter(t => t.completed).length;
+    const overallProgressPercent = totalAllTasks > 0 ? Math.round((completedAllTasks / totalAllTasks) * 100) : 0;
+
     const users = await getUsers();
     const tasksWithOwnerNames = clientTasks.map(task => ({
       ...task,
-      ownerDisplayName: task.owner 
+      ownerDisplayName: task.owner
         ? (users.find(u => u.email === task.owner)?.name || task.owner)
         : null
     }));
-    
+
     res.json({
-      project: { 
-        name: project.name, 
+      project: {
+        name: project.name,
         clientName: project.clientName,
-        goLiveDate: project.goLiveDate
+        goLiveDate: project.goLiveDate,
+        overallProgressPercent
       },
       tasks: tasksWithOwnerNames
     });
@@ -2381,10 +2387,16 @@ app.get('/api/client-portal/data', authenticateToken, async (req, res) => {
       const allTasks = await getTasks(project.id);
       const clientTasks = allTasks.filter(t => t.showToClient).map(task => ({
         ...task,
-        ownerDisplayName: task.owner 
+        ownerDisplayName: task.owner
           ? (users.find(u => u.email === task.owner)?.name || task.owner)
           : null
       }));
+
+      // Calculate overall progress from ALL tasks (matches admin dashboard)
+      const totalAllTasks = allTasks.length;
+      const completedAllTasks = allTasks.filter(t => t.completed).length;
+      const overallProgressPercent = totalAllTasks > 0 ? Math.round((completedAllTasks / totalAllTasks) * 100) : 0;
+
       return {
         id: project.id,
         name: project.name,
@@ -2393,6 +2405,7 @@ app.get('/api/client-portal/data', authenticateToken, async (req, res) => {
         goLiveDate: project.goLiveDate,
         hubspotRecordId: project.hubspotRecordId || null,
         hubspotRecordType: project.hubspotRecordType || 'companies',
+        overallProgressPercent,
         tasks: clientTasks
       };
     }));

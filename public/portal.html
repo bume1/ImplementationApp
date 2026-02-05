@@ -713,9 +713,13 @@
         return result;
       };
       
+      // Use server-calculated overall progress (based on ALL tasks, matching admin dashboard)
+      // Falls back to client-visible calculation if server doesn't provide it
       const completedTasks = tasks.filter(t => t.completed).length;
       const totalTasks = tasks.length;
-      const progressPercent = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+      const progressPercent = project.overallProgressPercent !== undefined
+        ? project.overallProgressPercent
+        : (totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0);
 
       // Use dynamic phase organization
       const groupedByPhase = organizeTasksByPhaseAndStage(tasks, PHASE_ORDER, dynamicPhases);
