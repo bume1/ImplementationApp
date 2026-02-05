@@ -6588,17 +6588,18 @@ app.put('/api/service-reports/:id', authenticateToken, requireServiceAccess, asy
 
     const existingReport = serviceReports[reportIndex];
 
-    // Only allow editing own reports unless admin
+    // Only allow editing own reports unless admin or assigning manager
     // Convert to strings for reliable comparison
     const isTechnician = String(existingReport.technicianId || '') === String(req.user.id);
     const isAssigned = String(existingReport.assignedToId || '') === String(req.user.id);
-    if (req.user.role !== 'admin' && !isTechnician && !isAssigned) {
+    const isAssigningManager = req.user.isManager && String(existingReport.assignedById || '') === String(req.user.id);
+    if (req.user.role !== 'admin' && !isAssigningManager && !isTechnician && !isAssigned) {
       console.log(`Edit authorization failed: technicianId="${existingReport.technicianId}" and assignedToId="${existingReport.assignedToId}" don't match userId="${req.user.id}"`);
       return res.status(403).json({ error: 'Not authorized to edit this report' });
     }
 
-    // Check 30-minute edit window for submitted reports (admins can always edit)
-    if (req.user.role !== 'admin' && existingReport.submittedAt) {
+    // Check 30-minute edit window for submitted reports (admins and assigning managers can always edit)
+    if (req.user.role !== 'admin' && !isAssigningManager && existingReport.submittedAt) {
       const submittedTime = new Date(existingReport.submittedAt);
       const currentTime = new Date();
       const minutesElapsed = (currentTime - submittedTime) / (1000 * 60);
@@ -7197,26 +7198,41 @@ app.post('/api/service-reports/:id/photos', authenticateToken, upload.array('pho
 
     const report = serviceReports[reportIndex];
     const photos = report.photos || [];
+    const clientName = report.clientFacilityName || 'Unknown Client';
 
-    // Save photos to uploads directory (must match /uploads static middleware path)
-    const uploadDir = path.join(__dirname, 'uploads', 'service-photos');
-    await fs.mkdir(uploadDir, { recursive: true });
-
+    // Upload photos to Google Drive for persistent storage
     for (const file of req.files) {
       const fileId = uuidv4();
       const ext = path.extname(file.originalname) || '.jpg';
       const fileName = `${fileId}${ext}`;
-      const filePath = path.join(uploadDir, fileName);
 
-      await fs.writeFile(filePath, file.buffer);
+      try {
+        const driveResult = await googledrive.uploadServiceReportAttachment(
+          clientName, fileName, file.buffer, file.mimetype || 'image/jpeg'
+        );
 
-      photos.push({
-        id: fileId,
-        name: file.originalname,
-        url: `/uploads/service-photos/${fileName}`,
-        uploadedAt: new Date().toISOString(),
-        uploadedBy: req.user.name
-      });
+        photos.push({
+          id: fileId,
+          name: file.originalname,
+          url: driveResult.webContentLink,
+          webViewLink: driveResult.webViewLink,
+          thumbnailLink: driveResult.thumbnailLink,
+          driveFileId: driveResult.fileId,
+          uploadedAt: new Date().toISOString(),
+          uploadedBy: req.user.name
+        });
+      } catch (driveErr) {
+        console.error('Google Drive photo upload failed, skipping:', driveErr.message);
+        // Still record the photo metadata even if Drive upload fails
+        photos.push({
+          id: fileId,
+          name: file.originalname,
+          url: null,
+          uploadError: driveErr.message,
+          uploadedAt: new Date().toISOString(),
+          uploadedBy: req.user.name
+        });
+      }
     }
 
     serviceReports[reportIndex].photos = photos;
@@ -7251,26 +7267,39 @@ app.post('/api/service-reports/:id/files', authenticateToken, upload.array('file
 
     const report = serviceReports[reportIndex];
     const clientFiles = report.clientFiles || [];
+    const clientName = report.clientFacilityName || 'Unknown Client';
 
-    // Save files to uploads directory (must match /uploads static middleware path)
-    const uploadDir = path.join(__dirname, 'uploads', 'service-files');
-    await fs.mkdir(uploadDir, { recursive: true });
-
+    // Upload files to Google Drive for persistent storage
     for (const file of req.files) {
       const fileId = uuidv4();
       const ext = path.extname(file.originalname) || '';
       const fileName = `${fileId}${ext}`;
-      const filePath = path.join(uploadDir, fileName);
 
-      await fs.writeFile(filePath, file.buffer);
+      try {
+        const driveResult = await googledrive.uploadServiceReportAttachment(
+          clientName, fileName, file.buffer, file.mimetype || 'application/octet-stream'
+        );
 
-      clientFiles.push({
-        id: fileId,
-        name: file.originalname,
-        url: `/uploads/service-files/${fileName}`,
-        uploadedAt: new Date().toISOString(),
-        uploadedBy: req.user.name
-      });
+        clientFiles.push({
+          id: fileId,
+          name: file.originalname,
+          url: driveResult.webContentLink,
+          webViewLink: driveResult.webViewLink,
+          driveFileId: driveResult.fileId,
+          uploadedAt: new Date().toISOString(),
+          uploadedBy: req.user.name
+        });
+      } catch (driveErr) {
+        console.error('Google Drive file upload failed, skipping:', driveErr.message);
+        clientFiles.push({
+          id: fileId,
+          name: file.originalname,
+          url: null,
+          uploadError: driveErr.message,
+          uploadedAt: new Date().toISOString(),
+          uploadedBy: req.user.name
+        });
+      }
     }
 
     serviceReports[reportIndex].clientFiles = clientFiles;
@@ -7302,10 +7331,14 @@ app.delete('/api/service-reports/:id/photos/:photoId', authenticateToken, async 
     const photo = (report.photos || []).find(p => p.id === req.params.photoId);
 
     if (photo) {
-      // Delete file from disk
+      // Delete file from Google Drive (or local disk for legacy uploads)
       try {
-        const filePath = path.join(__dirname, photo.url);
-        await fs.unlink(filePath);
+        if (photo.driveFileId) {
+          await googledrive.deleteFile(photo.driveFileId);
+        } else if (photo.url && photo.url.startsWith('/uploads/')) {
+          const filePath = path.join(__dirname, photo.url);
+          await fs.unlink(filePath);
+        }
       } catch (e) { /* file may not exist */ }
     }
 
@@ -7338,10 +7371,14 @@ app.delete('/api/service-reports/:id/files/:fileId', authenticateToken, async (r
     const file = (report.clientFiles || []).find(f => f.id === req.params.fileId);
 
     if (file) {
-      // Delete file from disk
+      // Delete file from Google Drive (or local disk for legacy uploads)
       try {
-        const filePath = path.join(__dirname, file.url);
-        await fs.unlink(filePath);
+        if (file.driveFileId) {
+          await googledrive.deleteFile(file.driveFileId);
+        } else if (file.url && file.url.startsWith('/uploads/')) {
+          const filePath = path.join(__dirname, file.url);
+          await fs.unlink(filePath);
+        }
       } catch (e) { /* file may not exist */ }
     }
 
@@ -8483,33 +8520,63 @@ app.listen(PORT, () => {
   // Start HubSpot ticket polling (webhook workaround)
   initializeTicketPolling();
 
-  // One-time migrations for NANI service report
+  // One-time migrations for service reports
   (async () => {
     try {
-      const naniReportId = '26a15b8d-fc8b-4687-8316-46764c8bcdc1';
       const serviceReports = (await db.get('service_reports')) || [];
+      let reportsUpdated = false;
+
+      // Migration 1: Add signer names to NANI service report
+      const naniReportId = '26a15b8d-fc8b-4687-8316-46764c8bcdc1';
       const naniIdx = serviceReports.findIndex(r => r.id === naniReportId);
+      if (naniIdx !== -1 && !serviceReports[naniIdx].customerFirstName) {
+        serviceReports[naniIdx].customerFirstName = 'Terra';
+        serviceReports[naniIdx].customerLastName = 'Hearn';
+        serviceReports[naniIdx].technicianFirstName = 'Jeff';
+        serviceReports[naniIdx].technicianLastName = 'Gray';
+        reportsUpdated = true;
+        console.log('✅ Migration: Added signer names to NANI service report');
+      }
 
-      if (naniIdx !== -1) {
-        let updated = false;
-
-        // Migration 1: Add signer names
-        if (!serviceReports[naniIdx].customerFirstName) {
-          serviceReports[naniIdx].customerFirstName = 'Terra';
-          serviceReports[naniIdx].customerLastName = 'Hearn';
-          serviceReports[naniIdx].technicianFirstName = 'Jeff';
-          serviceReports[naniIdx].technicianLastName = 'Gray';
-          updated = true;
-          console.log('✅ Migration: Added signer names to NANI service report');
+      // Migration 2: Clean up broken local filesystem photo/file URLs across ALL reports
+      // Photos stored at /uploads/ are lost on Replit restart (ephemeral filesystem)
+      // Mark them so the UI shows "unavailable" instead of broken images
+      for (let i = 0; i < serviceReports.length; i++) {
+        const report = serviceReports[i];
+        if (report.photos) {
+          for (let j = 0; j < report.photos.length; j++) {
+            const photo = report.photos[j];
+            if (photo.url && photo.url.startsWith('/uploads/') && !photo.driveFileId) {
+              // Local file URL - these files are lost on Replit restart
+              // Clear the URL so the UI shows "unavailable"
+              report.photos[j].url = null;
+              report.photos[j].lostLocalUrl = photo.url;
+              reportsUpdated = true;
+            }
+          }
         }
+        if (report.clientFiles) {
+          for (let j = 0; j < report.clientFiles.length; j++) {
+            const file = report.clientFiles[j];
+            if (file.url && file.url.startsWith('/uploads/') && !file.driveFileId) {
+              file.url = null;
+              file.lostLocalUrl = file.url;
+              reportsUpdated = true;
+            }
+          }
+        }
+      }
 
-        if (updated) await db.set('service_reports', serviceReports);
+      if (reportsUpdated) {
+        await db.set('service_reports', serviceReports);
+        console.log('✅ Migration: Cleaned up broken local file URLs in service reports');
+      }
 
-        // Migration 2: Add to client documents if not already there
+      // Migration 3: Add NANI report to client documents if not already there
+      if (naniIdx !== -1) {
         const clientDocuments = (await db.get('client_documents')) || [];
         const alreadyAdded = clientDocuments.some(d => d.serviceReportId === naniReportId);
         if (!alreadyAdded) {
-          // Find NANI client by matching facility name or practice name
           const users = (await db.get('users')) || [];
           const report = serviceReports[naniIdx];
           const clientFacility = (report.clientFacilityName || '').toLowerCase();
@@ -8549,6 +8616,140 @@ app.listen(PORT, () => {
       }
     } catch (e) {
       console.error('Migration error (non-blocking):', e.message);
+    }
+  })();
+
+  // One-time migration: Normalize all project task boards to template structure
+  // Fixes broken stage/category breakdowns by setting all stages to "Tasks"
+  // and re-mapping phases to match the canonical template where possible
+  (async () => {
+    try {
+      const migrationKey = 'migration_tasks_normalized_v1';
+      const alreadyRun = await db.get(migrationKey);
+      if (alreadyRun) return;
+
+      console.log('🔄 Migration: Normalizing project task boards to template structure...');
+
+      // Load the template to build title -> phase lookup
+      const templatePath = require('path').join(__dirname, 'template-biolis-au480-clia.json');
+      const templateRaw = await fs.readFile(templatePath, 'utf8');
+      const templateTasks = JSON.parse(templateRaw);
+
+      // Build normalized title -> phase mapping for fuzzy matching
+      const titleToPhase = {};
+      templateTasks.forEach(t => {
+        const normalizedTitle = t.taskTitle.trim().toLowerCase();
+        titleToPhase[normalizedTitle] = t.phase;
+      });
+
+      // Also build a mapping of old stage names to phases for tasks that used stage as a phase-like value
+      const oldStageToPhase = {
+        'contract & initial setup': 'Phase 1',
+        'billing, clia & hiring': 'Phase 2',
+        'tech infrastructure & lis integration': 'Phase 3',
+        'tech infrastructure': 'Phase 3',
+        'inventory forecasting & procurement': 'Phase 4',
+        'inventory forecasting': 'Phase 4',
+        'supply orders & logistics': 'Phase 5',
+        'supply orders': 'Phase 5',
+        'onboarding & welcome calls': 'Phase 6',
+        'onboarding': 'Phase 6',
+        'virtual soft pilot & prep': 'Phase 7',
+        'virtual soft pilot': 'Phase 7',
+        'soft pilot': 'Phase 7',
+        'training & full validation': 'Phase 8',
+        'training & validation': 'Phase 8',
+        'training/validation': 'Phase 8',
+        'go-live': 'Phase 9',
+        'go live': 'Phase 9',
+        'golive': 'Phase 9',
+        'post-launch support & optimization': 'Phase 10',
+        'post-launch': 'Phase 10',
+        'post launch': 'Phase 10'
+      };
+
+      const validPhases = new Set(['Phase 1', 'Phase 2', 'Phase 3', 'Phase 4', 'Phase 5', 'Phase 6', 'Phase 7', 'Phase 8', 'Phase 9', 'Phase 10']);
+
+      const projects = await getProjects();
+      let totalFixedStages = 0;
+      let totalFixedPhases = 0;
+      let projectsUpdated = 0;
+
+      for (const project of projects) {
+        // Skip NANI projects - their board is already correct
+        const projectName = (project.name || '').toLowerCase();
+        const clientName = (project.clientName || '').toLowerCase();
+        if (projectName.includes('nani') || clientName.includes('nani') || clientName.includes('indiana kidney')) {
+          continue;
+        }
+
+        const tasks = await getRawTasks(project.id);
+        if (!tasks || tasks.length === 0) continue;
+
+        let modified = false;
+
+        for (let i = 0; i < tasks.length; i++) {
+          const task = tasks[i];
+
+          // Fix stage: normalize everything to "Tasks"
+          if (task.stage && task.stage !== 'Tasks') {
+            // Before overwriting, check if stage was being used as a phase hint
+            const oldStage = (task.stage || '').trim().toLowerCase();
+            if (!validPhases.has(task.phase) && oldStageToPhase[oldStage]) {
+              tasks[i].phase = oldStageToPhase[oldStage];
+              totalFixedPhases++;
+            }
+            tasks[i].stage = 'Tasks';
+            totalFixedStages++;
+            modified = true;
+          }
+
+          // Fix phase: try to match task title to template
+          const normalizedTitle = (task.taskTitle || '').trim().toLowerCase();
+          if (normalizedTitle && titleToPhase[normalizedTitle]) {
+            const correctPhase = titleToPhase[normalizedTitle];
+            if (task.phase !== correctPhase) {
+              tasks[i].phase = correctPhase;
+              totalFixedPhases++;
+              modified = true;
+            }
+          }
+
+          // Ensure phase is valid (Phase 1 through Phase 10)
+          if (!validPhases.has(task.phase)) {
+            // Try to extract phase number from non-standard format
+            const phaseMatch = (task.phase || '').match(/phase\s*(\d+)/i);
+            if (phaseMatch && parseInt(phaseMatch[1]) >= 1 && parseInt(phaseMatch[1]) <= 10) {
+              tasks[i].phase = `Phase ${phaseMatch[1]}`;
+              totalFixedPhases++;
+              modified = true;
+            } else {
+              // Try mapping from old stage-like phase names
+              const lowerPhase = (task.phase || '').trim().toLowerCase();
+              if (oldStageToPhase[lowerPhase]) {
+                tasks[i].phase = oldStageToPhase[lowerPhase];
+                totalFixedPhases++;
+                modified = true;
+              } else {
+                // Default unrecognized phases to Phase 1
+                tasks[i].phase = 'Phase 1';
+                totalFixedPhases++;
+                modified = true;
+              }
+            }
+          }
+        }
+
+        if (modified) {
+          await db.set(`tasks_${project.id}`, tasks);
+          projectsUpdated++;
+        }
+      }
+
+      await db.set(migrationKey, { ranAt: new Date().toISOString(), projectsUpdated, totalFixedStages, totalFixedPhases });
+      console.log(`✅ Migration: Normalized ${totalFixedStages} stages and ${totalFixedPhases} phases across ${projectsUpdated} projects`);
+    } catch (e) {
+      console.error('Task normalization migration error (non-blocking):', e.message);
     }
   })();
 });
