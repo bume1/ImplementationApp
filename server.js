@@ -6618,7 +6618,15 @@ app.put('/api/service-reports/:id', authenticateToken, requireServiceAccess, asy
       'issueDescription', 'workPerformed', 'partsUsed', 'recommendations',
       'followUpRequired', 'followUpDate', 'followUpNotes',
       'technicianNotes', 'clientSignature', 'technicianSignature',
-      'photos', 'attachments', 'readings', 'testResults'
+      'photos', 'attachments', 'readings', 'testResults',
+      'clientFacilityName', 'customerName', 'address', 'analyzerModel',
+      'analyzerSerialNumber', 'serviceType', 'descriptionOfWork',
+      'materialsUsed', 'solution', 'outstandingIssues',
+      'serviceCompletionDate', 'serviceProviderName',
+      'customerSignature', 'customerSignatureDate',
+      'customerFirstName', 'customerLastName',
+      'technicianFirstName', 'technicianLastName',
+      'technicianSignatureDate'
     ];
     const sanitizedReportUpdates = {};
     for (const key of serviceReportAllowedFields) {
@@ -7002,8 +7010,12 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
       analyzersValidated,
       customerSignature,
       customerSignatureDate,
+      customerFirstName,
+      customerLastName,
       technicianSignature,
       technicianSignatureDate,
+      technicianFirstName,
+      technicianLastName,
       serviceCompletionDate,
       analyzerSerialNumber
     } = req.body;
@@ -7028,8 +7040,12 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
       analyzersValidated: analyzersValidated || existingReport.analyzersValidated,
       customerSignature: customerSignature || existingReport.customerSignature,
       customerSignatureDate: customerSignatureDate || existingReport.customerSignatureDate,
+      customerFirstName: customerFirstName || existingReport.customerFirstName,
+      customerLastName: customerLastName || existingReport.customerLastName,
       technicianSignature: technicianSignature || existingReport.technicianSignature,
       technicianSignatureDate: technicianSignatureDate || existingReport.technicianSignatureDate,
+      technicianFirstName: technicianFirstName || existingReport.technicianFirstName,
+      technicianLastName: technicianLastName || existingReport.technicianLastName,
       serviceCompletionDate: serviceCompletionDate || existingReport.serviceCompletionDate || new Date().toISOString().split('T')[0],
       analyzerSerialNumber: analyzerSerialNumber || existingReport.analyzerSerialNumber,
       serviceProviderName: req.user.name,
@@ -8466,4 +8482,73 @@ app.listen(PORT, () => {
 
   // Start HubSpot ticket polling (webhook workaround)
   initializeTicketPolling();
+
+  // One-time migrations for NANI service report
+  (async () => {
+    try {
+      const naniReportId = '26a15b8d-fc8b-4687-8316-46764c8bcdc1';
+      const serviceReports = (await db.get('service_reports')) || [];
+      const naniIdx = serviceReports.findIndex(r => r.id === naniReportId);
+
+      if (naniIdx !== -1) {
+        let updated = false;
+
+        // Migration 1: Add signer names
+        if (!serviceReports[naniIdx].customerFirstName) {
+          serviceReports[naniIdx].customerFirstName = 'Terra';
+          serviceReports[naniIdx].customerLastName = 'Hearn';
+          serviceReports[naniIdx].technicianFirstName = 'Jeff';
+          serviceReports[naniIdx].technicianLastName = 'Gray';
+          updated = true;
+          console.log('✅ Migration: Added signer names to NANI service report');
+        }
+
+        if (updated) await db.set('service_reports', serviceReports);
+
+        // Migration 2: Add to client documents if not already there
+        const clientDocuments = (await db.get('client_documents')) || [];
+        const alreadyAdded = clientDocuments.some(d => d.serviceReportId === naniReportId);
+        if (!alreadyAdded) {
+          // Find NANI client by matching facility name or practice name
+          const users = (await db.get('users')) || [];
+          const report = serviceReports[naniIdx];
+          const clientFacility = (report.clientFacilityName || '').toLowerCase();
+          const reportCompanyId = report.hubspotCompanyId || '';
+
+          const client = users.find(u => {
+            if (u.role !== 'client') return false;
+            if (reportCompanyId && u.hubspotCompanyId && String(u.hubspotCompanyId) === String(reportCompanyId)) return true;
+            if (clientFacility && u.practiceName?.toLowerCase().includes('nani')) return true;
+            if (clientFacility && u.practiceName?.toLowerCase().includes('indiana kidney')) return true;
+            if (clientFacility && u.name?.toLowerCase().includes('nani')) return true;
+            return false;
+          });
+
+          if (client && client.slug) {
+            const reportDate = new Date(report.serviceCompletionDate || report.createdAt).toLocaleDateString();
+            clientDocuments.push({
+              id: uuidv4(),
+              slug: client.slug,
+              title: `Service Report - ${reportDate}`,
+              description: `${report.serviceType} - ${report.serviceProviderName || report.technicianName || 'Jeff Gray'}`,
+              category: 'Service Reports',
+              serviceReportId: naniReportId,
+              serviceType: report.serviceType,
+              driveWebViewLink: report.driveWebViewLink || null,
+              driveWebContentLink: report.driveWebContentLink || null,
+              createdAt: new Date().toISOString(),
+              uploadedBy: 'system',
+              uploadedByName: 'Thrive 365 Labs'
+            });
+            await db.set('client_documents', clientDocuments);
+            console.log(`✅ Migration: Added NANI service report to client files for slug "${client.slug}"`);
+          } else {
+            console.log('⚠️ Migration: Could not find NANI client user to add service report to files');
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Migration error (non-blocking):', e.message);
+    }
+  })();
 });

@@ -165,8 +165,17 @@ async function generateServiceReportPDF(reportData, technicianName) {
         doc.fontSize(10).fillColor(COLORS.lightGray).font('Helvetica-Oblique');
         doc.text('(Not signed)', 120, y + 35);
       }
-      doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica');
-      doc.text(`Date: ${reportData.customerSignatureDate || '-'}`, 50, y + 70);
+      // Customer name
+      const customerName = [reportData.customerFirstName, reportData.customerLastName].filter(Boolean).join(' ');
+      if (customerName) {
+        doc.fontSize(9).fillColor(COLORS.darkGray).font('Helvetica');
+        doc.text(customerName, 50, y + 68);
+        doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica');
+        doc.text(`Date: ${reportData.customerSignatureDate || '-'}`, 50, y + 82);
+      } else {
+        doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica');
+        doc.text(`Date: ${reportData.customerSignatureDate || '-'}`, 50, y + 70);
+      }
 
       // Technician signature
       doc.fontSize(9).fillColor(COLORS.darkGray).font('Helvetica-Bold');
@@ -184,8 +193,17 @@ async function generateServiceReportPDF(reportData, technicianName) {
         doc.fontSize(10).fillColor(COLORS.lightGray).font('Helvetica-Oblique');
         doc.text('(Not signed)', 370, y + 35);
       }
-      doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica');
-      doc.text(`Date: ${reportData.technicianSignatureDate || '-'}`, 300, y + 70);
+      // Technician name
+      const techName = [reportData.technicianFirstName, reportData.technicianLastName].filter(Boolean).join(' ');
+      if (techName) {
+        doc.fontSize(9).fillColor(COLORS.darkGray).font('Helvetica');
+        doc.text(techName, 300, y + 68);
+        doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica');
+        doc.text(`Date: ${reportData.technicianSignatureDate || '-'}`, 300, y + 82);
+      } else {
+        doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica');
+        doc.text(`Date: ${reportData.technicianSignatureDate || '-'}`, 300, y + 70);
+      }
 
       // Footer
       doc.fontSize(8).fillColor(COLORS.lightGray).font('Helvetica-Oblique');
@@ -224,10 +242,17 @@ function drawFieldTable(doc, rows, x, startY) {
   rows.forEach(row => {
     if (row.length === 4) {
       drawFieldRow(doc, row[0], row[1], x, y, row[2], row[3]);
+      // Calculate row height based on longest value text in the row
+      const val1Width = 130;
+      const val2Width = 130;
+      const val1Height = doc.fontSize(10).font('Helvetica').heightOfString(row[1] || '-', { width: val1Width });
+      const val2Height = doc.fontSize(10).font('Helvetica').heightOfString(row[3] || '-', { width: val2Width });
+      y += Math.max(18, Math.max(val1Height, val2Height) + 4);
     } else if (row.length === 2) {
       drawFieldRow(doc, row[0], row[1], x, y);
+      const valHeight = doc.fontSize(10).font('Helvetica').heightOfString(row[1] || '-', { width: 380 });
+      y += Math.max(18, valHeight + 4);
     }
-    y += 18;
   });
 
   return y;
@@ -406,8 +431,17 @@ async function generateValidationReportPDF(reportData, technicianName) {
         doc.fontSize(10).fillColor(COLORS.lightGray).font('Helvetica-Oblique');
         doc.text('(Not signed)', 120, y + 35);
       }
-      doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica');
-      doc.text(`Date: ${reportData.customerSignatureDate || '-'}`, 50, y + 70);
+      // Customer name
+      const customerName = [reportData.customerFirstName, reportData.customerLastName].filter(Boolean).join(' ');
+      if (customerName) {
+        doc.fontSize(9).fillColor(COLORS.darkGray).font('Helvetica');
+        doc.text(customerName, 50, y + 68);
+        doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica');
+        doc.text(`Date: ${reportData.customerSignatureDate || '-'}`, 50, y + 82);
+      } else {
+        doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica');
+        doc.text(`Date: ${reportData.customerSignatureDate || '-'}`, 50, y + 70);
+      }
 
       // Technician signature
       doc.fontSize(9).fillColor(COLORS.darkGray).font('Helvetica-Bold');
@@ -425,8 +459,17 @@ async function generateValidationReportPDF(reportData, technicianName) {
         doc.fontSize(10).fillColor(COLORS.lightGray).font('Helvetica-Oblique');
         doc.text('(Not signed)', 370, y + 35);
       }
-      doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica');
-      doc.text(`Date: ${reportData.technicianSignatureDate || '-'}`, 300, y + 70);
+      // Technician name
+      const techName = [reportData.technicianFirstName, reportData.technicianLastName].filter(Boolean).join(' ');
+      if (techName) {
+        doc.fontSize(9).fillColor(COLORS.darkGray).font('Helvetica');
+        doc.text(techName, 300, y + 68);
+        doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica');
+        doc.text(`Date: ${reportData.technicianSignatureDate || '-'}`, 300, y + 82);
+      } else {
+        doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica');
+        doc.text(`Date: ${reportData.technicianSignatureDate || '-'}`, 300, y + 70);
+      }
 
       // Footer
       doc.fontSize(8).fillColor(COLORS.lightGray).font('Helvetica-Oblique');
