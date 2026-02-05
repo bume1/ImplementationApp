@@ -762,7 +762,7 @@
                       <div>
                         <h3 className="font-semibold text-gray-700">{stageName}</h3>
                         <p className="text-xs text-gray-500">{stageTasks.filter(t => t.completed).length} of {stageTasks.length} complete</p>
-                        {phase === 'Phase 3' && stageName === 'Training/Validation' && onNavigate && (
+                        {phase === 'Phase 8' && onNavigate && (
                           <button onClick={() => onNavigate('files')} className="text-xs text-primary hover:underline mt-1 inline-block">
                             View Validation Reports in Files →
                           </button>
@@ -871,7 +871,7 @@
                           <div className="flex justify-between items-start mb-3">
                             <div>
                               <h4 className="font-semibold text-gray-800">{stage}</h4>
-                              {phase === 'Phase 3' && stage === 'Training/Validation' && onNavigate && (
+                              {phase === 'Phase 8' && onNavigate && (
                                 <button onClick={() => onNavigate('files')} className="text-xs text-primary hover:underline mt-1 inline-block">
                                   View Validation Reports in Files →
                                 </button>
