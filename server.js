@@ -7955,199 +7955,17 @@ app.get('/changelog', (req, res) => {
 
 // ============== CHANGELOG API ==============
 
-// Get all changelog entries (public)
+// Get all changelog entries (public, sorted by version descending)
 app.get('/api/changelog', async (req, res) => {
   try {
     const changelog = (await db.get('changelog')) || [];
+    // Sort by semver descending (newest first)
+    changelog.sort((a, b) => {
+      return changelogGenerator.compareVersions(b.version, a.version);
+    });
     res.json(changelog);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Add new changelog version (admin only)
-app.post('/api/changelog', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { version, date, sections } = req.body;
-    if (!version || !sections) {
-      return res.status(400).json({ error: 'Version and sections are required' });
-    }
-
-    const changelog = (await db.get('changelog')) || [];
-
-    // Mark all existing as not current
-    changelog.forEach(entry => entry.isCurrent = false);
-
-    const newEntry = {
-      id: Date.now().toString(),
-      version,
-      date: date || new Date().toISOString().split('T')[0],
-      sections, // Array of { title, items: [], color?: 'primary'|'red' }
-      isCurrent: true,
-      createdAt: new Date().toISOString(),
-      createdBy: req.user.email
-    };
-
-    changelog.unshift(newEntry);
-    await db.set('changelog', changelog);
-
-    res.json({ message: 'Changelog entry added', entry: newEntry });
-  } catch (error) {
-    console.error('Changelog create error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Update changelog entry (admin only)
-app.put('/api/changelog/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { version, date, sections, isCurrent } = req.body;
-
-    const changelog = (await db.get('changelog')) || [];
-    const idx = changelog.findIndex(c => c.id === id);
-    if (idx === -1) return res.status(404).json({ error: 'Entry not found' });
-
-    // If marking as current, unmark others
-    if (isCurrent) {
-      changelog.forEach(entry => entry.isCurrent = false);
-    }
-
-    changelog[idx] = {
-      ...changelog[idx],
-      version: version || changelog[idx].version,
-      date: date || changelog[idx].date,
-      sections: sections || changelog[idx].sections,
-      isCurrent: isCurrent !== undefined ? isCurrent : changelog[idx].isCurrent,
-      updatedAt: new Date().toISOString(),
-      updatedBy: req.user.email
-    };
-
-    await db.set('changelog', changelog);
-    res.json({ message: 'Changelog updated' });
-  } catch (error) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Add section to existing changelog version (admin only)
-app.post('/api/changelog/:id/section', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { title, items, color } = req.body;
-
-    if (!title || !items || !Array.isArray(items)) {
-      return res.status(400).json({ error: 'Title and items array required' });
-    }
-
-    const changelog = (await db.get('changelog')) || [];
-    const idx = changelog.findIndex(c => c.id === id);
-    if (idx === -1) return res.status(404).json({ error: 'Entry not found' });
-
-    changelog[idx].sections.push({ title, items, color: color || 'primary' });
-    changelog[idx].updatedAt = new Date().toISOString();
-    changelog[idx].updatedBy = req.user.email;
-
-    await db.set('changelog', changelog);
-    res.json({ message: 'Section added' });
-  } catch (error) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Delete changelog entry (admin only)
-app.delete('/api/changelog/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { id } = req.params;
-    let changelog = (await db.get('changelog')) || [];
-    changelog = changelog.filter(c => c.id !== id);
-    await db.set('changelog', changelog);
-    res.json({ message: 'Changelog deleted' });
-  } catch (error) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Generate changelog from git commits (admin only)
-app.post('/api/changelog/generate', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { version, sinceTag } = req.body;
-
-    console.log('📋 Generating changelog from git commits...');
-
-    // Generate changelog entry from commits
-    const entry = await changelogGenerator.generateChangelogFromCommits(version, sinceTag);
-
-    if (!entry) {
-      return res.status(400).json({ error: 'No commits found to generate changelog' });
-    }
-
-    // Get existing changelog
-    const changelog = (await db.get('changelog')) || [];
-
-    // Mark all existing as not current
-    changelog.forEach(e => e.isCurrent = false);
-
-    // Add metadata
-    entry.createdBy = req.user.email;
-    entry.generatedFromGit = true;
-
-    // Add new entry at the beginning
-    changelog.unshift(entry);
-    await db.set('changelog', changelog);
-
-    // Log activity
-    await logActivity(
-      req.user.id,
-      req.user.name,
-      'changelog_generated',
-      'changelog',
-      entry.id,
-      { version: entry.version, sectionsCount: entry.sections.length }
-    );
-
-    res.json({
-      message: 'Changelog generated successfully',
-      entry
-    });
-  } catch (error) {
-    console.error('Changelog generation error:', error);
-    res.status(500).json({ error: 'Failed to generate changelog: ' + error.message });
-  }
-});
-
-// Preview changelog from git commits (admin only, doesn't save)
-app.get('/api/changelog/preview', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { sinceTag, maxCommits } = req.query;
-
-    // Get recent commits
-    const commits = changelogGenerator.getRecentCommits(sinceTag, parseInt(maxCommits) || 50);
-
-    if (commits.length === 0) {
-      return res.json({ commits: [], sections: [] });
-    }
-
-    // Group by category
-    const sections = changelogGenerator.groupCommitsByCategory(commits);
-
-    res.json({
-      commitCount: commits.length,
-      commits: commits.slice(0, 20).map(c => ({
-        hash: c.hash.substring(0, 7),
-        message: c.message,
-        date: c.date
-      })),
-      sections: sections.map(s => ({
-        label: s.label,
-        color: s.color,
-        itemCount: s.items.length,
-        items: s.items.map(i => i.message)
-      }))
-    });
-  } catch (error) {
-    console.error('Changelog preview error:', error);
-    res.status(500).json({ error: 'Failed to preview changelog' });
   }
 });
 
@@ -8752,4 +8570,7 @@ app.listen(PORT, () => {
       console.error('Task normalization migration error (non-blocking):', e.message);
     }
   })();
+
+  // Auto-generate changelog from git commits on startup
+  changelogGenerator.autoUpdateChangelog(db);
 });
