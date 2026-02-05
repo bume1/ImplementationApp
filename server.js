@@ -13,10 +13,25 @@ const googledrive = require('./googledrive');
 const pdfGenerator = require('./pdf-generator');
 const changelogGenerator = require('./changelog-generator');
 
-const upload = multer({ 
+const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }
 });
+
+// Concurrent upload limiter to prevent memory exhaustion (Gotcha #12)
+// Files are memory-only (10MB each); limit concurrent uploads to prevent OOM
+const MAX_CONCURRENT_UPLOADS = 5;
+let _activeUploads = 0;
+
+const uploadLimiter = (req, res, next) => {
+  if (_activeUploads >= MAX_CONCURRENT_UPLOADS) {
+    return res.status(503).json({ error: 'Server busy processing uploads. Please try again in a moment.' });
+  }
+  _activeUploads++;
+  res.on('finish', () => { _activeUploads--; });
+  res.on('close', () => { _activeUploads--; });
+  next();
+};
 
 const app = express();
 const db = new Database();
@@ -25,6 +40,12 @@ const PORT = process.env.PORT || 3000;
 // HubSpot ticket polling timer reference
 let hubspotPollingTimer = null;
 const JWT_SECRET = process.env.JWT_SECRET || 'thrive365-secret-change-in-production';
+
+// Startup security warnings
+if (!process.env.JWT_SECRET) {
+  console.warn('⚠️  WARNING: JWT_SECRET environment variable not set. Using weak default secret.');
+  console.warn('   This is a SECURITY RISK in production. Set JWT_SECRET to a strong random value.');
+}
 
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
@@ -63,7 +84,7 @@ app.use('/launch', express.static('public', staticOptions));
 app.use('/thrive365labsLAUNCH', express.static('public', staticOptions));
 app.use('/thrive365labslaunch', express.static('public', staticOptions));
 app.use(express.static('public', { ...staticOptions, index: false }));
-app.use('/uploads', express.static('uploads', staticOptions));
+// NOTE: Authenticated /uploads static middleware is registered after authenticateToken is defined (see below)
 
 // ============== LAUNCH ROUTES (Implementations Portal) ==============
 // Main implementations dashboard
@@ -101,6 +122,7 @@ app.get('/thrive365labslaunch', (req, res) => {
         createdAt: new Date().toISOString()
       });
       await db.set('users', users);
+    invalidateUsersCache();
       console.log('✅ Admin user created: bianca@thrive365labs.com / Thrive2025!');
     }
   } catch (err) {
@@ -109,8 +131,31 @@ app.get('/thrive365labslaunch', (req, res) => {
 })();
 
 // Helper functions
-const getUsers = async () => (await db.get('users')) || [];
-const getProjects = async () => {
+
+// Short-lived user cache to reduce DB reads on every authenticated request (Gotcha #6)
+// 5-second TTL ensures permission changes take effect within seconds while reducing O(n) lookups
+let _usersCache = { data: null, lastRefresh: 0 };
+const USERS_CACHE_TTL = 5000; // 5 seconds
+
+const getUsers = async () => {
+  const now = Date.now();
+  if (_usersCache.data && (now - _usersCache.lastRefresh < USERS_CACHE_TTL)) {
+    return _usersCache.data;
+  }
+  const users = (await db.get('users')) || [];
+  _usersCache = { data: users, lastRefresh: now };
+  return users;
+};
+
+// Invalidate user cache after writes (called after db.set('users', ...))
+const invalidateUsersCache = () => {
+  _usersCache = { data: null, lastRefresh: 0 };
+};
+// Run legacy migration once at startup instead of on every read (Gotcha #15)
+let _projectsMigrated = false;
+
+const migrateProjects = async () => {
+  if (_projectsMigrated) return;
   const projects = (await db.get('projects')) || [];
   let needsSave = false;
   for (const project of projects) {
@@ -122,12 +167,25 @@ const getProjects = async () => {
   }
   if (needsSave) {
     await db.set('projects', projects);
+    console.log('Migrated hubspotDealId -> hubspotRecordId for legacy projects');
   }
-  return projects;
+  _projectsMigrated = true;
 };
+
+// Run migration immediately on startup
+migrateProjects().catch(err => console.error('Project migration error:', err));
+
+const getProjects = async () => (await db.get('projects')) || [];
 // Get raw tasks for mutation - use this when you need to modify and save back
 const getRawTasks = async (projectId) => {
   return (await db.get(`tasks_${projectId}`)) || [];
+};
+
+// Safe next ID generator - handles mixed numeric/UUID task IDs without NaN
+const getNextNumericId = (items) => {
+  if (!items || items.length === 0) return 1;
+  const numericIds = items.map(t => typeof t.id === 'number' ? t.id : parseInt(t.id, 10)).filter(id => !isNaN(id));
+  return numericIds.length > 0 ? Math.max(...numericIds) + 1 : items.length + 1;
 };
 
 // Get normalized tasks for display - use this for read-only operations
@@ -149,6 +207,8 @@ const getTasks = async (projectId) => {
 };
 
 // Activity logging helper
+const ACTIVITY_LOG_MAX = 2000;
+
 const logActivity = async (userId, userName, action, entityType, entityId, details, projectId = null) => {
   try {
     const activities = (await db.get('activity_log')) || [];
@@ -164,8 +224,12 @@ const logActivity = async (userId, userName, action, entityType, entityId, detai
       timestamp: new Date().toISOString()
     };
     activities.unshift(activity);
-    // Keep only last 500 activities to prevent unbounded growth
-    if (activities.length > 500) activities.length = 500;
+    // Keep only last ACTIVITY_LOG_MAX activities to prevent unbounded growth
+    if (activities.length > ACTIVITY_LOG_MAX) {
+      const droppedCount = activities.length - ACTIVITY_LOG_MAX;
+      console.warn(`Activity log exceeded ${ACTIVITY_LOG_MAX} entries, dropping ${droppedCount} oldest entries`);
+      activities.length = ACTIVITY_LOG_MAX;
+    }
     await db.set('activity_log', activities);
   } catch (err) {
     console.error('Failed to log activity:', err);
@@ -598,47 +662,57 @@ const authenticateToken = async (req, res, next) => {
   if (!token) return res.status(401).json({ error: 'Access denied' });
   jwt.verify(token, JWT_SECRET, async (err, tokenUser) => {
     if (err) return res.status(403).json({ error: 'Invalid token' });
-    // Fetch fresh user data from database to get current role and permissions
-    const users = await getUsers();
-    const freshUser = users.find(u => u.id === tokenUser.id);
-    if (!freshUser) return res.status(403).json({ error: 'User not found' });
-    // Use fresh data for all user properties to ensure permission changes take effect immediately
-    // Determine if user is a manager (has limited admin access)
-    const isManager = freshUser.isManager || false;
+    try {
+      // Fetch fresh user data from database to get current role and permissions
+      const users = await getUsers();
+      const freshUser = users.find(u => u.id === tokenUser.id);
+      if (!freshUser) return res.status(403).json({ error: 'User not found' });
+      // Use fresh data for all user properties to ensure permission changes take effect immediately
+      // Determine if user is a manager (has limited admin access)
+      const isManager = freshUser.isManager || false;
 
-    req.user = {
-      id: freshUser.id,
-      email: freshUser.email,
-      name: freshUser.name,
-      role: freshUser.role, // admin (super admin), user, client, vendor
-      assignedProjects: freshUser.assignedProjects || [],
-      projectAccessLevels: freshUser.projectAccessLevels || {},
-      // Manager flag - provides limited admin access (client portal admin + service portal in admin hub)
-      isManager: isManager,
-      // Granular permission flags
-      hasServicePortalAccess: freshUser.hasServicePortalAccess || false,
-      hasAdminHubAccess: freshUser.hasAdminHubAccess || false,
-      hasImplementationsAccess: freshUser.hasImplementationsAccess || false,
-      // Managers automatically get client portal admin access
-      hasClientPortalAdminAccess: freshUser.hasClientPortalAdminAccess || isManager || false,
-      // Vendor-specific: clients they can service
-      assignedClients: freshUser.assignedClients || [],
-      // Client-specific fields
-      isNewClient: freshUser.isNewClient || false,
-      slug: freshUser.slug || null,
-      practiceName: freshUser.practiceName || null
-    };
-    next();
+      req.user = {
+        id: freshUser.id,
+        email: freshUser.email,
+        name: freshUser.name,
+        role: freshUser.role, // admin (super admin), user, client, vendor
+        assignedProjects: freshUser.assignedProjects || [],
+        projectAccessLevels: freshUser.projectAccessLevels || {},
+        // Manager flag - provides limited admin access (client portal admin + service portal in admin hub)
+        isManager: isManager,
+        // Granular permission flags
+        hasServicePortalAccess: freshUser.hasServicePortalAccess || false,
+        hasAdminHubAccess: freshUser.hasAdminHubAccess || false,
+        hasImplementationsAccess: freshUser.hasImplementationsAccess || false,
+        // Managers automatically get client portal admin access
+        hasClientPortalAdminAccess: freshUser.hasClientPortalAdminAccess || isManager || false,
+        // Vendor-specific: clients they can service
+        assignedClients: freshUser.assignedClients || [],
+        // Client-specific fields
+        isNewClient: freshUser.isNewClient || false,
+        slug: freshUser.slug || null,
+        practiceName: freshUser.practiceName || null
+      };
+      next();
+    } catch (error) {
+      console.error('Auth middleware error:', error);
+      res.status(500).json({ error: 'Authentication error' });
+    }
   });
 };
 
 // Authorization helper to check project access
 const canAccessProject = (user, projectId) => {
   if (user.role === 'admin') return true;
-  if (user.role === 'client') {
-    return (user.assignedProjects || []).includes(projectId);
-  }
   return (user.assignedProjects || []).includes(projectId);
+};
+
+// Authorization helper to check write access to a project
+const canWriteProject = (user, projectId) => {
+  if (user.role === 'admin') return true;
+  if (!(user.assignedProjects || []).includes(projectId)) return false;
+  const level = (user.projectAccessLevels || {})[projectId];
+  return level === 'write' || level === 'admin';
 };
 
 // Generate a unique slug for client users
@@ -693,27 +767,43 @@ const requireClientPortalAdmin = (req, res, next) => {
   return res.status(403).json({ error: 'Client Portal admin access required' });
 };
 
+// Uploads require authentication - registered here after authenticateToken is defined
+app.use('/uploads', authenticateToken, express.static('uploads', staticOptions));
+
 // ============== AUTH ROUTES ==============
-app.post('/api/auth/signup', async (req, res) => {
+app.post('/api/auth/signup', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { email, password, name } = req.body;
     if (!email || !password || !name) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+    // Validate password strength (min 8 chars, at least one uppercase, one lowercase, one number)
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters long' });
+    }
+    if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
+      return res.status(400).json({ error: 'Password must contain at least one uppercase letter, one lowercase letter, and one number' });
+    }
     const users = await getUsers();
-    if (users.find(u => u.email === email)) {
+    if (users.find(u => u.email?.toLowerCase() === email.toLowerCase())) {
       return res.status(400).json({ error: 'User already exists' });
     }
     const hashedPassword = await bcrypt.hash(password, 10);
     users.push({
       id: uuidv4(),
-      email,
+      email: email.toLowerCase().trim(),
       name,
       password: hashedPassword,
       role: 'user',
       createdAt: new Date().toISOString()
     });
     await db.set('users', users);
+    invalidateUsersCache();
     res.json({ message: 'Account created successfully' });
   } catch (error) {
     console.error('Signup error:', error);
@@ -800,6 +890,7 @@ app.post('/api/users', authenticateToken, async (req, res) => {
 
     users.push(newUser);
     await db.set('users', users);
+    invalidateUsersCache();
     res.json({
       id: newUser.id,
       email: newUser.email,
@@ -879,6 +970,7 @@ app.post('/api/auth/login', async (req, res) => {
         if (userIndex !== -1) {
           users[userIndex].slug = generatedSlug;
           await db.set('users', users);
+    invalidateUsersCache();
         }
         userResponse.slug = generatedSlug;
       } else {
@@ -905,7 +997,7 @@ app.post('/api/auth/client-login', async (req, res) => {
     }
     const users = await getUsers();
     // Allow clients, admins (super admin), and managers to log into the portal
-    const user = users.find(u => u.email === email && (u.role === 'client' || u.role === 'admin' || u.isManager));
+    const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase() && (u.role === 'client' || u.role === 'admin' || u.isManager));
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
@@ -951,16 +1043,16 @@ app.post('/api/auth/forgot-password', async (req, res) => {
       return res.status(400).json({ error: 'Email is required' });
     }
     const users = await getUsers();
-    const user = users.find(u => u.email === email);
+    const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase());
     if (!user) {
       return res.json({ message: 'Your request has been submitted. An administrator will reach out to you shortly to help reset your password.' });
     }
-    
+
     // Store password reset request for admin to handle
     const resetRequests = await db.get('password_reset_requests') || [];
-    
+
     // Check if there's already a pending request for this user
-    const existingIdx = resetRequests.findIndex(r => r.email === email && r.status === 'pending');
+    const existingIdx = resetRequests.findIndex(r => r.email?.toLowerCase() === email.toLowerCase() && r.status === 'pending');
     if (existingIdx !== -1) {
       return res.json({ message: 'Your request has been submitted. An administrator will reach out to you shortly to help reset your password.' });
     }
@@ -1151,58 +1243,6 @@ app.get('/api/users', authenticateToken, async (req, res) => {
   }
 });
 
-// Debug endpoint to check client users (temporary)
-app.get('/api/debug/clients', async (req, res) => {
-  try {
-    const users = await getUsers();
-    const clients = users.filter(u => u.role === 'client').map(u => ({
-      email: u.email,
-      name: u.name,
-      practiceName: u.practiceName,
-      slug: u.slug,
-      hasPassword: !!u.password,
-      passwordLength: u.password ? u.password.length : 0,
-      passwordIsHashed: u.password ? u.password.startsWith('$2') : false
-    }));
-    res.json({ totalUsers: users.length, clients });
-  } catch (error) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Debug endpoint to test login (temporary)
-app.post('/api/debug/test-login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    const users = await getUsers();
-    const user = users.find(u => u.email?.toLowerCase() === email?.toLowerCase());
-
-    if (!user) {
-      return res.json({ success: false, reason: 'User not found', emailSearched: email });
-    }
-
-    if (!user.password) {
-      return res.json({ success: false, reason: 'User has no password set', email: user.email });
-    }
-
-    const isHashed = user.password.startsWith('$2');
-    if (!isHashed) {
-      return res.json({ success: false, reason: 'Password not hashed (stored as plain text)', email: user.email });
-    }
-
-    const passwordMatch = await bcrypt.compare(password, user.password);
-    return res.json({
-      success: passwordMatch,
-      reason: passwordMatch ? 'Password matches' : 'Password does not match',
-      email: user.email,
-      role: user.role,
-      slug: user.slug
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
 app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
@@ -1244,8 +1284,17 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
       users[idx].practiceName = practiceName;
       // Regenerate slug if practice name changes and user is a client
       if (users[idx].role === 'client' && practiceName) {
+        const oldSlug = users[idx].slug;
         const existingSlugs = users.filter((u, i) => i !== idx && u.slug).map(u => u.slug);
-        users[idx].slug = generateClientSlug(practiceName, existingSlugs);
+        const newSlug = generateClientSlug(practiceName, existingSlugs);
+        if (oldSlug && oldSlug !== newSlug) {
+          // Preserve old slug for redirect lookups so existing portal URLs keep working
+          if (!users[idx].previousSlugs) users[idx].previousSlugs = [];
+          if (!users[idx].previousSlugs.includes(oldSlug)) {
+            users[idx].previousSlugs.push(oldSlug);
+          }
+        }
+        users[idx].slug = newSlug;
       }
     }
     if (isNewClient !== undefined) users[idx].isNewClient = isNewClient;
@@ -1257,6 +1306,7 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
     if (hubspotContactId !== undefined) users[idx].hubspotContactId = hubspotContactId;
 
     await db.set('users', users);
+    invalidateUsersCache();
     res.json({
       id: users[idx].id,
       email: users[idx].email,
@@ -1292,6 +1342,7 @@ app.delete('/api/users/:userId', authenticateToken, requireAdmin, async (req, re
     }
     const filtered = users.filter(u => u.id !== userId);
     await db.set('users', filtered);
+    invalidateUsersCache();
     res.json({ message: 'User deleted' });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
@@ -1373,11 +1424,12 @@ app.get('/api/team-members', authenticateToken, async (req, res) => {
     const { projectId } = req.query;
     const users = await getUsers();
     
-    // If projectId is provided, filter to only users assigned to that project (or admins)
-    let filteredUsers = users;
+    // Filter to team members (admins + users), exclude clients and vendors
+    let filteredUsers = users.filter(u => u.role === 'admin' || u.role === 'user');
     if (projectId) {
-      filteredUsers = users.filter(u => 
-        u.role === 'admin' || 
+      // Further filter to only users assigned to that project (or admins)
+      filteredUsers = filteredUsers.filter(u =>
+        u.role === 'admin' ||
         (u.assignedProjects && u.assignedProjects.includes(projectId))
       );
     }
@@ -1411,12 +1463,14 @@ app.post('/api/projects/:projectId/tasks/:taskId/subtasks', authenticateToken, a
     const idx = tasks.findIndex(t => t.id === parseInt(taskId) || String(t.id) === String(taskId));
     if (idx === -1) return res.status(404).json({ error: 'Task not found' });
     
+    // Inherit showToClient from parent task if not explicitly provided
+    const parentShowToClient = tasks[idx].showToClient || false;
     const subtask = {
       id: uuidv4(),
       title,
       owner: owner || '',
       dueDate: dueDate || '',
-      showToClient: showToClient !== false,
+      showToClient: showToClient !== undefined ? showToClient : parentShowToClient,
       completed: false,
       createdAt: new Date().toISOString(),
       createdBy: req.user.id
@@ -1509,10 +1563,10 @@ app.delete('/api/projects/:projectId/tasks/:taskId/subtasks/:subtaskId', authent
 app.put('/api/projects/:projectId/tasks/bulk-update', authenticateToken, async (req, res) => {
   try {
     const { projectId } = req.params;
-    
-    // Check project access
-    if (!canAccessProject(req.user, projectId)) {
-      return res.status(403).json({ error: 'Access denied to this project' });
+
+    // Check project write access
+    if (!canWriteProject(req.user, projectId)) {
+      return res.status(403).json({ error: 'Write access required for this project' });
     }
     
     const { taskIds, completed } = req.body;
@@ -1528,9 +1582,23 @@ app.put('/api/projects/:projectId/tasks/bulk-update', authenticateToken, async (
     const tasks = await getRawTasks(projectId);
     const updatedTasks = [];
     
+    const skippedTasks = [];
     for (const taskId of taskIds) {
       const idx = tasks.findIndex(t => t.id === parseInt(taskId) || String(t.id) === String(taskId));
       if (idx !== -1) {
+        // Check subtask completion before marking complete (same rule as single-task update)
+        if (completed && !tasks[idx].completed) {
+          const subtasks = tasks[idx].subtasks || [];
+          const incompleteSubtasks = subtasks.filter(s => {
+            const isComplete = s.completed || s.status === 'Complete' || s.status === 'completed';
+            const isNA = s.notApplicable || s.status === 'N/A' || s.status === 'not_applicable';
+            return !isComplete && !isNA;
+          });
+          if (incompleteSubtasks.length > 0) {
+            skippedTasks.push({ id: taskId, title: tasks[idx].taskTitle, reason: 'has incomplete subtasks' });
+            continue;
+          }
+        }
         tasks[idx].completed = completed;
         if (completed) {
           tasks[idx].dateCompleted = new Date().toISOString();
@@ -1542,7 +1610,12 @@ app.put('/api/projects/:projectId/tasks/bulk-update', authenticateToken, async (
     }
     
     await db.set(`tasks_${projectId}`, tasks);
-    res.json({ message: `${updatedTasks.length} tasks updated`, updatedTasks });
+    const response = { message: `${updatedTasks.length} tasks updated`, updatedTasks };
+    if (skippedTasks.length > 0) {
+      response.skipped = skippedTasks;
+      response.message += `, ${skippedTasks.length} skipped (incomplete subtasks)`;
+    }
+    res.json(response);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }
@@ -1552,10 +1625,10 @@ app.put('/api/projects/:projectId/tasks/bulk-update', authenticateToken, async (
 app.post('/api/projects/:projectId/tasks/bulk-delete', authenticateToken, async (req, res) => {
   try {
     const { projectId } = req.params;
-    
-    // Check project access
-    if (!canAccessProject(req.user, projectId)) {
-      return res.status(403).json({ error: 'Access denied to this project' });
+
+    // Check project write access
+    if (!canWriteProject(req.user, projectId)) {
+      return res.status(403).json({ error: 'Write access required for this project' });
     }
     
     const { taskIds } = req.body;
@@ -1568,23 +1641,36 @@ app.post('/api/projects/:projectId/tasks/bulk-delete', authenticateToken, async 
     const tasks = await getRawTasks(projectId);
     const taskIdsSet = new Set(taskIds.map(id => String(id)));
     
-    // Check permissions - user can only delete tasks they created (unless admin)
-    const users = await db.get('users') || [];
-    const user = users.find(u => u.id === req.user.id);
-    const isAdmin = user && user.role === 'admin';
-    
+    // Check permissions - partial success: delete what user has access to, skip the rest
+    const isAdmin = req.user.role === 'admin';
+
     const tasksToDelete = tasks.filter(t => taskIdsSet.has(String(t.id)));
+    const deletableIds = new Set();
+    const skippedTasks = [];
+
     for (const task of tasksToDelete) {
-      if (!isAdmin && task.createdBy !== req.user.id) {
-        return res.status(403).json({ error: `You can only delete tasks you created. Task "${task.taskTitle}" was created by someone else.` });
+      if (!isAdmin && task.createdBy && task.createdBy !== req.user.id) {
+        skippedTasks.push({ id: task.id, title: task.taskTitle, reason: 'created by another user' });
+      } else {
+        deletableIds.add(String(task.id));
       }
     }
-    
-    const remainingTasks = tasks.filter(t => !taskIdsSet.has(String(t.id)));
-    const deletedCount = tasks.length - remainingTasks.length;
-    
+
+    // Clean up dependency references pointing to deleted tasks
+    const remainingTasks = tasks.filter(t => !deletableIds.has(String(t.id)));
+    for (const t of remainingTasks) {
+      if (Array.isArray(t.dependencies)) {
+        t.dependencies = t.dependencies.filter(depId => !deletableIds.has(String(depId)));
+      }
+    }
+
     await db.set(`tasks_${projectId}`, remainingTasks);
-    res.json({ message: `${deletedCount} tasks deleted` });
+    const response = { message: `${deletableIds.size} tasks deleted` };
+    if (skippedTasks.length > 0) {
+      response.skipped = skippedTasks;
+      response.message += `, ${skippedTasks.length} skipped (no permission)`;
+    }
+    res.json(response);
   } catch (error) {
     console.error('Bulk delete error:', error);
     res.status(500).json({ error: 'Server error' });
@@ -1763,7 +1849,7 @@ const ALLOWED_FILE_TYPES = [
 ];
 
 // Upload file to task (admin only)
-app.post('/api/projects/:projectId/tasks/:taskId/files', authenticateToken, requireAdmin, upload.single('file'), async (req, res) => {
+app.post('/api/projects/:projectId/tasks/:taskId/files', authenticateToken, requireAdmin, uploadLimiter, upload.single('file'), async (req, res) => {
   try {
     
     const { projectId, taskId } = req.params;
@@ -1966,7 +2052,7 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/api/projects', authenticateToken, async (req, res) => {
+app.post('/api/projects', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { name, clientName, projectManager, hubspotRecordId, hubspotRecordType, hubspotDealStage, template } = req.body;
     if (!name || !clientName) {
@@ -2065,13 +2151,29 @@ app.put('/api/projects/:id', authenticateToken, async (req, res) => {
     const idx = projects.findIndex(p => p.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'Project not found' });
     
+    // Validate project status against allowed values
+    if (req.body.status !== undefined) {
+      const validStatuses = ['active', 'paused', 'completed'];
+      if (!validStatuses.includes(req.body.status)) {
+        return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
+      }
+    }
+
+    // Validate name and clientName are not empty if provided
+    if (req.body.name !== undefined && !String(req.body.name).trim()) {
+      return res.status(400).json({ error: 'Project name cannot be empty' });
+    }
+    if (req.body.clientName !== undefined && !String(req.body.clientName).trim()) {
+      return res.status(400).json({ error: 'Client name cannot be empty' });
+    }
+
     // Require Soft-Pilot Checklist before marking project as completed
     if (req.body.status === 'completed' && !projects[idx].softPilotChecklistSubmitted) {
-      return res.status(400).json({ 
-        error: 'The Soft-Pilot Checklist must be submitted before marking this project as completed.' 
+      return res.status(400).json({
+        error: 'The Soft-Pilot Checklist must be submitted before marking this project as completed.'
       });
     }
-    
+
     const allowedFields = ['name', 'clientName', 'projectManager', 'hubspotRecordId', 'hubspotRecordType', 'status', 'clientPortalDomain', 'goLiveDate'];
     
     // Check if client name is being changed - regenerate slug
@@ -2095,11 +2197,20 @@ app.put('/api/projects/:id', authenticateToken, async (req, res) => {
     
     // Regenerate clientLinkSlug when clientName changes
     if (newClientName && newClientName !== oldClientName) {
+      const oldProjectSlug = projects[idx].clientLinkSlug;
       const existingSlugs = projects
         .filter(p => p.id !== projects[idx].id)
         .map(p => p.clientLinkSlug)
         .filter(Boolean);
-      projects[idx].clientLinkSlug = generateClientSlug(newClientName, existingSlugs);
+      const newProjectSlug = generateClientSlug(newClientName, existingSlugs);
+      if (oldProjectSlug && oldProjectSlug !== newProjectSlug) {
+        // Preserve old slug for redirect lookups so existing URLs keep working
+        if (!projects[idx].previousSlugs) projects[idx].previousSlugs = [];
+        if (!projects[idx].previousSlugs.includes(oldProjectSlug)) {
+          projects[idx].previousSlugs.push(oldProjectSlug);
+        }
+      }
+      projects[idx].clientLinkSlug = newProjectSlug;
     }
     
     await db.set('projects', projects);
@@ -2134,7 +2245,7 @@ app.delete('/api/projects/:id', authenticateToken, async (req, res) => {
 });
 
 // Clone/Duplicate a project
-app.post('/api/projects/:id/clone', authenticateToken, async (req, res) => {
+app.post('/api/projects/:id/clone', authenticateToken, requireAdmin, async (req, res) => {
   try {
     // Check project access
     if (!canAccessProject(req.user, req.params.id)) {
@@ -2168,13 +2279,17 @@ app.post('/api/projects/:id/clone', authenticateToken, async (req, res) => {
     projects.push(newProject);
     await db.set('projects', projects);
     
-    // Clone the tasks
+    // Clone the tasks - clear state, files, HubSpot refs, and reset ownership
     const originalTasks = await getTasks(req.params.id);
     const clonedTasks = originalTasks.map(task => ({
       ...task,
       completed: false,
       dateCompleted: '',
       notes: [],
+      files: [],
+      createdBy: req.user.id,
+      hubspotTaskId: undefined,
+      hubspotSyncedAt: undefined,
       subtasks: (task.subtasks || []).map(st => ({
         ...st,
         completed: false,
@@ -2209,17 +2324,20 @@ app.get('/api/projects/:id/tasks', authenticateToken, async (req, res) => {
 
 app.post('/api/projects/:id/tasks', authenticateToken, async (req, res) => {
   try {
-    // Check project access
-    if (!canAccessProject(req.user, req.params.id)) {
-      return res.status(403).json({ error: 'Access denied to this project' });
+    // Check project write access
+    if (!canWriteProject(req.user, req.params.id)) {
+      return res.status(403).json({ error: 'Write access required for this project' });
     }
-    
+
     const { taskTitle, owner, dueDate, phase, stage, showToClient, clientName, description, notes, dependencies } = req.body;
+    if (!taskTitle || !String(taskTitle).trim()) {
+      return res.status(400).json({ error: 'Task title is required' });
+    }
     const projectId = req.params.id;
     // Use raw tasks for mutation to prevent normalization drift
     const tasks = await getRawTasks(projectId);
     const newTask = {
-      id: tasks.length > 0 ? Math.max(...tasks.map(t => t.id)) + 1 : 1,
+      id: getNextNumericId(tasks),
       phase: phase || 'Phase 1',
       stage: stage || '',
       taskTitle,
@@ -2249,11 +2367,11 @@ app.put('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req,
   try {
     const { projectId, taskId } = req.params;
     
-    // Check project access
-    if (!canAccessProject(req.user, projectId)) {
-      return res.status(403).json({ error: 'Access denied to this project' });
+    // Check project write access
+    if (!canWriteProject(req.user, projectId)) {
+      return res.status(403).json({ error: 'Write access required for this project' });
     }
-    
+
     const updates = req.body;
     // Use raw tasks for mutation to prevent normalization drift
     const tasks = await getRawTasks(projectId);
@@ -2291,10 +2409,23 @@ app.put('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req,
       delete updates.owner;
     }
 
+    // Whitelist allowed fields to prevent overwriting protected fields (id, createdBy, files, subtasks, hubspotTaskId, etc.)
+    const taskUpdateAllowedFields = [
+      'taskTitle', 'owner', 'secondaryOwner', 'dueDate', 'startDate', 'phase', 'stage',
+      'completed', 'dateCompleted', 'description', 'showToClient', 'clientName',
+      'dependencies', 'tags', 'notes', 'duration'
+    ];
+    const sanitizedUpdates = {};
+    for (const key of taskUpdateAllowedFields) {
+      if (updates[key] !== undefined) {
+        sanitizedUpdates[key] = updates[key];
+      }
+    }
+
     const wasCompleted = task.completed;
-    
+
     // Server-side validation: Check for incomplete subtasks before allowing completion
-    if (updates.completed && !task.completed) {
+    if (sanitizedUpdates.completed && !task.completed) {
       const subtasks = task.subtasks || [];
       // Check for both new format (completed boolean) and old format (status string)
       const incompleteSubtasks = subtasks.filter(s => {
@@ -2303,14 +2434,23 @@ app.put('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req,
         return !isComplete && !isNotApplicable;
       });
       if (incompleteSubtasks.length > 0) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: 'Cannot complete task with pending subtasks',
           incompleteSubtasks: incompleteSubtasks.map(s => s.title)
         });
       }
     }
-    
-    tasks[idx] = { ...tasks[idx], ...updates };
+
+    // Auto-set dateCompleted when marking task as completed (server-side guarantee)
+    if (sanitizedUpdates.completed && !task.completed && !sanitizedUpdates.dateCompleted) {
+      sanitizedUpdates.dateCompleted = new Date().toISOString();
+    }
+    // Clear dateCompleted when un-completing a task
+    if (sanitizedUpdates.completed === false && task.completed) {
+      sanitizedUpdates.dateCompleted = '';
+    }
+
+    tasks[idx] = { ...tasks[idx], ...sanitizedUpdates };
     await db.set(`tasks_${projectId}`, tasks);
     
     // Log activity for task updates
@@ -2367,7 +2507,14 @@ app.delete('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (r
       return res.status(403).json({ error: 'You can only delete tasks you created' });
     }
     
-    const filtered = tasks.filter(t => String(t.id) !== String(taskId));
+    const deletedId = String(taskId);
+    const filtered = tasks.filter(t => String(t.id) !== deletedId);
+    // Clean up dependency references to the deleted task
+    for (const t of filtered) {
+      if (Array.isArray(t.dependencies)) {
+        t.dependencies = t.dependencies.filter(depId => String(depId) !== deletedId);
+      }
+    }
     await db.set(`tasks_${projectId}`, filtered);
     res.json({ message: 'Task deleted' });
   } catch (error) {
@@ -2734,8 +2881,12 @@ app.get('/api/client-documents', authenticateToken, async (req, res) => {
 });
 
 // Get documents for a specific slug (client portal)
-app.get('/api/client-documents/:slug', async (req, res) => {
+app.get('/api/client-documents/:slug', authenticateToken, async (req, res) => {
   try {
+    // Clients can only access their own slug's documents
+    if (req.user.role === 'client' && req.user.slug !== req.params.slug) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
     const documents = (await db.get('client_documents')) || [];
     // Include documents for specific slug OR documents shared with all clients
     const clientDocs = documents.filter(d =>
@@ -2845,7 +2996,7 @@ app.delete('/api/client-documents/:slug/:docId', authenticateToken, requireAdmin
 
 // Upload file as client document (admin only) - stores file and creates document entry
 // Use slug="all" to upload to all clients (shareWithAll)
-app.post('/api/client-documents/:slug/upload', authenticateToken, requireAdmin, upload.single('file'), async (req, res) => {
+app.post('/api/client-documents/:slug/upload', authenticateToken, requireAdmin, uploadLimiter, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file provided' });
@@ -2905,7 +3056,7 @@ app.post('/api/client-documents/:slug/upload', authenticateToken, requireAdmin, 
 
 // ============== HUBSPOT FILE UPLOAD ==============
 // Upload file to HubSpot and attach to a deal record (admin only)
-app.post('/api/hubspot/upload-to-deal', authenticateToken, requireAdmin, upload.single('file'), async (req, res) => {
+app.post('/api/hubspot/upload-to-deal', authenticateToken, requireAdmin, uploadLimiter, upload.single('file'), async (req, res) => {
   try {
     const { dealId, noteText, category } = req.body;
     
@@ -2980,7 +3131,7 @@ app.get('/api/hubspot/deals', authenticateToken, requireAdmin, async (req, res) 
 
 // ============== CLIENT HUBSPOT FILE UPLOAD ==============
 // Client uploads file to their account's HubSpot records (Company, Deal, Contact)
-app.post('/api/client/hubspot/upload', authenticateToken, upload.single('file'), async (req, res) => {
+app.post('/api/client/hubspot/upload', authenticateToken, uploadLimiter, upload.single('file'), async (req, res) => {
   try {
     // Only clients can use this endpoint
     if (req.user.role !== 'client') {
@@ -3806,6 +3957,12 @@ app.get('/api/client/hubspot/file/:fileId', authenticateToken, async (req, res) 
 // ============== HUBSPOT WEBHOOKS ==============
 const HUBSPOT_WEBHOOK_SECRET = process.env.HUBSPOT_WEBHOOK_SECRET;
 
+// Startup warning for missing webhook secret (Gotcha #18)
+if (!HUBSPOT_WEBHOOK_SECRET) {
+  console.warn('⚠️  WARNING: HUBSPOT_WEBHOOK_SECRET not set. Webhook endpoint will accept ALL requests without validation.');
+  console.warn('   Set HUBSPOT_WEBHOOK_SECRET to enable webhook authentication.');
+}
+
 app.post('/api/webhooks/hubspot', async (req, res) => {
   try {
     if (HUBSPOT_WEBHOOK_SECRET) {
@@ -3914,6 +4071,9 @@ app.get('/api/inventory/template', async (req, res) => {
 app.put('/api/inventory/template', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { template } = req.body;
+    if (!template || typeof template !== 'object') {
+      return res.status(400).json({ error: 'Invalid template data. Must be a non-empty object.' });
+    }
     await db.set('inventory_template', template);
     res.json({ success: true });
   } catch (error) {
@@ -4045,15 +4205,22 @@ app.get('/api/inventory/export-all', authenticateToken, requireAdmin, async (req
   }
 });
 
+// Normalize inventory data to batch format (Gotcha #13)
+// Logs a warning when auto-wrapping occurs to aid debugging
 const normalizeInventoryData = (data) => {
   const normalized = {};
+  let wrappedCount = 0;
   Object.entries(data || {}).forEach(([key, value]) => {
-    if (value && value.batches) {
+    if (value && Array.isArray(value.batches)) {
       normalized[key] = value;
     } else {
+      wrappedCount++;
       normalized[key] = { batches: [value || {}] };
     }
   });
+  if (wrappedCount > 0) {
+    console.warn(`Inventory data auto-wrapped: ${wrappedCount} item(s) were not in { batches: [...] } format and were converted automatically.`);
+  }
   return normalized;
 };
 
@@ -4822,7 +4989,12 @@ const normalizeDate = (dateStr) => {
     month = month.padStart(2, '0');
     day = day.padStart(2, '0');
     if (year.length === 2) {
-      year = parseInt(year) > 50 ? '19' + year : '20' + year;
+      // Use current year as reference: if 2-digit year would be >10 years in the future, assume 1900s
+      // This is future-proof unlike a fixed threshold (Gotcha #14)
+      const currentCentury = Math.floor(new Date().getFullYear() / 100) * 100;
+      const currentYearTwoDigit = new Date().getFullYear() % 100;
+      const twoDigitYear = parseInt(year);
+      year = twoDigitYear <= (currentYearTwoDigit + 10) ? String(currentCentury + twoDigitYear) : String(currentCentury - 100 + twoDigitYear);
     }
     return `${year}-${month}-${day}`;
   }
@@ -5318,7 +5490,7 @@ app.get('/api/projects/:id/export', authenticateToken, async (req, res) => {
       t.dateCompleted || '',
       Array.isArray(t.tags) ? t.tags.join(';') : '',
       Array.isArray(t.dependencies) ? t.dependencies.join(';') : '',
-      Array.isArray(t.notes) ? t.notes.map(n => n.text || n).join(' | ') : ''
+      Array.isArray(t.notes) ? t.notes.map(n => n.content || n.text || '').join(' | ') : ''
     ].map(escapeCSV));
     
     const csv = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
@@ -5356,7 +5528,7 @@ app.get('/api/templates', authenticateToken, async (req, res) => {
       id: t.id,
       name: t.name,
       description: t.description,
-      taskCount: t.tasks.length,
+      taskCount: Array.isArray(t.tasks) ? t.tasks.length : 0,
       createdAt: t.createdAt,
       isDefault: t.isDefault
     }));
@@ -5477,7 +5649,7 @@ app.post('/api/templates/:id/import-csv', authenticateToken, requireAdmin, async
     }
     
     // Generate new IDs for imported tasks and create ID mapping
-    const maxId = template.tasks.length > 0 ? Math.max(...template.tasks.map(t => t.id)) : 0;
+    const maxId = getNextNumericId(template.tasks) - 1;
     const idMapping = {};
     
     const newTasks = csvData.map((row, index) => {
@@ -5563,7 +5735,7 @@ app.post('/api/projects/:id/import-csv', authenticateToken, async (req, res) => 
     
     // Use raw tasks for mutation to prevent normalization drift
     const tasks = await getRawTasks(req.params.id);
-    const maxId = tasks.length > 0 ? Math.max(...tasks.map(t => t.id)) : 0;
+    const maxId = getNextNumericId(tasks) - 1;
     
     // Separate parent tasks and subtasks
     const parentRows = csvData.filter(row => {
@@ -5806,7 +5978,7 @@ app.post('/api/auth/service-login', async (req, res) => {
       return res.status(400).json({ error: 'Missing credentials' });
     }
     const users = await getUsers();
-    const user = users.find(u => u.email === email);
+    const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase());
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
@@ -6266,13 +6438,25 @@ app.put('/api/service-reports/:id', authenticateToken, requireServiceAccess, asy
       }
     }
 
+    // Whitelist allowed fields for service report updates
+    const serviceReportAllowedFields = [
+      'clientSlug', 'clientName', 'visitDate', 'visitType', 'status',
+      'equipmentType', 'serialNumber', 'modelNumber', 'location',
+      'issueDescription', 'workPerformed', 'partsUsed', 'recommendations',
+      'followUpRequired', 'followUpDate', 'followUpNotes',
+      'technicianNotes', 'clientSignature', 'technicianSignature',
+      'photos', 'attachments', 'readings', 'testResults'
+    ];
+    const sanitizedReportUpdates = {};
+    for (const key of serviceReportAllowedFields) {
+      if (req.body[key] !== undefined) {
+        sanitizedReportUpdates[key] = req.body[key];
+      }
+    }
+
     serviceReports[reportIndex] = {
       ...existingReport,
-      ...req.body,
-      id: existingReport.id,
-      technicianId: existingReport.technicianId,
-      createdAt: existingReport.createdAt,
-      submittedAt: existingReport.submittedAt,
+      ...sanitizedReportUpdates,
       updatedAt: new Date().toISOString()
     };
 
@@ -7152,12 +7336,24 @@ app.put('/api/validation-reports/:id', authenticateToken, requireServiceAccess, 
       return res.status(403).json({ error: 'Not authorized to edit this report' });
     }
 
+    // Whitelist allowed fields for validation report updates
+    const validationReportAllowedFields = [
+      'clientSlug', 'clientName', 'validationDate', 'validationType', 'status',
+      'equipmentType', 'serialNumber', 'modelNumber', 'location',
+      'testResults', 'readings', 'calibrationData', 'observations',
+      'passFailStatus', 'recommendations', 'followUpRequired',
+      'technicianNotes', 'signatures', 'attachments', 'photos'
+    ];
+    const sanitizedValidationUpdates = {};
+    for (const key of validationReportAllowedFields) {
+      if (req.body[key] !== undefined) {
+        sanitizedValidationUpdates[key] = req.body[key];
+      }
+    }
+
     validationReports[reportIndex] = {
       ...existingReport,
-      ...req.body,
-      id: existingReport.id,
-      technicianId: existingReport.technicianId,
-      createdAt: existingReport.createdAt,
+      ...sanitizedValidationUpdates,
       updatedAt: new Date().toISOString()
     };
 
@@ -7663,19 +7859,11 @@ app.get('/api/changelog/preview', authenticateToken, requireAdmin, async (req, r
 
 // ============== PASSWORD MANAGEMENT ==============
 
-// Generate temp password based on user type
+// Generate cryptographically random temp password
 function generateTempPassword(user) {
-  // For clients: ClientName2026!
-  // For users: FirstLastName2026!
-  if (user.role === 'client') {
-    const clientName = (user.practiceName || user.name || 'Client').replace(/[^a-zA-Z0-9]/g, '');
-    return `${clientName}2026!`;
-  } else {
-    const nameParts = (user.name || 'User').split(' ');
-    const firstName = (nameParts[0] || '').replace(/[^a-zA-Z0-9]/g, '');
-    const lastName = (nameParts[nameParts.length - 1] || '').replace(/[^a-zA-Z0-9]/g, '');
-    return `${firstName}${lastName}2026!`;
-  }
+  const crypto = require('crypto');
+  const randomPart = crypto.randomBytes(4).toString('hex');
+  return `Temp${randomPart}!`;
 }
 
 // Bulk password reset for all users (admin only)
@@ -7730,6 +7918,7 @@ app.post('/api/admin/bulk-password-reset', authenticateToken, requireAdmin, asyn
     }
 
     await db.set('users', users);
+    invalidateUsersCache();
 
     // Log activity
     await logActivity(
@@ -7776,10 +7965,11 @@ app.post('/api/admin/reset-user-password/:userId', authenticateToken, requireAdm
     users[userIndex].lastPasswordReset = new Date().toISOString();
 
     await db.set('users', users);
+    invalidateUsersCache();
 
     res.json({
       message: 'Password reset successfully',
-      tempPassword: customPassword ? undefined : newPassword,
+      ...(customPassword ? {} : { tempPassword: newPassword }),
       requirePasswordChange: users[userIndex].requirePasswordChange
     });
   } catch (error) {
@@ -7824,6 +8014,7 @@ app.post('/api/auth/change-password', authenticateToken, async (req, res) => {
     users[userIndex].lastPasswordChange = new Date().toISOString();
 
     await db.set('users', users);
+    invalidateUsersCache();
 
     res.json({ message: 'Password changed successfully' });
   } catch (error) {
@@ -7847,9 +8038,9 @@ app.post('/api/auth/admin-login', async (req, res) => {
       return res.status(400).json({ error: 'Missing credentials' });
     }
     const users = await getUsers();
-    const user = users.find(u => u.email === email && u.role === 'admin');
+    const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase() && (u.role === 'admin' || u.hasAdminHubAccess));
     if (!user || !(await bcrypt.compare(password, user.password))) {
-      return res.status(400).json({ error: 'Invalid credentials or not an admin' });
+      return res.status(400).json({ error: 'Invalid credentials' });
     }
 
     const token = jwt.sign(
@@ -7921,15 +8112,24 @@ app.get('/portal', (req, res) => {
   res.sendFile(__dirname + '/public/portal.html');
 });
 
+// Helper to find client user by slug (checks current slug first, then previousSlugs for redirects)
+const findClientBySlugOrRedirect = async (slug, res) => {
+  const users = await getUsers();
+  // Check current slug first
+  const currentMatch = users.find(u => u.role === 'client' && u.slug === slug);
+  if (currentMatch) return { user: currentMatch, redirect: false };
+  // Check previousSlugs for redirect (slug was changed, old URL still in use)
+  const previousMatch = users.find(u => u.role === 'client' && Array.isArray(u.previousSlugs) && u.previousSlugs.includes(slug));
+  if (previousMatch) return { user: previousMatch, redirect: true, newSlug: previousMatch.slug };
+  return null;
+};
+
 // Client portal login page: /portal/:slug/login
 app.get('/portal/:slug/login', async (req, res) => {
-  const users = await getUsers();
-  const clientUser = users.find(u => u.role === 'client' && u.slug === req.params.slug);
-  if (clientUser) {
-    res.sendFile(__dirname + '/public/portal.html');
-  } else {
-    res.status(404).send('Portal not found');
-  }
+  const result = await findClientBySlugOrRedirect(req.params.slug, res);
+  if (!result) return res.status(404).send('Portal not found');
+  if (result.redirect) return res.redirect(302, `/portal/${result.newSlug}/login`);
+  res.sendFile(__dirname + '/public/portal.html');
 });
 
 // Client portal pages: /portal/:slug, /portal/:slug/*
@@ -7938,13 +8138,10 @@ app.get('/portal/:slug', async (req, res) => {
   if (req.params.slug === 'admin') {
     return res.sendFile(__dirname + '/public/portal.html');
   }
-  const users = await getUsers();
-  const clientUser = users.find(u => u.role === 'client' && u.slug === req.params.slug);
-  if (clientUser) {
-    res.sendFile(__dirname + '/public/portal.html');
-  } else {
-    res.status(404).send('Portal not found');
-  }
+  const result = await findClientBySlugOrRedirect(req.params.slug, res);
+  if (!result) return res.status(404).send('Portal not found');
+  if (result.redirect) return res.redirect(302, `/portal/${result.newSlug}`);
+  res.sendFile(__dirname + '/public/portal.html');
 });
 
 app.get('/portal/:slug/*', async (req, res) => {
@@ -7952,14 +8149,35 @@ app.get('/portal/:slug/*', async (req, res) => {
   if (req.params.slug === 'admin') {
     return res.sendFile(__dirname + '/public/portal.html');
   }
-  const users = await getUsers();
-  const clientUser = users.find(u => u.role === 'client' && u.slug === req.params.slug);
-  if (clientUser) {
-    res.sendFile(__dirname + '/public/portal.html');
-  } else {
-    res.status(404).send('Portal not found');
+  const result = await findClientBySlugOrRedirect(req.params.slug, res);
+  if (!result) return res.status(404).send('Portal not found');
+  if (result.redirect) {
+    const remainingPath = req.params[0] || '';
+    return res.redirect(302, `/portal/${result.newSlug}/${remainingPath}`);
   }
+  res.sendFile(__dirname + '/public/portal.html');
 });
+
+// In-memory cache for project slug lookups (avoids DB hit on every root-level request)
+let _projectSlugCache = { slugs: new Set(), previousSlugs: new Map(), lastRefresh: 0 };
+const PROJECT_SLUG_CACHE_TTL = 30000; // 30 seconds
+
+const refreshProjectSlugCache = async () => {
+  const now = Date.now();
+  if (now - _projectSlugCache.lastRefresh < PROJECT_SLUG_CACHE_TTL) return;
+  const projects = await getProjects();
+  const slugs = new Set();
+  const previousSlugsMap = new Map();
+  for (const p of projects) {
+    if (p.clientLinkSlug) slugs.add(p.clientLinkSlug);
+    if (Array.isArray(p.previousSlugs)) {
+      for (const oldSlug of p.previousSlugs) {
+        previousSlugsMap.set(oldSlug, p.clientLinkSlug);
+      }
+    }
+  }
+  _projectSlugCache = { slugs, previousSlugs: previousSlugsMap, lastRefresh: now };
+};
 
 // Legacy root-level route - redirect old project slugs to /launch
 app.get('/:slug', async (req, res, next) => {
@@ -7968,15 +8186,37 @@ app.get('/:slug', async (req, res, next) => {
     return next();
   }
 
-  // Check if this slug matches a project - redirect to /launch
-  const projects = await getProjects();
-  const project = projects.find(p => p.clientLinkSlug === req.params.slug);
+  // Use cached slug lookup to avoid DB hit on every root-level request
+  await refreshProjectSlugCache();
+  const slug = req.params.slug;
 
-  if (project) {
-    res.redirect(301, `/launch/${req.params.slug}`);
+  if (_projectSlugCache.slugs.has(slug)) {
+    // Use 302 (temporary) instead of 301 (permanent) to avoid browser caching issues
+    res.redirect(302, `/launch/${slug}`);
+  } else if (_projectSlugCache.previousSlugs.has(slug)) {
+    // Redirect old slug to current slug
+    res.redirect(302, `/launch/${_projectSlugCache.previousSlugs.get(slug)}`);
   } else {
     next();
   }
+});
+
+// Global error handling middleware (Gotcha #11)
+// Must be defined after all routes - Express identifies error handlers by 4-argument signature
+app.use((err, req, res, next) => {
+  console.error('Unhandled route error:', err.stack || err.message || err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: 'An unexpected error occurred' });
+});
+
+// Process-level error handlers to prevent crashes from unhandled async errors
+process.on('uncaughtException', (err) => {
+  console.error('FATAL: Uncaught exception:', err.stack || err.message || err);
+  // In production, graceful shutdown is preferred; for now, log and continue
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled promise rejection:', reason);
 });
 
 app.listen(PORT, () => {

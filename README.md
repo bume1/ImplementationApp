@@ -208,4 +208,10 @@ For technical support or questions:
 
 ---
 
-*Developed for Thrive 365 Labs*
+## License
+
+Proprietary - Thrive 365 Labs
+
+---
+
+*Last Updated: January 2026*

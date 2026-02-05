@@ -484,6 +484,15 @@ Configure via Admin Hub > Settings > Client Portal Domain.
 - Fix priority and pinned announcement features
 - Update changelog for Version 2.7.4 [skip ci]
 - Update changelog with v2.7.3 and improve automation
+### Current Version: 2.7.3 (January 2026)
+
+#### Highlights
+- Add detailed frontend console logging for assigned reports debugging
+- Add comprehensive logging and robust string-based ID comparison
+- Fix priority and pinned announcement features
+- Fix service report counter double-counting assigned reports
+- Update Knowledge Hub Quick Tips for internal users
+- Update Service Portal and Knowledge Hub with improvements
 
 See [CHANGELOG](/changelog) for complete version history.
 
