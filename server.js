@@ -769,6 +769,8 @@ const requireClientPortalAdmin = (req, res, next) => {
 
 // Uploads require authentication - registered here after authenticateToken is defined
 app.use('/uploads', authenticateToken, express.static('uploads', staticOptions));
+// Fallback: serve from public/uploads for files saved before path fix
+app.use('/uploads', authenticateToken, express.static('public/uploads', staticOptions));
 
 // ============== AUTH ROUTES ==============
 app.post('/api/auth/signup', authenticateToken, requireAdmin, async (req, res) => {
@@ -824,7 +826,8 @@ app.post('/api/users', authenticateToken, async (req, res) => {
     const {
       email, password, name, role, practiceName, isNewClient, assignedProjects, logo,
       hasServicePortalAccess, hasAdminHubAccess, hasImplementationsAccess, hasClientPortalAdminAccess,
-      isManager, assignedClients, hubspotCompanyId, hubspotDealId, hubspotContactId, projectAccessLevels
+      isManager, assignedClients, hubspotCompanyId, hubspotDealId, hubspotContactId, projectAccessLevels,
+      existingPortalSlug
     } = req.body;
 
     // Managers can only create client users
@@ -861,18 +864,35 @@ app.post('/api/users', authenticateToken, async (req, res) => {
 
     // Client-specific fields
     if (role === 'client') {
-      if (!practiceName) {
-        return res.status(400).json({ error: 'Practice name is required for client accounts' });
+      // If adding user to an existing portal, inherit slug and practice settings
+      if (existingPortalSlug) {
+        const existingClient = users.find(u => u.role === 'client' && u.slug === existingPortalSlug);
+        if (!existingClient) {
+          return res.status(400).json({ error: 'Existing portal not found' });
+        }
+        newUser.practiceName = practiceName || existingClient.practiceName;
+        newUser.slug = existingPortalSlug;
+        newUser.isNewClient = false;
+        newUser.assignedProjects = assignedProjects || existingClient.assignedProjects || [];
+        newUser.projectAccessLevels = projectAccessLevels || existingClient.projectAccessLevels || {};
+        newUser.logo = logo || existingClient.logo || '';
+        newUser.hubspotCompanyId = hubspotCompanyId || existingClient.hubspotCompanyId || '';
+        newUser.hubspotDealId = hubspotDealId || existingClient.hubspotDealId || '';
+        newUser.hubspotContactId = hubspotContactId || existingClient.hubspotContactId || '';
+      } else {
+        if (!practiceName) {
+          return res.status(400).json({ error: 'Practice name is required for client accounts' });
+        }
+        newUser.practiceName = practiceName;
+        newUser.isNewClient = isNewClient || false;
+        newUser.slug = await generateClientUserSlug(practiceName);
+        newUser.assignedProjects = assignedProjects || [];
+        newUser.projectAccessLevels = projectAccessLevels || {};
+        if (logo) newUser.logo = logo;
+        if (hubspotCompanyId) newUser.hubspotCompanyId = hubspotCompanyId;
+        if (hubspotDealId) newUser.hubspotDealId = hubspotDealId;
+        if (hubspotContactId) newUser.hubspotContactId = hubspotContactId;
       }
-      newUser.practiceName = practiceName;
-      newUser.isNewClient = isNewClient || false;
-      newUser.slug = await generateClientUserSlug(practiceName);
-      newUser.assignedProjects = assignedProjects || [];
-      newUser.projectAccessLevels = projectAccessLevels || {};
-      if (logo) newUser.logo = logo;
-      if (hubspotCompanyId) newUser.hubspotCompanyId = hubspotCompanyId;
-      if (hubspotDealId) newUser.hubspotDealId = hubspotDealId;
-      if (hubspotContactId) newUser.hubspotContactId = hubspotContactId;
     }
 
     // Vendor-specific fields
@@ -912,6 +932,37 @@ app.post('/api/users', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     console.error('Admin create user error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get existing client portals (unique slugs) for adding users to existing portals
+app.get('/api/client-portals', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin' && !req.user.isManager) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    const users = await getUsers();
+    const clientUsers = users.filter(u => u.role === 'client' && u.slug);
+    // Group by slug to get unique portals with member count
+    const portalMap = {};
+    for (const u of clientUsers) {
+      if (!portalMap[u.slug]) {
+        portalMap[u.slug] = {
+          slug: u.slug,
+          practiceName: u.practiceName,
+          logo: u.logo || '',
+          hubspotCompanyId: u.hubspotCompanyId || '',
+          memberCount: 0,
+          members: []
+        };
+      }
+      portalMap[u.slug].memberCount++;
+      portalMap[u.slug].members.push({ id: u.id, name: u.name, email: u.email });
+    }
+    res.json(Object.values(portalMap));
+  } catch (error) {
+    console.error('Error fetching client portals:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -3718,7 +3769,8 @@ app.post('/api/admin/ticket-polling/reset', authenticateToken, requireAdmin, asy
 });
 
 // Fetch support tickets from HubSpot for the logged-in client
-// Only shows tickets that were created through the portal (tracked in portal_tickets)
+// Shows internal tickets only (filtered by internal_vs_external_ticket field)
+// Attaches matching service reports to each ticket
 app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
   try {
     // Only clients can use this endpoint
@@ -3738,29 +3790,21 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
     const hubspotContactId = clientUser.hubspotContactId || '';
     const hubspotDealId = clientUser.hubspotDealId || '';
 
-    // Debug logging
-    console.log(`🎫 Ticket fetch for user ${clientUser.username}:`);
+    console.log(`🎫 Ticket fetch for user ${clientUser.username || clientUser.email}:`);
     console.log(`   - Company ID: "${hubspotCompanyId}"`);
     console.log(`   - Contact ID: "${hubspotContactId}"`);
     console.log(`   - Deal ID: "${hubspotDealId}"`);
 
-    // Check if we have any HubSpot ID to fetch tickets for
     if (!hubspotCompanyId && !hubspotContactId && !hubspotDealId) {
-      console.log(`🎫 No HubSpot IDs configured for ${clientUser.username}`);
+      console.log(`🎫 No HubSpot IDs configured for ${clientUser.username || clientUser.email}`);
       return res.json({ tickets: [], message: 'No HubSpot account linked' });
     }
-
-    // Get portal-tracked ticket IDs (only show tickets created through portal)
-    let portalTickets = (await db.get('portal_tickets')) || [];
-    let portalTicketIds = new Set(portalTickets.map(t => String(t.ticketId)));
-    console.log(`🎫 Portal has ${portalTicketIds.size} tracked tickets`);
 
     let tickets = [];
 
     // Fetch tickets by company first (primary)
     if (hubspotCompanyId) {
       try {
-        console.log(`🎫 Fetching tickets for company ID: ${hubspotCompanyId}`);
         const companyTickets = await hubspot.getTicketsForCompany(hubspotCompanyId);
         tickets = [...companyTickets];
         console.log(`📋 Fetched ${companyTickets.length} tickets for company ${hubspotCompanyId}`);
@@ -3772,12 +3816,10 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
     // Fetch tickets by deal ID and merge
     if (hubspotDealId && hubspot.getTicketsForDeal) {
       try {
-        console.log(`🎫 Fetching tickets for deal ID: ${hubspotDealId}`);
         const dealTickets = await hubspot.getTicketsForDeal(hubspotDealId);
         const existingIds = new Set(tickets.map(t => t.id));
         const newTickets = dealTickets.filter(t => !existingIds.has(t.id));
         tickets = [...tickets, ...newTickets];
-        console.log(`📋 Added ${newTickets.length} additional tickets from deal ${hubspotDealId}`);
       } catch (err) {
         console.error('Error fetching deal tickets:', err.message);
       }
@@ -3786,58 +3828,64 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
     // Fetch tickets by contact ID and merge (deduping by ID)
     if (hubspotContactId) {
       try {
-        console.log(`🎫 Fetching tickets for contact ID: ${hubspotContactId}`);
         const contactTickets = await hubspot.getTicketsForContact(hubspotContactId);
         const existingIds = new Set(tickets.map(t => t.id));
         const newTickets = contactTickets.filter(t => !existingIds.has(t.id));
         tickets = [...tickets, ...newTickets];
-        console.log(`📋 Added ${newTickets.length} additional tickets from contact ${hubspotContactId}`);
       } catch (err) {
         console.error('Error fetching contact tickets:', err.message);
       }
     }
 
-    // Auto-register form-submitted tickets that aren't already in portal_tickets
-    // This allows tickets created via HubSpot forms to appear without needing the automation webhook
-    const formSources = ['FORM', 'FORMS', 'Form submission'];
-    const unregisteredFormTickets = tickets.filter(t => {
-      const isFormSubmitted = formSources.includes(t.source) ||
-                              (t.sourceLabel && t.sourceLabel.toLowerCase().includes('form'));
-      const notRegistered = !portalTicketIds.has(String(t.id));
-      return isFormSubmitted && notRegistered;
+    // Filter to only show tickets marked as "Internal" in HubSpot
+    // The custom property internal_vs_external_ticket must be "Internal" (case-insensitive)
+    const beforeFilter = tickets.length;
+    tickets = tickets.filter(t => {
+      const typeVal = (t.ticketType || '').toLowerCase().trim();
+      return typeVal === 'internal';
+    });
+    console.log(`🎫 Filtered ${beforeFilter} -> ${tickets.length} internal-only tickets`);
+
+    // Fetch service reports to link to tickets
+    const serviceReports = (await db.get('service_reports')) || [];
+
+    // Map tickets to simplified format with Open/Closed status and linked service reports
+    const mappedTickets = tickets.map(t => {
+      // Determine status: Closed if stage label contains "closed", otherwise Open
+      const stageLower = (t.stage || '').toLowerCase();
+      const status = (stageLower.includes('closed') || t.closedAt) ? 'Closed' : 'Open';
+
+      // Find matching service report by HubSpot ticket ID
+      const linkedReport = serviceReports.find(r => {
+        const reportTicketId = String(r.hubspotTicketId || r.hubspotTicketNumber || '');
+        return reportTicketId && reportTicketId === String(t.id);
+      });
+
+      return {
+        id: t.id,
+        subject: t.subject,
+        description: t.content || '',
+        status,
+        createdAt: t.createdAt,
+        closedAt: t.closedAt || null,
+        priority: t.priority,
+        serviceReport: linkedReport ? {
+          id: linkedReport.id,
+          serviceType: linkedReport.serviceType,
+          technicianName: linkedReport.technicianName || linkedReport.serviceProviderName,
+          completedAt: linkedReport.serviceCompletionDate || linkedReport.createdAt,
+          description: linkedReport.descriptionOfWork || linkedReport.validationResults || '',
+          pdfUrl: linkedReport.pdfUrl || null,
+          driveFileId: linkedReport.driveFileId || null
+        } : null
+      };
     });
 
-    if (unregisteredFormTickets.length > 0) {
-      console.log(`🎫 Auto-registering ${unregisteredFormTickets.length} form-submitted tickets`);
-      for (const ticket of unregisteredFormTickets) {
-        portalTickets.unshift({
-          ticketId: String(ticket.id),
-          companyId: hubspotCompanyId || null,
-          contactEmail: clientUser.email || clientUser.username,
-          registeredAt: new Date().toISOString(),
-          autoRegistered: true,
-          source: ticket.source || 'FORM'
-        });
-        console.log(`   - Registered ticket ${ticket.id} (source: ${ticket.source || ticket.sourceLabel})`);
-      }
-      // Keep only last 1000 portal tickets
-      if (portalTickets.length > 1000) portalTickets.length = 1000;
-      await db.set('portal_tickets', portalTickets);
-      // Update the set for filtering
-      portalTicketIds = new Set(portalTickets.map(t => String(t.ticketId)));
-    }
-
-    // Filter to only show tickets created through the portal
-    // (tickets must be registered via the webhook from HubSpot workflow OR auto-registered from form submissions)
-    const totalFetched = tickets.length;
-    tickets = tickets.filter(t => portalTicketIds.has(String(t.id)));
-    console.log(`🎫 Filtered ${totalFetched} -> ${tickets.length} portal-only tickets`);
-
     // Sort by creation date, newest first
-    tickets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    mappedTickets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-    console.log(`🎫 Total tickets returned for ${clientUser.username}: ${tickets.length}`);
-    res.json({ tickets, count: tickets.length });
+    console.log(`🎫 Total tickets returned for ${clientUser.username || clientUser.email}: ${mappedTickets.length}`);
+    res.json({ tickets: mappedTickets, count: mappedTickets.length });
   } catch (error) {
     console.error('Error fetching client tickets:', error);
     res.status(500).json({ error: error.message || 'Failed to fetch tickets' });
@@ -3912,6 +3960,62 @@ app.get('/api/client/service-reports', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error fetching client service reports:', error);
     res.status(500).json({ error: error.message || 'Failed to fetch service reports' });
+  }
+});
+
+// Download service report PDF for clients
+// Generates the PDF on-the-fly from stored report data
+app.get('/api/client/service-reports/:id/pdf', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'client' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const serviceReports = (await db.get('service_reports')) || [];
+    const report = serviceReports.find(r => r.id === req.params.id);
+
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    // For clients, verify the report belongs to them
+    if (req.user.role === 'client') {
+      const users = await getUsers();
+      const clientUser = users.find(u => u.id === req.user.id);
+      if (!clientUser) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      const hubspotCompanyId = clientUser.hubspotCompanyId || '';
+      const practiceName = (clientUser.practiceName || clientUser.name || '').toLowerCase();
+      const reportClient = (report.clientFacilityName || '').toLowerCase();
+
+      const isMatch = (hubspotCompanyId && report.hubspotCompanyId === hubspotCompanyId) ||
+                      (practiceName && reportClient.includes(practiceName));
+
+      if (!isMatch) {
+        return res.status(403).json({ error: 'Not authorized to access this report' });
+      }
+    }
+
+    // If report has a Google Drive download link, redirect to it
+    if (report.driveWebContentLink) {
+      return res.redirect(report.driveWebContentLink);
+    }
+
+    // Generate PDF on-the-fly
+    const pdfBuffer = await pdfGenerator.generateServiceReportPDF(report, report.technicianName || report.serviceProviderName || 'N/A');
+
+    const reportDate = new Date(report.serviceCompletionDate || report.createdAt || Date.now()).toLocaleDateString().replace(/\//g, '-');
+    const fileName = `Service_Report_${(report.clientFacilityName || 'Report').replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error('Error generating service report PDF:', error);
+    res.status(500).json({ error: 'Failed to generate PDF' });
   }
 });
 
@@ -6251,44 +6355,74 @@ app.post('/api/service-reports', authenticateToken, requireServiceAccess, async 
       }
     }
 
-    // Auto-upload signed service reports to client's Files section
-    if (reportData.customerSignature) {
-      try {
-        // Find client by name to get their slug
-        const users = (await db.get('users')) || [];
-        const client = users.find(u =>
-          u.role === 'client' &&
-          (u.name?.toLowerCase() === reportData.clientFacilityName?.toLowerCase() ||
-           u.clientName?.toLowerCase() === reportData.clientFacilityName?.toLowerCase() ||
-           u.companyName?.toLowerCase() === reportData.clientFacilityName?.toLowerCase())
-        );
+    // Upload PDF to Google Drive
+    try {
+      const reportDate = new Date(reportData.serviceCompletionDate || newReport.createdAt).toLocaleDateString();
+      const driveFileName = `Service_Report_${reportData.clientFacilityName.replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate.replace(/\//g, '-')}.pdf`;
+      const drivePdfBuffer = await pdfGenerator.generateServiceReportPDF({ ...reportData, id: newReport.id }, req.user.name);
 
-        if (client && client.slug) {
-          const clientDocuments = (await db.get('client_documents')) || [];
-          const reportDate = new Date(reportData.serviceCompletionDate || newReport.createdAt).toLocaleDateString();
-          const reportTypeName = reportData.serviceType === 'Validations' ? 'Validation Report' : 'Service Report';
+      const driveResult = await googledrive.uploadServiceReportPDF(
+        reportData.clientFacilityName || 'Unknown Client',
+        driveFileName,
+        drivePdfBuffer
+      );
 
-          const newDocument = {
-            id: uuidv4(),
-            slug: client.slug,
-            title: `${reportTypeName} - ${reportDate}`,
-            description: `${reportData.serviceType} - ${reportData.serviceProviderName || req.user.name}`,
-            category: 'Service Reports',
-            serviceReportId: newReport.id,
-            serviceType: reportData.serviceType,
-            createdAt: new Date().toISOString(),
-            uploadedBy: 'system',
-            uploadedByName: 'Thrive 365 Labs'
-          };
+      newReport.driveFileId = driveResult.fileId;
+      newReport.driveWebViewLink = driveResult.webViewLink;
+      newReport.driveWebContentLink = driveResult.webContentLink;
+      await db.set('service_reports', serviceReports);
 
-          clientDocuments.push(newDocument);
-          await db.set('client_documents', clientDocuments);
+      console.log(`✅ Service report PDF uploaded to Google Drive: ${driveResult.fileName}`);
+    } catch (driveError) {
+      console.error('Google Drive upload error (non-blocking):', driveError.message);
+    }
 
-          console.log(`✅ Service report auto-added to client files for ${client.slug}`);
-        }
-      } catch (clientDocError) {
-        console.error('Client document auto-upload error (non-blocking):', clientDocError.message);
+    // Auto-add service reports to client's Files section under "Service Reports" category
+    try {
+      const users = (await db.get('users')) || [];
+      const clientFacility = (reportData.clientFacilityName || '').toLowerCase();
+      const reportCompanyId = reportData.hubspotCompanyId || '';
+
+      // Match client by hubspotCompanyId (most reliable), then by name/practiceName fallback
+      const client = users.find(u => {
+        if (u.role !== 'client') return false;
+        if (reportCompanyId && u.hubspotCompanyId && String(u.hubspotCompanyId) === String(reportCompanyId)) return true;
+        if (clientFacility && u.practiceName?.toLowerCase() === clientFacility) return true;
+        if (clientFacility && u.name?.toLowerCase() === clientFacility) return true;
+        if (clientFacility && u.clientName?.toLowerCase() === clientFacility) return true;
+        if (clientFacility && u.companyName?.toLowerCase() === clientFacility) return true;
+        return false;
+      });
+
+      if (client && client.slug) {
+        const clientDocuments = (await db.get('client_documents')) || [];
+        const reportDate = new Date(reportData.serviceCompletionDate || newReport.createdAt).toLocaleDateString();
+        const reportTypeName = reportData.serviceType === 'Validations' ? 'Validation Report' : 'Service Report';
+
+        const newDocument = {
+          id: uuidv4(),
+          slug: client.slug,
+          title: `${reportTypeName} - ${reportDate}`,
+          description: `${reportData.serviceType} - ${reportData.serviceProviderName || req.user.name}`,
+          category: 'Service Reports',
+          serviceReportId: newReport.id,
+          serviceType: reportData.serviceType,
+          driveWebViewLink: newReport.driveWebViewLink || null,
+          driveWebContentLink: newReport.driveWebContentLink || null,
+          createdAt: new Date().toISOString(),
+          uploadedBy: 'system',
+          uploadedByName: 'Thrive 365 Labs'
+        };
+
+        clientDocuments.push(newDocument);
+        await db.set('client_documents', clientDocuments);
+
+        console.log(`✅ Service report auto-added to client files for ${client.slug}`);
+      } else {
+        console.log(`⚠️ No matching client found for service report auto-upload: "${reportData.clientFacilityName}" (companyId: ${reportCompanyId})`);
       }
+    } catch (clientDocError) {
+      console.error('Client document auto-upload error (non-blocking):', clientDocError.message);
     }
 
     res.json(newReport);
@@ -6396,6 +6530,32 @@ app.get('/api/service-reports/assigned', authenticateToken, requireServiceAccess
   } catch (error) {
     console.error('Get assigned service reports error:', error);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Download service report PDF (service portal users)
+app.get('/api/service-reports/:id/pdf', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    const report = serviceReports.find(r => r.id === req.params.id);
+
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    // Generate PDF
+    const pdfBuffer = await pdfGenerator.generateServiceReportPDF(report, report.technicianName || report.serviceProviderName || 'N/A');
+
+    const reportDate = new Date(report.serviceCompletionDate || report.createdAt || Date.now()).toLocaleDateString().replace(/\//g, '-');
+    const fileName = `Service_Report_${(report.clientFacilityName || 'Report').replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error('Error generating service report PDF:', error);
+    res.status(500).json({ error: 'Failed to generate PDF' });
   }
 });
 
@@ -6925,6 +7085,74 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
       }
     }
 
+    // Upload PDF to Google Drive
+    try {
+      const driveReportDate = new Date(completedReport.serviceCompletionDate || completedReport.createdAt).toLocaleDateString();
+      const driveFileName = `Service_Report_${completedReport.clientFacilityName.replace(/[^a-zA-Z0-9]/g, '_')}_${driveReportDate.replace(/\//g, '-')}.pdf`;
+      const drivePdfBuffer = await pdfGenerator.generateServiceReportPDF(completedReport, req.user.name);
+
+      const driveResult = await googledrive.uploadServiceReportPDF(
+        completedReport.clientFacilityName || 'Unknown Client',
+        driveFileName,
+        drivePdfBuffer
+      );
+
+      serviceReports[reportIndex].driveFileId = driveResult.fileId;
+      serviceReports[reportIndex].driveWebViewLink = driveResult.webViewLink;
+      serviceReports[reportIndex].driveWebContentLink = driveResult.webContentLink;
+      await db.set('service_reports', serviceReports);
+
+      console.log(`✅ Completed service report PDF uploaded to Google Drive: ${driveResult.fileName}`);
+    } catch (driveError) {
+      console.error('Google Drive upload error (non-blocking):', driveError.message);
+    }
+
+    // Auto-add completed assigned report to client's Files section under "Service Reports" category
+    try {
+      const users = (await db.get('users')) || [];
+      const clientFacility = (completedReport.clientFacilityName || '').toLowerCase();
+      const reportCompanyId = completedReport.hubspotCompanyId || '';
+
+      const client = users.find(u => {
+        if (u.role !== 'client') return false;
+        if (reportCompanyId && u.hubspotCompanyId && String(u.hubspotCompanyId) === String(reportCompanyId)) return true;
+        if (clientFacility && u.practiceName?.toLowerCase() === clientFacility) return true;
+        if (clientFacility && u.name?.toLowerCase() === clientFacility) return true;
+        if (clientFacility && u.clientName?.toLowerCase() === clientFacility) return true;
+        if (clientFacility && u.companyName?.toLowerCase() === clientFacility) return true;
+        return false;
+      });
+
+      if (client && client.slug) {
+        const clientDocuments = (await db.get('client_documents')) || [];
+        // Avoid duplicates if report was already added during creation
+        const alreadyAdded = clientDocuments.some(d => d.serviceReportId === completedReport.id);
+        if (!alreadyAdded) {
+          const reportDate = new Date(completedReport.serviceCompletionDate || completedReport.createdAt).toLocaleDateString();
+          const reportTypeName = completedReport.serviceType === 'Validations' ? 'Validation Report' : 'Service Report';
+
+          clientDocuments.push({
+            id: uuidv4(),
+            slug: client.slug,
+            title: `${reportTypeName} - ${reportDate}`,
+            description: `${completedReport.serviceType} - ${completedReport.technicianName || req.user.name}`,
+            category: 'Service Reports',
+            serviceReportId: completedReport.id,
+            serviceType: completedReport.serviceType,
+            driveWebViewLink: serviceReports[reportIndex].driveWebViewLink || null,
+            driveWebContentLink: serviceReports[reportIndex].driveWebContentLink || null,
+            createdAt: new Date().toISOString(),
+            uploadedBy: 'system',
+            uploadedByName: 'Thrive 365 Labs'
+          });
+          await db.set('client_documents', clientDocuments);
+          console.log(`✅ Completed assigned report auto-added to client files for ${client.slug}`);
+        }
+      }
+    } catch (clientDocError) {
+      console.error('Client document auto-upload error (non-blocking):', clientDocError.message);
+    }
+
     res.json(serviceReports[reportIndex]);
   } catch (error) {
     console.error('Complete service report error:', error);
@@ -6954,7 +7182,7 @@ app.post('/api/service-reports/:id/photos', authenticateToken, upload.array('pho
     const report = serviceReports[reportIndex];
     const photos = report.photos || [];
 
-    // Save photos to uploads directory
+    // Save photos to uploads directory (must match /uploads static middleware path)
     const uploadDir = path.join(__dirname, 'uploads', 'service-photos');
     await fs.mkdir(uploadDir, { recursive: true });
 
@@ -7008,7 +7236,7 @@ app.post('/api/service-reports/:id/files', authenticateToken, upload.array('file
     const report = serviceReports[reportIndex];
     const clientFiles = report.clientFiles || [];
 
-    // Save files to uploads directory
+    // Save files to uploads directory (must match /uploads static middleware path)
     const uploadDir = path.join(__dirname, 'uploads', 'service-files');
     await fs.mkdir(uploadDir, { recursive: true });
 

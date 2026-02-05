@@ -334,9 +334,12 @@
       // Debug logging
       console.log('Sidebar user data:', { role: user?.role, isManager: user?.isManager, hasServicePortalAccess: user?.hasServicePortalAccess, canAssignReports });
 
+      // Admins and managers don't submit reports - they view and assign them
+      const isAdminOrManager = user?.role === 'admin' || user?.isManager;
+
       const baseMenuItems = [
         { id: 'home', label: 'Dashboard', icon: Icons.home },
-        { id: 'new_report', label: 'New Service Report', icon: Icons.plus },
+        ...(!isAdminOrManager ? [{ id: 'new_report', label: 'New Service Report', icon: Icons.plus }] : []),
         { id: 'reports', label: 'Service Reports', icon: Icons.folder }
       ];
 
@@ -494,17 +497,20 @@
           )}
 
           {/* Quick Actions */}
-          <div className="grid md:grid-cols-3 gap-5">
-            <button
-              onClick={() => onNavigate('new_report')}
-              className="card-modern p-6 text-left group hover:border-primary-200 transition-all"
-            >
-              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white mb-4 shadow-md group-hover:scale-105 transition-transform">
-                {React.cloneElement(Icons.plus, { className: 'w-7 h-7' })}
-              </div>
-              <h3 className="font-semibold text-gray-900">New Service Report</h3>
-              <p className="text-sm text-gray-500 mt-1">Submit a new service report</p>
-            </button>
+          <div className={`grid ${user?.role === 'admin' || user?.isManager ? 'md:grid-cols-2' : 'md:grid-cols-3'} gap-5`}>
+            {/* New Service Report - only for vendors/technicians, not admins/managers */}
+            {user?.role !== 'admin' && !user?.isManager && (
+              <button
+                onClick={() => onNavigate('new_report')}
+                className="card-modern p-6 text-left group hover:border-primary-200 transition-all"
+              >
+                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white mb-4 shadow-md group-hover:scale-105 transition-transform">
+                  {React.cloneElement(Icons.plus, { className: 'w-7 h-7' })}
+                </div>
+                <h3 className="font-semibold text-gray-900">New Service Report</h3>
+                <p className="text-sm text-gray-500 mt-1">Submit a new service report</p>
+              </button>
+            )}
             <button
               onClick={() => onNavigate('reports')}
               className="card-modern p-6 text-left group hover:border-purple-200 transition-all"
@@ -1686,13 +1692,44 @@
                         {report.hubspotTicketNumber || '-'}
                       </td>
                       <td className="px-6 py-4">
-                        <button
-                          onClick={() => onViewReport(report)}
-                          className="text-primary hover:text-accent flex items-center gap-1"
-                        >
-                          {Icons.eye}
-                          <span className="text-sm">View</span>
-                        </button>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => onViewReport(report)}
+                            className="text-primary hover:text-accent flex items-center gap-1"
+                          >
+                            {Icons.eye}
+                            <span className="text-sm">View</span>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const tkn = localStorage.getItem('service_token') || localStorage.getItem('token') || localStorage.getItem('unified_token');
+                              fetch(`${API_URL}/api/service-reports/${report.id}/pdf`, {
+                                headers: { 'Authorization': `Bearer ${tkn}` }
+                              })
+                              .then(resp => {
+                                if (!resp.ok) throw new Error('Download failed');
+                                return resp.blob();
+                              })
+                              .then(blob => {
+                                const url = window.URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = `Service_Report_${(report.clientFacilityName || 'Report').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+                                document.body.appendChild(a);
+                                a.click();
+                                window.URL.revokeObjectURL(url);
+                                a.remove();
+                              })
+                              .catch(err => alert('Failed to download PDF: ' + err.message));
+                            }}
+                            className="text-gray-500 hover:text-primary flex items-center gap-1"
+                            title="Download PDF"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                            <span className="text-sm">PDF</span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1712,9 +1749,32 @@
 
     // View Report Page
     const ViewReportPage = ({ report, onBack }) => {
+      const token = localStorage.getItem('service_token') || localStorage.getItem('token') || localStorage.getItem('unified_token');
+
+      const handleDownloadPDF = () => {
+        fetch(`${API_URL}/api/service-reports/${report.id}/pdf`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+        .then(resp => {
+          if (!resp.ok) throw new Error('Download failed');
+          return resp.blob();
+        })
+        .then(blob => {
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `Service_Report_${(report.clientFacilityName || 'Report').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+          a.remove();
+        })
+        .catch(err => alert('Failed to download PDF: ' + err.message));
+      };
+
       return (
         <div className="space-y-6">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center justify-between">
             <button
               onClick={onBack}
               className="flex items-center gap-2 text-primary hover:text-accent"
@@ -1723,6 +1783,13 @@
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
               </svg>
               Back to Reports
+            </button>
+            <button
+              onClick={handleDownloadPDF}
+              className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition font-medium text-sm shadow-sm"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+              Download PDF
             </button>
           </div>
 
