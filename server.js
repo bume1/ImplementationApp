@@ -2701,8 +2701,8 @@ app.get('/api/announcements', async (req, res) => {
   }
 });
 
-// Create announcement (admin only)
-app.post('/api/announcements', authenticateToken, requireAdmin, async (req, res) => {
+// Create announcement (admin, managers, client portal admins)
+app.post('/api/announcements', authenticateToken, requireClientPortalAdmin, async (req, res) => {
   try {
     const { title, content, type, priority, pinned, targetAll, targetClients, attachmentUrl, attachmentName } = req.body;
     if (!title || !content) {
@@ -2734,8 +2734,8 @@ app.post('/api/announcements', authenticateToken, requireAdmin, async (req, res)
   }
 });
 
-// Update announcement (admin only)
-app.put('/api/announcements/:id', authenticateToken, requireAdmin, async (req, res) => {
+// Update announcement (admin, managers, client portal admins)
+app.put('/api/announcements/:id', authenticateToken, requireClientPortalAdmin, async (req, res) => {
   try {
     const { title, content, type, priority, pinned, targetAll, targetClients, attachmentUrl, attachmentName } = req.body;
     const announcements = (await db.get('announcements')) || [];
@@ -2761,8 +2761,8 @@ app.put('/api/announcements/:id', authenticateToken, requireAdmin, async (req, r
   }
 });
 
-// Delete announcement (admin only)
-app.delete('/api/announcements/:id', authenticateToken, requireAdmin, async (req, res) => {
+// Delete announcement (admin, managers, client portal admins)
+app.delete('/api/announcements/:id', authenticateToken, requireClientPortalAdmin, async (req, res) => {
   try {
     const announcements = (await db.get('announcements')) || [];
     const filtered = announcements.filter(a => a.id !== req.params.id);
