@@ -6618,7 +6618,15 @@ app.put('/api/service-reports/:id', authenticateToken, requireServiceAccess, asy
       'issueDescription', 'workPerformed', 'partsUsed', 'recommendations',
       'followUpRequired', 'followUpDate', 'followUpNotes',
       'technicianNotes', 'clientSignature', 'technicianSignature',
-      'photos', 'attachments', 'readings', 'testResults'
+      'photos', 'attachments', 'readings', 'testResults',
+      'clientFacilityName', 'customerName', 'address', 'analyzerModel',
+      'analyzerSerialNumber', 'serviceType', 'descriptionOfWork',
+      'materialsUsed', 'solution', 'outstandingIssues',
+      'serviceCompletionDate', 'serviceProviderName',
+      'customerSignature', 'customerSignatureDate',
+      'customerFirstName', 'customerLastName',
+      'technicianFirstName', 'technicianLastName',
+      'technicianSignatureDate'
     ];
     const sanitizedReportUpdates = {};
     for (const key of serviceReportAllowedFields) {
@@ -7002,8 +7010,12 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
       analyzersValidated,
       customerSignature,
       customerSignatureDate,
+      customerFirstName,
+      customerLastName,
       technicianSignature,
       technicianSignatureDate,
+      technicianFirstName,
+      technicianLastName,
       serviceCompletionDate,
       analyzerSerialNumber
     } = req.body;
@@ -7028,8 +7040,12 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
       analyzersValidated: analyzersValidated || existingReport.analyzersValidated,
       customerSignature: customerSignature || existingReport.customerSignature,
       customerSignatureDate: customerSignatureDate || existingReport.customerSignatureDate,
+      customerFirstName: customerFirstName || existingReport.customerFirstName,
+      customerLastName: customerLastName || existingReport.customerLastName,
       technicianSignature: technicianSignature || existingReport.technicianSignature,
       technicianSignatureDate: technicianSignatureDate || existingReport.technicianSignatureDate,
+      technicianFirstName: technicianFirstName || existingReport.technicianFirstName,
+      technicianLastName: technicianLastName || existingReport.technicianLastName,
       serviceCompletionDate: serviceCompletionDate || existingReport.serviceCompletionDate || new Date().toISOString().split('T')[0],
       analyzerSerialNumber: analyzerSerialNumber || existingReport.analyzerSerialNumber,
       serviceProviderName: req.user.name,
@@ -8466,4 +8482,22 @@ app.listen(PORT, () => {
 
   // Start HubSpot ticket polling (webhook workaround)
   initializeTicketPolling();
+
+  // One-time migration: add signer names to NANI service report (26a15b8d-fc8b-4687-8316-46764c8bcdc1)
+  (async () => {
+    try {
+      const serviceReports = (await db.get('service_reports')) || [];
+      const naniIdx = serviceReports.findIndex(r => r.id === '26a15b8d-fc8b-4687-8316-46764c8bcdc1');
+      if (naniIdx !== -1 && !serviceReports[naniIdx].customerFirstName) {
+        serviceReports[naniIdx].customerFirstName = 'Terra';
+        serviceReports[naniIdx].customerLastName = 'Hearn';
+        serviceReports[naniIdx].technicianFirstName = 'Jeff';
+        serviceReports[naniIdx].technicianLastName = 'Gray';
+        await db.set('service_reports', serviceReports);
+        console.log('✅ Migration: Added signer names to NANI service report');
+      }
+    } catch (e) {
+      console.error('Migration error (non-blocking):', e.message);
+    }
+  })();
 });
