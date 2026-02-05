@@ -6143,9 +6143,10 @@ const requireServiceAccess = (req, res, next) => {
 app.get('/api/service-portal/data', authenticateToken, requireServiceAccess, async (req, res) => {
   try {
     const serviceReports = (await db.get('service_reports')) || [];
+    const isAdminOrManager = req.user.role === 'admin' || (req.user.isManager && req.user.hasServicePortalAccess);
     let userReports;
 
-    if (req.user.role === 'admin' || (req.user.isManager && req.user.hasServicePortalAccess)) {
+    if (isAdminOrManager) {
       // Super Admins and Managers with Service Portal access see all reports
       userReports = serviceReports;
     } else if (req.user.role === 'vendor') {
@@ -6164,6 +6165,10 @@ app.get('/api/service-portal/data', authenticateToken, requireServiceAccess, asy
       );
     }
 
+    // For admin stats: count open (assigned) and closed (submitted) across ALL reports
+    const openCount = serviceReports.filter(r => r.status === 'assigned').length;
+    const closedCount = serviceReports.filter(r => r.status === 'submitted').length;
+
     // Exclude assigned reports from recentReports since they're tracked separately in assignedReports
     // This prevents double-counting in the "My Reports" counter
     userReports = userReports.filter(r => r.status !== 'assigned');
@@ -6173,7 +6178,12 @@ app.get('/api/service-portal/data', authenticateToken, requireServiceAccess, asy
 
     res.json({
       recentReports: userReports.slice(0, 10),
-      totalReports: userReports.length
+      totalReports: userReports.length,
+      // Admin-specific stats for dashboard
+      isAdminView: isAdminOrManager,
+      allReportsCount: serviceReports.length,
+      openCount,
+      closedCount
     });
   } catch (error) {
     console.error('Service portal data error:', error);
@@ -6411,7 +6421,8 @@ app.post('/api/service-reports', authenticateToken, requireServiceAccess, async 
           driveWebContentLink: newReport.driveWebContentLink || null,
           createdAt: new Date().toISOString(),
           uploadedBy: 'system',
-          uploadedByName: 'Thrive 365 Labs'
+          uploadedByName: 'Thrive 365 Labs',
+          active: true
         };
 
         clientDocuments.push(newDocument);
@@ -8423,7 +8434,8 @@ app.listen(PORT, () => {
               driveWebContentLink: report.driveWebContentLink || null,
               createdAt: new Date().toISOString(),
               uploadedBy: 'system',
-              uploadedByName: 'Thrive 365 Labs'
+              uploadedByName: 'Thrive 365 Labs',
+              active: true
             });
             await db.set('client_documents', clientDocuments);
             console.log(`✅ Migration: Added NANI service report to client files for slug "${client.slug}"`);
@@ -8431,6 +8443,21 @@ app.listen(PORT, () => {
             console.log('⚠️ Migration: Could not find NANI client user to add service report to files');
           }
         }
+      }
+
+      // Migration 4: Fix service report client documents missing 'active' field
+      // This ensures all service reports added to client files are visible in the portal
+      const clientDocs = (await db.get('client_documents')) || [];
+      let docsUpdated = false;
+      for (let i = 0; i < clientDocs.length; i++) {
+        if (clientDocs[i].serviceReportId && clientDocs[i].active !== true) {
+          clientDocs[i].active = true;
+          docsUpdated = true;
+        }
+      }
+      if (docsUpdated) {
+        await db.set('client_documents', clientDocs);
+        console.log('✅ Migration: Fixed service report documents missing active field');
       }
     } catch (e) {
       console.error('Migration error (non-blocking):', e.message);
