@@ -13,15 +13,39 @@ const googledrive = require('./googledrive');
 const pdfGenerator = require('./pdf-generator');
 const changelogGenerator = require('./changelog-generator');
 
-const upload = multer({ 
+const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }
 });
 
+// Concurrent upload limiter to prevent memory exhaustion (Gotcha #12)
+// Files are memory-only (10MB each); limit concurrent uploads to prevent OOM
+const MAX_CONCURRENT_UPLOADS = 5;
+let _activeUploads = 0;
+
+const uploadLimiter = (req, res, next) => {
+  if (_activeUploads >= MAX_CONCURRENT_UPLOADS) {
+    return res.status(503).json({ error: 'Server busy processing uploads. Please try again in a moment.' });
+  }
+  _activeUploads++;
+  res.on('finish', () => { _activeUploads--; });
+  res.on('close', () => { _activeUploads--; });
+  next();
+};
+
 const app = express();
 const db = new Database();
 const PORT = process.env.PORT || 3000;
+
+// HubSpot ticket polling timer reference
+let hubspotPollingTimer = null;
 const JWT_SECRET = process.env.JWT_SECRET || 'thrive365-secret-change-in-production';
+
+// Startup security warnings
+if (!process.env.JWT_SECRET) {
+  console.warn('⚠️  WARNING: JWT_SECRET environment variable not set. Using weak default secret.');
+  console.warn('   This is a SECURITY RISK in production. Set JWT_SECRET to a strong random value.');
+}
 
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
@@ -60,7 +84,7 @@ app.use('/launch', express.static('public', staticOptions));
 app.use('/thrive365labsLAUNCH', express.static('public', staticOptions));
 app.use('/thrive365labslaunch', express.static('public', staticOptions));
 app.use(express.static('public', { ...staticOptions, index: false }));
-app.use('/uploads', express.static('uploads', staticOptions));
+// NOTE: Authenticated /uploads static middleware is registered after authenticateToken is defined (see below)
 
 // ============== LAUNCH ROUTES (Implementations Portal) ==============
 // Main implementations dashboard
@@ -98,6 +122,7 @@ app.get('/thrive365labslaunch', (req, res) => {
         createdAt: new Date().toISOString()
       });
       await db.set('users', users);
+    invalidateUsersCache();
       console.log('✅ Admin user created: bianca@thrive365labs.com / Thrive2025!');
     }
   } catch (err) {
@@ -106,8 +131,31 @@ app.get('/thrive365labslaunch', (req, res) => {
 })();
 
 // Helper functions
-const getUsers = async () => (await db.get('users')) || [];
-const getProjects = async () => {
+
+// Short-lived user cache to reduce DB reads on every authenticated request (Gotcha #6)
+// 5-second TTL ensures permission changes take effect within seconds while reducing O(n) lookups
+let _usersCache = { data: null, lastRefresh: 0 };
+const USERS_CACHE_TTL = 5000; // 5 seconds
+
+const getUsers = async () => {
+  const now = Date.now();
+  if (_usersCache.data && (now - _usersCache.lastRefresh < USERS_CACHE_TTL)) {
+    return _usersCache.data;
+  }
+  const users = (await db.get('users')) || [];
+  _usersCache = { data: users, lastRefresh: now };
+  return users;
+};
+
+// Invalidate user cache after writes (called after db.set('users', ...))
+const invalidateUsersCache = () => {
+  _usersCache = { data: null, lastRefresh: 0 };
+};
+// Run legacy migration once at startup instead of on every read (Gotcha #15)
+let _projectsMigrated = false;
+
+const migrateProjects = async () => {
+  if (_projectsMigrated) return;
   const projects = (await db.get('projects')) || [];
   let needsSave = false;
   for (const project of projects) {
@@ -119,12 +167,25 @@ const getProjects = async () => {
   }
   if (needsSave) {
     await db.set('projects', projects);
+    console.log('Migrated hubspotDealId -> hubspotRecordId for legacy projects');
   }
-  return projects;
+  _projectsMigrated = true;
 };
+
+// Run migration immediately on startup
+migrateProjects().catch(err => console.error('Project migration error:', err));
+
+const getProjects = async () => (await db.get('projects')) || [];
 // Get raw tasks for mutation - use this when you need to modify and save back
 const getRawTasks = async (projectId) => {
   return (await db.get(`tasks_${projectId}`)) || [];
+};
+
+// Safe next ID generator - handles mixed numeric/UUID task IDs without NaN
+const getNextNumericId = (items) => {
+  if (!items || items.length === 0) return 1;
+  const numericIds = items.map(t => typeof t.id === 'number' ? t.id : parseInt(t.id, 10)).filter(id => !isNaN(id));
+  return numericIds.length > 0 ? Math.max(...numericIds) + 1 : items.length + 1;
 };
 
 // Get normalized tasks for display - use this for read-only operations
@@ -146,6 +207,8 @@ const getTasks = async (projectId) => {
 };
 
 // Activity logging helper
+const ACTIVITY_LOG_MAX = 2000;
+
 const logActivity = async (userId, userName, action, entityType, entityId, details, projectId = null) => {
   try {
     const activities = (await db.get('activity_log')) || [];
@@ -161,8 +224,12 @@ const logActivity = async (userId, userName, action, entityType, entityId, detai
       timestamp: new Date().toISOString()
     };
     activities.unshift(activity);
-    // Keep only last 500 activities to prevent unbounded growth
-    if (activities.length > 500) activities.length = 500;
+    // Keep only last ACTIVITY_LOG_MAX activities to prevent unbounded growth
+    if (activities.length > ACTIVITY_LOG_MAX) {
+      const droppedCount = activities.length - ACTIVITY_LOG_MAX;
+      console.warn(`Activity log exceeded ${ACTIVITY_LOG_MAX} entries, dropping ${droppedCount} oldest entries`);
+      activities.length = ACTIVITY_LOG_MAX;
+    }
     await db.set('activity_log', activities);
   } catch (err) {
     console.error('Failed to log activity:', err);
@@ -200,6 +267,390 @@ async function loadTemplate() {
   }
 }
 
+// ===== HubSpot Ticket Polling Engine =====
+// Polls HubSpot for tickets in target stages and creates service reports
+// Workaround for when HubSpot webhooks are not available
+
+function getDefaultPollingConfig() {
+  return {
+    enabled: true,
+    intervalSeconds: 60,
+    startedAt: new Date().toISOString(),
+    lastPollTime: null,
+    processedTicketIds: [],
+    targetStages: ['assigned', 'vendor escalation'],
+    resolvedStageIds: [],
+    stageIdsCachedAt: null,
+    filter: {
+      mode: 'property',       // 'keyword' | 'property' | 'all'
+      subjectKeyword: '[SR]', // For keyword mode: only tickets with this in subject
+      propertyName: 'create_service_report', // For property mode: HubSpot custom property name
+      propertyValue: 'true'   // For property mode: expected value
+    },
+    stats: {
+      totalPolls: 0,
+      totalReportsCreated: 0,
+      lastSuccessfulPoll: null,
+      lastError: null,
+      lastErrorTime: null
+    },
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+}
+
+async function pollHubSpotTickets() {
+  try {
+    const config = await db.get('ticket_polling_config');
+    if (!config || !config.enabled) return;
+
+    console.log('[HubSpot Poll] Starting poll cycle...');
+
+    // Resolve stage IDs from labels if not cached or cache is stale (refresh every hour)
+    const cacheAge = config.stageIdsCachedAt
+      ? Date.now() - new Date(config.stageIdsCachedAt).getTime()
+      : Infinity;
+
+    if (!config.resolvedStageIds || !config.resolvedStageIds.length || cacheAge > 3600000) {
+      try {
+        const pipelines = await hubspot.getTicketPipelines();
+        const targetLabels = config.targetStages.map(s => s.toLowerCase());
+        const stageIds = [];
+        for (const pipeline of pipelines) {
+          for (const stage of pipeline.stages) {
+            if (targetLabels.some(t => stage.label.toLowerCase().includes(t))) {
+              stageIds.push(stage.id);
+            }
+          }
+        }
+        config.resolvedStageIds = stageIds;
+        config.stageIdsCachedAt = new Date().toISOString();
+        await db.set('ticket_polling_config', config);
+        console.log(`[HubSpot Poll] Resolved ${stageIds.length} target stage ID(s).`);
+      } catch (pipelineErr) {
+        console.error('[HubSpot Poll] Failed to resolve stage IDs:', pipelineErr.message);
+        config.stats.lastError = 'Failed to resolve stage IDs: ' + pipelineErr.message;
+        config.stats.lastErrorTime = new Date().toISOString();
+        await db.set('ticket_polling_config', config);
+        return;
+      }
+    }
+
+    if (!config.resolvedStageIds.length) {
+      console.log('[HubSpot Poll] No target stage IDs resolved. Check targetStages config.');
+      return;
+    }
+
+    // Use lastPollTime if available, otherwise startedAt (first poll = fresh start)
+    const sinceTime = config.lastPollTime || config.startedAt;
+
+    // Include custom property in search if using property filter mode
+    const additionalProps = [];
+    if (config.filter.mode === 'property' && config.filter.propertyName) {
+      additionalProps.push(config.filter.propertyName);
+    }
+
+    // Search HubSpot for tickets in target stages modified since last poll
+    let candidates;
+    try {
+      candidates = await hubspot.searchTicketsByStage(
+        config.resolvedStageIds,
+        sinceTime,
+        additionalProps
+      );
+    } catch (searchErr) {
+      console.error('[HubSpot Poll] Search failed:', searchErr.message);
+      config.stats.lastError = 'Search failed: ' + searchErr.message;
+      config.stats.lastErrorTime = new Date().toISOString();
+      config.stats.totalPolls++;
+      await db.set('ticket_polling_config', config);
+      return;
+    }
+
+    if (!candidates.length) {
+      config.lastPollTime = new Date().toISOString();
+      config.stats.totalPolls++;
+      config.stats.lastSuccessfulPoll = new Date().toISOString();
+      config.stats.lastError = null;
+      await db.set('ticket_polling_config', config);
+      return;
+    }
+
+    console.log(`[HubSpot Poll] Found ${candidates.length} candidate ticket(s).`);
+
+    // Filter out already-processed tickets
+    const processedIds = new Set(config.processedTicketIds || []);
+    let filteredCandidates = candidates.filter(t => !processedIds.has(String(t.id)));
+
+    // Apply the configured filter mode
+    if (config.filter.mode === 'keyword') {
+      const keyword = (config.filter.subjectKeyword || '').toLowerCase();
+      if (keyword) {
+        filteredCandidates = filteredCandidates.filter(t => {
+          const subject = (t.properties?.subject || '').toLowerCase();
+          return subject.includes(keyword);
+        });
+      }
+    } else if (config.filter.mode === 'property') {
+      const propName = config.filter.propertyName;
+      const propValue = (config.filter.propertyValue || '').toLowerCase();
+      if (propName && propValue) {
+        filteredCandidates = filteredCandidates.filter(t => {
+          const val = (t.properties?.[propName] || '').toLowerCase();
+          return val === propValue;
+        });
+      }
+    }
+    // mode === 'all' means no additional filtering
+
+    if (!filteredCandidates.length) {
+      config.lastPollTime = new Date().toISOString();
+      config.stats.totalPolls++;
+      config.stats.lastSuccessfulPoll = new Date().toISOString();
+      config.stats.lastError = null;
+      await db.set('ticket_polling_config', config);
+      return;
+    }
+
+    console.log(`[HubSpot Poll] ${filteredCandidates.length} ticket(s) passed filter. Processing...`);
+
+    // Load existing service reports and users for duplicate check and owner mapping
+    const serviceReports = (await db.get('service_reports')) || [];
+    const existingTicketIds = new Set(
+      serviceReports.map(r => String(r.hubspotTicketNumber)).filter(Boolean)
+    );
+    const users = (await db.get('users')) || [];
+
+    const serviceTypeMapping = {
+      'analyzer hardware': 'Analyzer Hardware',
+      'inventory': 'Inventory',
+      'lis/emr': 'LIS/EMR',
+      'lis': 'LIS/EMR',
+      'emr': 'LIS/EMR',
+      'billing & fees': 'Billing & Fees',
+      'billing': 'Billing & Fees',
+      'compliance': 'Compliance',
+      'training': 'Training',
+      'validations': 'Validations',
+      'validation': 'Validations'
+    };
+
+    let reportsCreated = 0;
+
+    for (const candidate of filteredCandidates) {
+      const ticketId = String(candidate.id);
+
+      // Skip if service report already exists for this ticket
+      if (existingTicketIds.has(ticketId)) {
+        console.log(`[HubSpot Poll] Service report already exists for ticket ${ticketId}, skipping.`);
+        processedIds.add(ticketId);
+        continue;
+      }
+
+      // Fetch full ticket details (company, contact, notes)
+      let ticket;
+      try {
+        ticket = await hubspot.getTicketById(ticketId);
+      } catch (fetchErr) {
+        console.error(`[HubSpot Poll] Failed to fetch ticket ${ticketId}:`, fetchErr.message);
+        continue;
+      }
+
+      // Map HubSpot owner to internal user (same logic as webhook handler)
+      let assignedToId = null;
+      let assignedToName = null;
+
+      if (ticket.ownerId) {
+        try {
+          const owners = await hubspot.getOwners();
+          const hubspotOwner = owners.find(o => String(o.id) === String(ticket.ownerId));
+
+          if (hubspotOwner) {
+            // Try email match first
+            if (hubspotOwner.email) {
+              const userByEmail = users.find(u =>
+                u.email && u.email.toLowerCase() === hubspotOwner.email.toLowerCase() &&
+                (u.role === 'vendor' || u.role === 'admin' || u.hasServicePortalAccess)
+              );
+              if (userByEmail) {
+                assignedToId = userByEmail.id;
+                assignedToName = userByEmail.name;
+              }
+            }
+            // Fall back to name match
+            if (!assignedToId && hubspotOwner.firstName && hubspotOwner.lastName) {
+              const fullName = `${hubspotOwner.firstName} ${hubspotOwner.lastName}`;
+              const userByName = users.find(u =>
+                u.name && u.name.toLowerCase() === fullName.toLowerCase() &&
+                (u.role === 'vendor' || u.role === 'admin' || u.hasServicePortalAccess)
+              );
+              if (userByName) {
+                assignedToId = userByName.id;
+                assignedToName = userByName.name;
+              }
+            }
+          }
+        } catch (ownerErr) {
+          console.log(`[HubSpot Poll] Could not match owner for ticket ${ticketId}:`, ownerErr.message);
+        }
+      }
+
+      if (!assignedToId) {
+        console.log(`[HubSpot Poll] No internal user match for ticket ${ticketId} (owner ${ticket.ownerId}). Skipping.`);
+        processedIds.add(ticketId);
+        continue;
+      }
+
+      // Map service type from issue category
+      const issueCategoryLower = (ticket.issueCategory || '').toLowerCase();
+      const serviceType = serviceTypeMapping[issueCategoryLower] || '';
+
+      // Build manager notes from ticket description and notes
+      let managerNotes = '';
+      if (ticket.description) {
+        managerNotes += `**Ticket Description:**\n${ticket.description}\n\n`;
+      }
+      if (ticket.notes && ticket.notes.length > 0) {
+        managerNotes += `**Ticket Notes:**\n`;
+        ticket.notes.forEach((note) => {
+          const timestamp = note.timestamp ? new Date(parseInt(note.timestamp)).toLocaleString() : '';
+          managerNotes += `\n[${timestamp}]\n${note.body}\n`;
+          if (note.attachmentIds) {
+            managerNotes += `(Attachments: ${note.attachmentIds})\n`;
+          }
+        });
+      }
+
+      // Create the service report
+      const newReport = {
+        id: uuidv4(),
+        status: 'assigned',
+        assignedToId,
+        assignedToName,
+        assignedById: 'system',
+        assignedByName: 'HubSpot Polling',
+        assignedAt: new Date().toISOString(),
+        clientFacilityName: ticket.companyName || '',
+        customerName: ticket.submittedBy || '',
+        serviceProviderName: assignedToName,
+        address: '',
+        serviceType,
+        analyzerModel: '',
+        analyzerSerialNumber: ticket.serialNumber || '',
+        hubspotTicketNumber: String(ticket.id),
+        hubspotCompanyId: ticket.companyId || '',
+        hubspotDealId: '',
+        serviceCompletionDate: new Date().toISOString().split('T')[0],
+        managerNotes: managerNotes.trim(),
+        photos: [],
+        clientFiles: [],
+        technicianId: null,
+        technicianName: null,
+        descriptionOfWork: '',
+        materialsUsed: '',
+        solution: '',
+        outstandingIssues: '',
+        validationResults: '',
+        validationStartDate: '',
+        validationEndDate: '',
+        trainingProvided: '',
+        testProcedures: '',
+        recommendations: '',
+        analyzersValidated: [],
+        customerSignature: null,
+        customerSignatureDate: null,
+        technicianSignature: null,
+        technicianSignatureDate: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        createdViaWebhook: true,
+        createdViaPolling: true
+      };
+
+      serviceReports.push(newReport);
+      existingTicketIds.add(ticketId);
+      processedIds.add(ticketId);
+      reportsCreated++;
+
+      console.log(`[HubSpot Poll] Created service report ${newReport.id} from ticket ${ticketId} -> ${assignedToName}`);
+
+      // Log activity
+      try {
+        await logActivity(
+          'system',
+          'HubSpot Polling',
+          'service_report_auto_assigned',
+          'service_report',
+          newReport.id,
+          {
+            ticketId,
+            assignedTo: assignedToName,
+            clientName: ticket.companyName,
+            source: 'polling'
+          }
+        );
+      } catch (logErr) {
+        console.log('[HubSpot Poll] Could not log activity:', logErr.message);
+      }
+    }
+
+    // Persist all new service reports
+    if (reportsCreated > 0) {
+      await db.set('service_reports', serviceReports);
+    }
+
+    // Update polling config state
+    config.processedTicketIds = Array.from(processedIds);
+    // Trim to last 500 IDs to prevent unbounded growth
+    if (config.processedTicketIds.length > 500) {
+      config.processedTicketIds = config.processedTicketIds.slice(-500);
+    }
+    config.lastPollTime = new Date().toISOString();
+    config.stats.totalPolls++;
+    config.stats.totalReportsCreated += reportsCreated;
+    config.stats.lastSuccessfulPoll = new Date().toISOString();
+    config.stats.lastError = null;
+    config.stats.lastErrorTime = null;
+    await db.set('ticket_polling_config', config);
+
+    console.log(`[HubSpot Poll] Cycle complete. Created ${reportsCreated} report(s).`);
+  } catch (error) {
+    console.error('[HubSpot Poll] Unexpected error:', error.message);
+    try {
+      const config = await db.get('ticket_polling_config');
+      if (config) {
+        config.stats.lastError = error.message;
+        config.stats.lastErrorTime = new Date().toISOString();
+        config.stats.totalPolls++;
+        await db.set('ticket_polling_config', config);
+      }
+    } catch (dbErr) {
+      console.error('[HubSpot Poll] Could not persist error state:', dbErr.message);
+    }
+  }
+}
+
+async function initializeTicketPolling() {
+  try {
+    let config = await db.get('ticket_polling_config');
+    if (!config) {
+      config = getDefaultPollingConfig();
+      await db.set('ticket_polling_config', config);
+      console.log('[HubSpot Poll] Initialized default config (enabled, 60s, property filter "create_service_report")');
+    }
+
+    if (config.enabled) {
+      const interval = (config.intervalSeconds || 60) * 1000;
+      hubspotPollingTimer = setInterval(pollHubSpotTickets, interval);
+      console.log(`[HubSpot Poll] Polling started (every ${config.intervalSeconds || 60}s, filter: ${config.filter?.mode || 'keyword'})`);
+    } else {
+      console.log('[HubSpot Poll] Polling is disabled in config.');
+    }
+  } catch (err) {
+    console.error('[HubSpot Poll] Failed to initialize:', err.message);
+  }
+}
+
 // Auth middleware (accepts token from header or query param for downloads)
 const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -211,41 +662,57 @@ const authenticateToken = async (req, res, next) => {
   if (!token) return res.status(401).json({ error: 'Access denied' });
   jwt.verify(token, JWT_SECRET, async (err, tokenUser) => {
     if (err) return res.status(403).json({ error: 'Invalid token' });
-    // Fetch fresh user data from database to get current role and permissions
-    const users = await getUsers();
-    const freshUser = users.find(u => u.id === tokenUser.id);
-    if (!freshUser) return res.status(403).json({ error: 'User not found' });
-    // Use fresh data for all user properties to ensure permission changes take effect immediately
-    req.user = {
-      id: freshUser.id,
-      email: freshUser.email,
-      name: freshUser.name,
-      role: freshUser.role, // admin, user, client, vendor
-      assignedProjects: freshUser.assignedProjects || [],
-      projectAccessLevels: freshUser.projectAccessLevels || {},
-      // Granular permission flags
-      hasServicePortalAccess: freshUser.hasServicePortalAccess || false,
-      hasAdminHubAccess: freshUser.hasAdminHubAccess || false,
-      hasImplementationsAccess: freshUser.hasImplementationsAccess || false,
-      hasClientPortalAdminAccess: freshUser.hasClientPortalAdminAccess || false,
-      // Vendor-specific: clients they can service
-      assignedClients: freshUser.assignedClients || [],
-      // Client-specific fields
-      isNewClient: freshUser.isNewClient || false,
-      slug: freshUser.slug || null,
-      practiceName: freshUser.practiceName || null
-    };
-    next();
+    try {
+      // Fetch fresh user data from database to get current role and permissions
+      const users = await getUsers();
+      const freshUser = users.find(u => u.id === tokenUser.id);
+      if (!freshUser) return res.status(403).json({ error: 'User not found' });
+      // Use fresh data for all user properties to ensure permission changes take effect immediately
+      // Determine if user is a manager (has limited admin access)
+      const isManager = freshUser.isManager || false;
+
+      req.user = {
+        id: freshUser.id,
+        email: freshUser.email,
+        name: freshUser.name,
+        role: freshUser.role, // admin (super admin), user, client, vendor
+        assignedProjects: freshUser.assignedProjects || [],
+        projectAccessLevels: freshUser.projectAccessLevels || {},
+        // Manager flag - provides limited admin access (client portal admin + service portal in admin hub)
+        isManager: isManager,
+        // Granular permission flags
+        hasServicePortalAccess: freshUser.hasServicePortalAccess || false,
+        hasAdminHubAccess: freshUser.hasAdminHubAccess || false,
+        hasImplementationsAccess: freshUser.hasImplementationsAccess || false,
+        // Managers automatically get client portal admin access
+        hasClientPortalAdminAccess: freshUser.hasClientPortalAdminAccess || isManager || false,
+        // Vendor-specific: clients they can service
+        assignedClients: freshUser.assignedClients || [],
+        // Client-specific fields
+        isNewClient: freshUser.isNewClient || false,
+        slug: freshUser.slug || null,
+        practiceName: freshUser.practiceName || null
+      };
+      next();
+    } catch (error) {
+      console.error('Auth middleware error:', error);
+      res.status(500).json({ error: 'Authentication error' });
+    }
   });
 };
 
 // Authorization helper to check project access
 const canAccessProject = (user, projectId) => {
   if (user.role === 'admin') return true;
-  if (user.role === 'client') {
-    return (user.assignedProjects || []).includes(projectId);
-  }
   return (user.assignedProjects || []).includes(projectId);
+};
+
+// Authorization helper to check write access to a project
+const canWriteProject = (user, projectId) => {
+  if (user.role === 'admin') return true;
+  if (!(user.assignedProjects || []).includes(projectId)) return false;
+  const level = (user.projectAccessLevels || {})[projectId];
+  return level === 'write' || level === 'admin';
 };
 
 // Generate a unique slug for client users
@@ -255,19 +722,32 @@ const generateClientUserSlug = async (practiceName) => {
   return generateClientSlug(practiceName, existingSlugs);
 };
 
+// Super Admin access - full system access (role === 'admin')
 const requireAdmin = (req, res, next) => {
   if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Admin access required' });
+    return res.status(403).json({ error: 'Super Admin access required' });
   }
   next();
 };
 
-// Require Admin Hub access (admins or users with hasAdminHubAccess)
+// Alias for clarity - Super Admin only routes
+const requireSuperAdmin = requireAdmin;
+
+// Require Admin Hub access (super admins, managers, or users with hasAdminHubAccess)
+// Note: Managers can access Admin Hub but only Service Portal section (UI handles section visibility)
 const requireAdminHubAccess = (req, res, next) => {
-  if (req.user.role === 'admin' || req.user.hasAdminHubAccess) {
+  if (req.user.role === 'admin' || req.user.isManager || req.user.hasAdminHubAccess) {
     return next();
   }
   return res.status(403).json({ error: 'Admin Hub access required' });
+};
+
+// Require Super Admin for sensitive Admin Hub operations (Inbox, User Management)
+const requireAdminHubFullAccess = (req, res, next) => {
+  if (req.user.role === 'admin') {
+    return next();
+  }
+  return res.status(403).json({ error: 'Super Admin access required for this operation' });
 };
 
 // Require Implementations App access
@@ -279,35 +759,53 @@ const requireImplementationsAccess = (req, res, next) => {
   return res.status(403).json({ error: 'Implementations App access required' });
 };
 
-// Require Client Portal Admin access
+// Require Client Portal Admin access (super admins, managers, or users with hasClientPortalAdminAccess)
 const requireClientPortalAdmin = (req, res, next) => {
-  if (req.user.role === 'admin' || req.user.hasClientPortalAdminAccess) {
+  if (req.user.role === 'admin' || req.user.isManager || req.user.hasClientPortalAdminAccess) {
     return next();
   }
   return res.status(403).json({ error: 'Client Portal admin access required' });
 };
 
+// Uploads require authentication - registered here after authenticateToken is defined
+app.use('/uploads', authenticateToken, express.static('uploads', staticOptions));
+// Fallback: serve from public/uploads for files saved before path fix
+app.use('/uploads', authenticateToken, express.static('public/uploads', staticOptions));
+
 // ============== AUTH ROUTES ==============
-app.post('/api/auth/signup', async (req, res) => {
+app.post('/api/auth/signup', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { email, password, name } = req.body;
     if (!email || !password || !name) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+    // Validate password strength (min 8 chars, at least one uppercase, one lowercase, one number)
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters long' });
+    }
+    if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
+      return res.status(400).json({ error: 'Password must contain at least one uppercase letter, one lowercase letter, and one number' });
+    }
     const users = await getUsers();
-    if (users.find(u => u.email === email)) {
+    if (users.find(u => u.email?.toLowerCase() === email.toLowerCase())) {
       return res.status(400).json({ error: 'User already exists' });
     }
     const hashedPassword = await bcrypt.hash(password, 10);
     users.push({
       id: uuidv4(),
-      email,
+      email: email.toLowerCase().trim(),
       name,
       password: hashedPassword,
       role: 'user',
       createdAt: new Date().toISOString()
     });
     await db.set('users', users);
+    invalidateUsersCache();
     res.json({ message: 'Account created successfully' });
   } catch (error) {
     console.error('Signup error:', error);
@@ -315,17 +813,28 @@ app.post('/api/auth/signup', async (req, res) => {
   }
 });
 
-// Admin create user endpoint
+// Admin create user endpoint (Super Admin or Manager for client users only)
 app.post('/api/users', authenticateToken, async (req, res) => {
   try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Admin access required' });
+    // Super Admin can create any user type, Managers can only create client users
+    const isSuperAdmin = req.user.role === 'admin';
+    const isCurrentUserManager = req.user.isManager || false;
+
+    if (!isSuperAdmin && !isCurrentUserManager) {
+      return res.status(403).json({ error: 'Admin or Manager access required' });
     }
     const {
       email, password, name, role, practiceName, isNewClient, assignedProjects, logo,
       hasServicePortalAccess, hasAdminHubAccess, hasImplementationsAccess, hasClientPortalAdminAccess,
-      assignedClients, hubspotCompanyId, hubspotDealId, hubspotContactId, projectAccessLevels
+      isManager, assignedClients, hubspotCompanyId, hubspotDealId, hubspotContactId, projectAccessLevels,
+      existingPortalSlug
     } = req.body;
+
+    // Managers can only create client users
+    if (isCurrentUserManager && !isSuperAdmin && role !== 'client') {
+      return res.status(403).json({ error: 'Managers can only create client users' });
+    }
+
     if (!email || !password || !name) {
       return res.status(400).json({ error: 'Email, password, and name are required' });
     }
@@ -339,34 +848,58 @@ app.post('/api/users', authenticateToken, async (req, res) => {
       email,
       name,
       password: hashedPassword,
-      role: role || 'user', // admin, user, client, vendor
+      role: role || 'user', // admin (super admin), user, client, vendor
+      // Manager flag - provides limited admin access
+      isManager: isManager || false,
       // Permission flags
       hasServicePortalAccess: hasServicePortalAccess || false,
       hasAdminHubAccess: hasAdminHubAccess || false,
       hasImplementationsAccess: hasImplementationsAccess || false,
       hasClientPortalAdminAccess: hasClientPortalAdminAccess || false,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      // Force new users to change their password on first login
+      requirePasswordChange: true,
+      lastPasswordReset: new Date().toISOString()
     };
 
     // Client-specific fields
     if (role === 'client') {
-      if (!practiceName) {
-        return res.status(400).json({ error: 'Practice name is required for client accounts' });
+      // If adding user to an existing portal, inherit slug and practice settings
+      if (existingPortalSlug) {
+        const existingClient = users.find(u => u.role === 'client' && u.slug === existingPortalSlug);
+        if (!existingClient) {
+          return res.status(400).json({ error: 'Existing portal not found' });
+        }
+        newUser.practiceName = practiceName || existingClient.practiceName;
+        newUser.slug = existingPortalSlug;
+        newUser.isNewClient = false;
+        newUser.assignedProjects = assignedProjects || existingClient.assignedProjects || [];
+        newUser.projectAccessLevels = projectAccessLevels || existingClient.projectAccessLevels || {};
+        newUser.logo = logo || existingClient.logo || '';
+        newUser.hubspotCompanyId = hubspotCompanyId || existingClient.hubspotCompanyId || '';
+        newUser.hubspotDealId = hubspotDealId || existingClient.hubspotDealId || '';
+        newUser.hubspotContactId = hubspotContactId || existingClient.hubspotContactId || '';
+      } else {
+        if (!practiceName) {
+          return res.status(400).json({ error: 'Practice name is required for client accounts' });
+        }
+        newUser.practiceName = practiceName;
+        newUser.isNewClient = isNewClient || false;
+        newUser.slug = await generateClientUserSlug(practiceName);
+        newUser.assignedProjects = assignedProjects || [];
+        newUser.projectAccessLevels = projectAccessLevels || {};
+        if (logo) newUser.logo = logo;
+        if (hubspotCompanyId) newUser.hubspotCompanyId = hubspotCompanyId;
+        if (hubspotDealId) newUser.hubspotDealId = hubspotDealId;
+        if (hubspotContactId) newUser.hubspotContactId = hubspotContactId;
       }
-      newUser.practiceName = practiceName;
-      newUser.isNewClient = isNewClient || false;
-      newUser.slug = await generateClientUserSlug(practiceName);
-      newUser.assignedProjects = assignedProjects || [];
-      newUser.projectAccessLevels = projectAccessLevels || {};
-      if (logo) newUser.logo = logo;
-      if (hubspotCompanyId) newUser.hubspotCompanyId = hubspotCompanyId;
-      if (hubspotDealId) newUser.hubspotDealId = hubspotDealId;
-      if (hubspotContactId) newUser.hubspotContactId = hubspotContactId;
     }
 
     // Vendor-specific fields
     if (role === 'vendor') {
       newUser.assignedClients = assignedClients || [];
+      // Vendors automatically get service portal access
+      newUser.hasServicePortalAccess = true;
     }
 
     // User/team member fields
@@ -377,11 +910,13 @@ app.post('/api/users', authenticateToken, async (req, res) => {
 
     users.push(newUser);
     await db.set('users', users);
+    invalidateUsersCache();
     res.json({
       id: newUser.id,
       email: newUser.email,
       name: newUser.name,
       role: newUser.role,
+      isManager: newUser.isManager,
       hasServicePortalAccess: newUser.hasServicePortalAccess,
       hasAdminHubAccess: newUser.hasAdminHubAccess,
       hasImplementationsAccess: newUser.hasImplementationsAccess,
@@ -397,6 +932,37 @@ app.post('/api/users', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     console.error('Admin create user error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get existing client portals (unique slugs) for adding users to existing portals
+app.get('/api/client-portals', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin' && !req.user.isManager) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    const users = await getUsers();
+    const clientUsers = users.filter(u => u.role === 'client' && u.slug);
+    // Group by slug to get unique portals with member count
+    const portalMap = {};
+    for (const u of clientUsers) {
+      if (!portalMap[u.slug]) {
+        portalMap[u.slug] = {
+          slug: u.slug,
+          practiceName: u.practiceName,
+          logo: u.logo || '',
+          hubspotCompanyId: u.hubspotCompanyId || '',
+          memberCount: 0,
+          members: []
+        };
+      }
+      portalMap[u.slug].memberCount++;
+      portalMap[u.slug].members.push({ id: u.id, name: u.name, email: u.email });
+    }
+    res.json(Object.values(portalMap));
+  } catch (error) {
+    console.error('Error fetching client portals:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -423,16 +989,20 @@ app.post('/api/auth/login', async (req, res) => {
       JWT_SECRET,
       { expiresIn: '24h' }
     );
+    const isManager = user.isManager || false;
     const userResponse = {
       id: user.id,
       email: user.email,
       name: user.name,
       role: user.role,
+      // Manager flag - provides limited admin access
+      isManager: isManager,
       // Include permission flags for all users
       hasServicePortalAccess: user.hasServicePortalAccess || false,
       hasAdminHubAccess: user.hasAdminHubAccess || false,
       hasImplementationsAccess: user.hasImplementationsAccess || false,
-      hasClientPortalAdminAccess: user.hasClientPortalAdminAccess || false,
+      // Managers automatically get client portal admin access
+      hasClientPortalAdminAccess: user.hasClientPortalAdminAccess || isManager || false,
       assignedProjects: user.assignedProjects || [],
       assignedClients: user.assignedClients || [],
       // Password reset flag
@@ -451,6 +1021,7 @@ app.post('/api/auth/login', async (req, res) => {
         if (userIndex !== -1) {
           users[userIndex].slug = generatedSlug;
           await db.set('users', users);
+    invalidateUsersCache();
         }
         userResponse.slug = generatedSlug;
       } else {
@@ -468,7 +1039,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// Client portal login endpoint (also supports admin access to portal management)
+// Client portal login endpoint (supports admin, manager, and client access)
 app.post('/api/auth/client-login', async (req, res) => {
   try {
     const { email, password, slug } = req.body;
@@ -476,8 +1047,8 @@ app.post('/api/auth/client-login', async (req, res) => {
       return res.status(400).json({ error: 'Missing credentials' });
     }
     const users = await getUsers();
-    // Allow both clients and admins to log into the portal
-    const user = users.find(u => u.email === email && (u.role === 'client' || u.role === 'admin'));
+    // Allow clients, admins (super admin), and managers to log into the portal
+    const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase() && (u.role === 'client' || u.role === 'admin' || u.isManager));
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
@@ -490,16 +1061,21 @@ app.post('/api/auth/client-login', async (req, res) => {
       JWT_SECRET,
       { expiresIn: '24h' }
     );
-    res.json({ 
-      token, 
-      user: { 
-        id: user.id, 
-        email: user.email, 
-        name: user.name, 
+    const isManager = user.isManager || false;
+    // Admin and Manager get 'admin' slug for portal admin access
+    const effectiveSlug = (user.role === 'admin' || isManager) ? 'admin' : user.slug;
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
         role: user.role,
+        isManager: isManager,
+        hasClientPortalAdminAccess: user.hasClientPortalAdminAccess || isManager || user.role === 'admin',
         practiceName: user.practiceName,
         isNewClient: user.isNewClient,
-        slug: user.role === 'admin' ? 'admin' : user.slug,
+        slug: effectiveSlug,
         logo: user.logo || '',
         assignedProjects: user.assignedProjects || []
       }
@@ -518,16 +1094,16 @@ app.post('/api/auth/forgot-password', async (req, res) => {
       return res.status(400).json({ error: 'Email is required' });
     }
     const users = await getUsers();
-    const user = users.find(u => u.email === email);
+    const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase());
     if (!user) {
       return res.json({ message: 'Your request has been submitted. An administrator will reach out to you shortly to help reset your password.' });
     }
-    
+
     // Store password reset request for admin to handle
     const resetRequests = await db.get('password_reset_requests') || [];
-    
+
     // Check if there's already a pending request for this user
-    const existingIdx = resetRequests.findIndex(r => r.email === email && r.status === 'pending');
+    const existingIdx = resetRequests.findIndex(r => r.email?.toLowerCase() === email.toLowerCase() && r.status === 'pending');
     if (existingIdx !== -1) {
       return res.json({ message: 'Your request has been submitted. An administrator will reach out to you shortly to help reset your password.' });
     }
@@ -676,8 +1252,12 @@ app.get('/api/admin/activity-log', authenticateToken, requireAdmin, async (req, 
   }
 });
 
-// ============== USER MANAGEMENT (Admin Only) ==============
-app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
+// ============== USER MANAGEMENT (Super Admin, Manager, and Client Portal Admin) ==============
+app.get('/api/users', authenticateToken, async (req, res) => {
+  // Allow super admins, managers, and client portal admins to view users
+  if (req.user.role !== 'admin' && !req.user.isManager && !req.user.hasClientPortalAdminAccess) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
   try {
     const users = await getUsers();
     const safeUsers = users.map(u => ({
@@ -686,6 +1266,8 @@ app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
       name: u.name,
       role: u.role,
       createdAt: u.createdAt,
+      // Manager flag
+      isManager: u.isManager || false,
       // Permission flags
       hasServicePortalAccess: u.hasServicePortalAccess || false,
       hasAdminHubAccess: u.hasAdminHubAccess || false,
@@ -712,58 +1294,6 @@ app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
   }
 });
 
-// Debug endpoint to check client users (temporary)
-app.get('/api/debug/clients', async (req, res) => {
-  try {
-    const users = await getUsers();
-    const clients = users.filter(u => u.role === 'client').map(u => ({
-      email: u.email,
-      name: u.name,
-      practiceName: u.practiceName,
-      slug: u.slug,
-      hasPassword: !!u.password,
-      passwordLength: u.password ? u.password.length : 0,
-      passwordIsHashed: u.password ? u.password.startsWith('$2') : false
-    }));
-    res.json({ totalUsers: users.length, clients });
-  } catch (error) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Debug endpoint to test login (temporary)
-app.post('/api/debug/test-login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    const users = await getUsers();
-    const user = users.find(u => u.email?.toLowerCase() === email?.toLowerCase());
-
-    if (!user) {
-      return res.json({ success: false, reason: 'User not found', emailSearched: email });
-    }
-
-    if (!user.password) {
-      return res.json({ success: false, reason: 'User has no password set', email: user.email });
-    }
-
-    const isHashed = user.password.startsWith('$2');
-    if (!isHashed) {
-      return res.json({ success: false, reason: 'Password not hashed (stored as plain text)', email: user.email });
-    }
-
-    const passwordMatch = await bcrypt.compare(password, user.password);
-    return res.json({
-      success: passwordMatch,
-      reason: passwordMatch ? 'Password matches' : 'Password does not match',
-      email: user.email,
-      role: user.role,
-      slug: user.slug
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
 app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
@@ -771,7 +1301,7 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
       name, email, role, password, assignedProjects, projectAccessLevels,
       practiceName, isNewClient, logo, hubspotCompanyId, hubspotDealId, hubspotContactId,
       hasServicePortalAccess, hasAdminHubAccess, hasImplementationsAccess, hasClientPortalAdminAccess,
-      assignedClients
+      isManager, assignedClients
     } = req.body;
     const users = await getUsers();
     const idx = users.findIndex(u => u.id === userId);
@@ -780,9 +1310,16 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
     if (name) users[idx].name = name;
     if (email) users[idx].email = email;
     if (role) users[idx].role = role;
-    if (password) users[idx].password = await bcrypt.hash(password, 10);
+    if (password) {
+      users[idx].password = await bcrypt.hash(password, 10);
+      users[idx].requirePasswordChange = true;
+      users[idx].lastPasswordReset = new Date().toISOString();
+    }
     if (assignedProjects !== undefined) users[idx].assignedProjects = assignedProjects;
     if (projectAccessLevels !== undefined) users[idx].projectAccessLevels = projectAccessLevels;
+
+    // Manager flag - provides limited admin access
+    if (isManager !== undefined) users[idx].isManager = isManager;
 
     // Permission flags
     if (hasServicePortalAccess !== undefined) users[idx].hasServicePortalAccess = hasServicePortalAccess;
@@ -798,8 +1335,17 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
       users[idx].practiceName = practiceName;
       // Regenerate slug if practice name changes and user is a client
       if (users[idx].role === 'client' && practiceName) {
+        const oldSlug = users[idx].slug;
         const existingSlugs = users.filter((u, i) => i !== idx && u.slug).map(u => u.slug);
-        users[idx].slug = generateClientSlug(practiceName, existingSlugs);
+        const newSlug = generateClientSlug(practiceName, existingSlugs);
+        if (oldSlug && oldSlug !== newSlug) {
+          // Preserve old slug for redirect lookups so existing portal URLs keep working
+          if (!users[idx].previousSlugs) users[idx].previousSlugs = [];
+          if (!users[idx].previousSlugs.includes(oldSlug)) {
+            users[idx].previousSlugs.push(oldSlug);
+          }
+        }
+        users[idx].slug = newSlug;
       }
     }
     if (isNewClient !== undefined) users[idx].isNewClient = isNewClient;
@@ -811,11 +1357,13 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
     if (hubspotContactId !== undefined) users[idx].hubspotContactId = hubspotContactId;
 
     await db.set('users', users);
+    invalidateUsersCache();
     res.json({
       id: users[idx].id,
       email: users[idx].email,
       name: users[idx].name,
       role: users[idx].role,
+      isManager: users[idx].isManager || false,
       hasServicePortalAccess: users[idx].hasServicePortalAccess || false,
       hasAdminHubAccess: users[idx].hasAdminHubAccess || false,
       hasImplementationsAccess: users[idx].hasImplementationsAccess || false,
@@ -845,8 +1393,78 @@ app.delete('/api/users/:userId', authenticateToken, requireAdmin, async (req, re
     }
     const filtered = users.filter(u => u.id !== userId);
     await db.set('users', filtered);
+    invalidateUsersCache();
     res.json({ message: 'User deleted' });
   } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============== CLIENT DETAILS (Manager-restricted) ==============
+// This endpoint allows Managers and Client Portal Admins to update ONLY client details
+// without access to sensitive fields like role, permissions, or passwords.
+// Changes sync with the main user record visible in Admin Hub User Management.
+app.put('/api/client-portal/clients/:clientId', authenticateToken, requireClientPortalAdmin, async (req, res) => {
+  try {
+    const { clientId } = req.params;
+    const { practiceName, logo, hubspotCompanyId, hubspotDealId, hubspotContactId } = req.body;
+
+    const users = await getUsers();
+    const idx = users.findIndex(u => u.id === clientId);
+
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+
+    // Only allow editing client users
+    if (users[idx].role !== 'client') {
+      return res.status(403).json({ error: 'Can only edit client users through this endpoint' });
+    }
+
+    // Update only allowed client details fields
+    if (practiceName !== undefined) {
+      users[idx].practiceName = practiceName;
+      // Regenerate slug if practice name changes
+      if (practiceName) {
+        const existingSlugs = users.filter((u, i) => i !== idx && u.slug).map(u => u.slug);
+        users[idx].slug = generateClientSlug(practiceName, existingSlugs);
+      }
+    }
+    if (logo !== undefined) users[idx].logo = logo;
+    if (hubspotCompanyId !== undefined) users[idx].hubspotCompanyId = hubspotCompanyId;
+    if (hubspotDealId !== undefined) users[idx].hubspotDealId = hubspotDealId;
+    if (hubspotContactId !== undefined) users[idx].hubspotContactId = hubspotContactId;
+
+    // Track modification
+    users[idx].updatedAt = new Date().toISOString();
+    users[idx].updatedBy = req.user.id;
+
+    await db.set('users', users);
+
+    // Log the activity
+    await logActivity(
+      req.user.id,
+      req.user.name,
+      'update_client_details',
+      'user',
+      clientId,
+      `Updated client details for ${users[idx].name} (${users[idx].practiceName || 'No practice name'})`
+    );
+
+    res.json({
+      id: users[idx].id,
+      name: users[idx].name,
+      email: users[idx].email,
+      practiceName: users[idx].practiceName || null,
+      slug: users[idx].slug || null,
+      logo: users[idx].logo || '',
+      hubspotCompanyId: users[idx].hubspotCompanyId || '',
+      hubspotDealId: users[idx].hubspotDealId || '',
+      hubspotContactId: users[idx].hubspotContactId || '',
+      updatedAt: users[idx].updatedAt
+    });
+  } catch (error) {
+    console.error('Error updating client details:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -857,11 +1475,12 @@ app.get('/api/team-members', authenticateToken, async (req, res) => {
     const { projectId } = req.query;
     const users = await getUsers();
     
-    // If projectId is provided, filter to only users assigned to that project (or admins)
-    let filteredUsers = users;
+    // Filter to team members (admins + users), exclude clients and vendors
+    let filteredUsers = users.filter(u => u.role === 'admin' || u.role === 'user');
     if (projectId) {
-      filteredUsers = users.filter(u => 
-        u.role === 'admin' || 
+      // Further filter to only users assigned to that project (or admins)
+      filteredUsers = filteredUsers.filter(u =>
+        u.role === 'admin' ||
         (u.assignedProjects && u.assignedProjects.includes(projectId))
       );
     }
@@ -895,12 +1514,14 @@ app.post('/api/projects/:projectId/tasks/:taskId/subtasks', authenticateToken, a
     const idx = tasks.findIndex(t => t.id === parseInt(taskId) || String(t.id) === String(taskId));
     if (idx === -1) return res.status(404).json({ error: 'Task not found' });
     
+    // Inherit showToClient from parent task if not explicitly provided
+    const parentShowToClient = tasks[idx].showToClient || false;
     const subtask = {
       id: uuidv4(),
       title,
       owner: owner || '',
       dueDate: dueDate || '',
-      showToClient: showToClient !== false,
+      showToClient: showToClient !== undefined ? showToClient : parentShowToClient,
       completed: false,
       createdAt: new Date().toISOString(),
       createdBy: req.user.id
@@ -993,10 +1614,10 @@ app.delete('/api/projects/:projectId/tasks/:taskId/subtasks/:subtaskId', authent
 app.put('/api/projects/:projectId/tasks/bulk-update', authenticateToken, async (req, res) => {
   try {
     const { projectId } = req.params;
-    
-    // Check project access
-    if (!canAccessProject(req.user, projectId)) {
-      return res.status(403).json({ error: 'Access denied to this project' });
+
+    // Check project write access
+    if (!canWriteProject(req.user, projectId)) {
+      return res.status(403).json({ error: 'Write access required for this project' });
     }
     
     const { taskIds, completed } = req.body;
@@ -1012,9 +1633,23 @@ app.put('/api/projects/:projectId/tasks/bulk-update', authenticateToken, async (
     const tasks = await getRawTasks(projectId);
     const updatedTasks = [];
     
+    const skippedTasks = [];
     for (const taskId of taskIds) {
       const idx = tasks.findIndex(t => t.id === parseInt(taskId) || String(t.id) === String(taskId));
       if (idx !== -1) {
+        // Check subtask completion before marking complete (same rule as single-task update)
+        if (completed && !tasks[idx].completed) {
+          const subtasks = tasks[idx].subtasks || [];
+          const incompleteSubtasks = subtasks.filter(s => {
+            const isComplete = s.completed || s.status === 'Complete' || s.status === 'completed';
+            const isNA = s.notApplicable || s.status === 'N/A' || s.status === 'not_applicable';
+            return !isComplete && !isNA;
+          });
+          if (incompleteSubtasks.length > 0) {
+            skippedTasks.push({ id: taskId, title: tasks[idx].taskTitle, reason: 'has incomplete subtasks' });
+            continue;
+          }
+        }
         tasks[idx].completed = completed;
         if (completed) {
           tasks[idx].dateCompleted = new Date().toISOString();
@@ -1026,7 +1661,12 @@ app.put('/api/projects/:projectId/tasks/bulk-update', authenticateToken, async (
     }
     
     await db.set(`tasks_${projectId}`, tasks);
-    res.json({ message: `${updatedTasks.length} tasks updated`, updatedTasks });
+    const response = { message: `${updatedTasks.length} tasks updated`, updatedTasks };
+    if (skippedTasks.length > 0) {
+      response.skipped = skippedTasks;
+      response.message += `, ${skippedTasks.length} skipped (incomplete subtasks)`;
+    }
+    res.json(response);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }
@@ -1036,10 +1676,10 @@ app.put('/api/projects/:projectId/tasks/bulk-update', authenticateToken, async (
 app.post('/api/projects/:projectId/tasks/bulk-delete', authenticateToken, async (req, res) => {
   try {
     const { projectId } = req.params;
-    
-    // Check project access
-    if (!canAccessProject(req.user, projectId)) {
-      return res.status(403).json({ error: 'Access denied to this project' });
+
+    // Check project write access
+    if (!canWriteProject(req.user, projectId)) {
+      return res.status(403).json({ error: 'Write access required for this project' });
     }
     
     const { taskIds } = req.body;
@@ -1052,23 +1692,36 @@ app.post('/api/projects/:projectId/tasks/bulk-delete', authenticateToken, async 
     const tasks = await getRawTasks(projectId);
     const taskIdsSet = new Set(taskIds.map(id => String(id)));
     
-    // Check permissions - user can only delete tasks they created (unless admin)
-    const users = await db.get('users') || [];
-    const user = users.find(u => u.id === req.user.id);
-    const isAdmin = user && user.role === 'admin';
-    
+    // Check permissions - partial success: delete what user has access to, skip the rest
+    const isAdmin = req.user.role === 'admin';
+
     const tasksToDelete = tasks.filter(t => taskIdsSet.has(String(t.id)));
+    const deletableIds = new Set();
+    const skippedTasks = [];
+
     for (const task of tasksToDelete) {
-      if (!isAdmin && task.createdBy !== req.user.id) {
-        return res.status(403).json({ error: `You can only delete tasks you created. Task "${task.taskTitle}" was created by someone else.` });
+      if (!isAdmin && task.createdBy && task.createdBy !== req.user.id) {
+        skippedTasks.push({ id: task.id, title: task.taskTitle, reason: 'created by another user' });
+      } else {
+        deletableIds.add(String(task.id));
       }
     }
-    
-    const remainingTasks = tasks.filter(t => !taskIdsSet.has(String(t.id)));
-    const deletedCount = tasks.length - remainingTasks.length;
-    
+
+    // Clean up dependency references pointing to deleted tasks
+    const remainingTasks = tasks.filter(t => !deletableIds.has(String(t.id)));
+    for (const t of remainingTasks) {
+      if (Array.isArray(t.dependencies)) {
+        t.dependencies = t.dependencies.filter(depId => !deletableIds.has(String(depId)));
+      }
+    }
+
     await db.set(`tasks_${projectId}`, remainingTasks);
-    res.json({ message: `${deletedCount} tasks deleted` });
+    const response = { message: `${deletableIds.size} tasks deleted` };
+    if (skippedTasks.length > 0) {
+      response.skipped = skippedTasks;
+      response.message += `, ${skippedTasks.length} skipped (no permission)`;
+    }
+    res.json(response);
   } catch (error) {
     console.error('Bulk delete error:', error);
     res.status(500).json({ error: 'Server error' });
@@ -1247,7 +1900,7 @@ const ALLOWED_FILE_TYPES = [
 ];
 
 // Upload file to task (admin only)
-app.post('/api/projects/:projectId/tasks/:taskId/files', authenticateToken, requireAdmin, upload.single('file'), async (req, res) => {
+app.post('/api/projects/:projectId/tasks/:taskId/files', authenticateToken, requireAdmin, uploadLimiter, upload.single('file'), async (req, res) => {
   try {
     
     const { projectId, taskId } = req.params;
@@ -1450,7 +2103,7 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/api/projects', authenticateToken, async (req, res) => {
+app.post('/api/projects', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { name, clientName, projectManager, hubspotRecordId, hubspotRecordType, hubspotDealStage, template } = req.body;
     if (!name || !clientName) {
@@ -1549,13 +2202,29 @@ app.put('/api/projects/:id', authenticateToken, async (req, res) => {
     const idx = projects.findIndex(p => p.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'Project not found' });
     
+    // Validate project status against allowed values
+    if (req.body.status !== undefined) {
+      const validStatuses = ['active', 'paused', 'completed'];
+      if (!validStatuses.includes(req.body.status)) {
+        return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
+      }
+    }
+
+    // Validate name and clientName are not empty if provided
+    if (req.body.name !== undefined && !String(req.body.name).trim()) {
+      return res.status(400).json({ error: 'Project name cannot be empty' });
+    }
+    if (req.body.clientName !== undefined && !String(req.body.clientName).trim()) {
+      return res.status(400).json({ error: 'Client name cannot be empty' });
+    }
+
     // Require Soft-Pilot Checklist before marking project as completed
     if (req.body.status === 'completed' && !projects[idx].softPilotChecklistSubmitted) {
-      return res.status(400).json({ 
-        error: 'The Soft-Pilot Checklist must be submitted before marking this project as completed.' 
+      return res.status(400).json({
+        error: 'The Soft-Pilot Checklist must be submitted before marking this project as completed.'
       });
     }
-    
+
     const allowedFields = ['name', 'clientName', 'projectManager', 'hubspotRecordId', 'hubspotRecordType', 'status', 'clientPortalDomain', 'goLiveDate'];
     
     // Check if client name is being changed - regenerate slug
@@ -1579,11 +2248,20 @@ app.put('/api/projects/:id', authenticateToken, async (req, res) => {
     
     // Regenerate clientLinkSlug when clientName changes
     if (newClientName && newClientName !== oldClientName) {
+      const oldProjectSlug = projects[idx].clientLinkSlug;
       const existingSlugs = projects
         .filter(p => p.id !== projects[idx].id)
         .map(p => p.clientLinkSlug)
         .filter(Boolean);
-      projects[idx].clientLinkSlug = generateClientSlug(newClientName, existingSlugs);
+      const newProjectSlug = generateClientSlug(newClientName, existingSlugs);
+      if (oldProjectSlug && oldProjectSlug !== newProjectSlug) {
+        // Preserve old slug for redirect lookups so existing URLs keep working
+        if (!projects[idx].previousSlugs) projects[idx].previousSlugs = [];
+        if (!projects[idx].previousSlugs.includes(oldProjectSlug)) {
+          projects[idx].previousSlugs.push(oldProjectSlug);
+        }
+      }
+      projects[idx].clientLinkSlug = newProjectSlug;
     }
     
     await db.set('projects', projects);
@@ -1618,7 +2296,7 @@ app.delete('/api/projects/:id', authenticateToken, async (req, res) => {
 });
 
 // Clone/Duplicate a project
-app.post('/api/projects/:id/clone', authenticateToken, async (req, res) => {
+app.post('/api/projects/:id/clone', authenticateToken, requireAdmin, async (req, res) => {
   try {
     // Check project access
     if (!canAccessProject(req.user, req.params.id)) {
@@ -1652,13 +2330,17 @@ app.post('/api/projects/:id/clone', authenticateToken, async (req, res) => {
     projects.push(newProject);
     await db.set('projects', projects);
     
-    // Clone the tasks
+    // Clone the tasks - clear state, files, HubSpot refs, and reset ownership
     const originalTasks = await getTasks(req.params.id);
     const clonedTasks = originalTasks.map(task => ({
       ...task,
       completed: false,
       dateCompleted: '',
       notes: [],
+      files: [],
+      createdBy: req.user.id,
+      hubspotTaskId: undefined,
+      hubspotSyncedAt: undefined,
       subtasks: (task.subtasks || []).map(st => ({
         ...st,
         completed: false,
@@ -1693,17 +2375,20 @@ app.get('/api/projects/:id/tasks', authenticateToken, async (req, res) => {
 
 app.post('/api/projects/:id/tasks', authenticateToken, async (req, res) => {
   try {
-    // Check project access
-    if (!canAccessProject(req.user, req.params.id)) {
-      return res.status(403).json({ error: 'Access denied to this project' });
+    // Check project write access
+    if (!canWriteProject(req.user, req.params.id)) {
+      return res.status(403).json({ error: 'Write access required for this project' });
     }
-    
+
     const { taskTitle, owner, dueDate, phase, stage, showToClient, clientName, description, notes, dependencies } = req.body;
+    if (!taskTitle || !String(taskTitle).trim()) {
+      return res.status(400).json({ error: 'Task title is required' });
+    }
     const projectId = req.params.id;
     // Use raw tasks for mutation to prevent normalization drift
     const tasks = await getRawTasks(projectId);
     const newTask = {
-      id: tasks.length > 0 ? Math.max(...tasks.map(t => t.id)) + 1 : 1,
+      id: getNextNumericId(tasks),
       phase: phase || 'Phase 1',
       stage: stage || '',
       taskTitle,
@@ -1733,11 +2418,11 @@ app.put('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req,
   try {
     const { projectId, taskId } = req.params;
     
-    // Check project access
-    if (!canAccessProject(req.user, projectId)) {
-      return res.status(403).json({ error: 'Access denied to this project' });
+    // Check project write access
+    if (!canWriteProject(req.user, projectId)) {
+      return res.status(403).json({ error: 'Write access required for this project' });
     }
-    
+
     const updates = req.body;
     // Use raw tasks for mutation to prevent normalization drift
     const tasks = await getRawTasks(projectId);
@@ -1775,10 +2460,23 @@ app.put('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req,
       delete updates.owner;
     }
 
+    // Whitelist allowed fields to prevent overwriting protected fields (id, createdBy, files, subtasks, hubspotTaskId, etc.)
+    const taskUpdateAllowedFields = [
+      'taskTitle', 'owner', 'secondaryOwner', 'dueDate', 'startDate', 'phase', 'stage',
+      'completed', 'dateCompleted', 'description', 'showToClient', 'clientName',
+      'dependencies', 'tags', 'notes', 'duration'
+    ];
+    const sanitizedUpdates = {};
+    for (const key of taskUpdateAllowedFields) {
+      if (updates[key] !== undefined) {
+        sanitizedUpdates[key] = updates[key];
+      }
+    }
+
     const wasCompleted = task.completed;
-    
+
     // Server-side validation: Check for incomplete subtasks before allowing completion
-    if (updates.completed && !task.completed) {
+    if (sanitizedUpdates.completed && !task.completed) {
       const subtasks = task.subtasks || [];
       // Check for both new format (completed boolean) and old format (status string)
       const incompleteSubtasks = subtasks.filter(s => {
@@ -1787,14 +2485,23 @@ app.put('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req,
         return !isComplete && !isNotApplicable;
       });
       if (incompleteSubtasks.length > 0) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: 'Cannot complete task with pending subtasks',
           incompleteSubtasks: incompleteSubtasks.map(s => s.title)
         });
       }
     }
-    
-    tasks[idx] = { ...tasks[idx], ...updates };
+
+    // Auto-set dateCompleted when marking task as completed (server-side guarantee)
+    if (sanitizedUpdates.completed && !task.completed && !sanitizedUpdates.dateCompleted) {
+      sanitizedUpdates.dateCompleted = new Date().toISOString();
+    }
+    // Clear dateCompleted when un-completing a task
+    if (sanitizedUpdates.completed === false && task.completed) {
+      sanitizedUpdates.dateCompleted = '';
+    }
+
+    tasks[idx] = { ...tasks[idx], ...sanitizedUpdates };
     await db.set(`tasks_${projectId}`, tasks);
     
     // Log activity for task updates
@@ -1851,7 +2558,14 @@ app.delete('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (r
       return res.status(403).json({ error: 'You can only delete tasks you created' });
     }
     
-    const filtered = tasks.filter(t => String(t.id) !== String(taskId));
+    const deletedId = String(taskId);
+    const filtered = tasks.filter(t => String(t.id) !== deletedId);
+    // Clean up dependency references to the deleted task
+    for (const t of filtered) {
+      if (Array.isArray(t.dependencies)) {
+        t.dependencies = t.dependencies.filter(depId => String(depId) !== deletedId);
+      }
+    }
     await db.set(`tasks_${projectId}`, filtered);
     res.json({ message: 'Task deleted' });
   } catch (error) {
@@ -1946,20 +2660,26 @@ app.get('/api/client/:linkId', async (req, res) => {
     if (!project) return res.status(404).json({ error: 'Project not found' });
     const allTasks = await getTasks(project.id);
     const clientTasks = allTasks.filter(t => t.showToClient);
-    
+
+    // Calculate overall progress from ALL tasks (matches admin dashboard)
+    const totalAllTasks = allTasks.length;
+    const completedAllTasks = allTasks.filter(t => t.completed).length;
+    const overallProgressPercent = totalAllTasks > 0 ? Math.round((completedAllTasks / totalAllTasks) * 100) : 0;
+
     const users = await getUsers();
     const tasksWithOwnerNames = clientTasks.map(task => ({
       ...task,
-      ownerDisplayName: task.owner 
+      ownerDisplayName: task.owner
         ? (users.find(u => u.email === task.owner)?.name || task.owner)
         : null
     }));
-    
+
     res.json({
-      project: { 
-        name: project.name, 
+      project: {
+        name: project.name,
         clientName: project.clientName,
-        goLiveDate: project.goLiveDate
+        goLiveDate: project.goLiveDate,
+        overallProgressPercent
       },
       tasks: tasksWithOwnerNames
     });
@@ -1984,7 +2704,7 @@ app.get('/api/announcements', async (req, res) => {
 // Create announcement (admin only)
 app.post('/api/announcements', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { title, content, type } = req.body;
+    const { title, content, type, priority, pinned, targetAll, targetClients, attachmentUrl, attachmentName } = req.body;
     if (!title || !content) {
       return res.status(400).json({ error: 'Title and content are required' });
     }
@@ -1994,6 +2714,12 @@ app.post('/api/announcements', authenticateToken, requireAdmin, async (req, res)
       title,
       content,
       type: type || 'info', // info, warning, success
+      priority: priority || false,
+      pinned: pinned || false,
+      targetAll: targetAll !== false,
+      targetClients: targetClients || [],
+      attachmentUrl: attachmentUrl || '',
+      attachmentName: attachmentName || '',
       createdAt: new Date().toISOString(),
       createdBy: req.user.name,
       createdById: req.user.id
@@ -2011,17 +2737,23 @@ app.post('/api/announcements', authenticateToken, requireAdmin, async (req, res)
 // Update announcement (admin only)
 app.put('/api/announcements/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { title, content, type } = req.body;
+    const { title, content, type, priority, pinned, targetAll, targetClients, attachmentUrl, attachmentName } = req.body;
     const announcements = (await db.get('announcements')) || [];
     const idx = announcements.findIndex(a => a.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'Announcement not found' });
-    
+
     if (title) announcements[idx].title = title;
     if (content) announcements[idx].content = content;
     if (type) announcements[idx].type = type;
+    if (priority !== undefined) announcements[idx].priority = priority;
+    if (pinned !== undefined) announcements[idx].pinned = pinned;
+    if (targetAll !== undefined) announcements[idx].targetAll = targetAll;
+    if (targetClients !== undefined) announcements[idx].targetClients = targetClients;
+    if (attachmentUrl !== undefined) announcements[idx].attachmentUrl = attachmentUrl;
+    if (attachmentName !== undefined) announcements[idx].attachmentName = attachmentName;
     announcements[idx].updatedAt = new Date().toISOString();
     announcements[idx].updatedBy = req.user.name;
-    
+
     await db.set('announcements', announcements);
     res.json(announcements[idx]);
   } catch (error) {
@@ -2038,6 +2770,35 @@ app.delete('/api/announcements/:id', authenticateToken, requireAdmin, async (req
     res.json({ message: 'Announcement deleted' });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Reset test data (admin only) - clears inventory submissions and announcements
+app.delete('/api/admin/reset-test-data', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { resetSubmissions, resetAnnouncements } = req.body || { resetSubmissions: true, resetAnnouncements: true };
+    const results = {};
+
+    if (resetSubmissions !== false) {
+      const oldSubmissions = (await db.get('inventory_submissions')) || [];
+      await db.set('inventory_submissions', []);
+      results.submissionsCleared = oldSubmissions.length;
+    }
+
+    if (resetAnnouncements !== false) {
+      const oldAnnouncements = (await db.get('announcements')) || [];
+      await db.set('announcements', []);
+      results.announcementsCleared = oldAnnouncements.length;
+    }
+
+    console.log(`[ADMIN] Test data reset by ${req.user.email}:`, results);
+    res.json({
+      message: 'Test data reset successfully',
+      ...results
+    });
+  } catch (error) {
+    console.error('Error resetting test data:', error);
+    res.status(500).json({ error: 'Failed to reset test data' });
   }
 });
 
@@ -2064,10 +2825,16 @@ app.get('/api/client-portal/data', authenticateToken, async (req, res) => {
       const allTasks = await getTasks(project.id);
       const clientTasks = allTasks.filter(t => t.showToClient).map(task => ({
         ...task,
-        ownerDisplayName: task.owner 
+        ownerDisplayName: task.owner
           ? (users.find(u => u.email === task.owner)?.name || task.owner)
           : null
       }));
+
+      // Calculate overall progress from ALL tasks (matches admin dashboard)
+      const totalAllTasks = allTasks.length;
+      const completedAllTasks = allTasks.filter(t => t.completed).length;
+      const overallProgressPercent = totalAllTasks > 0 ? Math.round((completedAllTasks / totalAllTasks) * 100) : 0;
+
       return {
         id: project.id,
         name: project.name,
@@ -2076,6 +2843,7 @@ app.get('/api/client-portal/data', authenticateToken, async (req, res) => {
         goLiveDate: project.goLiveDate,
         hubspotRecordId: project.hubspotRecordId || null,
         hubspotRecordType: project.hubspotRecordType || 'companies',
+        overallProgressPercent,
         tasks: clientTasks
       };
     }));
@@ -2160,13 +2928,15 @@ app.put('/api/portal-settings', authenticateToken, requireAdmin, async (req, res
 app.get('/api/client-documents', authenticateToken, async (req, res) => {
   try {
     const documents = (await db.get('client_documents')) || [];
-    
+
     if (req.user.role === 'client') {
-      // Clients only see documents for their slug
-      const clientDocs = documents.filter(d => d.slug === req.user.slug && d.active);
+      // Clients see documents for their slug OR documents shared with all clients
+      const clientDocs = documents.filter(d =>
+        d.active && (d.slug === req.user.slug || d.shareWithAll === true)
+      );
       return res.json(clientDocs);
     }
-    
+
     // Admins see all documents
     res.json(documents);
   } catch (error) {
@@ -2175,10 +2945,17 @@ app.get('/api/client-documents', authenticateToken, async (req, res) => {
 });
 
 // Get documents for a specific slug (client portal)
-app.get('/api/client-documents/:slug', async (req, res) => {
+app.get('/api/client-documents/:slug', authenticateToken, async (req, res) => {
   try {
+    // Clients can only access their own slug's documents
+    if (req.user.role === 'client' && req.user.slug !== req.params.slug) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
     const documents = (await db.get('client_documents')) || [];
-    const clientDocs = documents.filter(d => d.slug === req.params.slug && d.active);
+    // Include documents for specific slug OR documents shared with all clients
+    const clientDocs = documents.filter(d =>
+      d.active && (d.slug === req.params.slug || d.shareWithAll === true)
+    );
     res.json(clientDocs);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
@@ -2188,33 +2965,38 @@ app.get('/api/client-documents/:slug', async (req, res) => {
 // Add a document for a client (admin only)
 app.post('/api/client-documents', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { slug, title, description, url, category } = req.body;
-    if (!slug || !title || !url) {
-      return res.status(400).json({ error: 'Missing required fields (slug, title, url)' });
+    const { slug, title, description, url, category, shareWithAll } = req.body;
+    // slug is not required if shareWithAll is true
+    if (!title || !url) {
+      return res.status(400).json({ error: 'Missing required fields (title, url)' });
     }
-    
+    if (!shareWithAll && !slug) {
+      return res.status(400).json({ error: 'Either slug or shareWithAll must be provided' });
+    }
+
     const documents = (await db.get('client_documents')) || [];
     const newDoc = {
       id: require('uuid').v4(),
-      slug,
+      slug: shareWithAll ? null : slug,
       title,
       description: description || '',
       url,
       category: category || 'General',
+      shareWithAll: shareWithAll || false,
       active: true,
       createdAt: new Date().toISOString(),
       createdBy: req.user.name
     };
-    
+
     documents.push(newDoc);
     await db.set('client_documents', documents);
-    
+
     // Log activity
     await logActivity(null, 'document_added', req.user.name, {
       documentTitle: title,
-      clientSlug: slug
+      clientSlug: shareWithAll ? 'ALL CLIENTS' : slug
     });
-    
+
     res.json(newDoc);
   } catch (error) {
     console.error('Add document error:', error);
@@ -2230,8 +3012,8 @@ app.put('/api/client-documents/:id', authenticateToken, requireAdmin, async (req
     if (idx === -1) {
       return res.status(404).json({ error: 'Document not found' });
     }
-    
-    const { title, description, url, category, active } = req.body;
+
+    const { title, description, url, category, active, shareWithAll, slug } = req.body;
     documents[idx] = {
       ...documents[idx],
       title: title || documents[idx].title,
@@ -2239,10 +3021,12 @@ app.put('/api/client-documents/:id', authenticateToken, requireAdmin, async (req
       url: url || documents[idx].url,
       category: category || documents[idx].category,
       active: active !== undefined ? active : documents[idx].active,
+      shareWithAll: shareWithAll !== undefined ? shareWithAll : documents[idx].shareWithAll,
+      slug: shareWithAll ? null : (slug !== undefined ? slug : documents[idx].slug),
       updatedAt: new Date().toISOString(),
       updatedBy: req.user.name
     };
-    
+
     await db.set('client_documents', documents);
     res.json(documents[idx]);
   } catch (error) {
@@ -2275,35 +3059,38 @@ app.delete('/api/client-documents/:slug/:docId', authenticateToken, requireAdmin
 });
 
 // Upload file as client document (admin only) - stores file and creates document entry
-app.post('/api/client-documents/:slug/upload', authenticateToken, requireAdmin, upload.single('file'), async (req, res) => {
+// Use slug="all" to upload to all clients (shareWithAll)
+app.post('/api/client-documents/:slug/upload', authenticateToken, requireAdmin, uploadLimiter, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file provided' });
     }
-    
+
     const { title, description, category } = req.body;
-    const slug = req.params.slug;
-    
+    const slugParam = req.params.slug;
+    const isAllClients = slugParam === 'all';
+
     // Create a unique filename
     const ext = require('path').extname(req.file.originalname);
     const uniqueName = `${uuidv4()}${ext}`;
     const uploadsDir = require('path').join(__dirname, 'uploads', 'documents');
-    
+
     // Ensure uploads directory exists
     const fs = require('fs');
     if (!fs.existsSync(uploadsDir)) {
       fs.mkdirSync(uploadsDir, { recursive: true });
     }
-    
+
     // Save the file
     const filePath = require('path').join(uploadsDir, uniqueName);
     fs.writeFileSync(filePath, req.file.buffer);
-    
+
     // Create the document entry with a URL pointing to the file
     const documents = (await db.get('client_documents')) || [];
     const newDoc = {
       id: uuidv4(),
-      slug: slug,
+      slug: isAllClients ? null : slugParam,
+      shareWithAll: isAllClients,
       title: title || req.file.originalname,
       description: description || '',
       category: category || 'General',
@@ -2314,10 +3101,16 @@ app.post('/api/client-documents/:slug/upload', authenticateToken, requireAdmin, 
       createdAt: new Date().toISOString(),
       createdBy: req.user.name
     };
-    
+
     documents.push(newDoc);
     await db.set('client_documents', documents);
-    
+
+    // Log activity
+    await logActivity(null, 'document_added', req.user.name, {
+      documentTitle: newDoc.title,
+      clientSlug: isAllClients ? 'ALL CLIENTS' : slugParam
+    });
+
     res.json(newDoc);
   } catch (error) {
     console.error('Document upload error:', error);
@@ -2327,7 +3120,7 @@ app.post('/api/client-documents/:slug/upload', authenticateToken, requireAdmin, 
 
 // ============== HUBSPOT FILE UPLOAD ==============
 // Upload file to HubSpot and attach to a deal record (admin only)
-app.post('/api/hubspot/upload-to-deal', authenticateToken, requireAdmin, upload.single('file'), async (req, res) => {
+app.post('/api/hubspot/upload-to-deal', authenticateToken, requireAdmin, uploadLimiter, upload.single('file'), async (req, res) => {
   try {
     const { dealId, noteText, category } = req.body;
     
@@ -2402,7 +3195,7 @@ app.get('/api/hubspot/deals', authenticateToken, requireAdmin, async (req, res) 
 
 // ============== CLIENT HUBSPOT FILE UPLOAD ==============
 // Client uploads file to their account's HubSpot records (Company, Deal, Contact)
-app.post('/api/client/hubspot/upload', authenticateToken, upload.single('file'), async (req, res) => {
+app.post('/api/client/hubspot/upload', authenticateToken, uploadLimiter, upload.single('file'), async (req, res) => {
   try {
     // Only clients can use this endpoint
     if (req.user.role !== 'client') {
@@ -2555,7 +3348,429 @@ app.post('/api/client/hubspot/upload', authenticateToken, upload.single('file'),
 });
 
 // ============== CLIENT HUBSPOT TICKETS ==============
+
+// Webhook endpoint for HubSpot to register portal-created tickets
+// HubSpot workflow should call this when a ticket is created from the portal form
+app.post('/api/webhook/hubspot/ticket-created', async (req, res) => {
+  try {
+    const { ticketId, contactEmail, companyId, subject } = req.body;
+
+    if (!ticketId) {
+      return res.status(400).json({ error: 'ticketId is required' });
+    }
+
+    // Get or create portal_tickets collection
+    const portalTickets = (await db.get('portal_tickets')) || [];
+
+    // Check if already registered
+    if (portalTickets.find(t => t.ticketId === ticketId)) {
+      return res.json({ message: 'Ticket already registered', ticketId });
+    }
+
+    // Add the ticket to portal tracking
+    portalTickets.push({
+      ticketId: String(ticketId),
+      contactEmail: contactEmail || '',
+      companyId: companyId || '',
+      subject: subject || '',
+      registeredAt: new Date().toISOString()
+    });
+
+    // Keep only last 1000 portal tickets
+    if (portalTickets.length > 1000) portalTickets.length = 1000;
+
+    await db.set('portal_tickets', portalTickets);
+    console.log(`🎫 Portal ticket registered: ${ticketId} for ${contactEmail || companyId}`);
+
+    res.json({ success: true, ticketId, message: 'Ticket registered for portal display' });
+  } catch (error) {
+    console.error('Error registering portal ticket:', error);
+    res.status(500).json({ error: 'Failed to register ticket' });
+  }
+});
+
+// Webhook endpoint for HubSpot ticket stage changes
+// HubSpot workflow should trigger this when ticket moves to "Assigned" or "Vendor Escalation" stage
+app.post('/api/webhook/hubspot/ticket-stage-change', async (req, res) => {
+  try {
+    const { ticketId, stageId, stageName } = req.body;
+
+    if (!ticketId) {
+      return res.status(400).json({ error: 'ticketId is required' });
+    }
+
+    console.log(`🎫 Ticket stage change webhook: ${ticketId} -> ${stageName || stageId}`);
+
+    // Check if the stage is one we should process
+    const targetStages = ['assigned', 'vendor escalation', 'vendor_escalation'];
+    const stageNameLower = (stageName || '').toLowerCase();
+    const shouldProcess = targetStages.some(stage => stageNameLower.includes(stage));
+
+    if (!shouldProcess) {
+      return res.json({
+        message: 'Stage not configured for auto-assignment',
+        ticketId,
+        stageName
+      });
+    }
+
+    // Fetch the ticket from HubSpot
+    let ticket;
+    try {
+      ticket = await hubspot.getTicketById(ticketId);
+    } catch (err) {
+      console.error(`Failed to fetch ticket ${ticketId}:`, err.message);
+      return res.status(404).json({
+        error: 'Ticket not found in HubSpot',
+        ticketId,
+        details: err.message
+      });
+    }
+
+    // Check if service report already exists for this ticket
+    const serviceReports = (await db.get('service_reports')) || [];
+    const existingReport = serviceReports.find(r =>
+      r.hubspotTicketNumber === ticketId || r.hubspotTicketNumber === String(ticketId)
+    );
+
+    if (existingReport) {
+      console.log(`Service report already exists for ticket ${ticketId}`);
+      return res.json({
+        message: 'Service report already exists for this ticket',
+        ticketId,
+        reportId: existingReport.id
+      });
+    }
+
+    // Map HubSpot owner ID to internal user
+    let assignedToId = null;
+    let assignedToName = null;
+    const users = (await db.get('users')) || [];
+
+    if (ticket.ownerId) {
+      try {
+        const owners = await hubspot.getOwners();
+        const hubspotOwner = owners.find(o => String(o.id) === String(ticket.ownerId));
+
+        if (hubspotOwner) {
+          // Try to match by email first
+          if (hubspotOwner.email) {
+            const userByEmail = users.find(u =>
+              u.email && u.email.toLowerCase() === hubspotOwner.email.toLowerCase() &&
+              (u.role === 'vendor' || u.role === 'admin' || u.hasServicePortalAccess)
+            );
+            if (userByEmail) {
+              assignedToId = userByEmail.id;
+              assignedToName = userByEmail.name;
+            }
+          }
+
+          // If no match by email, try by name
+          if (!assignedToId && hubspotOwner.firstName && hubspotOwner.lastName) {
+            const fullName = `${hubspotOwner.firstName} ${hubspotOwner.lastName}`;
+            const userByName = users.find(u =>
+              u.name && u.name.toLowerCase() === fullName.toLowerCase() &&
+              (u.role === 'vendor' || u.role === 'admin' || u.hasServicePortalAccess)
+            );
+            if (userByName) {
+              assignedToId = userByName.id;
+              assignedToName = userByName.name;
+            }
+          }
+        }
+      } catch (ownerErr) {
+        console.log('Could not match HubSpot owner to internal user:', ownerErr.message);
+      }
+    }
+
+    // If no assignee found, we cannot auto-create the service report
+    if (!assignedToId) {
+      console.log(`Cannot auto-create service report: No internal user found for HubSpot owner ${ticket.ownerId}`);
+      return res.json({
+        message: 'Ticket owner not matched to internal user - manual assignment required',
+        ticketId,
+        hubspotOwnerId: ticket.ownerId,
+        requiresManualAssignment: true
+      });
+    }
+
+    // Map Service Type from Issue Category
+    const serviceTypeMapping = {
+      'analyzer hardware': 'Analyzer Hardware',
+      'inventory': 'Inventory',
+      'lis/emr': 'LIS/EMR',
+      'lis': 'LIS/EMR',
+      'emr': 'LIS/EMR',
+      'billing & fees': 'Billing & Fees',
+      'billing': 'Billing & Fees',
+      'compliance': 'Compliance',
+      'training': 'Training',
+      'validations': 'Validations',
+      'validation': 'Validations'
+    };
+
+    const issueCategoryLower = (ticket.issueCategory || '').toLowerCase();
+    const serviceType = serviceTypeMapping[issueCategoryLower] || '';
+
+    // Combine ticket description and notes into manager notes
+    let managerNotes = '';
+    if (ticket.description) {
+      managerNotes += `**Ticket Description:**\n${ticket.description}\n\n`;
+    }
+    if (ticket.notes && ticket.notes.length > 0) {
+      managerNotes += `**Ticket Notes:**\n`;
+      ticket.notes.forEach((note, index) => {
+        const timestamp = note.timestamp ? new Date(parseInt(note.timestamp)).toLocaleString() : '';
+        managerNotes += `\n[${timestamp}]\n${note.body}\n`;
+        if (note.attachmentIds) {
+          managerNotes += `(Attachments: ${note.attachmentIds})\n`;
+        }
+      });
+    }
+
+    // Create the service report
+    const newReport = {
+      id: uuidv4(),
+      // Assignment info
+      status: 'assigned',
+      assignedToId,
+      assignedToName,
+      assignedById: 'system', // System-generated from webhook
+      assignedByName: 'HubSpot Automation',
+      assignedAt: new Date().toISOString(),
+      // Pre-filled info from HubSpot ticket
+      clientFacilityName: ticket.companyName || '',
+      customerName: ticket.submittedBy || '',
+      serviceProviderName: assignedToName,
+      address: '',
+      serviceType: serviceType,
+      analyzerModel: '',
+      analyzerSerialNumber: ticket.serialNumber || '',
+      hubspotTicketNumber: String(ticket.id),
+      hubspotCompanyId: ticket.companyId || '',
+      hubspotDealId: '',
+      serviceCompletionDate: new Date().toISOString().split('T')[0],
+      // Manager-only fields
+      managerNotes: managerNotes.trim(),
+      photos: [],
+      clientFiles: [],
+      // Technician fields (to be filled when completing)
+      technicianId: null,
+      technicianName: null,
+      descriptionOfWork: '',
+      materialsUsed: '',
+      solution: '',
+      outstandingIssues: '',
+      validationResults: '',
+      validationStartDate: '',
+      validationEndDate: '',
+      trainingProvided: '',
+      testProcedures: '',
+      recommendations: '',
+      analyzersValidated: [],
+      customerSignature: null,
+      customerSignatureDate: null,
+      technicianSignature: null,
+      technicianSignatureDate: null,
+      // Metadata
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      createdViaWebhook: true
+    };
+
+    serviceReports.push(newReport);
+    await db.set('service_reports', serviceReports);
+
+    console.log(`✅ Auto-created service report ${newReport.id} from ticket ${ticketId}`);
+
+    // Log activity (skip if system user doesn't exist)
+    try {
+      await logActivity(
+        'system',
+        'HubSpot Automation',
+        'service_report_auto_assigned',
+        'service_report',
+        newReport.id,
+        {
+          ticketId,
+          assignedTo: assignedToName,
+          clientName: ticket.companyName
+        }
+      );
+    } catch (logErr) {
+      console.log('Could not log activity:', logErr.message);
+    }
+
+    res.json({
+      success: true,
+      message: 'Service report auto-created from ticket',
+      ticketId,
+      reportId: newReport.id,
+      assignedTo: assignedToName
+    });
+  } catch (error) {
+    console.error('Error processing ticket stage change webhook:', error);
+    res.status(500).json({
+      error: 'Failed to process webhook',
+      details: error.message
+    });
+  }
+});
+
+// Admin endpoint to view/manage portal tickets
+app.get('/api/admin/portal-tickets', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const portalTickets = (await db.get('portal_tickets')) || [];
+    res.json({ tickets: portalTickets, count: portalTickets.length });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch portal tickets' });
+  }
+});
+
+// Admin endpoint to clear portal tickets (for testing)
+app.delete('/api/admin/portal-tickets', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const old = (await db.get('portal_tickets')) || [];
+    await db.set('portal_tickets', []);
+    res.json({ message: 'Portal tickets cleared', cleared: old.length });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to clear portal tickets' });
+  }
+});
+
+// ===== HubSpot Ticket Polling Admin Endpoints =====
+
+// Get polling configuration
+app.get('/api/admin/ticket-polling/config', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const config = (await db.get('ticket_polling_config')) || getDefaultPollingConfig();
+    res.json(config);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch polling config' });
+  }
+});
+
+// Update polling configuration
+app.put('/api/admin/ticket-polling/config', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const config = (await db.get('ticket_polling_config')) || getDefaultPollingConfig();
+    const updates = req.body;
+
+    // Update allowed fields
+    if (updates.enabled !== undefined) config.enabled = Boolean(updates.enabled);
+    if (updates.intervalSeconds !== undefined) {
+      config.intervalSeconds = Math.max(30, Math.min(3600, Number(updates.intervalSeconds)));
+    }
+    if (updates.targetStages) config.targetStages = updates.targetStages;
+
+    // Update filter settings
+    if (updates.filter) {
+      if (updates.filter.mode && ['keyword', 'property', 'all'].includes(updates.filter.mode)) {
+        config.filter.mode = updates.filter.mode;
+      }
+      if (updates.filter.subjectKeyword !== undefined) {
+        config.filter.subjectKeyword = String(updates.filter.subjectKeyword);
+      }
+      if (updates.filter.propertyName !== undefined) {
+        config.filter.propertyName = String(updates.filter.propertyName);
+      }
+      if (updates.filter.propertyValue !== undefined) {
+        config.filter.propertyValue = String(updates.filter.propertyValue);
+      }
+    }
+
+    // Clear resolved stage IDs if target stages changed (force re-resolution)
+    if (updates.targetStages) {
+      config.resolvedStageIds = [];
+      config.stageIdsCachedAt = null;
+    }
+
+    config.updatedAt = new Date().toISOString();
+    await db.set('ticket_polling_config', config);
+
+    // Restart polling timer with new settings
+    if (hubspotPollingTimer) {
+      clearInterval(hubspotPollingTimer);
+      hubspotPollingTimer = null;
+    }
+    if (config.enabled) {
+      hubspotPollingTimer = setInterval(pollHubSpotTickets, config.intervalSeconds * 1000);
+    }
+
+    res.json({ success: true, config });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update polling config', details: error.message });
+  }
+});
+
+// Get polling status summary
+app.get('/api/admin/ticket-polling/status', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const config = await db.get('ticket_polling_config');
+    res.json({
+      enabled: config?.enabled || false,
+      running: !!hubspotPollingTimer,
+      intervalSeconds: config?.intervalSeconds || 60,
+      filterMode: config?.filter?.mode || 'keyword',
+      filterDetail: config?.filter?.mode === 'keyword'
+        ? `Subject contains "${config?.filter?.subjectKeyword || '[SR]'}"`
+        : config?.filter?.mode === 'property'
+        ? `${config?.filter?.propertyName} = ${config?.filter?.propertyValue}`
+        : 'All tickets (no filter)',
+      lastPollTime: config?.lastPollTime || null,
+      startedAt: config?.startedAt || null,
+      processedTicketCount: config?.processedTicketIds?.length || 0,
+      resolvedStageIds: config?.resolvedStageIds || [],
+      stats: config?.stats || {}
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch polling status' });
+  }
+});
+
+// Manually trigger a poll cycle
+app.post('/api/admin/ticket-polling/trigger', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await pollHubSpotTickets();
+    const config = await db.get('ticket_polling_config');
+    res.json({
+      success: true,
+      message: 'Poll cycle completed',
+      lastPollTime: config?.lastPollTime,
+      stats: config?.stats
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to trigger poll', details: error.message });
+  }
+});
+
+// Reset polling state (clear processed tickets, reset stats)
+app.post('/api/admin/ticket-polling/reset', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const config = (await db.get('ticket_polling_config')) || getDefaultPollingConfig();
+    config.processedTicketIds = [];
+    config.resolvedStageIds = [];
+    config.stageIdsCachedAt = null;
+    config.startedAt = new Date().toISOString();
+    config.lastPollTime = null;
+    config.stats = {
+      totalPolls: 0,
+      totalReportsCreated: 0,
+      lastSuccessfulPoll: null,
+      lastError: null,
+      lastErrorTime: null
+    };
+    config.updatedAt = new Date().toISOString();
+    await db.set('ticket_polling_config', config);
+    res.json({ success: true, message: 'Polling state reset', config });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to reset polling state' });
+  }
+});
+
 // Fetch support tickets from HubSpot for the logged-in client
+// Shows internal tickets only (filtered by internal_vs_external_ticket field)
+// Attaches matching service reports to each ticket
 app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
   try {
     // Only clients can use this endpoint
@@ -2575,15 +3790,13 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
     const hubspotContactId = clientUser.hubspotContactId || '';
     const hubspotDealId = clientUser.hubspotDealId || '';
 
-    // Debug logging
-    console.log(`🎫 Ticket fetch for user ${clientUser.username}:`);
+    console.log(`🎫 Ticket fetch for user ${clientUser.username || clientUser.email}:`);
     console.log(`   - Company ID: "${hubspotCompanyId}"`);
     console.log(`   - Contact ID: "${hubspotContactId}"`);
     console.log(`   - Deal ID: "${hubspotDealId}"`);
 
-    // Check if we have any HubSpot ID to fetch tickets for
     if (!hubspotCompanyId && !hubspotContactId && !hubspotDealId) {
-      console.log(`🎫 No HubSpot IDs configured for ${clientUser.username}`);
+      console.log(`🎫 No HubSpot IDs configured for ${clientUser.username || clientUser.email}`);
       return res.json({ tickets: [], message: 'No HubSpot account linked' });
     }
 
@@ -2592,7 +3805,6 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
     // Fetch tickets by company first (primary)
     if (hubspotCompanyId) {
       try {
-        console.log(`🎫 Fetching tickets for company ID: ${hubspotCompanyId}`);
         const companyTickets = await hubspot.getTicketsForCompany(hubspotCompanyId);
         tickets = [...companyTickets];
         console.log(`📋 Fetched ${companyTickets.length} tickets for company ${hubspotCompanyId}`);
@@ -2604,12 +3816,10 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
     // Fetch tickets by deal ID and merge
     if (hubspotDealId && hubspot.getTicketsForDeal) {
       try {
-        console.log(`🎫 Fetching tickets for deal ID: ${hubspotDealId}`);
         const dealTickets = await hubspot.getTicketsForDeal(hubspotDealId);
         const existingIds = new Set(tickets.map(t => t.id));
         const newTickets = dealTickets.filter(t => !existingIds.has(t.id));
         tickets = [...tickets, ...newTickets];
-        console.log(`📋 Added ${newTickets.length} additional tickets from deal ${hubspotDealId}`);
       } catch (err) {
         console.error('Error fetching deal tickets:', err.message);
       }
@@ -2618,25 +3828,194 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
     // Fetch tickets by contact ID and merge (deduping by ID)
     if (hubspotContactId) {
       try {
-        console.log(`🎫 Fetching tickets for contact ID: ${hubspotContactId}`);
         const contactTickets = await hubspot.getTicketsForContact(hubspotContactId);
         const existingIds = new Set(tickets.map(t => t.id));
         const newTickets = contactTickets.filter(t => !existingIds.has(t.id));
         tickets = [...tickets, ...newTickets];
-        console.log(`📋 Added ${newTickets.length} additional tickets from contact ${hubspotContactId}`);
       } catch (err) {
         console.error('Error fetching contact tickets:', err.message);
       }
     }
 
-    // Sort by creation date, newest first
-    tickets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    // Filter to only show tickets marked as "Internal" in HubSpot
+    // The custom property internal_vs_external_ticket must be "Internal" (case-insensitive)
+    const beforeFilter = tickets.length;
+    tickets = tickets.filter(t => {
+      const typeVal = (t.ticketType || '').toLowerCase().trim();
+      return typeVal === 'internal';
+    });
+    console.log(`🎫 Filtered ${beforeFilter} -> ${tickets.length} internal-only tickets`);
 
-    console.log(`🎫 Total tickets returned for ${clientUser.username}: ${tickets.length}`);
-    res.json({ tickets, count: tickets.length });
+    // Fetch service reports to link to tickets
+    const serviceReports = (await db.get('service_reports')) || [];
+
+    // Map tickets to simplified format with Open/Closed status and linked service reports
+    const mappedTickets = tickets.map(t => {
+      // Determine status: Closed if stage label contains "closed", otherwise Open
+      const stageLower = (t.stage || '').toLowerCase();
+      const status = (stageLower.includes('closed') || t.closedAt) ? 'Closed' : 'Open';
+
+      // Find matching service report by HubSpot ticket ID
+      const linkedReport = serviceReports.find(r => {
+        const reportTicketId = String(r.hubspotTicketId || r.hubspotTicketNumber || '');
+        return reportTicketId && reportTicketId === String(t.id);
+      });
+
+      return {
+        id: t.id,
+        subject: t.subject,
+        description: t.content || '',
+        status,
+        createdAt: t.createdAt,
+        closedAt: t.closedAt || null,
+        priority: t.priority,
+        serviceReport: linkedReport ? {
+          id: linkedReport.id,
+          serviceType: linkedReport.serviceType,
+          technicianName: linkedReport.technicianName || linkedReport.serviceProviderName,
+          completedAt: linkedReport.serviceCompletionDate || linkedReport.createdAt,
+          description: linkedReport.descriptionOfWork || linkedReport.validationResults || '',
+          pdfUrl: linkedReport.pdfUrl || null,
+          driveFileId: linkedReport.driveFileId || null
+        } : null
+      };
+    });
+
+    // Sort by creation date, newest first
+    mappedTickets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    console.log(`🎫 Total tickets returned for ${clientUser.username || clientUser.email}: ${mappedTickets.length}`);
+    res.json({ tickets: mappedTickets, count: mappedTickets.length });
   } catch (error) {
     console.error('Error fetching client tickets:', error);
     res.status(500).json({ error: error.message || 'Failed to fetch tickets' });
+  }
+});
+
+// Get service reports for clients (Service History)
+app.get('/api/client/service-reports', authenticateToken, async (req, res) => {
+  try {
+    // Only clients can use this endpoint
+    if (req.user.role !== 'client') {
+      return res.status(403).json({ error: 'Client access required' });
+    }
+
+    // Get fresh user data with HubSpot IDs
+    const users = await getUsers();
+    const clientUser = users.find(u => u.id === req.user.id);
+
+    if (!clientUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const hubspotCompanyId = clientUser.hubspotCompanyId || '';
+    const clientSlug = clientUser.slug || '';
+    const practiceName = clientUser.practiceName || clientUser.name || '';
+
+    console.log(`📋 Service reports fetch for ${clientUser.username}:`);
+    console.log(`   - Company ID: "${hubspotCompanyId}"`);
+    console.log(`   - Slug: "${clientSlug}"`);
+    console.log(`   - Practice: "${practiceName}"`);
+
+    // Fetch all service reports
+    const serviceReports = (await db.get('service_reports')) || [];
+
+    // Filter reports for this client by:
+    // 1. Matching hubspotCompanyId
+    // 2. Or matching client name/practice name (fallback)
+    const clientReports = serviceReports.filter(report => {
+      if (hubspotCompanyId && report.hubspotCompanyId === hubspotCompanyId) {
+        return true;
+      }
+      // Fallback: match by client name
+      const reportClient = (report.clientFacilityName || '').toLowerCase();
+      const userPractice = practiceName.toLowerCase();
+      if (userPractice && reportClient.includes(userPractice)) {
+        return true;
+      }
+      return false;
+    });
+
+    // Sort by creation date, newest first
+    clientReports.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    console.log(`📋 Found ${clientReports.length} service reports for ${clientUser.username}`);
+
+    // Map to a cleaner format for the frontend
+    const reports = clientReports.map(r => ({
+      id: r.id,
+      subject: `${r.serviceType} - ${r.clientFacilityName}`,
+      serviceType: r.serviceType,
+      technicianName: r.technicianName || r.serviceProviderName,
+      ticketNumber: r.hubspotTicketId || r.hubspotTicketNumber || null,
+      createdAt: r.createdAt,
+      completedAt: r.serviceCompletionDate || r.createdAt,
+      status: 'Completed',
+      description: r.descriptionOfWork || r.validationResults || '',
+      pdfUrl: r.pdfUrl || null,
+      driveFileId: r.driveFileId || null
+    }));
+
+    res.json({ reports, count: reports.length });
+  } catch (error) {
+    console.error('Error fetching client service reports:', error);
+    res.status(500).json({ error: error.message || 'Failed to fetch service reports' });
+  }
+});
+
+// Download service report PDF for clients
+// Generates the PDF on-the-fly from stored report data
+app.get('/api/client/service-reports/:id/pdf', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'client' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const serviceReports = (await db.get('service_reports')) || [];
+    const report = serviceReports.find(r => r.id === req.params.id);
+
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    // For clients, verify the report belongs to them
+    if (req.user.role === 'client') {
+      const users = await getUsers();
+      const clientUser = users.find(u => u.id === req.user.id);
+      if (!clientUser) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      const hubspotCompanyId = clientUser.hubspotCompanyId || '';
+      const practiceName = (clientUser.practiceName || clientUser.name || '').toLowerCase();
+      const reportClient = (report.clientFacilityName || '').toLowerCase();
+
+      const isMatch = (hubspotCompanyId && report.hubspotCompanyId === hubspotCompanyId) ||
+                      (practiceName && reportClient.includes(practiceName));
+
+      if (!isMatch) {
+        return res.status(403).json({ error: 'Not authorized to access this report' });
+      }
+    }
+
+    // If report has a Google Drive download link, redirect to it
+    if (report.driveWebContentLink) {
+      return res.redirect(report.driveWebContentLink);
+    }
+
+    // Generate PDF on-the-fly
+    const pdfBuffer = await pdfGenerator.generateServiceReportPDF(report, report.technicianName || report.serviceProviderName || 'N/A');
+
+    const reportDate = new Date(report.serviceCompletionDate || report.createdAt || Date.now()).toLocaleDateString().replace(/\//g, '-');
+    const fileName = `Service_Report_${(report.clientFacilityName || 'Report').replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error('Error generating service report PDF:', error);
+    res.status(500).json({ error: 'Failed to generate PDF' });
   }
 });
 
@@ -2694,6 +4073,12 @@ app.get('/api/client/hubspot/file/:fileId', authenticateToken, async (req, res) 
 
 // ============== HUBSPOT WEBHOOKS ==============
 const HUBSPOT_WEBHOOK_SECRET = process.env.HUBSPOT_WEBHOOK_SECRET;
+
+// Startup warning for missing webhook secret (Gotcha #18)
+if (!HUBSPOT_WEBHOOK_SECRET) {
+  console.warn('⚠️  WARNING: HUBSPOT_WEBHOOK_SECRET not set. Webhook endpoint will accept ALL requests without validation.');
+  console.warn('   Set HUBSPOT_WEBHOOK_SECRET to enable webhook authentication.');
+}
 
 app.post('/api/webhooks/hubspot', async (req, res) => {
   try {
@@ -2803,6 +4188,9 @@ app.get('/api/inventory/template', async (req, res) => {
 app.put('/api/inventory/template', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { template } = req.body;
+    if (!template || typeof template !== 'object') {
+      return res.status(400).json({ error: 'Invalid template data. Must be a non-empty object.' });
+    }
     await db.set('inventory_template', template);
     res.json({ success: true });
   } catch (error) {
@@ -2934,15 +4322,22 @@ app.get('/api/inventory/export-all', authenticateToken, requireAdmin, async (req
   }
 });
 
+// Normalize inventory data to batch format (Gotcha #13)
+// Logs a warning when auto-wrapping occurs to aid debugging
 const normalizeInventoryData = (data) => {
   const normalized = {};
+  let wrappedCount = 0;
   Object.entries(data || {}).forEach(([key, value]) => {
-    if (value && value.batches) {
+    if (value && Array.isArray(value.batches)) {
       normalized[key] = value;
     } else {
+      wrappedCount++;
       normalized[key] = { batches: [value || {}] };
     }
   });
+  if (wrappedCount > 0) {
+    console.warn(`Inventory data auto-wrapped: ${wrappedCount} item(s) were not in { batches: [...] } format and were converted automatically.`);
+  }
   return normalized;
 };
 
@@ -3009,6 +4404,49 @@ app.post('/api/inventory/submit', authenticateToken, async (req, res) => {
     res.json({ success: true, submission });
   } catch (error) {
     console.error('Inventory submit error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete inventory submissions (Super Admin & Manager only)
+app.delete('/api/inventory/submissions', authenticateToken, async (req, res) => {
+  try {
+    // Only allow Super Admins and Managers
+    if (req.user.role !== 'admin' && !req.user.isManager) {
+      return res.status(403).json({ error: 'Access denied. Only Super Admins and Managers can delete submissions.' });
+    }
+
+    const { submissionIds, slug } = req.body;
+
+    if (!submissionIds || !Array.isArray(submissionIds) || submissionIds.length === 0) {
+      return res.status(400).json({ error: 'submissionIds array is required' });
+    }
+
+    const allSubmissions = (await db.get('inventory_submissions')) || [];
+    const idsToDelete = new Set(submissionIds);
+
+    // Filter out submissions that match the IDs and optionally the slug
+    const remainingSubmissions = allSubmissions.filter(s => {
+      if (slug && s.slug !== slug) return true; // Keep submissions from other clients
+      return !idsToDelete.has(s.id);
+    });
+
+    const deletedCount = allSubmissions.length - remainingSubmissions.length;
+
+    await db.set('inventory_submissions', remainingSubmissions);
+
+    await logActivity(
+      req.user.id || null,
+      req.user.name || req.user.email,
+      'inventory_submissions_deleted',
+      'inventory',
+      null,
+      { slug, deletedCount, submissionIds }
+    );
+
+    res.json({ success: true, deletedCount });
+  } catch (error) {
+    console.error('Delete submissions error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -3184,7 +4622,8 @@ app.get('/api/inventory/report/:slug', authenticateToken, async (req, res) => {
 });
 
 // ============== ADMIN AGGREGATE INVENTORY REPORT ==============
-app.get('/api/inventory/report-all', authenticateToken, requireAdmin, async (req, res) => {
+// Allow Super Admins, Managers, and Client Portal Admins to access
+app.get('/api/inventory/report-all', authenticateToken, requireClientPortalAdmin, async (req, res) => {
   try {
     const allSubmissions = (await db.get('inventory_submissions')) || [];
     const users = await getUsers();
@@ -3667,7 +5106,12 @@ const normalizeDate = (dateStr) => {
     month = month.padStart(2, '0');
     day = day.padStart(2, '0');
     if (year.length === 2) {
-      year = parseInt(year) > 50 ? '19' + year : '20' + year;
+      // Use current year as reference: if 2-digit year would be >10 years in the future, assume 1900s
+      // This is future-proof unlike a fixed threshold (Gotcha #14)
+      const currentCentury = Math.floor(new Date().getFullYear() / 100) * 100;
+      const currentYearTwoDigit = new Date().getFullYear() % 100;
+      const twoDigitYear = parseInt(year);
+      year = twoDigitYear <= (currentYearTwoDigit + 10) ? String(currentCentury + twoDigitYear) : String(currentCentury - 100 + twoDigitYear);
     }
     return `${year}-${month}-${day}`;
   }
@@ -4163,7 +5607,7 @@ app.get('/api/projects/:id/export', authenticateToken, async (req, res) => {
       t.dateCompleted || '',
       Array.isArray(t.tags) ? t.tags.join(';') : '',
       Array.isArray(t.dependencies) ? t.dependencies.join(';') : '',
-      Array.isArray(t.notes) ? t.notes.map(n => n.text || n).join(' | ') : ''
+      Array.isArray(t.notes) ? t.notes.map(n => n.content || n.text || '').join(' | ') : ''
     ].map(escapeCSV));
     
     const csv = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
@@ -4201,7 +5645,7 @@ app.get('/api/templates', authenticateToken, async (req, res) => {
       id: t.id,
       name: t.name,
       description: t.description,
-      taskCount: t.tasks.length,
+      taskCount: Array.isArray(t.tasks) ? t.tasks.length : 0,
       createdAt: t.createdAt,
       isDefault: t.isDefault
     }));
@@ -4322,7 +5766,7 @@ app.post('/api/templates/:id/import-csv', authenticateToken, requireAdmin, async
     }
     
     // Generate new IDs for imported tasks and create ID mapping
-    const maxId = template.tasks.length > 0 ? Math.max(...template.tasks.map(t => t.id)) : 0;
+    const maxId = getNextNumericId(template.tasks) - 1;
     const idMapping = {};
     
     const newTasks = csvData.map((row, index) => {
@@ -4408,7 +5852,7 @@ app.post('/api/projects/:id/import-csv', authenticateToken, async (req, res) => 
     
     // Use raw tasks for mutation to prevent normalization drift
     const tasks = await getRawTasks(req.params.id);
-    const maxId = tasks.length > 0 ? Math.max(...tasks.map(t => t.id)) : 0;
+    const maxId = getNextNumericId(tasks) - 1;
     
     // Separate parent tasks and subtasks
     const parentRows = csvData.filter(row => {
@@ -4651,7 +6095,7 @@ app.post('/api/auth/service-login', async (req, res) => {
       return res.status(400).json({ error: 'Missing credentials' });
     }
     const users = await getUsers();
-    const user = users.find(u => u.email === email);
+    const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase());
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
@@ -4684,8 +6128,10 @@ app.post('/api/auth/service-login', async (req, res) => {
 
 // Middleware to check service portal access
 const requireServiceAccess = (req, res, next) => {
-  // Admins always have access
+  // Super Admins always have access
   if (req.user.role === 'admin') return next();
+  // Managers have access to service portal (part of their Admin Hub access)
+  if (req.user.isManager) return next();
   // Vendors always have service portal access
   if (req.user.role === 'vendor') return next();
   // Users with explicit service portal access
@@ -4699,20 +6145,28 @@ app.get('/api/service-portal/data', authenticateToken, requireServiceAccess, asy
     const serviceReports = (await db.get('service_reports')) || [];
     let userReports;
 
-    if (req.user.role === 'admin') {
-      // Admins see all reports
+    if (req.user.role === 'admin' || (req.user.isManager && req.user.hasServicePortalAccess)) {
+      // Super Admins and Managers with Service Portal access see all reports
       userReports = serviceReports;
     } else if (req.user.role === 'vendor') {
-      // Vendors see their own reports + reports for their assigned clients
+      // Vendors see their own reports + reports assigned to them + reports for their assigned clients
       const assignedClients = req.user.assignedClients || [];
       userReports = serviceReports.filter(r =>
         r.technicianId === req.user.id ||
+        r.assignedToId === req.user.id ||
         assignedClients.includes(r.clientFacilityName)
       );
     } else {
-      // Regular users with service access see only their own reports
-      userReports = serviceReports.filter(r => r.technicianId === req.user.id);
+      // Regular users with service access see their own reports + reports assigned to them
+      userReports = serviceReports.filter(r =>
+        r.technicianId === req.user.id ||
+        r.assignedToId === req.user.id
+      );
     }
+
+    // Exclude assigned reports from recentReports since they're tracked separately in assignedReports
+    // This prevents double-counting in the "My Reports" counter
+    userReports = userReports.filter(r => r.status !== 'assigned');
 
     // Sort by date descending
     userReports.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -4797,6 +6251,7 @@ app.post('/api/service-reports', authenticateToken, requireServiceAccess, async 
       technicianId: req.user.id,
       technicianName: req.user.name,
       createdAt: new Date().toISOString(),
+      submittedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
 
@@ -4900,44 +6355,74 @@ app.post('/api/service-reports', authenticateToken, requireServiceAccess, async 
       }
     }
 
-    // Auto-upload signed service reports to client's Files section
-    if (reportData.customerSignature) {
-      try {
-        // Find client by name to get their slug
-        const users = (await db.get('users')) || [];
-        const client = users.find(u =>
-          u.role === 'client' &&
-          (u.name?.toLowerCase() === reportData.clientFacilityName?.toLowerCase() ||
-           u.clientName?.toLowerCase() === reportData.clientFacilityName?.toLowerCase() ||
-           u.companyName?.toLowerCase() === reportData.clientFacilityName?.toLowerCase())
-        );
+    // Upload PDF to Google Drive
+    try {
+      const reportDate = new Date(reportData.serviceCompletionDate || newReport.createdAt).toLocaleDateString();
+      const driveFileName = `Service_Report_${reportData.clientFacilityName.replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate.replace(/\//g, '-')}.pdf`;
+      const drivePdfBuffer = await pdfGenerator.generateServiceReportPDF({ ...reportData, id: newReport.id }, req.user.name);
 
-        if (client && client.slug) {
-          const clientDocuments = (await db.get('client_documents')) || [];
-          const reportDate = new Date(reportData.serviceCompletionDate || newReport.createdAt).toLocaleDateString();
-          const reportTypeName = reportData.serviceType === 'Validations' ? 'Validation Report' : 'Service Report';
+      const driveResult = await googledrive.uploadServiceReportPDF(
+        reportData.clientFacilityName || 'Unknown Client',
+        driveFileName,
+        drivePdfBuffer
+      );
 
-          const newDocument = {
-            id: uuidv4(),
-            slug: client.slug,
-            title: `${reportTypeName} - ${reportDate}`,
-            description: `${reportData.serviceType} - ${reportData.serviceProviderName || req.user.name}`,
-            category: 'Service Reports',
-            serviceReportId: newReport.id,
-            serviceType: reportData.serviceType,
-            createdAt: new Date().toISOString(),
-            uploadedBy: 'system',
-            uploadedByName: 'Thrive 365 Labs'
-          };
+      newReport.driveFileId = driveResult.fileId;
+      newReport.driveWebViewLink = driveResult.webViewLink;
+      newReport.driveWebContentLink = driveResult.webContentLink;
+      await db.set('service_reports', serviceReports);
 
-          clientDocuments.push(newDocument);
-          await db.set('client_documents', clientDocuments);
+      console.log(`✅ Service report PDF uploaded to Google Drive: ${driveResult.fileName}`);
+    } catch (driveError) {
+      console.error('Google Drive upload error (non-blocking):', driveError.message);
+    }
 
-          console.log(`✅ Service report auto-added to client files for ${client.slug}`);
-        }
-      } catch (clientDocError) {
-        console.error('Client document auto-upload error (non-blocking):', clientDocError.message);
+    // Auto-add service reports to client's Files section under "Service Reports" category
+    try {
+      const users = (await db.get('users')) || [];
+      const clientFacility = (reportData.clientFacilityName || '').toLowerCase();
+      const reportCompanyId = reportData.hubspotCompanyId || '';
+
+      // Match client by hubspotCompanyId (most reliable), then by name/practiceName fallback
+      const client = users.find(u => {
+        if (u.role !== 'client') return false;
+        if (reportCompanyId && u.hubspotCompanyId && String(u.hubspotCompanyId) === String(reportCompanyId)) return true;
+        if (clientFacility && u.practiceName?.toLowerCase() === clientFacility) return true;
+        if (clientFacility && u.name?.toLowerCase() === clientFacility) return true;
+        if (clientFacility && u.clientName?.toLowerCase() === clientFacility) return true;
+        if (clientFacility && u.companyName?.toLowerCase() === clientFacility) return true;
+        return false;
+      });
+
+      if (client && client.slug) {
+        const clientDocuments = (await db.get('client_documents')) || [];
+        const reportDate = new Date(reportData.serviceCompletionDate || newReport.createdAt).toLocaleDateString();
+        const reportTypeName = reportData.serviceType === 'Validations' ? 'Validation Report' : 'Service Report';
+
+        const newDocument = {
+          id: uuidv4(),
+          slug: client.slug,
+          title: `${reportTypeName} - ${reportDate}`,
+          description: `${reportData.serviceType} - ${reportData.serviceProviderName || req.user.name}`,
+          category: 'Service Reports',
+          serviceReportId: newReport.id,
+          serviceType: reportData.serviceType,
+          driveWebViewLink: newReport.driveWebViewLink || null,
+          driveWebContentLink: newReport.driveWebContentLink || null,
+          createdAt: new Date().toISOString(),
+          uploadedBy: 'system',
+          uploadedByName: 'Thrive 365 Labs'
+        };
+
+        clientDocuments.push(newDocument);
+        await db.set('client_documents', clientDocuments);
+
+        console.log(`✅ Service report auto-added to client files for ${client.slug}`);
+      } else {
+        console.log(`⚠️ No matching client found for service report auto-upload: "${reportData.clientFacilityName}" (companyId: ${reportCompanyId})`);
       }
+    } catch (clientDocError) {
+      console.error('Client document auto-upload error (non-blocking):', clientDocError.message);
     }
 
     res.json(newReport);
@@ -4997,6 +6482,83 @@ app.get('/api/service-reports', authenticateToken, requireServiceAccess, async (
   }
 });
 
+// Get assigned service reports for the current technician/vendor
+// IMPORTANT: This route must come BEFORE /:id to avoid "assigned" being treated as an ID
+app.get('/api/service-reports/assigned', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+
+    console.log('=== ASSIGNED REPORTS DEBUG ===');
+    console.log('User ID:', req.user.id, 'Type:', typeof req.user.id);
+    console.log('User Role:', req.user.role);
+    console.log('User Name:', req.user.name);
+    console.log('Total reports in DB:', serviceReports.length);
+
+    // Log all assigned reports for debugging
+    const allAssignedReports = serviceReports.filter(r => r.status === 'assigned');
+    console.log('All reports with status=assigned:', allAssignedReports.length);
+    allAssignedReports.forEach(r => {
+      console.log(`  Report ${r.id.substring(0, 8)}: assignedToId=${r.assignedToId} (type: ${typeof r.assignedToId}), client=${r.clientFacilityName}, status=${r.status}`);
+    });
+
+    // Filter reports assigned to this user that haven't been submitted yet
+    // Convert both IDs to strings to ensure proper comparison regardless of type
+    const userIdString = String(req.user.id);
+    let assignedReports = serviceReports.filter(r => {
+      const reportAssignedId = String(r.assignedToId || '');
+      const idMatch = reportAssignedId === userIdString;
+      const statusMatch = r.status === 'assigned';
+      if (r.status === 'assigned') {
+        console.log(`  Checking report ${r.id?.substring(0, 8)}: assignedToId="${r.assignedToId}" (converted: "${reportAssignedId}") === userId="${req.user.id}" (converted: "${userIdString}")? ${idMatch}, status=${r.status}==='assigned'? ${statusMatch}`);
+      }
+      return idMatch && statusMatch;
+    });
+
+    console.log('Matched reports for user:', assignedReports.length);
+
+    // NOTE: Client filtering removed - vendors should see ALL reports assigned to them
+    // The act of assigning a report to a vendor implicitly grants access to that client
+    // No additional client filtering needed
+
+    // Sort by assignment date (most recent first)
+    assignedReports.sort((a, b) => new Date(b.assignedAt) - new Date(a.assignedAt));
+
+    console.log('Final assigned reports count:', assignedReports.length);
+    console.log('=== END DEBUG ===');
+
+    res.json(assignedReports);
+  } catch (error) {
+    console.error('Get assigned service reports error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Download service report PDF (service portal users)
+app.get('/api/service-reports/:id/pdf', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    const report = serviceReports.find(r => r.id === req.params.id);
+
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    // Generate PDF
+    const pdfBuffer = await pdfGenerator.generateServiceReportPDF(report, report.technicianName || report.serviceProviderName || 'N/A');
+
+    const reportDate = new Date(report.serviceCompletionDate || report.createdAt || Date.now()).toLocaleDateString().replace(/\//g, '-');
+    const fileName = `Service_Report_${(report.clientFacilityName || 'Report').replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error('Error generating service report PDF:', error);
+    res.status(500).json({ error: 'Failed to generate PDF' });
+  }
+});
+
 // Get single service report
 app.get('/api/service-reports/:id', authenticateToken, requireServiceAccess, async (req, res) => {
   try {
@@ -5027,16 +6589,47 @@ app.put('/api/service-reports/:id', authenticateToken, requireServiceAccess, asy
     const existingReport = serviceReports[reportIndex];
 
     // Only allow editing own reports unless admin
-    if (req.user.role !== 'admin' && existingReport.technicianId !== req.user.id) {
+    // Convert to strings for reliable comparison
+    const isTechnician = String(existingReport.technicianId || '') === String(req.user.id);
+    const isAssigned = String(existingReport.assignedToId || '') === String(req.user.id);
+    if (req.user.role !== 'admin' && !isTechnician && !isAssigned) {
+      console.log(`Edit authorization failed: technicianId="${existingReport.technicianId}" and assignedToId="${existingReport.assignedToId}" don't match userId="${req.user.id}"`);
       return res.status(403).json({ error: 'Not authorized to edit this report' });
+    }
+
+    // Check 30-minute edit window for submitted reports (admins can always edit)
+    if (req.user.role !== 'admin' && existingReport.submittedAt) {
+      const submittedTime = new Date(existingReport.submittedAt);
+      const currentTime = new Date();
+      const minutesElapsed = (currentTime - submittedTime) / (1000 * 60);
+
+      if (minutesElapsed > 30) {
+        return res.status(403).json({
+          error: 'Edit window has expired. Reports can only be edited within 30 minutes of submission.',
+          minutesElapsed: Math.floor(minutesElapsed)
+        });
+      }
+    }
+
+    // Whitelist allowed fields for service report updates
+    const serviceReportAllowedFields = [
+      'clientSlug', 'clientName', 'visitDate', 'visitType', 'status',
+      'equipmentType', 'serialNumber', 'modelNumber', 'location',
+      'issueDescription', 'workPerformed', 'partsUsed', 'recommendations',
+      'followUpRequired', 'followUpDate', 'followUpNotes',
+      'technicianNotes', 'clientSignature', 'technicianSignature',
+      'photos', 'attachments', 'readings', 'testResults'
+    ];
+    const sanitizedReportUpdates = {};
+    for (const key of serviceReportAllowedFields) {
+      if (req.body[key] !== undefined) {
+        sanitizedReportUpdates[key] = req.body[key];
+      }
     }
 
     serviceReports[reportIndex] = {
       ...existingReport,
-      ...req.body,
-      id: existingReport.id,
-      technicianId: existingReport.technicianId,
-      createdAt: existingReport.createdAt,
+      ...sanitizedReportUpdates,
       updatedAt: new Date().toISOString()
     };
 
@@ -5064,6 +6657,739 @@ app.delete('/api/service-reports/:id', authenticateToken, requireAdmin, async (r
     res.json({ message: 'Report deleted successfully' });
   } catch (error) {
     console.error('Delete service report error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Batch delete service reports (Super Admin can delete any, Service Technicians can delete their own)
+app.delete('/api/service-reports', authenticateToken, async (req, res) => {
+  try {
+    const { reportIds } = req.body;
+    const isSuperAdmin = req.user.role === 'admin';
+    const isServiceTechnician = req.user.role === 'vendor' || req.user.hasServicePortalAccess;
+
+    // Only Super Admins and Service Technicians can delete
+    if (!isSuperAdmin && !isServiceTechnician) {
+      return res.status(403).json({ error: 'Access denied. Only Super Admins and Service Technicians can delete reports.' });
+    }
+
+    if (!reportIds || !Array.isArray(reportIds) || reportIds.length === 0) {
+      return res.status(400).json({ error: 'reportIds array is required' });
+    }
+
+    let serviceReports = (await db.get('service_reports')) || [];
+    const idsToDelete = new Set(reportIds);
+    const initialCount = serviceReports.length;
+
+    // For service technicians, only allow deleting their own reports
+    if (!isSuperAdmin) {
+      const reportsToDelete = serviceReports.filter(r => idsToDelete.has(r.id));
+      const unauthorizedReports = reportsToDelete.filter(r => r.technicianId !== req.user.id);
+      if (unauthorizedReports.length > 0) {
+        return res.status(403).json({ error: 'You can only delete your own reports.' });
+      }
+    }
+
+    serviceReports = serviceReports.filter(r => !idsToDelete.has(r.id));
+    const deletedCount = initialCount - serviceReports.length;
+
+    await db.set('service_reports', serviceReports);
+
+    await logActivity(
+      req.user.id || null,
+      req.user.name || req.user.email,
+      'service_reports_deleted',
+      'service_reports',
+      null,
+      { deletedCount, reportIds }
+    );
+
+    res.json({ success: true, deletedCount });
+  } catch (error) {
+    console.error('Batch delete service reports error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============== SERVICE REPORT ASSIGNMENTS (Manager/Admin assigns to Technician/Vendor) ==============
+
+// Fetch HubSpot ticket and map to service report fields
+app.get('/api/hubspot/ticket/:ticketId/map-to-service-report', authenticateToken, async (req, res) => {
+  try {
+    // Only admins and managers with service portal access can use this endpoint
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
+      return res.status(403).json({ error: 'Only admins and managers can import from HubSpot' });
+    }
+
+    const ticketId = req.params.ticketId;
+
+    // Fetch ticket from HubSpot
+    const ticket = await hubspot.getTicketById(ticketId);
+
+    // Map HubSpot owner ID to internal user
+    let assignedToId = null;
+    let assignedToName = null;
+    if (ticket.ownerId) {
+      const users = (await db.get('users')) || [];
+
+      // Try to find user by matching HubSpot owner ID
+      // First, get the HubSpot owner details
+      try {
+        const owners = await hubspot.getOwners();
+        const hubspotOwner = owners.find(o => String(o.id) === String(ticket.ownerId));
+
+        if (hubspotOwner) {
+          // Try to match by email first
+          if (hubspotOwner.email) {
+            const userByEmail = users.find(u =>
+              u.email && u.email.toLowerCase() === hubspotOwner.email.toLowerCase()
+            );
+            if (userByEmail) {
+              assignedToId = userByEmail.id;
+              assignedToName = userByEmail.name;
+            }
+          }
+
+          // If no match by email, try by name
+          if (!assignedToId && hubspotOwner.firstName && hubspotOwner.lastName) {
+            const fullName = `${hubspotOwner.firstName} ${hubspotOwner.lastName}`;
+            const userByName = users.find(u =>
+              u.name && u.name.toLowerCase() === fullName.toLowerCase()
+            );
+            if (userByName) {
+              assignedToId = userByName.id;
+              assignedToName = userByName.name;
+            }
+          }
+        }
+      } catch (ownerErr) {
+        console.log('Could not match HubSpot owner to internal user:', ownerErr.message);
+      }
+    }
+
+    // Map Service Type from Issue Category
+    const serviceTypeMapping = {
+      'analyzer hardware': 'Analyzer Hardware',
+      'inventory': 'Inventory',
+      'lis/emr': 'LIS/EMR',
+      'lis': 'LIS/EMR',
+      'emr': 'LIS/EMR',
+      'billing & fees': 'Billing & Fees',
+      'billing': 'Billing & Fees',
+      'compliance': 'Compliance',
+      'training': 'Training',
+      'validations': 'Validations',
+      'validation': 'Validations'
+    };
+
+    const issueCategoryLower = (ticket.issueCategory || '').toLowerCase();
+    const serviceType = serviceTypeMapping[issueCategoryLower] || '';
+
+    // Combine ticket description and notes into manager notes
+    let managerNotes = '';
+    if (ticket.description) {
+      managerNotes += `**Ticket Description:**\n${ticket.description}\n\n`;
+    }
+    if (ticket.notes && ticket.notes.length > 0) {
+      managerNotes += `**Ticket Notes:**\n`;
+      ticket.notes.forEach((note, index) => {
+        const timestamp = note.timestamp ? new Date(parseInt(note.timestamp)).toLocaleString() : '';
+        managerNotes += `\n[${timestamp}]\n${note.body}\n`;
+        if (note.attachmentIds) {
+          managerNotes += `(Attachments: ${note.attachmentIds})\n`;
+        }
+      });
+    }
+
+    // Build the mapped service report data
+    const mappedData = {
+      // HubSpot ticket info
+      ticketId: ticket.id,
+      ticketSubject: ticket.subject,
+      ticketStage: ticket.stage,
+
+      // Mapped fields for service report
+      assignedToId: assignedToId,
+      assignedToName: assignedToName,
+      clientFacilityName: ticket.companyName || '',
+      customerName: ticket.submittedBy || '',
+      serviceType: serviceType,
+      analyzerSerialNumber: ticket.serialNumber || '',
+      hubspotTicketNumber: ticket.id,
+      hubspotCompanyId: ticket.companyId || '',
+      managerNotes: managerNotes.trim(),
+      serviceCompletionDate: new Date().toISOString().split('T')[0], // Today's date
+
+      // Additional info
+      hubspotOwnerNotMatched: ticket.ownerId && !assignedToId,
+      hubspotOwnerId: ticket.ownerId
+    };
+
+    res.json(mappedData);
+  } catch (error) {
+    console.error('Error mapping HubSpot ticket to service report:', error);
+    res.status(500).json({
+      error: 'Failed to fetch ticket from HubSpot',
+      details: error.message
+    });
+  }
+});
+
+// Create and assign service report to technician/vendor (admin/manager with service access only)
+app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
+  try {
+    // Only admins and managers with service portal access can assign service reports
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
+      return res.status(403).json({ error: 'Only admins and managers can assign service reports' });
+    }
+
+    const {
+      assignedToId,
+      clientFacilityName,
+      customerName,
+      address,
+      serviceType,
+      analyzerModel,
+      analyzerSerialNumber,
+      hubspotTicketNumber,
+      hubspotCompanyId,
+      hubspotDealId,
+      managerNotes,
+      photos,
+      clientFiles,
+      serviceCompletionDate
+    } = req.body;
+
+    if (!assignedToId || !clientFacilityName) {
+      return res.status(400).json({ error: 'Assigned technician and client facility name are required' });
+    }
+
+    console.log('=== ASSIGN REPORT DEBUG ===');
+    console.log('assignedToId from request:', assignedToId, 'Type:', typeof assignedToId);
+
+    // Verify the assigned user exists and has service access
+    const users = (await db.get('users')) || [];
+    console.log('Total users in DB:', users.length);
+
+    // Use string comparison for finding user
+    const assignedUser = users.find(u => String(u.id) === String(assignedToId));
+    console.log('Found assigned user:', assignedUser ? assignedUser.name : 'NOT FOUND');
+
+    if (!assignedUser) {
+      console.log('Available user IDs:', users.map(u => `${u.id} (${typeof u.id})`));
+      return res.status(400).json({ error: 'Assigned user not found' });
+    }
+    if (assignedUser.role !== 'vendor' && assignedUser.role !== 'admin' && !assignedUser.hasServicePortalAccess) {
+      return res.status(400).json({ error: 'Assigned user does not have service portal access' });
+    }
+
+    const serviceReports = (await db.get('service_reports')) || [];
+
+    const newReport = {
+      id: uuidv4(),
+      // Assignment info
+      status: 'assigned',
+      assignedToId,
+      assignedToName: assignedUser.name,
+      assignedById: req.user.id,
+      assignedByName: req.user.name,
+      assignedAt: new Date().toISOString(),
+      // Pre-filled info by manager
+      clientFacilityName,
+      customerName: customerName || '',
+      serviceProviderName: assignedUser.name,
+      address: address || '',
+      serviceType: serviceType || '',
+      analyzerModel: analyzerModel || '',
+      analyzerSerialNumber: analyzerSerialNumber || '',
+      hubspotTicketNumber: hubspotTicketNumber || '',
+      hubspotCompanyId: hubspotCompanyId || '',
+      hubspotDealId: hubspotDealId || '',
+      serviceCompletionDate: serviceCompletionDate || '',
+      // Manager-only fields
+      managerNotes: managerNotes || '',
+      photos: photos || [], // Array of { id, url, name, uploadedAt }
+      clientFiles: clientFiles || [], // Array of { id, url, name, uploadedAt }
+      // Technician fields (to be filled when completing)
+      technicianId: null,
+      technicianName: null,
+      descriptionOfWork: '',
+      materialsUsed: '',
+      solution: '',
+      outstandingIssues: '',
+      validationResults: '',
+      validationStartDate: '',
+      validationEndDate: '',
+      trainingProvided: '',
+      testProcedures: '',
+      recommendations: '',
+      analyzersValidated: [],
+      customerSignature: null,
+      customerSignatureDate: null,
+      technicianSignature: null,
+      technicianSignatureDate: null,
+      // Metadata
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    serviceReports.push(newReport);
+    await db.set('service_reports', serviceReports);
+
+    console.log('Created report:', {
+      id: newReport.id.substring(0, 8),
+      assignedToId: newReport.assignedToId,
+      assignedToIdType: typeof newReport.assignedToId,
+      assignedToName: newReport.assignedToName,
+      status: newReport.status,
+      client: newReport.clientFacilityName
+    });
+    console.log('=== END ASSIGN DEBUG ===');
+
+    // Log activity
+    await logActivity(
+      req.user.id,
+      req.user.name,
+      'service_report_assigned',
+      'service_report',
+      newReport.id,
+      { clientName: clientFacilityName, assignedTo: assignedUser.name }
+    );
+
+    res.json(newReport);
+  } catch (error) {
+    console.error('Assign service report error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Complete an assigned service report (technician/vendor submits their portion)
+app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const existingReport = serviceReports[reportIndex];
+
+    // Only the assigned technician can complete the report
+    // Convert to strings for reliable comparison
+    const isAssignedToUser = String(existingReport.assignedToId) === String(req.user.id);
+    if (!isAssignedToUser && req.user.role !== 'admin') {
+      console.log(`Authorization failed: assignedToId="${existingReport.assignedToId}" !== userId="${req.user.id}"`);
+      return res.status(403).json({ error: 'Not authorized to complete this report' });
+    }
+
+    // Verify it's an assigned report
+    if (existingReport.status !== 'assigned') {
+      return res.status(400).json({ error: 'This report is not in assigned status' });
+    }
+
+    const {
+      descriptionOfWork,
+      materialsUsed,
+      solution,
+      outstandingIssues,
+      validationResults,
+      validationStartDate,
+      validationEndDate,
+      trainingProvided,
+      testProcedures,
+      recommendations,
+      analyzersValidated,
+      customerSignature,
+      customerSignatureDate,
+      technicianSignature,
+      technicianSignatureDate,
+      serviceCompletionDate,
+      analyzerSerialNumber
+    } = req.body;
+
+    // Update the report with technician-provided info
+    serviceReports[reportIndex] = {
+      ...existingReport,
+      status: 'submitted',
+      technicianId: req.user.id,
+      technicianName: req.user.name,
+      // Technician-editable fields
+      descriptionOfWork: descriptionOfWork || existingReport.descriptionOfWork,
+      materialsUsed: materialsUsed || existingReport.materialsUsed,
+      solution: solution || existingReport.solution,
+      outstandingIssues: outstandingIssues || existingReport.outstandingIssues,
+      validationResults: validationResults || existingReport.validationResults,
+      validationStartDate: validationStartDate || existingReport.validationStartDate,
+      validationEndDate: validationEndDate || existingReport.validationEndDate,
+      trainingProvided: trainingProvided || existingReport.trainingProvided,
+      testProcedures: testProcedures || existingReport.testProcedures,
+      recommendations: recommendations || existingReport.recommendations,
+      analyzersValidated: analyzersValidated || existingReport.analyzersValidated,
+      customerSignature: customerSignature || existingReport.customerSignature,
+      customerSignatureDate: customerSignatureDate || existingReport.customerSignatureDate,
+      technicianSignature: technicianSignature || existingReport.technicianSignature,
+      technicianSignatureDate: technicianSignatureDate || existingReport.technicianSignatureDate,
+      serviceCompletionDate: serviceCompletionDate || existingReport.serviceCompletionDate || new Date().toISOString().split('T')[0],
+      analyzerSerialNumber: analyzerSerialNumber || existingReport.analyzerSerialNumber,
+      serviceProviderName: req.user.name,
+      completedAt: new Date().toISOString(),
+      submittedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    await db.set('service_reports', serviceReports);
+
+    const completedReport = serviceReports[reportIndex];
+
+    // Log activity
+    await logActivity(
+      req.user.id,
+      req.user.name,
+      'service_report_completed',
+      'service_report',
+      completedReport.id,
+      { clientName: completedReport.clientFacilityName, serviceType: completedReport.serviceType }
+    );
+
+    // Upload to HubSpot if company ID is available
+    if (completedReport.hubspotCompanyId && hubspot.isValidRecordId(completedReport.hubspotCompanyId)) {
+      try {
+        const reportDate = new Date(completedReport.serviceCompletionDate || completedReport.createdAt).toLocaleDateString();
+        console.log(`📄 Generating PDF for completed assigned service report: ${completedReport.clientFacilityName}`);
+        const pdfBuffer = await pdfGenerator.generateServiceReportPDF(completedReport, req.user.name);
+
+        const fileName = `Service_Report_${completedReport.clientFacilityName.replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate.replace(/\//g, '-')}.pdf`;
+        const noteText = `Service Report Completed\n\nClient: ${completedReport.clientFacilityName}\nService Type: ${completedReport.serviceType}\nTechnician: ${req.user.name}\nTicket #: ${completedReport.hubspotTicketNumber || 'N/A'}`;
+
+        const uploadResult = await hubspot.uploadFileAndAttachToRecord(
+          completedReport.hubspotCompanyId,
+          pdfBuffer.toString('base64'),
+          fileName,
+          noteText,
+          {
+            recordType: 'companies',
+            folderPath: '/service-reports',
+            notePrefix: '[Service Portal]',
+            isBase64: true
+          }
+        );
+
+        serviceReports[reportIndex].hubspotFileId = uploadResult.fileId;
+        serviceReports[reportIndex].hubspotNoteId = uploadResult.noteId;
+        await db.set('service_reports', serviceReports);
+
+        console.log(`✅ Completed service report PDF uploaded to HubSpot for company ${completedReport.hubspotCompanyId}`);
+      } catch (hubspotError) {
+        console.error('HubSpot upload error (non-blocking):', hubspotError.message);
+      }
+    }
+
+    // Upload PDF to Google Drive
+    try {
+      const driveReportDate = new Date(completedReport.serviceCompletionDate || completedReport.createdAt).toLocaleDateString();
+      const driveFileName = `Service_Report_${completedReport.clientFacilityName.replace(/[^a-zA-Z0-9]/g, '_')}_${driveReportDate.replace(/\//g, '-')}.pdf`;
+      const drivePdfBuffer = await pdfGenerator.generateServiceReportPDF(completedReport, req.user.name);
+
+      const driveResult = await googledrive.uploadServiceReportPDF(
+        completedReport.clientFacilityName || 'Unknown Client',
+        driveFileName,
+        drivePdfBuffer
+      );
+
+      serviceReports[reportIndex].driveFileId = driveResult.fileId;
+      serviceReports[reportIndex].driveWebViewLink = driveResult.webViewLink;
+      serviceReports[reportIndex].driveWebContentLink = driveResult.webContentLink;
+      await db.set('service_reports', serviceReports);
+
+      console.log(`✅ Completed service report PDF uploaded to Google Drive: ${driveResult.fileName}`);
+    } catch (driveError) {
+      console.error('Google Drive upload error (non-blocking):', driveError.message);
+    }
+
+    // Auto-add completed assigned report to client's Files section under "Service Reports" category
+    try {
+      const users = (await db.get('users')) || [];
+      const clientFacility = (completedReport.clientFacilityName || '').toLowerCase();
+      const reportCompanyId = completedReport.hubspotCompanyId || '';
+
+      const client = users.find(u => {
+        if (u.role !== 'client') return false;
+        if (reportCompanyId && u.hubspotCompanyId && String(u.hubspotCompanyId) === String(reportCompanyId)) return true;
+        if (clientFacility && u.practiceName?.toLowerCase() === clientFacility) return true;
+        if (clientFacility && u.name?.toLowerCase() === clientFacility) return true;
+        if (clientFacility && u.clientName?.toLowerCase() === clientFacility) return true;
+        if (clientFacility && u.companyName?.toLowerCase() === clientFacility) return true;
+        return false;
+      });
+
+      if (client && client.slug) {
+        const clientDocuments = (await db.get('client_documents')) || [];
+        // Avoid duplicates if report was already added during creation
+        const alreadyAdded = clientDocuments.some(d => d.serviceReportId === completedReport.id);
+        if (!alreadyAdded) {
+          const reportDate = new Date(completedReport.serviceCompletionDate || completedReport.createdAt).toLocaleDateString();
+          const reportTypeName = completedReport.serviceType === 'Validations' ? 'Validation Report' : 'Service Report';
+
+          clientDocuments.push({
+            id: uuidv4(),
+            slug: client.slug,
+            title: `${reportTypeName} - ${reportDate}`,
+            description: `${completedReport.serviceType} - ${completedReport.technicianName || req.user.name}`,
+            category: 'Service Reports',
+            serviceReportId: completedReport.id,
+            serviceType: completedReport.serviceType,
+            driveWebViewLink: serviceReports[reportIndex].driveWebViewLink || null,
+            driveWebContentLink: serviceReports[reportIndex].driveWebContentLink || null,
+            createdAt: new Date().toISOString(),
+            uploadedBy: 'system',
+            uploadedByName: 'Thrive 365 Labs'
+          });
+          await db.set('client_documents', clientDocuments);
+          console.log(`✅ Completed assigned report auto-added to client files for ${client.slug}`);
+        }
+      }
+    } catch (clientDocError) {
+      console.error('Client document auto-upload error (non-blocking):', clientDocError.message);
+    }
+
+    res.json(serviceReports[reportIndex]);
+  } catch (error) {
+    console.error('Complete service report error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Upload photos to service report (admin/manager with service access only)
+app.post('/api/service-reports/:id/photos', authenticateToken, upload.array('photos', 10), async (req, res) => {
+  try {
+    // Only admins and managers with service portal access can upload photos
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
+      return res.status(403).json({ error: 'Only admins and managers can upload photos' });
+    }
+
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'No photos provided' });
+    }
+
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = serviceReports[reportIndex];
+    const photos = report.photos || [];
+
+    // Save photos to uploads directory (must match /uploads static middleware path)
+    const uploadDir = path.join(__dirname, 'uploads', 'service-photos');
+    await fs.mkdir(uploadDir, { recursive: true });
+
+    for (const file of req.files) {
+      const fileId = uuidv4();
+      const ext = path.extname(file.originalname) || '.jpg';
+      const fileName = `${fileId}${ext}`;
+      const filePath = path.join(uploadDir, fileName);
+
+      await fs.writeFile(filePath, file.buffer);
+
+      photos.push({
+        id: fileId,
+        name: file.originalname,
+        url: `/uploads/service-photos/${fileName}`,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: req.user.name
+      });
+    }
+
+    serviceReports[reportIndex].photos = photos;
+    serviceReports[reportIndex].updatedAt = new Date().toISOString();
+    await db.set('service_reports', serviceReports);
+
+    res.json({ photos: serviceReports[reportIndex].photos });
+  } catch (error) {
+    console.error('Upload photos error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Upload client files to service report (admin/manager with service access only)
+app.post('/api/service-reports/:id/files', authenticateToken, upload.array('files', 10), async (req, res) => {
+  try {
+    // Only admins and managers with service portal access can upload client files
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
+      return res.status(403).json({ error: 'Only admins and managers can upload client files' });
+    }
+
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'No files provided' });
+    }
+
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = serviceReports[reportIndex];
+    const clientFiles = report.clientFiles || [];
+
+    // Save files to uploads directory (must match /uploads static middleware path)
+    const uploadDir = path.join(__dirname, 'uploads', 'service-files');
+    await fs.mkdir(uploadDir, { recursive: true });
+
+    for (const file of req.files) {
+      const fileId = uuidv4();
+      const ext = path.extname(file.originalname) || '';
+      const fileName = `${fileId}${ext}`;
+      const filePath = path.join(uploadDir, fileName);
+
+      await fs.writeFile(filePath, file.buffer);
+
+      clientFiles.push({
+        id: fileId,
+        name: file.originalname,
+        url: `/uploads/service-files/${fileName}`,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: req.user.name
+      });
+    }
+
+    serviceReports[reportIndex].clientFiles = clientFiles;
+    serviceReports[reportIndex].updatedAt = new Date().toISOString();
+    await db.set('service_reports', serviceReports);
+
+    res.json({ clientFiles: serviceReports[reportIndex].clientFiles });
+  } catch (error) {
+    console.error('Upload client files error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete photo from service report (admin/manager with service access only)
+app.delete('/api/service-reports/:id/photos/:photoId', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
+      return res.status(403).json({ error: 'Only admins and managers can delete photos' });
+    }
+
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = serviceReports[reportIndex];
+    const photo = (report.photos || []).find(p => p.id === req.params.photoId);
+
+    if (photo) {
+      // Delete file from disk
+      try {
+        const filePath = path.join(__dirname, photo.url);
+        await fs.unlink(filePath);
+      } catch (e) { /* file may not exist */ }
+    }
+
+    serviceReports[reportIndex].photos = (report.photos || []).filter(p => p.id !== req.params.photoId);
+    serviceReports[reportIndex].updatedAt = new Date().toISOString();
+    await db.set('service_reports', serviceReports);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete photo error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete client file from service report (admin/manager with service access only)
+app.delete('/api/service-reports/:id/files/:fileId', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
+      return res.status(403).json({ error: 'Only admins and managers can delete files' });
+    }
+
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = serviceReports[reportIndex];
+    const file = (report.clientFiles || []).find(f => f.id === req.params.fileId);
+
+    if (file) {
+      // Delete file from disk
+      try {
+        const filePath = path.join(__dirname, file.url);
+        await fs.unlink(filePath);
+      } catch (e) { /* file may not exist */ }
+    }
+
+    serviceReports[reportIndex].clientFiles = (report.clientFiles || []).filter(f => f.id !== req.params.fileId);
+    serviceReports[reportIndex].updatedAt = new Date().toISOString();
+    await db.set('service_reports', serviceReports);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete client file error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update manager notes on service report (admin/manager with service access only)
+app.put('/api/service-reports/:id/manager-notes', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
+      return res.status(403).json({ error: 'Only admins and managers can update manager notes' });
+    }
+
+    const { managerNotes } = req.body;
+
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    serviceReports[reportIndex].managerNotes = managerNotes || '';
+    serviceReports[reportIndex].updatedAt = new Date().toISOString();
+    await db.set('service_reports', serviceReports);
+
+    res.json(serviceReports[reportIndex]);
+  } catch (error) {
+    console.error('Update manager notes error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get service portal technicians/vendors for assignment dropdown
+app.get('/api/service-portal/technicians', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
+      return res.status(403).json({ error: 'Only admins and managers can access technician list' });
+    }
+
+    const users = (await db.get('users')) || [];
+
+    // Filter users with service portal access
+    const technicians = users.filter(u =>
+      u.role === 'vendor' || u.role === 'admin' || u.hasServicePortalAccess
+    ).map(u => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      role: u.role,
+      assignedClients: u.assignedClients || []
+    }));
+
+    res.json(technicians);
+  } catch (error) {
+    console.error('Get technicians error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -5251,12 +7577,24 @@ app.put('/api/validation-reports/:id', authenticateToken, requireServiceAccess, 
       return res.status(403).json({ error: 'Not authorized to edit this report' });
     }
 
+    // Whitelist allowed fields for validation report updates
+    const validationReportAllowedFields = [
+      'clientSlug', 'clientName', 'validationDate', 'validationType', 'status',
+      'equipmentType', 'serialNumber', 'modelNumber', 'location',
+      'testResults', 'readings', 'calibrationData', 'observations',
+      'passFailStatus', 'recommendations', 'followUpRequired',
+      'technicianNotes', 'signatures', 'attachments', 'photos'
+    ];
+    const sanitizedValidationUpdates = {};
+    for (const key of validationReportAllowedFields) {
+      if (req.body[key] !== undefined) {
+        sanitizedValidationUpdates[key] = req.body[key];
+      }
+    }
+
     validationReports[reportIndex] = {
       ...existingReport,
-      ...req.body,
-      id: existingReport.id,
-      technicianId: existingReport.technicianId,
-      createdAt: existingReport.createdAt,
+      ...sanitizedValidationUpdates,
       updatedAt: new Date().toISOString()
     };
 
@@ -5276,6 +7614,280 @@ app.get('/service-portal', (req, res) => {
 // Knowledge Hub route
 app.get('/knowledge', (req, res) => {
   res.sendFile(__dirname + '/public/knowledge.html');
+});
+
+// ============== KNOWLEDGE HUB API ==============
+
+// Get all guides (authenticated users)
+app.get('/api/knowledge/guides', authenticateToken, async (req, res) => {
+  try {
+    const guides = (await db.get('knowledge_guides')) || [];
+    // Filter based on user permissions
+    const filteredGuides = guides.filter(guide => {
+      if (guide.ownerOnly && req.user.email !== 'bianca@thrive365labs.com') return false;
+      if (guide.adminOnly && req.user.role !== 'admin') return false;
+      return true;
+    });
+    res.json(filteredGuides);
+  } catch (error) {
+    console.error('Get guides error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get a specific guide with articles
+app.get('/api/knowledge/guides/:guideId', authenticateToken, async (req, res) => {
+  try {
+    const guides = (await db.get('knowledge_guides')) || [];
+    const guide = guides.find(g => g.id === req.params.guideId);
+    if (!guide) {
+      return res.status(404).json({ error: 'Guide not found' });
+    }
+    // Check permissions
+    if (guide.ownerOnly && req.user.email !== 'bianca@thrive365labs.com') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    if (guide.adminOnly && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    res.json(guide);
+  } catch (error) {
+    console.error('Get guide error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Create a new guide (admin only)
+app.post('/api/knowledge/guides', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { key, title, description, icon, color, ownerOnly, adminOnly, articles } = req.body;
+    if (!key || !title) {
+      return res.status(400).json({ error: 'Key and title are required' });
+    }
+    const guides = (await db.get('knowledge_guides')) || [];
+    // Check if key already exists
+    if (guides.find(g => g.key === key)) {
+      return res.status(400).json({ error: 'A guide with this key already exists' });
+    }
+    const newGuide = {
+      id: uuidv4(),
+      key,
+      title,
+      description: description || '',
+      icon: icon || 'book',
+      color: color || 'bg-gray-500',
+      ownerOnly: ownerOnly || false,
+      adminOnly: adminOnly || false,
+      articles: (articles || []).map(a => ({
+        id: uuidv4(),
+        title: a.title,
+        content: a.content,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    guides.push(newGuide);
+    await db.set('knowledge_guides', guides);
+    res.json(newGuide);
+  } catch (error) {
+    console.error('Create guide error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update a guide (admin only)
+app.put('/api/knowledge/guides/:guideId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { title, description, icon, color, ownerOnly, adminOnly } = req.body;
+    const guides = (await db.get('knowledge_guides')) || [];
+    const idx = guides.findIndex(g => g.id === req.params.guideId);
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Guide not found' });
+    }
+    if (title !== undefined) guides[idx].title = title;
+    if (description !== undefined) guides[idx].description = description;
+    if (icon !== undefined) guides[idx].icon = icon;
+    if (color !== undefined) guides[idx].color = color;
+    if (ownerOnly !== undefined) guides[idx].ownerOnly = ownerOnly;
+    if (adminOnly !== undefined) guides[idx].adminOnly = adminOnly;
+    guides[idx].updatedAt = new Date().toISOString();
+    await db.set('knowledge_guides', guides);
+    res.json(guides[idx]);
+  } catch (error) {
+    console.error('Update guide error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete a guide (admin only)
+app.delete('/api/knowledge/guides/:guideId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const guides = (await db.get('knowledge_guides')) || [];
+    const filtered = guides.filter(g => g.id !== req.params.guideId);
+    if (filtered.length === guides.length) {
+      return res.status(404).json({ error: 'Guide not found' });
+    }
+    await db.set('knowledge_guides', filtered);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete guide error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Add an article to a guide (admin only)
+app.post('/api/knowledge/guides/:guideId/articles', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { title, content } = req.body;
+    if (!title || !content) {
+      return res.status(400).json({ error: 'Title and content are required' });
+    }
+    const guides = (await db.get('knowledge_guides')) || [];
+    const idx = guides.findIndex(g => g.id === req.params.guideId);
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Guide not found' });
+    }
+    const newArticle = {
+      id: uuidv4(),
+      title,
+      content,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    guides[idx].articles = guides[idx].articles || [];
+    guides[idx].articles.push(newArticle);
+    guides[idx].updatedAt = new Date().toISOString();
+    await db.set('knowledge_guides', guides);
+    res.json(newArticle);
+  } catch (error) {
+    console.error('Add article error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update an article (admin only)
+app.put('/api/knowledge/guides/:guideId/articles/:articleId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { title, content } = req.body;
+    const guides = (await db.get('knowledge_guides')) || [];
+    const guideIdx = guides.findIndex(g => g.id === req.params.guideId);
+    if (guideIdx === -1) {
+      return res.status(404).json({ error: 'Guide not found' });
+    }
+    const articleIdx = (guides[guideIdx].articles || []).findIndex(a => a.id === req.params.articleId);
+    if (articleIdx === -1) {
+      return res.status(404).json({ error: 'Article not found' });
+    }
+    if (title !== undefined) guides[guideIdx].articles[articleIdx].title = title;
+    if (content !== undefined) guides[guideIdx].articles[articleIdx].content = content;
+    guides[guideIdx].articles[articleIdx].updatedAt = new Date().toISOString();
+    guides[guideIdx].updatedAt = new Date().toISOString();
+    await db.set('knowledge_guides', guides);
+    res.json(guides[guideIdx].articles[articleIdx]);
+  } catch (error) {
+    console.error('Update article error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete an article (admin only)
+app.delete('/api/knowledge/guides/:guideId/articles/:articleId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const guides = (await db.get('knowledge_guides')) || [];
+    const guideIdx = guides.findIndex(g => g.id === req.params.guideId);
+    if (guideIdx === -1) {
+      return res.status(404).json({ error: 'Guide not found' });
+    }
+    const originalLength = (guides[guideIdx].articles || []).length;
+    guides[guideIdx].articles = (guides[guideIdx].articles || []).filter(a => a.id !== req.params.articleId);
+    if (guides[guideIdx].articles.length === originalLength) {
+      return res.status(404).json({ error: 'Article not found' });
+    }
+    guides[guideIdx].updatedAt = new Date().toISOString();
+    await db.set('knowledge_guides', guides);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete article error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Reorder articles within a guide (admin only)
+app.put('/api/knowledge/guides/:guideId/reorder', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { articleIds } = req.body;
+    if (!Array.isArray(articleIds)) {
+      return res.status(400).json({ error: 'articleIds array is required' });
+    }
+    const guides = (await db.get('knowledge_guides')) || [];
+    const guideIdx = guides.findIndex(g => g.id === req.params.guideId);
+    if (guideIdx === -1) {
+      return res.status(404).json({ error: 'Guide not found' });
+    }
+    // Reorder articles based on the provided IDs
+    const articleMap = {};
+    (guides[guideIdx].articles || []).forEach(a => { articleMap[a.id] = a; });
+    const reorderedArticles = articleIds.map(id => articleMap[id]).filter(Boolean);
+    guides[guideIdx].articles = reorderedArticles;
+    guides[guideIdx].updatedAt = new Date().toISOString();
+    await db.set('knowledge_guides', guides);
+    res.json(guides[guideIdx]);
+  } catch (error) {
+    console.error('Reorder articles error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Check if knowledge guides need seeding (returns true if empty)
+app.get('/api/knowledge/needs-seed', authenticateToken, async (req, res) => {
+  try {
+    const guides = (await db.get('knowledge_guides')) || [];
+    res.json({ needsSeed: guides.length === 0 });
+  } catch (error) {
+    console.error('Check seed error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Seed knowledge guides from provided data (admin only, one-time)
+app.post('/api/knowledge/seed', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const existingGuides = (await db.get('knowledge_guides')) || [];
+    if (existingGuides.length > 0) {
+      return res.status(400).json({ error: 'Guides already exist. Use regular API to update.' });
+    }
+    const { guides } = req.body;
+    if (!Array.isArray(guides) || guides.length === 0) {
+      return res.status(400).json({ error: 'Guides array is required' });
+    }
+    // Transform guides to include IDs
+    const seededGuides = guides.map(guide => ({
+      id: uuidv4(),
+      key: guide.key,
+      title: guide.title,
+      description: guide.description || '',
+      icon: guide.icon || 'book',
+      color: guide.color || 'bg-gray-500',
+      ownerOnly: guide.ownerOnly || false,
+      adminOnly: guide.adminOnly || false,
+      articles: (guide.articles || []).map(article => ({
+        id: uuidv4(),
+        title: article.title,
+        content: article.content,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }));
+    await db.set('knowledge_guides', seededGuides);
+    res.json({ success: true, count: seededGuides.length });
+  } catch (error) {
+    console.error('Seed guides error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 // Link Directory route
@@ -5488,19 +8100,11 @@ app.get('/api/changelog/preview', authenticateToken, requireAdmin, async (req, r
 
 // ============== PASSWORD MANAGEMENT ==============
 
-// Generate temp password based on user type
+// Generate cryptographically random temp password
 function generateTempPassword(user) {
-  // For clients: ClientName2026!
-  // For users: FirstLastName2026!
-  if (user.role === 'client') {
-    const clientName = (user.practiceName || user.name || 'Client').replace(/[^a-zA-Z0-9]/g, '');
-    return `${clientName}2026!`;
-  } else {
-    const nameParts = (user.name || 'User').split(' ');
-    const firstName = (nameParts[0] || '').replace(/[^a-zA-Z0-9]/g, '');
-    const lastName = (nameParts[nameParts.length - 1] || '').replace(/[^a-zA-Z0-9]/g, '');
-    return `${firstName}${lastName}2026!`;
-  }
+  const crypto = require('crypto');
+  const randomPart = crypto.randomBytes(4).toString('hex');
+  return `Temp${randomPart}!`;
 }
 
 // Bulk password reset for all users (admin only)
@@ -5555,6 +8159,7 @@ app.post('/api/admin/bulk-password-reset', authenticateToken, requireAdmin, asyn
     }
 
     await db.set('users', users);
+    invalidateUsersCache();
 
     // Log activity
     await logActivity(
@@ -5568,6 +8173,7 @@ app.post('/api/admin/bulk-password-reset', authenticateToken, requireAdmin, asyn
 
     res.json({
       message: `Successfully reset passwords for ${results.total} users`,
+      total: results.total, // Include at top level for backward compatibility
       results
     });
   } catch (error) {
@@ -5600,10 +8206,11 @@ app.post('/api/admin/reset-user-password/:userId', authenticateToken, requireAdm
     users[userIndex].lastPasswordReset = new Date().toISOString();
 
     await db.set('users', users);
+    invalidateUsersCache();
 
     res.json({
       message: 'Password reset successfully',
-      tempPassword: customPassword ? undefined : newPassword,
+      ...(customPassword ? {} : { tempPassword: newPassword }),
       requirePasswordChange: users[userIndex].requirePasswordChange
     });
   } catch (error) {
@@ -5648,6 +8255,7 @@ app.post('/api/auth/change-password', authenticateToken, async (req, res) => {
     users[userIndex].lastPasswordChange = new Date().toISOString();
 
     await db.set('users', users);
+    invalidateUsersCache();
 
     res.json({ message: 'Password changed successfully' });
   } catch (error) {
@@ -5671,9 +8279,9 @@ app.post('/api/auth/admin-login', async (req, res) => {
       return res.status(400).json({ error: 'Missing credentials' });
     }
     const users = await getUsers();
-    const user = users.find(u => u.email === email && u.role === 'admin');
+    const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase() && (u.role === 'admin' || u.hasAdminHubAccess));
     if (!user || !(await bcrypt.compare(password, user.password))) {
-      return res.status(400).json({ error: 'Invalid credentials or not an admin' });
+      return res.status(400).json({ error: 'Invalid credentials' });
     }
 
     const token = jwt.sign(
@@ -5697,27 +8305,33 @@ app.post('/api/auth/admin-login', async (req, res) => {
 });
 
 // Admin hub dashboard data
-app.get('/api/admin-hub/dashboard', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin-hub/dashboard', authenticateToken, requireAdminHubAccess, async (req, res) => {
   try {
     const users = await getUsers();
     const projects = await getProjects();
     const serviceReports = (await db.get('service_reports')) || [];
 
-    // Get feedback/requests for admin inbox
+    // Get all open tickets across the app (feedback requests + password reset requests)
     const feedbackRequests = (await db.get('feedback_requests')) || [];
     const openFeedback = feedbackRequests.filter(f => f.status !== 'resolved').length;
+    const passwordResetRequests = (await db.get('password_reset_requests')) || [];
+    const pendingPasswordResets = passwordResetRequests.filter(r => r.status === 'pending').length;
+    const totalOpenTickets = openFeedback + pendingPasswordResets;
 
     // Calculate statistics
     const stats = {
       totalUsers: users.length,
+      // adminUsers kept for backward compatibility (super admins)
       adminUsers: users.filter(u => u.role === 'admin').length,
+      superAdminUsers: users.filter(u => u.role === 'admin').length,
+      managerUsers: users.filter(u => u.isManager).length,
       clientUsers: users.filter(u => u.role === 'client').length,
-      servicePortalUsers: users.filter(u => u.hasServicePortalAccess).length,
+      servicePortalUsers: users.filter(u => u.hasServicePortalAccess || u.role === 'vendor').length,
       totalProjects: projects.length,
       activeProjects: projects.filter(p => p.status !== 'completed').length,
       totalServiceReports: serviceReports.length,
       recentServiceReports: serviceReports.slice(0, 5),
-      openTickets: openFeedback
+      openTickets: totalOpenTickets
     };
 
     res.json(stats);
@@ -5739,15 +8353,24 @@ app.get('/portal', (req, res) => {
   res.sendFile(__dirname + '/public/portal.html');
 });
 
+// Helper to find client user by slug (checks current slug first, then previousSlugs for redirects)
+const findClientBySlugOrRedirect = async (slug, res) => {
+  const users = await getUsers();
+  // Check current slug first
+  const currentMatch = users.find(u => u.role === 'client' && u.slug === slug);
+  if (currentMatch) return { user: currentMatch, redirect: false };
+  // Check previousSlugs for redirect (slug was changed, old URL still in use)
+  const previousMatch = users.find(u => u.role === 'client' && Array.isArray(u.previousSlugs) && u.previousSlugs.includes(slug));
+  if (previousMatch) return { user: previousMatch, redirect: true, newSlug: previousMatch.slug };
+  return null;
+};
+
 // Client portal login page: /portal/:slug/login
 app.get('/portal/:slug/login', async (req, res) => {
-  const users = await getUsers();
-  const clientUser = users.find(u => u.role === 'client' && u.slug === req.params.slug);
-  if (clientUser) {
-    res.sendFile(__dirname + '/public/portal.html');
-  } else {
-    res.status(404).send('Portal not found');
-  }
+  const result = await findClientBySlugOrRedirect(req.params.slug, res);
+  if (!result) return res.status(404).send('Portal not found');
+  if (result.redirect) return res.redirect(302, `/portal/${result.newSlug}/login`);
+  res.sendFile(__dirname + '/public/portal.html');
 });
 
 // Client portal pages: /portal/:slug, /portal/:slug/*
@@ -5756,13 +8379,10 @@ app.get('/portal/:slug', async (req, res) => {
   if (req.params.slug === 'admin') {
     return res.sendFile(__dirname + '/public/portal.html');
   }
-  const users = await getUsers();
-  const clientUser = users.find(u => u.role === 'client' && u.slug === req.params.slug);
-  if (clientUser) {
-    res.sendFile(__dirname + '/public/portal.html');
-  } else {
-    res.status(404).send('Portal not found');
-  }
+  const result = await findClientBySlugOrRedirect(req.params.slug, res);
+  if (!result) return res.status(404).send('Portal not found');
+  if (result.redirect) return res.redirect(302, `/portal/${result.newSlug}`);
+  res.sendFile(__dirname + '/public/portal.html');
 });
 
 app.get('/portal/:slug/*', async (req, res) => {
@@ -5770,14 +8390,35 @@ app.get('/portal/:slug/*', async (req, res) => {
   if (req.params.slug === 'admin') {
     return res.sendFile(__dirname + '/public/portal.html');
   }
-  const users = await getUsers();
-  const clientUser = users.find(u => u.role === 'client' && u.slug === req.params.slug);
-  if (clientUser) {
-    res.sendFile(__dirname + '/public/portal.html');
-  } else {
-    res.status(404).send('Portal not found');
+  const result = await findClientBySlugOrRedirect(req.params.slug, res);
+  if (!result) return res.status(404).send('Portal not found');
+  if (result.redirect) {
+    const remainingPath = req.params[0] || '';
+    return res.redirect(302, `/portal/${result.newSlug}/${remainingPath}`);
   }
+  res.sendFile(__dirname + '/public/portal.html');
 });
+
+// In-memory cache for project slug lookups (avoids DB hit on every root-level request)
+let _projectSlugCache = { slugs: new Set(), previousSlugs: new Map(), lastRefresh: 0 };
+const PROJECT_SLUG_CACHE_TTL = 30000; // 30 seconds
+
+const refreshProjectSlugCache = async () => {
+  const now = Date.now();
+  if (now - _projectSlugCache.lastRefresh < PROJECT_SLUG_CACHE_TTL) return;
+  const projects = await getProjects();
+  const slugs = new Set();
+  const previousSlugsMap = new Map();
+  for (const p of projects) {
+    if (p.clientLinkSlug) slugs.add(p.clientLinkSlug);
+    if (Array.isArray(p.previousSlugs)) {
+      for (const oldSlug of p.previousSlugs) {
+        previousSlugsMap.set(oldSlug, p.clientLinkSlug);
+      }
+    }
+  }
+  _projectSlugCache = { slugs, previousSlugs: previousSlugsMap, lastRefresh: now };
+};
 
 // Legacy root-level route - redirect old project slugs to /launch
 app.get('/:slug', async (req, res, next) => {
@@ -5786,18 +8427,43 @@ app.get('/:slug', async (req, res, next) => {
     return next();
   }
 
-  // Check if this slug matches a project - redirect to /launch
-  const projects = await getProjects();
-  const project = projects.find(p => p.clientLinkSlug === req.params.slug);
+  // Use cached slug lookup to avoid DB hit on every root-level request
+  await refreshProjectSlugCache();
+  const slug = req.params.slug;
 
-  if (project) {
-    res.redirect(301, `/launch/${req.params.slug}`);
+  if (_projectSlugCache.slugs.has(slug)) {
+    // Use 302 (temporary) instead of 301 (permanent) to avoid browser caching issues
+    res.redirect(302, `/launch/${slug}`);
+  } else if (_projectSlugCache.previousSlugs.has(slug)) {
+    // Redirect old slug to current slug
+    res.redirect(302, `/launch/${_projectSlugCache.previousSlugs.get(slug)}`);
   } else {
     next();
   }
 });
 
+// Global error handling middleware (Gotcha #11)
+// Must be defined after all routes - Express identifies error handlers by 4-argument signature
+app.use((err, req, res, next) => {
+  console.error('Unhandled route error:', err.stack || err.message || err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: 'An unexpected error occurred' });
+});
+
+// Process-level error handlers to prevent crashes from unhandled async errors
+process.on('uncaughtException', (err) => {
+  console.error('FATAL: Uncaught exception:', err.stack || err.message || err);
+  // In production, graceful shutdown is preferred; for now, log and continue
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled promise rejection:', reason);
+});
+
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
   console.log(`🔐 Admin login: bianca@thrive365labs.com / Thrive2025!`);
+
+  // Start HubSpot ticket polling (webhook workaround)
+  initializeTicketPolling();
 });

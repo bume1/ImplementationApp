@@ -41,10 +41,148 @@
     // Static changelog entries (fallback and legacy)
     const staticChangelog = [
       {
+        id: 'static-274',
+        version: '2.7.4',
+        date: 'February 3, 2026',
+        isCurrent: true,
+        sections: [
+          { title: 'Security Fixes', color: 'red', items: [
+            'Removed debug endpoints that leaked user emails, names, and password hash info',
+            'Added authentication to /uploads static path and client documents endpoint',
+            'Added field whitelist on task updates to prevent property injection via API',
+            'Added field whitelist on service report and validation report updates',
+            'Randomized temporary passwords for admin resets (was predictable pattern)',
+            'Added XSS sanitization on client portal filesFormEmbed HTML injection',
+            'Locked signup endpoint behind admin authentication',
+            'Added startup warning when JWT_SECRET environment variable is not set',
+            'Added startup warning when HUBSPOT_WEBHOOK_SECRET is not configured',
+            'Added email format validation and password strength requirements on signup'
+          ]},
+          { title: 'Authorization & Access Control', color: 'red', items: [
+            'Enforced project-level write access (projectAccessLevels) on task mutations',
+            'Added requireAdmin middleware to project create and clone endpoints',
+            'Fixed admin login to accept users with hasAdminHubAccess permission flag',
+            'Team members endpoint now filters out client and vendor users',
+            'Case-insensitive email matching on all login endpoints (client, service, forgot-password)'
+          ]},
+          { title: 'Bug Fixes', color: 'red', items: [
+            'Fixed handleResponse in app.js to properly surface server error messages to users',
+            'Fixed task ID generation crash when project has UUID-based task IDs (NaN from Math.max)',
+            'Fixed CSV export note field using wrong property name (n.text vs n.content)',
+            'Fixed project clone leaking files, HubSpot IDs, and completion status from original',
+            'Fixed task deletion not cleaning up dangling dependency references',
+            'Fixed bulk update not validating subtask completion before marking task complete',
+            'Fixed password reset API response referencing undefined variable (duplicate field)',
+            'Fixed template listing crash when a template has undefined tasks array',
+            'Fixed inventory template update accepting null/undefined values',
+            'Fixed project status accepting arbitrary strings (now validates active/paused/completed)',
+            'Fixed project update allowing empty name and clientName values',
+            'Fixed task completion not auto-setting dateCompleted server-side',
+            'Fixed subtask showToClient defaulting to true instead of inheriting from parent task',
+            'Fixed new task stage selector showing all stages regardless of selected phase',
+            'Fixed loadTeamMembers not checking for error response before updating state'
+          ]},
+          { title: 'Frontend Stability', color: 'primary', items: [
+            'Added error checking to all major handlers: create, delete, clone, save, toggle, notes, files',
+            'Fixed stale closure bugs in 8 state updaters using functional updaters (setTasks prev => ...)',
+            'Added double-click protection on project creation',
+            'Added null guard in handleToggleComplete for missing task',
+            'Added array validation in loadTasks before setting state',
+            'All portals auto-redirect to login on expired token (401/403) instead of showing empty data',
+            'Logout now clears all 10 localStorage token keys across all portals consistently',
+            'Fixed React index-as-key anti-pattern in calendar, timeline, and changelog components'
+          ]},
+          { title: 'Performance & Reliability', color: 'primary', items: [
+            'Added 5-second TTL user cache to reduce O(n) database lookups on every authenticated request',
+            'Added 30-second in-memory cache for project slug lookups in root-level catch-all route',
+            'Changed root-level slug redirects from 301 (permanent) to 302 (temporary) to prevent browser caching',
+            'Moved legacy hubspotDealId migration from every getProjects() call to one-time startup',
+            'Increased activity log capacity from 500 to 2000 entries with overflow warning',
+            'Added concurrent upload limiter (max 5) to prevent memory exhaustion from parallel file uploads',
+            'Added global Express error middleware and process-level uncaughtException/unhandledRejection handlers',
+            'Fixed date parsing year threshold to use dynamic current-year reference instead of fixed 2050 cutoff',
+            'Added logging when inventory data is auto-wrapped to non-batch format for debugging visibility'
+          ]},
+          { title: 'URL Stability', color: 'primary', items: [
+            'Client portal slug changes now preserve old slugs in previousSlugs array',
+            'Project slug changes likewise track previous slugs for redirect lookups',
+            'Portal routes check previousSlugs and issue 302 redirects to updated URLs',
+            'Changed bulk delete from all-or-nothing to partial success with skipped task reporting'
+          ]}
+        ]
+      },
+      {
+        id: 'static-272',
+        version: '2.7.2',
+        date: 'January 20, 2026',
+        isCurrent: false,
+        sections: [
+          { title: 'Security Improvements', color: 'green', items: [
+            'New users created by Super Admin now require password change on first login',
+            'Manual password resets by Super Admin now force users to create their own password',
+            'Consistent password change enforcement across all user creation and reset flows'
+          ]}
+        ]
+      },
+      {
+        id: 'static-271',
+        version: '2.7.1',
+        date: 'January 19, 2026',
+        isCurrent: false,
+        sections: [
+          { title: 'New Features', color: 'primary', items: [
+            'Add Manager permissions to edit client details in Client Portal Admin',
+            'Client details edited by Managers sync with Admin Hub User Management',
+            'Enhanced Client Users page in Client Portal Admin with edit functionality'
+          ]},
+          { title: 'Improvements', color: 'green', items: [
+            'Managers can now update: Practice Name, Logo, HubSpot Company/Deal/Contact IDs',
+            'All client detail changes are logged in activity log'
+          ]},
+          { title: 'Planned Features (Future Rollout)', color: 'purple', items: [
+            'Customer Support Pipeline Enhancement: Hide HubSpot pipeline view and show only portal-submitted tickets',
+            'Benefits: Cleaner client experience, privacy, focused support view',
+            'See README.md "Future Features" section for implementation details'
+          ]}
+        ]
+      },
+      {
+        id: 'static-270',
+        version: '2.7.0',
+        date: 'January 2026',
+        sections: [
+          { title: 'Portal Enhancements', color: 'primary', items: [
+            'Add Knowledge Hub module to Portal Hub with guides and documentation',
+            'Add URL routing for portal deep linking',
+            'Add token fallback for seamless Portal Hub navigation across all apps'
+          ]},
+          { title: 'Service Portal Updates', color: 'primary', items: [
+            'Add PDF generation for service/validation reports',
+            'Enhanced service portal forms and workflows'
+          ]},
+          { title: 'HubSpot Integration', color: 'primary', items: [
+            'Add HubSpot chatbot to Live Chat tab in Customer Support',
+            'Add readable stage labels for HubSpot tickets',
+            'Add debug logging for HubSpot ticket fetch and deal ID support'
+          ]},
+          { title: 'Admin Hub Improvements', color: 'primary', items: [
+            'Simplify admin dashboard: rename to Quick Stats, keep only New Launches and Open Tickets',
+            'Add bulk password reset system with first-login change prompt',
+            'Add automatic changelog management system',
+            'Remove unused New Client checkbox from user management'
+          ]},
+          { title: 'Technical Improvements', color: 'green', items: [
+            'Add comprehensive changelog with HTML viewer and downloadable MD file',
+            'Remove blue icon boxes from login pages',
+            'Add /login route for unified login portal',
+            'Add granular permissions and validation reports'
+          ]}
+        ]
+      },
+      {
         id: 'static-261',
         version: '2.6.1',
         date: 'January 19, 2026',
-        isCurrent: true,
         sections: [
           { title: 'Navigation Improvements', color: 'primary', items: [
             'Added "Portal Hub" navigation button to Admin Hub sidebar for quick access to main portal',
@@ -446,8 +584,8 @@
                     <h3 className="font-semibold text-gray-800 mb-3">Preview Sections</h3>
                     {gitPreview.sections && gitPreview.sections.length > 0 ? (
                       <div className="space-y-3">
-                        {gitPreview.sections.map((section, idx) => (
-                          <div key={idx} className="bg-gray-50 rounded-lg p-3">
+                        {gitPreview.sections.map((section) => (
+                          <div key={section.label} className="bg-gray-50 rounded-lg p-3">
                             <div className="flex items-center gap-2 mb-2">
                               <span className={`w-3 h-3 rounded-full ${section.color === 'success' ? 'bg-green-500' : section.color === 'purple' ? 'bg-purple-500' : 'bg-primary-500'}`}></span>
                               <span className="font-medium text-sm">{section.label}</span>
@@ -455,7 +593,7 @@
                             </div>
                             <ul className="text-sm text-gray-600 ml-5 space-y-1">
                               {section.items.slice(0, 5).map((item, i) => (
-                                <li key={i}>• {item}</li>
+                                <li key={`${section.label}-${i}`}>• {item}</li>
                               ))}
                               {section.items.length > 5 && (
                                 <li className="text-gray-400 italic">...and {section.items.length - 5} more</li>

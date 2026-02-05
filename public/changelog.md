@@ -4,6 +4,161 @@
 
 ---
 
+### Version 2.7.5 - January 2026
+
+#### New Features
+- Allow managers to add client users from Client Portal admin view
+- Add detailed frontend console logging for assigned reports debugging
+- Add comprehensive logging and robust string-based ID comparison
+- Add debug logging to Service Portal assigned reports endpoint
+- Add 30-minute edit window for submitted service reports
+- Remove Assigned Clients section from Add New Vendor modal
+- Add collapsible phases and fix tag persistence in edit mode
+- Add debug logging to Service Portal sidebar for role visibility issue
+- Move Assign Report feature to Service Portal with Add Vendor popup
+- Add Assign Report tab to Service Portal admin and fix validation form field order
+- Add Knowledge Hub admin interface and dynamic content management
+- Add Knowledge Hub API and update guide with service admin documentation
+- Add Service Report Admin access permission for managers
+- Add service report assignment feature for managers and technicians
+- Add full phase titles to client portal and client view
+- Update task template and project phases for new launch structure
+- Update project tasks and UI to reflect new phase structure
+- Add client-facing README for Thrive 365 Labs
+- Force password change for new users created by super admin
+
+#### Bug Fixes
+- Fix service report photo and file storage path mismatch
+- Fix priority and pinned announcement features
+- Fix service report counter double-counting assigned reports
+- CRITICAL FIX: Move /assigned route before /:id to fix 404 error
+- Fix Knowledge Hub text formatting - properly render bold text and clean sections
+- Vendor workflow - remove broken client filtering and fix ID comparisons
+- Fix Service Portal assigned report workflow and display issues
+- Fix vendor dropdown visibility on mobile devices
+- Fix Service Portal assigned report workflow and display issues
+- Fix browser back button auth bypass and enhance Knowledge Hub
+- Fix blank Service Reports page caused by JavaScript errors
+
+#### Improvements
+- Update changelog for Version 2.7.4 [skip ci]
+- Update changelog with v2.7.3 and improve automation
+- Update Knowledge Hub Quick Tips for internal users
+- Update Service Portal and Knowledge Hub with improvements
+- Update all phase labels to accurately reflect the project's 10 phases
+- Update README to v2.7.2 with security improvements
+
+#### Changes
+- Make analyzer serial number editable for technicians completing assigned reports
+- Simplify service report admin access to use existing Service Portal checkbox
+- Sync client views with internal project board phases
+- Remove redundant Submission History section from Reports view
+- Remove Replit references from README for white-labeling
+
+
+### Version 2.7.4 - January 2026
+
+#### New Features
+- Allow managers to add client users from Client Portal admin view
+- Add detailed frontend console logging for assigned reports debugging
+- Add comprehensive logging and robust string-based ID comparison
+- Add debug logging to Service Portal assigned reports endpoint
+- Add 30-minute edit window for submitted service reports
+- Remove Assigned Clients section from Add New Vendor modal
+- Add collapsible phases and fix tag persistence in edit mode
+- Add debug logging to Service Portal sidebar for role visibility issue
+- Move Assign Report feature to Service Portal with Add Vendor popup
+- Add Assign Report tab to Service Portal admin and fix validation form field order
+- Add Knowledge Hub admin interface and dynamic content management
+- Add Knowledge Hub API and update guide with service admin documentation
+- Add Service Report Admin access permission for managers
+- Add service report assignment feature for managers and technicians
+- Add full phase titles to client portal and client view
+- Update task template and project phases for new launch structure
+- Update project tasks and UI to reflect new phase structure
+- Add client-facing README for Thrive 365 Labs
+- Force password change for new users created by super admin
+
+#### Bug Fixes
+- Fix priority and pinned announcement features
+- Fix service report counter double-counting assigned reports
+- CRITICAL FIX: Move /assigned route before /:id to fix 404 error
+- Fix Knowledge Hub text formatting - properly render bold text and clean sections
+- Vendor workflow - remove broken client filtering and fix ID comparisons
+- Fix Service Portal assigned report workflow and display issues
+- Fix vendor dropdown visibility on mobile devices
+- Fix Service Portal assigned report workflow and display issues
+- Fix browser back button auth bypass and enhance Knowledge Hub
+- Fix blank Service Reports page caused by JavaScript errors
+
+#### Improvements
+- Update changelog with v2.7.3 and improve automation
+- Update Knowledge Hub Quick Tips for internal users
+- Update Service Portal and Knowledge Hub with improvements
+- Update all phase labels to accurately reflect the project's 10 phases
+- Update README to v2.7.2 with security improvements
+
+#### Changes
+- Make analyzer serial number editable for technicians completing assigned reports
+- Simplify service report admin access to use existing Service Portal checkbox
+- Sync client views with internal project board phases
+- Remove redundant Submission History section from Reports view
+- Remove Replit references from README for white-labeling
+
+
+### Version 2.7.3 - January 26, 2026
+
+#### New Features
+- Allow managers to add client users from Client Portal admin view
+- Add collapsible phases feature with improved tag persistence in edit mode
+- Add 30-minute edit window for submitted service reports
+
+#### Improvements
+- Update Knowledge Hub Quick Tips for internal users
+- Enhance Knowledge Hub text formatting with proper bold text rendering
+- Add comprehensive logging for Service Portal assigned reports
+- Improve vendor workflow with ID comparison fixes
+- Remove Assigned Clients section from Add New Vendor modal for cleaner UX
+
+#### Bug Fixes
+- Fix priority and pinned announcement features
+- Make analyzer serial number editable for technicians completing assigned reports
+- Fix service report counter double-counting assigned reports
+- CRITICAL FIX: Move /assigned route before /:id to fix 404 error
+- Fix Service Portal assigned report workflow and display issues
+- Fix vendor dropdown visibility on mobile devices
+- Fix Knowledge Hub text formatting issues
+
+---
+
+### Version 2.7.2 - January 2026
+
+#### Security Improvements
+- New users created by Super Admin now require password change on first login
+- Manual password resets by Super Admin now force users to create their own password
+- Consistent password change enforcement across all user creation and reset flows
+
+---
+
+### Version 2.7.1 - January 2026
+
+#### New Features
+- Add Manager permissions to edit client details in Client Portal Admin
+- New API endpoint `/api/client-portal/clients/:clientId` for manager-restricted client updates
+- Client details edited by Managers sync with Admin Hub User Management
+
+#### Improvements
+- Enhanced Client Users page in Client Portal Admin with edit functionality
+- Managers can now update: Practice Name, Logo, HubSpot Company/Deal/Contact IDs
+- All client detail changes are logged in activity log
+
+#### Planned Features (Future Rollout)
+- **Customer Support Pipeline Enhancement**: Hide HubSpot pipeline view and show only portal-submitted tickets
+  - See README.md "Future Features" section for implementation details
+  - Benefits: Cleaner client experience, privacy, focused support view
+
+---
+
 ### Version 2.7.0 - January 2026
 
 #### New Features
@@ -64,8 +219,62 @@
 - Modernize UI across all portals with dynamic banner headers
 - Modernize Admin Hub UI with refined design system
 
+---
 
-### Version 2.5.0 - January 2026 (Current Release)
+### Version 2.6.1 - January 19, 2026
+
+#### Navigation Improvements
+- Added "Portal Hub" navigation button to Admin Hub sidebar for quick access to main portal
+- Added "Portal Hub" navigation button to Service Portal sidebar
+- Added "Portal Hub" navigation button to Client Portal Admin sidebar (admin users only)
+- Added "Portal Hub" link to Launch Portal header
+
+#### Bug Fixes
+- Fixed sign-out button in Admin Hub not redirecting to universal login
+- Fixed sign-out button in Service Portal not redirecting to universal login
+- Fixed sign-out button in Client Portal not redirecting to universal login
+- Fixed sign-out button in Launch Portal not redirecting to universal login
+- Sign-out now properly clears all authentication tokens across portals
+- Fixed Client Portal Admin access for users with hasClientPortalAdminAccess permission
+
+---
+
+### Version 2.6.0 - January 19, 2026
+
+#### Customer Support Center
+- HubSpot ticket history integration - clients can view their support tickets
+- Three-tab interface: Ticket History, Submit Ticket, Live Chat
+- Service reports now visible as tickets with file attachments
+- Ticket status and pipeline stage tracking from HubSpot
+
+#### Service Report HubSpot Integration
+- All service reports auto-push to HubSpot Ticket, Company, and Deal records
+- PDF attachments uploaded to HubSpot Files and linked to tickets
+- Enhanced tracking across CRM with full audit trail
+
+#### Admin Hub Improvements
+- New "Inbox" page for bug reports, feature requests, and password resets
+- Dashboard metrics updated: "New Launches" shows active projects, "Open Tickets" shows pending feedback
+- Personalized welcome messages using practice name
+
+#### Client Portal Updates
+- Inventory view simplified to show current stock levels only
+- Removed "Top Consumed Items" and "View History" from client view
+- Weekly inventory submission tracking with flags for overdue submissions
+
+#### Feedback System
+- "Report Bug or Request Feature" link added to Portal Hub footer
+- Bug report and feature request form with type selection
+- Admin inbox for reviewing and resolving submitted feedback
+
+#### Bug Fixes
+- Fixed client portal crash caused by missing SVG icons
+- Fixed changelog button link (route was not configured)
+- Fixed main login footer branding text
+
+---
+
+### Version 2.5.0 - January 2026
 
 #### UI Modernization & Branding Update
 - **Modern Design System**: Updated all portals with Inter font, refined color palette, and glass-card effects
@@ -177,4 +386,4 @@
 
 ---
 
-*Last Updated: January 19, 2026*
+*Last Updated: February 3, 2026*

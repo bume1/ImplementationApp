@@ -65,11 +65,28 @@
     // Helper function to handle fetch responses properly
     const handleResponse = async (response) => {
       if (!response.ok) {
+        // Auto-redirect to login on auth failure (expired/invalid token)
+        if (response.status === 401 || response.status === 403) {
+          try {
+            const errData = await response.clone().json();
+            if (errData.error === 'Invalid token' || errData.error === 'User not found' || response.status === 401) {
+              localStorage.removeItem('portal_token');
+              localStorage.removeItem('portal_user');
+              localStorage.removeItem('unified_token');
+              localStorage.removeItem('unified_user');
+              window.location.href = '/';
+              throw new Error('Session expired. Redirecting to login...');
+            }
+          } catch (redirectErr) {
+            if (redirectErr.message.includes('Session expired')) throw redirectErr;
+          }
+        }
         // Try to parse error message from response
         try {
           const errorData = await response.json();
           throw new Error(errorData.error || `HTTP error ${response.status}`);
         } catch (e) {
+          if (e.message.includes('Session expired')) throw e;
           // If parsing fails, throw generic error
           throw new Error(`HTTP error ${response.status}`);
         }
@@ -102,8 +119,10 @@
       getAnnouncements: () =>
         fetch(`${API_URL}/api/announcements`).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
-      getClientDocuments: (slug) =>
-        fetch(`${API_URL}/api/client-documents/${slug}`).then(handleResponse).catch(err => ({ error: err.message || 'Network error' }))
+      getClientDocuments: (slug, token) =>
+        fetch(`${API_URL}/api/client-documents/${slug}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' }))
     };
     
     const LoginPage = ({ slug, onLogin }) => {
@@ -227,7 +246,8 @@
       download: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>,
       plus: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"/></svg>,
       refresh: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>,
-      check: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>
+      check: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>,
+      trash: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
     };
     
     // Additional icons for admin portal
@@ -241,7 +261,8 @@
     const Sidebar = ({ activePage, onNavigate, user, isMobileOpen, onClose, projects }) => {
       const [inventoryExpanded, setInventoryExpanded] = useState(activePage === 'inventory' || activePage === 'reports' || activePage === 'submission_history');
       const [adminExpanded, setAdminExpanded] = useState(activePage.startsWith('admin_'));
-      const isAdmin = user?.role === 'admin' || user?.hasClientPortalAdminAccess;
+      // Super Admin, Manager, or users with hasClientPortalAdminAccess can access admin features
+      const isAdmin = user?.role === 'admin' || user?.isManager || user?.hasClientPortalAdminAccess;
 
       const mainItems = [
         { id: 'home', label: isAdmin ? 'Admin Dashboard' : 'Home', icon: Icons.home }
@@ -283,9 +304,20 @@
             </div>
             
             <div className="p-4 border-b bg-gray-50">
-              <p className="text-sm text-gray-500">Welcome,</p>
-              <p className="font-semibold text-accent">{user?.practiceName || user?.name || 'Client'}</p>
-              {user?.practiceName && user?.name && <p className="text-xs text-gray-500">{user?.name}</p>}
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-500">Welcome,</p>
+                  <p className="font-semibold text-accent">{user?.practiceName || user?.name || 'Client'}</p>
+                </div>
+                <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                  user?.role === 'admin' ? 'bg-purple-100 text-purple-700' :
+                  user?.isManager ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'
+                }`}>{
+                  user?.role === 'admin' ? 'Super Admin' :
+                  user?.isManager ? 'Manager' : 'Client'
+                }</span>
+              </div>
+              {user?.practiceName && user?.name && <p className="text-xs text-gray-500 mt-1">{user?.name}</p>}
             </div>
             
             <nav className="p-2">
@@ -585,8 +617,52 @@
       const tasks = allTasks.filter(t => t.showToClient !== false);
       const [viewType, setViewType] = useState('list');
       
-      const PHASE_ORDER = ['Phase 0', 'Phase 1', 'Phase 2', 'Phase 3', 'Phase 4'];
-      
+      // Phase name mappings for full display titles
+      const phaseNames = {
+        'Phase 1': 'Contract & Initial Setup',
+        'Phase 2': 'Billing, CLIA & Hiring',
+        'Phase 3': 'Tech Infrastructure & LIS Integration',
+        'Phase 4': 'Inventory Forecasting & Procurement',
+        'Phase 5': 'Supply Orders & Logistics',
+        'Phase 6': 'Onboarding & Welcome Calls',
+        'Phase 7': 'Virtual Soft Pilot & Prep',
+        'Phase 8': 'Training & Full Validation',
+        'Phase 9': 'Go-Live',
+        'Phase 10': 'Post-Launch Support & Optimization'
+      };
+
+      // Dynamic phase extraction from task data - phases are derived from actual tasks
+      // This ensures client portal view always matches the internal project board
+      const extractPhasesFromTasks = (taskList) => {
+        const phaseMap = {};
+        taskList.forEach(task => {
+          const phase = task.phase || 'No Phase';
+          if (!phaseMap[phase]) {
+            phaseMap[phase] = { name: phaseNames[phase] || phase, stages: new Set() };
+          }
+          const stage = task.stage || 'General';
+          phaseMap[phase].stages.add(stage);
+        });
+        Object.keys(phaseMap).forEach(phase => {
+          phaseMap[phase].stages = Array.from(phaseMap[phase].stages);
+        });
+        return phaseMap;
+      };
+
+      // Sort phases naturally (Phase 1, Phase 2, ... Phase 10, etc.)
+      const sortPhases = (phases) => {
+        return phases.sort((a, b) => {
+          const numA = parseInt(a.match(/\d+/)?.[0] || '999');
+          const numB = parseInt(b.match(/\d+/)?.[0] || '999');
+          if (numA !== numB) return numA - numB;
+          return a.localeCompare(b);
+        });
+      };
+
+      // Extract dynamic phases from tasks
+      const dynamicPhases = extractPhasesFromTasks(tasks);
+      const PHASE_ORDER = sortPhases(Object.keys(dynamicPhases));
+
       const formatDateForDisplay = (dateStr) => {
         if (!dateStr) return '';
         try {
@@ -606,68 +682,61 @@
           return dateStr;
         }
       };
-      
-      const STANDARD_PHASES = {
-        'Phase 0': { name: 'Phase 0: Contract Signature', stages: ['Contract Signature'] },
-        'Phase 1': { name: 'Phase 1: Pre-Launch', stages: ['Project Kick Off & Stakeholder Alignment', 'Launch Data & Systems Prep'] },
-        'Phase 2': { name: 'Phase 2: Implementation Sprints', stages: ['Sprint 1: Core System Setups', 'Sprint 2: Lab & QUA Pilot Prep', 'Sprint 3: Soft-Pilot'] },
-        'Phase 3': { name: 'Phase 3: Go-Live', stages: ['Training/Validation', 'Go-Live'] },
-        'Phase 4': { name: 'Phase 4: Post-Launch Optimization', stages: ['KPIs', 'Monitoring & Customer Support'] }
+
+      // Dynamic phase colors that cycle through a palette
+      const getPhaseColor = (phase, index) => {
+        const colors = ['border-purple-500', 'border-blue-600', 'border-green-500', 'border-yellow-500', 'border-orange-500', 'border-red-500', 'border-pink-500', 'border-indigo-500', 'border-teal-500', 'border-cyan-500'];
+        return colors[index % colors.length] || 'border-gray-500';
       };
-      
-      const getPhaseColor = (phase) => {
-        const colors = { 'Phase 0': 'border-purple-500', 'Phase 1': 'border-primary', 'Phase 2': 'border-green-500', 'Phase 3': 'border-orange-500', 'Phase 4': 'border-pink-500' };
-        return colors[phase] || 'border-gray-500';
+
+      // Dynamic phase gradients that cycle through a palette
+      const getPhaseGradient = (phase, index) => {
+        const gradients = ['bg-gradient-to-r from-purple-600 to-purple-700', 'bg-gradient-to-r from-blue-600 to-blue-700', 'bg-gradient-to-r from-green-600 to-green-700', 'bg-gradient-to-r from-yellow-500 to-yellow-600', 'bg-gradient-to-r from-orange-500 to-orange-600', 'bg-gradient-to-r from-red-500 to-red-600', 'bg-gradient-to-r from-pink-500 to-pink-600', 'bg-gradient-to-r from-indigo-500 to-indigo-600', 'bg-gradient-to-r from-teal-500 to-teal-600', 'bg-gradient-to-r from-cyan-500 to-cyan-600'];
+        return gradients[index % gradients.length] || 'bg-gradient-to-r from-gray-600 to-gray-700';
       };
-      
-      const getPhaseGradient = (phase) => {
-        const gradients = { 'Phase 0': 'bg-gradient-to-r from-purple-600 to-purple-700', 'Phase 1': 'bg-gradient-to-r from-blue-600 to-blue-800', 'Phase 2': 'bg-gradient-to-r from-green-600 to-green-700', 'Phase 3': 'bg-gradient-to-r from-orange-600 to-orange-700', 'Phase 4': 'bg-gradient-to-r from-pink-600 to-pink-700' };
-        return gradients[phase] || 'bg-gradient-to-r from-gray-600 to-gray-700';
-      };
-      
-      const ensureAllPhasesAndStages = (groupedByPhase) => {
+
+      // Helper to organize tasks by phase and stage
+      const organizeTasksByPhaseAndStage = (taskList, phaseOrder, phases) => {
         const result = {};
-        PHASE_ORDER.forEach(phase => {
+        phaseOrder.forEach(phase => {
           result[phase] = {};
-          const standardStages = STANDARD_PHASES[phase]?.stages || [];
-          standardStages.forEach(stage => {
-            result[phase][stage] = groupedByPhase[phase]?.[stage] || [];
-          });
-          if (groupedByPhase[phase]) {
-            Object.keys(groupedByPhase[phase]).forEach(stage => {
-              if (!result[phase][stage]) result[phase][stage] = groupedByPhase[phase][stage];
-            });
-          }
+          const stages = phases[phase]?.stages || [];
+          stages.forEach(stage => { result[phase][stage] = []; });
+        });
+        taskList.forEach(task => {
+          const phase = task.phase || 'No Phase';
+          const stage = task.stage || 'General';
+          if (!result[phase]) result[phase] = {};
+          if (!result[phase][stage]) result[phase][stage] = [];
+          result[phase][stage].push(task);
         });
         return result;
       };
       
+      // Use server-calculated overall progress (based on ALL tasks, matching admin dashboard)
+      // Falls back to client-visible calculation if server doesn't provide it
       const completedTasks = tasks.filter(t => t.completed).length;
       const totalTasks = tasks.length;
-      const progressPercent = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-      
-      const rawGroupedByPhase = tasks.reduce((acc, task) => {
-        if (!acc[task.phase]) acc[task.phase] = {};
-        const stageKey = task.stage || 'General';
-        if (!acc[task.phase][stageKey]) acc[task.phase][stageKey] = [];
-        acc[task.phase][stageKey].push(task);
-        return acc;
-      }, {});
-      const groupedByPhase = ensureAllPhasesAndStages(rawGroupedByPhase);
-      
+      const progressPercent = project.overallProgressPercent !== undefined
+        ? project.overallProgressPercent
+        : (totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0);
+
+      // Use dynamic phase organization
+      const groupedByPhase = organizeTasksByPhaseAndStage(tasks, PHASE_ORDER, dynamicPhases);
+
       const ListView = () => (
         <div className="space-y-8">
-          {PHASE_ORDER.map(phase => {
+          {PHASE_ORDER.map((phase, phaseIndex) => {
             const phaseTasks = Object.values(groupedByPhase[phase] || {}).flat();
             const phaseCompleted = phaseTasks.filter(t => t.completed).length;
             const phaseTotal = phaseTasks.length;
             const phasePercent = phaseTotal > 0 ? Math.round((phaseCompleted / phaseTotal) * 100) : 0;
             return (
             <div key={phase} className="space-y-4">
-              <div className={`${getPhaseGradient(phase)} p-4 rounded-lg text-white shadow-md`}>
+              <div className={`${getPhaseGradient(phase, phaseIndex)} p-4 rounded-lg text-white shadow-md`}>
                 <div className="flex items-center justify-between">
                   <div>
-                    <h2 className="text-lg font-bold">{STANDARD_PHASES[phase]?.name || phase}</h2>
+                    <h2 className="text-lg font-bold">{dynamicPhases[phase]?.name || phase.replace(/^Phase\s*\d+\s*:\s*/i, '')}</h2>
                     <p className="text-sm opacity-90 mt-1">
                       {phaseTotal > 0 ? `${phaseCompleted} of ${phaseTotal} complete` : 'No tasks assigned yet'}
                     </p>
@@ -688,7 +757,7 @@
                 const dueDates = stageTasks.filter(t => t.dueDate).map(t => t.dueDate).sort();
                 const targetDate = dueDates.length > 0 ? dueDates[dueDates.length - 1] : null;
                 return (
-                  <div key={stageName} className={`bg-white rounded-lg shadow-sm overflow-hidden border-l-4 ${getPhaseColor(phase)}`}>
+                  <div key={stageName} className={`bg-white rounded-lg shadow-sm overflow-hidden border-l-4 ${getPhaseColor(phase, phaseIndex)}`}>
                     <div className="bg-gray-50 p-3 border-b flex justify-between items-start">
                       <div>
                         <h3 className="font-semibold text-gray-700">{stageName}</h3>
@@ -725,10 +794,8 @@
                                   <span className="ml-2 text-gray-400" title={`${task.files.length} file${task.files.length > 1 ? 's' : ''} attached`}>📎</span>
                                 )}
                               </h3>
-                              {(task.ownerDisplayName || task.dateCompleted || task.dueDate) && (
+                              {(task.dateCompleted || task.dueDate) && (
                                 <p className="text-sm text-gray-600 mt-1">
-                                  {task.ownerDisplayName && <span>Owner: {task.ownerDisplayName}</span>}
-                                  {task.ownerDisplayName && (task.dateCompleted || task.dueDate) && <span className="mx-2">•</span>}
                                   {task.dueDate && !task.completed && (
                                     <span className={new Date(task.dueDate) < new Date() ? 'text-red-600' : 'text-blue-600'}>
                                       Due: {new Date(task.dueDate + 'T12:00:00').toLocaleDateString()}
@@ -785,14 +852,14 @@
         <div className="bg-white rounded-lg shadow-sm p-6">
           <h2 className="text-2xl font-bold mb-6 text-accent">Project Timeline</h2>
           <div className="space-y-8">
-            {PHASE_ORDER.map(phase => {
+            {PHASE_ORDER.map((phase, phaseIndex) => {
               const phaseData = groupedByPhase[phase] || {};
               const phaseTasks = Object.values(phaseData).flat();
               const completedCount = phaseTasks.filter(t => t.completed).length;
               return (
-                <div key={phase} className={`border-l-4 ${getPhaseColor(phase)} pl-6`}>
+                <div key={phase} className={`border-l-4 ${getPhaseColor(phase, phaseIndex)} pl-6`}>
                   <div className="mb-4">
-                    <h3 className="text-xl font-bold text-gray-900">{STANDARD_PHASES[phase]?.name || phase}</h3>
+                    <h3 className="text-xl font-bold text-gray-900">{dynamicPhases[phase]?.name || phase.replace(/^Phase\s*\d+\s*:\s*/i, '')}</h3>
                     <p className="text-sm text-gray-600">{completedCount} of {phaseTasks.length} complete ({phaseTasks.length > 0 ? Math.round((completedCount / phaseTasks.length) * 100) : 0}%)</p>
                   </div>
                   <div className="space-y-4">
@@ -825,11 +892,9 @@
                                       <span className="ml-2 text-gray-400" title={`${task.files.length} file${task.files.length > 1 ? 's' : ''} attached`}>📎</span>
                                     )}
                                   </h5>
-                                  {(task.dateCompleted || task.ownerDisplayName) && (
+                                  {task.dateCompleted && (
                                     <p className="mt-1 text-xs text-gray-600">
-                                      {task.ownerDisplayName && <span className="text-gray-500">Owner: {task.ownerDisplayName}</span>}
-                                      {task.ownerDisplayName && task.dateCompleted && <span className="mx-1">•</span>}
-                                      {task.dateCompleted && <span className="text-green-600">Completed: {formatDateForDisplay(task.dateCompleted)}</span>}
+                                      <span className="text-green-600">Completed: {formatDateForDisplay(task.dateCompleted)}</span>
                                     </p>
                                   )}
                                   {task.description && (
@@ -1509,29 +1574,6 @@
               </div>
             )}
           </div>
-
-          <div className="bg-white p-6 rounded-xl shadow-sm">
-            <h2 className="text-lg font-bold text-accent mb-4 flex items-center gap-2">
-              <span className="text-accent">{Icons.list}</span> Submission History
-            </h2>
-            {submissions && submissions.length > 0 ? (
-              <div className="space-y-2">
-                {submissions.slice(0, 10).map((sub, idx) => (
-                  <div key={idx} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                    <div>
-                      <p className="font-medium text-gray-800">{new Date(sub.submittedAt).toLocaleDateString()}</p>
-                      <p className="text-xs text-gray-500">Submitted by {sub.submittedBy}</p>
-                    </div>
-                    <span className="text-gray-600">{Object.keys(sub.data || {}).length} items tracked</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                <p>No submissions yet - submit your first inventory to see trends</p>
-              </div>
-            )}
-          </div>
         </div>
       );
     };
@@ -1720,19 +1762,23 @@
     };
 
     // Client Submission History Page - Spreadsheet View
-    const SubmissionHistoryPage = ({ token, slug, isAdmin, onNavigate }) => {
+    const SubmissionHistoryPage = ({ token, slug, isAdmin, onNavigate, currentUser }) => {
       const [submissions, setSubmissions] = useState([]);
       const [loading, setLoading] = useState(true);
       const [selectedClient, setSelectedClient] = useState('');
       const [clientList, setClientList] = useState([]);
       const [expandedRows, setExpandedRows] = useState({});
-      
+      const [deleting, setDeleting] = useState(false);
+
+      // Check if user can delete (Super Admin or Manager only)
+      const canDelete = currentUser?.role === 'admin' || currentUser?.isManager;
+
       // Filters
       const [dateFrom, setDateFrom] = useState('');
       const [dateTo, setDateTo] = useState('');
       const [categoryFilter, setCategoryFilter] = useState('');
       const [searchTerm, setSearchTerm] = useState('');
-      
+
       // Flatten all submissions into item-level rows
       const [itemRows, setItemRows] = useState([]);
       const [selectedRows, setSelectedRows] = useState(new Set());
@@ -1871,6 +1917,59 @@
         setCategoryFilter('');
         setSearchTerm('');
         setSelectedRows(new Set());
+      };
+
+      const handleDeleteSelected = async () => {
+        if (!canDelete) return;
+
+        // Get unique submission IDs from selected rows
+        const selectedSubmissionIds = [...new Set(
+          filteredRows
+            .filter((_, i) => selectedRows.has(i))
+            .map(row => row.submissionId)
+        )];
+
+        if (selectedSubmissionIds.length === 0) {
+          alert('No submissions selected');
+          return;
+        }
+
+        const confirmMessage = selectedRows.size === filteredRows.length
+          ? `Are you sure you want to delete ALL ${selectedSubmissionIds.length} submission(s)? This action cannot be undone.`
+          : `Are you sure you want to delete ${selectedSubmissionIds.length} submission(s) containing ${selectedRows.size} row(s)? This action cannot be undone.`;
+
+        if (!confirm(confirmMessage)) return;
+
+        setDeleting(true);
+        try {
+          const response = await fetch(`${API_URL}/api/inventory/submissions`, {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              submissionIds: selectedSubmissionIds,
+              slug: isAdmin ? selectedClient : slug
+            })
+          });
+
+          const data = await response.json();
+
+          if (response.ok) {
+            alert(`Successfully deleted ${data.deletedCount} submission(s)`);
+            setSelectedRows(new Set());
+            // Reload submissions
+            loadSubmissions(isAdmin ? selectedClient : slug);
+          } else {
+            alert(data.error || 'Failed to delete submissions');
+          }
+        } catch (error) {
+          console.error('Delete error:', error);
+          alert('Failed to delete submissions');
+        } finally {
+          setDeleting(false);
+        }
       };
 
       if (loading) {
@@ -2022,7 +2121,7 @@
                 </div>
               </div>
 
-              {/* Download Options */}
+              {/* Download & Delete Options */}
               <div className="bg-white p-4 rounded-xl shadow-sm flex flex-wrap items-center justify-between gap-4">
                 <div className="text-sm text-gray-600">
                   {selectedRows.size > 0 ? (
@@ -2032,6 +2131,19 @@
                   )}
                 </div>
                 <div className="flex gap-2">
+                  {canDelete && selectedRows.size > 0 && (
+                    <button
+                      onClick={handleDeleteSelected}
+                      disabled={deleting}
+                      className="bg-red-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-red-700 transition-colors flex items-center gap-2 text-sm disabled:opacity-50"
+                    >
+                      {deleting ? (
+                        <><div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div> Deleting...</>
+                      ) : (
+                        <>{Icons.trash} Delete Selected ({selectedRows.size})</>
+                      )}
+                    </button>
+                  )}
                   <button
                     onClick={handleDownloadFiltered}
                     className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-accent transition-colors flex items-center gap-2 text-sm"
@@ -2128,10 +2240,10 @@
       const [tickets, setTickets] = useState([]);
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState(null);
-      const [localActiveTab, setLocalActiveTab] = useState(propActiveTab || 'tickets');
+      const [localActiveTab, setLocalActiveTab] = useState(propActiveTab || 'history');
       const [expandedTicket, setExpandedTicket] = useState(null);
+      const [statusFilter, setStatusFilter] = useState('all');
 
-      // Use prop tab if provided (for URL routing), otherwise use local state
       const activeTab = propActiveTab || localActiveTab;
       const setActiveTab = (tab) => {
         if (onTabChange) {
@@ -2141,10 +2253,8 @@
         }
       };
 
-      const hasHubSpotConfig = userData?.hubspotCompanyId || userData?.hubspotContactId;
-
       useEffect(() => {
-        if (hasHubSpotConfig && token) {
+        if (token) {
           fetchTickets();
         } else {
           setLoading(false);
@@ -2152,50 +2262,24 @@
       }, [token]);
 
       const fetchTickets = async () => {
+        setLoading(true);
+        setError(null);
         try {
           const response = await fetch(`${API_URL}/api/client/hubspot/tickets`, {
             headers: { 'Authorization': `Bearer ${token}` }
           });
           const data = await response.json();
-          if (data.tickets) {
-            setTickets(data.tickets);
+          if (data.error) {
+            setError(data.error);
+          } else {
+            setTickets(data.tickets || []);
           }
         } catch (err) {
-          console.error('Error fetching tickets:', err);
-          setError('Unable to load ticket history');
+          console.error('Error fetching support tickets:', err);
+          setError('Unable to load support tickets');
         } finally {
           setLoading(false);
         }
-      };
-
-      // Map HubSpot stage IDs to readable names
-      const getStageLabel = (stage) => {
-        const stageStr = String(stage || '');
-        // Thrive 365 Labs custom ticket pipeline stages
-        const stageMap = {
-          '1': 'New',
-          '2': 'In Progress',
-          '3': 'Assigned',
-          '1155252903': 'Vendor Escalation',
-          '1155252904': 'Resolved',
-          '4': 'Closed'
-        };
-        // If it's a number, try to map it
-        if (/^\d+$/.test(stageStr)) {
-          return stageMap[stageStr] || `Stage ${stageStr}`;
-        }
-        return stageStr;
-      };
-
-      const getStageColor = (stage) => {
-        const stageLabel = getStageLabel(stage).toLowerCase();
-        if (stageLabel.includes('closed')) return 'bg-gray-100 text-gray-700 border border-gray-300';
-        if (stageLabel.includes('resolved')) return 'bg-green-100 text-green-700 border border-green-200';
-        if (stageLabel.includes('assigned')) return 'bg-purple-100 text-purple-700 border border-purple-200';
-        if (stageLabel.includes('in progress')) return 'bg-blue-100 text-blue-700 border border-blue-200';
-        if (stageLabel.includes('escalation') || stageLabel.includes('vendor')) return 'bg-orange-100 text-orange-700 border border-orange-200';
-        if (stageLabel.includes('new')) return 'bg-sky-100 text-sky-700 border border-sky-200';
-        return 'bg-gray-100 text-gray-700 border border-gray-200';
       };
 
       const formatDate = (dateStr) => {
@@ -2204,6 +2288,9 @@
           year: 'numeric', month: 'short', day: 'numeric'
         });
       };
+
+      const filteredTickets = statusFilter === 'all' ? tickets
+        : tickets.filter(t => t.status === statusFilter);
 
       return (
         <div className="space-y-6">
@@ -2223,131 +2310,144 @@
 
           {/* Tab Navigation */}
           <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-            <div className="grid grid-cols-3 border-b">
+            <div className="grid grid-cols-2 border-b">
               <button
-                onClick={() => setActiveTab('tickets')}
-                style={activeTab === 'tickets' ? {backgroundColor: '#045E9F', color: 'white'} : {}}
-                className={`py-4 px-4 font-medium transition flex items-center justify-center gap-2 ${activeTab === 'tickets' ? '' : 'text-gray-600 hover:bg-gray-50 border-r'}`}
+                onClick={() => setActiveTab('history')}
+                style={activeTab === 'history' ? {backgroundColor: '#045E9F', color: 'white'} : {}}
+                className={`py-4 px-4 font-medium transition flex items-center justify-center gap-2 ${activeTab === 'history' ? '' : 'text-gray-600 hover:bg-gray-50 border-r'}`}
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
-                <span>Ticket History</span>
+                <span>Support Tickets</span>
               </button>
               <button
                 onClick={() => setActiveTab('submit')}
                 style={activeTab === 'submit' ? {backgroundColor: '#045E9F', color: 'white'} : {}}
-                className={`py-4 px-4 font-medium transition flex items-center justify-center gap-2 ${activeTab === 'submit' ? '' : 'text-gray-600 hover:bg-gray-50 border-r'}`}
+                className={`py-4 px-4 font-medium transition flex items-center justify-center gap-2 ${activeTab === 'submit' ? '' : 'text-gray-600 hover:bg-gray-50'}`}
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                 <span>Submit a Ticket</span>
               </button>
-              <button
-                onClick={() => setActiveTab('chat')}
-                style={activeTab === 'chat' ? {backgroundColor: '#045E9F', color: 'white'} : {}}
-                className={`py-4 px-4 font-medium transition flex items-center justify-center gap-2 ${activeTab === 'chat' ? '' : 'text-gray-600 hover:bg-gray-50'}`}
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
-                <span>Live Chat</span>
-              </button>
             </div>
 
             <div className="p-6">
-              {/* Ticket History Tab */}
-              {activeTab === 'tickets' && (
+              {/* Support Tickets Tab */}
+              {activeTab === 'history' && (
                 <div>
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-lg font-semibold text-gray-800">Your Support Tickets</h2>
-                    <button onClick={fetchTickets} className="text-primary hover:text-accent text-sm flex items-center gap-1">
-                      {Icons.refresh || '↻'} Refresh
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <select
+                        value={statusFilter}
+                        onChange={(e) => setStatusFilter(e.target.value)}
+                        className="text-sm border rounded-lg px-3 py-1.5 text-gray-600 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      >
+                        <option value="all">All Tickets</option>
+                        <option value="Open">Open</option>
+                        <option value="Closed">Closed</option>
+                      </select>
+                      <button onClick={fetchTickets} className="text-primary hover:text-accent text-sm flex items-center gap-1">
+                        {Icons.refresh || '\u21bb'} Refresh
+                      </button>
+                    </div>
                   </div>
 
                   {loading ? (
                     <div className="flex justify-center py-12">
                       <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent"></div>
                     </div>
-                  ) : !hasHubSpotConfig ? (
-                    <div className="text-center py-12 text-gray-500">
-                      <div className="flex justify-center mb-4 text-gray-300">{React.cloneElement(Icons.folder, { className: 'w-16 h-16' })}</div>
-                      <p>Ticket history is not available for your account.</p>
-                      <p className="text-sm mt-2">Please contact support using the form or chat options.</p>
-                    </div>
                   ) : error ? (
                     <div className="text-center py-12 text-red-500">
                       <p>{error}</p>
                       <button onClick={fetchTickets} className="mt-4 text-primary hover:underline">Try again</button>
                     </div>
-                  ) : tickets.length === 0 ? (
+                  ) : filteredTickets.length === 0 ? (
                     <div className="text-center py-12 text-gray-500">
                       <div className="flex justify-center mb-4 text-green-400">{React.cloneElement(Icons.check, { className: 'w-16 h-16' })}</div>
                       <p className="font-medium">No support tickets</p>
-                      <p className="text-sm mt-2">You haven't submitted any support tickets yet.</p>
+                      <p className="text-sm mt-2">{statusFilter !== 'all' ? `No ${statusFilter.toLowerCase()} tickets found.` : 'No support tickets have been filed for your account yet.'}</p>
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {tickets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(ticket => (
+                      {filteredTickets.map(ticket => (
                         <div key={ticket.id} className="border rounded-lg overflow-hidden">
                           <button
                             onClick={() => setExpandedTicket(expandedTicket === ticket.id ? null : ticket.id)}
                             className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition text-left"
                           >
-                            <div className="flex-1">
-                              <p className="font-medium text-gray-800">{ticket.subject}</p>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-gray-800 truncate">{ticket.subject}</p>
                               <div className="flex flex-wrap items-center gap-3 mt-1 text-sm text-gray-500">
-                                <span>Created: {formatDate(ticket.createdAt)}</span>
-                                {ticket.closedAt && (
-                                  <span className="text-green-600">Closed: {formatDate(ticket.closedAt)}</span>
+                                <span>Opened: {formatDate(ticket.createdAt)}</span>
+                                {ticket.closedAt && <span>Closed: {formatDate(ticket.closedAt)}</span>}
+                                {ticket.serviceReport && (
+                                  <span className="text-primary font-medium flex items-center gap-1">
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                    Service Report Attached
+                                  </span>
                                 )}
                               </div>
                             </div>
-                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStageColor(ticket.stage)}`}>
-                              {getStageLabel(ticket.stage)}
+                            <span className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ml-3 ${
+                              ticket.status === 'Open'
+                                ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                                : 'bg-gray-100 text-gray-600 border border-gray-200'
+                            }`}>
+                              {ticket.status}
                             </span>
                           </button>
                           {expandedTicket === ticket.id && (
                             <div className="px-4 pb-4 border-t bg-gray-50">
-                              {ticket.content && (
+                              {ticket.description && (
                                 <div className="pt-3">
                                   <p className="text-xs font-medium text-gray-500 mb-1">Description:</p>
-                                  <p className="text-sm text-gray-600 whitespace-pre-wrap">{ticket.content}</p>
+                                  <p className="text-sm text-gray-600 whitespace-pre-wrap">{ticket.description}</p>
                                 </div>
                               )}
-                              {ticket.resolution && (
+                              {/* Linked Service Report */}
+                              {ticket.serviceReport && (
                                 <div className="mt-3 pt-3 border-t border-gray-200">
-                                  <p className="text-xs font-medium text-green-600 mb-1">Resolution Notes:</p>
-                                  <p className="text-sm text-gray-600 whitespace-pre-wrap bg-green-50 p-3 rounded-lg border border-green-100">{ticket.resolution}</p>
-                                </div>
-                              )}
-                              {ticket.attachments && ticket.attachments.length > 0 && (
-                                <div className="mt-3 pt-3 border-t border-gray-200">
-                                  <p className="text-sm font-medium text-gray-700 mb-2">Attachments:</p>
-                                  <div className="space-y-2">
-                                    {ticket.attachments.map((att, idx) => (
+                                  <p className="text-xs font-medium text-gray-500 mb-2">Service Report:</p>
+                                  <div className="bg-white rounded-lg border p-3">
+                                    <div className="flex items-start justify-between">
+                                      <div className="flex-1">
+                                        <p className="font-medium text-sm text-gray-800">{ticket.serviceReport.serviceType}</p>
+                                        <p className="text-xs text-gray-500 mt-1">
+                                          Technician: {ticket.serviceReport.technicianName} &middot; Completed: {formatDate(ticket.serviceReport.completedAt)}
+                                        </p>
+                                        {ticket.serviceReport.description && (
+                                          <p className="text-xs text-gray-500 mt-1 line-clamp-2">{ticket.serviceReport.description}</p>
+                                        )}
+                                      </div>
                                       <button
-                                        key={idx}
-                                        onClick={async (e) => {
+                                        onClick={(e) => {
                                           e.stopPropagation();
-                                          try {
-                                            const response = await fetch(`${API_URL}/api/client/hubspot/file/${att.fileId}`, {
-                                              headers: { 'Authorization': `Bearer ${token}` }
-                                            });
-                                            const data = await response.json();
-                                            if (data.downloadUrl) {
-                                              window.open(data.downloadUrl, '_blank');
-                                            }
-                                          } catch (err) {
-                                            console.error('Error downloading file:', err);
-                                          }
+                                          fetch(`${API_URL}/api/client/service-reports/${ticket.serviceReport.id}/pdf`, {
+                                            headers: { 'Authorization': `Bearer ${token}` }
+                                          })
+                                          .then(resp => {
+                                            if (!resp.ok) throw new Error('Download failed');
+                                            return resp.blob();
+                                          })
+                                          .then(blob => {
+                                            const url = window.URL.createObjectURL(blob);
+                                            const a = document.createElement('a');
+                                            a.href = url;
+                                            a.download = `Service_Report_${ticket.serviceReport.serviceType || 'Report'}.pdf`;
+                                            document.body.appendChild(a);
+                                            a.click();
+                                            window.URL.revokeObjectURL(url);
+                                            a.remove();
+                                          })
+                                          .catch(err => alert('Failed to download report: ' + err.message));
                                         }}
-                                        className="flex items-center gap-2 text-sm text-primary hover:text-accent hover:underline"
+                                        className="ml-3 flex items-center gap-1 px-3 py-1.5 bg-primary text-white text-xs font-medium rounded-lg hover:bg-accent transition whitespace-nowrap"
                                       >
-                                        {Icons.download} Service Report (Click to Download)
+                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                        Download PDF
                                       </button>
-                                    ))}
+                                    </div>
                                   </div>
                                 </div>
-                              )}
-                              {!ticket.content && !ticket.resolution && (!ticket.attachments || ticket.attachments.length === 0) && (
-                                <p className="text-sm text-gray-400 pt-3 italic">No additional details available</p>
                               )}
                             </div>
                           )}
@@ -2394,68 +2494,6 @@
                 </div>
               )}
 
-              {/* Live Chat Tab */}
-              {activeTab === 'chat' && (
-                <div
-                  ref={(el) => {
-                    if (el && !document.getElementById('hs-chat-script')) {
-                      const script = document.createElement('script');
-                      script.id = 'hs-chat-script';
-                      script.type = 'text/javascript';
-                      script.async = true;
-                      script.defer = true;
-                      script.src = '//js-na1.hs-scripts.com/49020024.js';
-                      document.body.appendChild(script);
-                    }
-                  }}
-                >
-                  <div className="grid md:grid-cols-2 gap-8 items-stretch min-h-[400px]">
-                    {/* Left Side - Info */}
-                    <div className="bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl p-8 flex flex-col justify-center items-center text-center text-white">
-                      <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mb-6">
-                        <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                        </svg>
-                      </div>
-                      <h2 className="text-3xl font-bold mb-3">Live Chat Support</h2>
-                      <p className="text-blue-100 mb-6">
-                        Need immediate help? Chat with our support team in real time.
-                      </p>
-                      <div className="flex items-center gap-2 text-sm bg-white/20 px-4 py-2 rounded-full">
-                        <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
-                        Support agents available
-                      </div>
-                    </div>
-
-                    {/* Right Side - Start Chat */}
-                    <div className="bg-white rounded-xl shadow-sm border p-8 flex flex-col justify-center items-center text-center">
-                      <h3 className="text-xl font-semibold text-gray-800 mb-4">Start a Conversation</h3>
-                      <p className="text-gray-500 mb-6 max-w-sm">
-                        Click the button below to open the chat window and connect with our support team.
-                      </p>
-                      <button
-                        onClick={() => {
-                          if (window.HubSpotConversations && window.HubSpotConversations.widget) {
-                            window.HubSpotConversations.widget.open();
-                          } else {
-                            alert('Chat is loading... Please try again in a moment or click the chat icon in the bottom-right corner.');
-                          }
-                        }}
-                        style={{backgroundColor: '#045E9F'}}
-                        className="text-white font-semibold px-8 py-4 rounded-lg shadow-lg hover:shadow-xl transition-all flex items-center gap-3"
-                      >
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                        </svg>
-                        Start Chat Now
-                      </button>
-                      <p className="text-gray-400 text-sm mt-4">
-                        Or click the chat icon in the bottom-right corner
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -2478,7 +2516,9 @@
       const refreshDocuments = async () => {
         if (!slug) return;
         try {
-          const response = await fetch(`${API_URL}/api/client-documents/${slug}`);
+          const response = await fetch(`${API_URL}/api/client-documents/${slug}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
           const data = await response.json();
           setDocuments(data || []);
         } catch (err) {
@@ -2556,24 +2596,56 @@
                   <div key={cat}>
                     <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">{cat}</h3>
                     <div className="space-y-2">
-                      {docs.map(doc => (
-                        <a
-                          key={doc.id}
-                          href={doc.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-3 p-3 rounded-lg border hover:bg-gray-50 transition group"
-                        >
-                          <span className="text-2xl">📄</span>
-                          <div className="flex-1">
-                            <p className="font-medium text-gray-800 group-hover:text-primary">{doc.title}</p>
-                            {doc.description && (
-                              <p className="text-sm text-gray-500">{doc.description}</p>
-                            )}
-                          </div>
-                          <span className="text-primary text-sm">Download →</span>
-                        </a>
-                      ))}
+                      {docs.map(doc => {
+                        const downloadUrl = doc.serviceReportId
+                          ? `${API_URL}/api/client/service-reports/${doc.serviceReportId}/pdf`
+                          : doc.url;
+                        const handleDownload = (e) => {
+                          if (doc.serviceReportId) {
+                            e.preventDefault();
+                            fetch(`${API_URL}/api/client/service-reports/${doc.serviceReportId}/pdf`, {
+                              headers: { 'Authorization': `Bearer ${token}` }
+                            })
+                            .then(resp => {
+                              if (!resp.ok) throw new Error('Download failed');
+                              return resp.blob();
+                            })
+                            .then(blob => {
+                              const url = window.URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = doc.title.replace(/[^a-zA-Z0-9\s-]/g, '') + '.pdf';
+                              document.body.appendChild(a);
+                              a.click();
+                              window.URL.revokeObjectURL(url);
+                              a.remove();
+                            })
+                            .catch(err => alert('Failed to download report: ' + err.message));
+                          }
+                        };
+                        return (
+                          <a
+                            key={doc.id}
+                            href={downloadUrl || '#'}
+                            target={doc.serviceReportId ? undefined : '_blank'}
+                            rel={doc.serviceReportId ? undefined : 'noopener noreferrer'}
+                            onClick={handleDownload}
+                            className="flex items-center gap-3 p-3 rounded-lg border hover:bg-gray-50 transition group cursor-pointer"
+                          >
+                            <span className="text-2xl">{doc.serviceReportId ? '📋' : '📄'}</span>
+                            <div className="flex-1">
+                              <p className="font-medium text-gray-800 group-hover:text-primary">{doc.title}</p>
+                              {doc.description && (
+                                <p className="text-sm text-gray-500">{doc.description}</p>
+                              )}
+                            </div>
+                            <span className="text-primary text-sm font-medium flex items-center gap-1">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                              Download PDF
+                            </span>
+                          </a>
+                        );
+                      })}
                     </div>
                   </div>
                 ))}
@@ -2645,20 +2717,6 @@
               
               <form onSubmit={handleFileUpload} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    className="w-full border rounded-lg p-2"
-                  >
-                    <option value="">Select category (optional)</option>
-                    {categories.map(c => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-                </div>
-                
-                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">File</label>
                   <input
                     id="clientFileInput"
@@ -2697,7 +2755,15 @@
               <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
                 <span>📝</span> Additional Upload Options
               </h2>
-              <div dangerouslySetInnerHTML={{ __html: settings.filesFormEmbed }} />
+              <div dangerouslySetInnerHTML={{ __html: (() => {
+                // Sanitize embed HTML: strip script tags and event handlers
+                let html = settings.filesFormEmbed;
+                html = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+                html = html.replace(/\son\w+\s*=\s*["'][^"']*["']/gi, '');
+                html = html.replace(/\son\w+\s*=\s*[^\s>]*/gi, '');
+                html = html.replace(/javascript\s*:/gi, '');
+                return html;
+              })() }} />
             </div>
           )}
         </div>
@@ -3221,19 +3287,27 @@
         if (selectedClient) {
           const loadDocs = async () => {
             try {
-              const res = await fetch(`${API_URL}/api/client-documents/${selectedClient}`);
-              const data = await res.json();
-              setDocuments(Array.isArray(data) ? data : []);
+              if (selectedClient === 'all') {
+                // Load all documents and filter to only show shared ones
+                const res = await fetch(`${API_URL}/api/client-documents`, { headers: { 'Authorization': `Bearer ${token}` } });
+                const data = await res.json();
+                setDocuments(Array.isArray(data) ? data.filter(d => d.shareWithAll === true) : []);
+              } else {
+                const res = await fetch(`${API_URL}/api/client-documents/${selectedClient}`, { headers: { 'Authorization': `Bearer ${token}` } });
+                const data = await res.json();
+                setDocuments(Array.isArray(data) ? data : []);
+              }
             } catch (err) {
               console.error('Failed to load docs:', err);
             }
           };
           loadDocs();
         }
-      }, [selectedClient]);
+      }, [selectedClient, token]);
       
       const handleAdd = async () => {
         setUploading(true);
+        const isAllClients = selectedClient === 'all';
         try {
           if (uploadMode === 'file' && uploadFile) {
             const formDataObj = new FormData();
@@ -3241,7 +3315,7 @@
             formDataObj.append('title', formData.title);
             formDataObj.append('description', formData.description);
             formDataObj.append('category', formData.category);
-            
+
             const res = await fetch(`${API_URL}/api/client-documents/${selectedClient}/upload`, {
               method: 'POST',
               headers: { 'Authorization': `Bearer ${token}` },
@@ -3252,20 +3326,38 @@
               setFormData({ title: '', url: '', description: '', category: '' });
               setUploadFile(null);
               setUploadMode('link');
-              const data = await fetch(`${API_URL}/api/client-documents/${selectedClient}`).then(r => r.json());
-              setDocuments(Array.isArray(data) ? data : []);
+              // Reload documents
+              if (isAllClients) {
+                const data = await fetch(`${API_URL}/api/client-documents`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json());
+                setDocuments(Array.isArray(data) ? data.filter(d => d.shareWithAll === true) : []);
+              } else {
+                const data = await fetch(`${API_URL}/api/client-documents/${selectedClient}`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json());
+                setDocuments(Array.isArray(data) ? data : []);
+              }
             }
           } else {
-            const res = await fetch(`${API_URL}/api/client-documents/${selectedClient}`, {
+            // Link-based document - use the base endpoint with slug/shareWithAll in body
+            const docPayload = {
+              ...formData,
+              slug: isAllClients ? null : selectedClient,
+              shareWithAll: isAllClients
+            };
+            const res = await fetch(`${API_URL}/api/client-documents`, {
               method: 'POST',
               headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify(formData)
+              body: JSON.stringify(docPayload)
             });
             if (res.ok) {
               setShowForm(false);
               setFormData({ title: '', url: '', description: '', category: '' });
-              const data = await fetch(`${API_URL}/api/client-documents/${selectedClient}`).then(r => r.json());
-              setDocuments(Array.isArray(data) ? data : []);
+              // Reload documents
+              if (isAllClients) {
+                const data = await fetch(`${API_URL}/api/client-documents`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json());
+                setDocuments(Array.isArray(data) ? data.filter(d => d.shareWithAll === true) : []);
+              } else {
+                const data = await fetch(`${API_URL}/api/client-documents/${selectedClient}`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json());
+                setDocuments(Array.isArray(data) ? data : []);
+              }
             }
           }
         } catch (err) {
@@ -3277,13 +3369,24 @@
       
       const handleDelete = async (docId) => {
         if (!confirm('Delete this document?')) return;
+        const isAllClients = selectedClient === 'all';
         try {
-          await fetch(`${API_URL}/api/client-documents/${selectedClient}/${docId}`, {
+          // Use the ID-only delete endpoint for shared documents or slug-based for specific clients
+          const deleteUrl = isAllClients
+            ? `${API_URL}/api/client-documents/${docId}`
+            : `${API_URL}/api/client-documents/${selectedClient}/${docId}`;
+          await fetch(deleteUrl, {
             method: 'DELETE',
             headers: { 'Authorization': `Bearer ${token}` }
           });
-          const data = await fetch(`${API_URL}/api/client-documents/${selectedClient}`).then(r => r.json());
-          setDocuments(Array.isArray(data) ? data : []);
+          // Reload documents
+          if (isAllClients) {
+            const data = await fetch(`${API_URL}/api/client-documents`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json());
+            setDocuments(Array.isArray(data) ? data.filter(d => d.shareWithAll === true) : []);
+          } else {
+            const data = await fetch(`${API_URL}/api/client-documents/${selectedClient}`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json());
+            setDocuments(Array.isArray(data) ? data : []);
+          }
         } catch (err) {
           console.error('Failed to delete doc:', err);
         }
@@ -3304,16 +3407,27 @@
               className="w-full md:w-1/2 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
             >
               <option value="">-- Select a client --</option>
+              <option value="all" className="font-semibold text-primary">All Clients (Share with Everyone)</option>
               {clients.map(c => (
                 <option key={c.id} value={c.slug}>{c.practiceName || c.name} ({c.email})</option>
               ))}
             </select>
+            {selectedClient === 'all' && (
+              <p className="mt-2 text-sm text-blue-600 flex items-center gap-1">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                Documents uploaded here will be visible to all client portals
+              </p>
+            )}
           </div>
           
           {selectedClient && (
             <>
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <h2 className="text-lg font-semibold text-gray-800">Documents for {clients.find(c => c.slug === selectedClient)?.practiceName || selectedClient}</h2>
+                <h2 className="text-lg font-semibold text-gray-800">
+                  {selectedClient === 'all'
+                    ? 'Documents Shared with All Clients'
+                    : `Documents for ${clients.find(c => c.slug === selectedClient)?.practiceName || selectedClient}`}
+                </h2>
                 <button
                   onClick={() => setShowForm(true)}
                   className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-accent transition"
@@ -3426,7 +3540,9 @@
               
               <div className="bg-white rounded-xl shadow-sm overflow-hidden">
                 {documents.length === 0 ? (
-                  <div className="p-8 text-center text-gray-500">No documents for this client</div>
+                  <div className="p-8 text-center text-gray-500">
+                    {selectedClient === 'all' ? 'No documents shared with all clients yet' : 'No documents for this client'}
+                  </div>
                 ) : (
                   <div className="divide-y">
                     {documents.map(doc => (
@@ -3434,6 +3550,9 @@
                         <div className="flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <h3 className="font-semibold text-gray-800">{doc.title}</h3>
+                            {doc.shareWithAll && (
+                              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-medium">All Clients</span>
+                            )}
                             {doc.uploadedBy === 'client' && (
                               <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded font-medium">Client Upload</span>
                             )}
@@ -3464,29 +3583,162 @@
     const AdminClientsPage = ({ token }) => {
       const [clients, setClients] = useState([]);
       const [loading, setLoading] = useState(true);
-      
+      const [editingClient, setEditingClient] = useState(null);
+      const [editForm, setEditForm] = useState({});
+      const [saving, setSaving] = useState(false);
+      const [message, setMessage] = useState(null);
+      const [showCreateForm, setShowCreateForm] = useState(false);
+      const [createForm, setCreateForm] = useState({
+        email: '',
+        name: '',
+        password: '',
+        practiceName: '',
+        logo: '',
+        hubspotCompanyId: '',
+        hubspotDealId: '',
+        hubspotContactId: ''
+      });
+
+      // Get current user to check if Super Admin
+      const currentUser = JSON.parse(localStorage.getItem('portal_user') || localStorage.getItem('admin_user') || '{}');
+      const isSuperAdmin = currentUser?.role === 'admin';
+
+      const loadClients = async () => {
+        try {
+          const res = await fetch(`${API_URL}/api/users`, { headers: { 'Authorization': `Bearer ${token}` } });
+          const data = await res.json();
+          setClients(Array.isArray(data) ? data.filter(u => u.role === 'client') : []);
+        } catch (err) {
+          console.error('Failed to load clients:', err);
+        } finally {
+          setLoading(false);
+        }
+      };
+
       useEffect(() => {
-        const loadClients = async () => {
-          try {
-            const res = await fetch(`${API_URL}/api/users`, { headers: { 'Authorization': `Bearer ${token}` } });
-            const data = await res.json();
-            setClients(Array.isArray(data) ? data.filter(u => u.role === 'client') : []);
-          } catch (err) {
-            console.error('Failed to load clients:', err);
-          } finally {
-            setLoading(false);
-          }
-        };
         loadClients();
       }, [token]);
-      
+
+      const handleEdit = (client) => {
+        setEditingClient(client.id);
+        setEditForm({
+          practiceName: client.practiceName || '',
+          logo: client.logo || '',
+          hubspotCompanyId: client.hubspotCompanyId || '',
+          hubspotDealId: client.hubspotDealId || '',
+          hubspotContactId: client.hubspotContactId || ''
+        });
+        setMessage(null);
+      };
+
+      const handleCancel = () => {
+        setEditingClient(null);
+        setEditForm({});
+        setMessage(null);
+      };
+
+      const handleSave = async () => {
+        setSaving(true);
+        setMessage(null);
+        try {
+          const res = await fetch(`${API_URL}/api/client-portal/clients/${editingClient}`, {
+            method: 'PUT',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(editForm)
+          });
+          const data = await res.json();
+          if (res.ok) {
+            setMessage({ type: 'success', text: 'Client details updated successfully!' });
+            // Refresh client list to get updated data
+            await loadClients();
+            setEditingClient(null);
+            setEditForm({});
+          } else {
+            setMessage({ type: 'error', text: data.error || 'Failed to update client' });
+          }
+        } catch (err) {
+          console.error('Error saving client:', err);
+          setMessage({ type: 'error', text: 'Network error. Please try again.' });
+        } finally {
+          setSaving(false);
+        }
+      };
+
+      const handleCreate = async () => {
+        setSaving(true);
+        setMessage(null);
+
+        // Validate required fields
+        if (!createForm.email || !createForm.name || !createForm.password || !createForm.practiceName) {
+          setMessage({ type: 'error', text: 'Email, name, password, and practice name are required' });
+          setSaving(false);
+          return;
+        }
+
+        try {
+          const res = await fetch(`${API_URL}/api/users`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              ...createForm,
+              role: 'client'
+            })
+          });
+          const data = await res.json();
+          if (res.ok) {
+            setMessage({ type: 'success', text: 'Client user created successfully!' });
+            // Refresh client list
+            await loadClients();
+            // Reset and close form
+            setShowCreateForm(false);
+            setCreateForm({
+              email: '',
+              name: '',
+              password: '',
+              practiceName: '',
+              logo: '',
+              hubspotCompanyId: '',
+              hubspotDealId: '',
+              hubspotContactId: ''
+            });
+          } else {
+            setMessage({ type: 'error', text: data.error || 'Failed to create client' });
+          }
+        } catch (err) {
+          console.error('Error creating client:', err);
+          setMessage({ type: 'error', text: 'Network error. Please try again.' });
+        } finally {
+          setSaving(false);
+        }
+      };
+
       return (
         <div className="space-y-6">
-          <div className="bg-white p-6 rounded-xl shadow-sm">
-            <h1 className="text-2xl font-bold text-accent mb-2">Client Users</h1>
-            <p className="text-gray-600">View client portal users (manage in Implementation App)</p>
+          <div className="bg-white p-6 rounded-xl shadow-sm flex justify-between items-start">
+            <div>
+              <h1 className="text-2xl font-bold text-accent mb-2">Client Users</h1>
+              <p className="text-gray-600">View and edit client portal user details</p>
+            </div>
+            <button
+              onClick={() => setShowCreateForm(true)}
+              className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-accent font-medium flex items-center gap-2"
+            >
+              <span>+</span> Add Client User
+            </button>
           </div>
-          
+
+          {message && (
+            <div className={`p-4 rounded-lg text-sm ${message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+              {message.text}
+            </div>
+          )}
+
           <div className="bg-white rounded-xl shadow-sm overflow-hidden">
             {loading ? (
               <div className="p-8 text-center text-gray-500">Loading...</div>
@@ -3499,14 +3751,21 @@
                     <tr>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Practice</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Practice Name</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Portal URL</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">HubSpot IDs</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
                     {clients.map(c => (
                       <tr key={c.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-sm text-gray-800">{c.name}</td>
+                        <td className="px-4 py-3 text-sm text-gray-800">
+                          <div className="flex items-center gap-2">
+                            {c.logo && <img src={c.logo} alt="" className="w-6 h-6 rounded object-cover" />}
+                            {c.name}
+                          </div>
+                        </td>
                         <td className="px-4 py-3 text-sm text-gray-600">{c.email}</td>
                         <td className="px-4 py-3 text-sm text-gray-600">{c.practiceName || '-'}</td>
                         <td className="px-4 py-3 text-sm">
@@ -3516,6 +3775,21 @@
                             </a>
                           ) : '-'}
                         </td>
+                        <td className="px-4 py-3 text-sm text-gray-500">
+                          {(c.hubspotCompanyId || c.hubspotDealId || c.hubspotContactId) ? (
+                            <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">Linked</span>
+                          ) : (
+                            <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded">Not linked</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-sm">
+                          <button
+                            onClick={() => handleEdit(c)}
+                            className="text-primary hover:text-accent font-medium"
+                          >
+                            Edit Details
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -3523,9 +3797,240 @@
               </div>
             )}
           </div>
-          
+
+          {/* Create Modal */}
+          {showCreateForm && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+                <div className="p-6 border-b">
+                  <h2 className="text-xl font-bold text-accent">Add New Client User</h2>
+                  <p className="text-sm text-gray-500 mt-1">Create a new client portal account (syncs with Admin Hub)</p>
+                </div>
+                <div className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Email <span className="text-red-500">*</span></label>
+                    <input
+                      type="email"
+                      value={createForm.email}
+                      onChange={(e) => setCreateForm({...createForm, email: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      placeholder="user@example.com"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Name <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={createForm.name}
+                      onChange={(e) => setCreateForm({...createForm, name: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      placeholder="John Doe"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Password <span className="text-red-500">*</span></label>
+                    <input
+                      type="password"
+                      value={createForm.password}
+                      onChange={(e) => setCreateForm({...createForm, password: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      placeholder="Temporary password"
+                      required
+                    />
+                    <p className="text-xs text-gray-400 mt-1">User will be required to change password on first login</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Practice Name <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={createForm.practiceName}
+                      onChange={(e) => setCreateForm({...createForm, practiceName: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      placeholder="e.g., ABC Medical Labs"
+                      required
+                    />
+                    <p className="text-xs text-gray-400 mt-1">Will auto-generate portal URL slug</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Logo URL</label>
+                    <input
+                      type="text"
+                      value={createForm.logo}
+                      onChange={(e) => setCreateForm({...createForm, logo: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      placeholder="https://example.com/logo.png"
+                    />
+                    {createForm.logo && (
+                      <div className="mt-2 p-2 bg-gray-50 rounded flex items-center gap-2">
+                        <img src={createForm.logo} alt="Preview" className="h-8 object-contain" onError={(e) => e.target.style.display='none'} />
+                        <span className="text-xs text-gray-500">Preview</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="border-t pt-4">
+                    <p className="text-sm font-medium text-gray-700 mb-3">HubSpot Integration IDs (Optional)</p>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Company ID</label>
+                        <input
+                          type="text"
+                          value={createForm.hubspotCompanyId}
+                          onChange={(e) => setCreateForm({...createForm, hubspotCompanyId: e.target.value})}
+                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                          placeholder="e.g., 12345678"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Deal ID</label>
+                        <input
+                          type="text"
+                          value={createForm.hubspotDealId}
+                          onChange={(e) => setCreateForm({...createForm, hubspotDealId: e.target.value})}
+                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                          placeholder="e.g., 87654321"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Contact ID</label>
+                        <input
+                          type="text"
+                          value={createForm.hubspotContactId}
+                          onChange={(e) => setCreateForm({...createForm, hubspotContactId: e.target.value})}
+                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                          placeholder="e.g., 11223344"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
+                  <button
+                    onClick={() => {
+                      setShowCreateForm(false);
+                      setCreateForm({
+                        email: '',
+                        name: '',
+                        password: '',
+                        practiceName: '',
+                        logo: '',
+                        hubspotCompanyId: '',
+                        hubspotDealId: '',
+                        hubspotContactId: ''
+                      });
+                    }}
+                    className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium"
+                    disabled={saving}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCreate}
+                    disabled={saving}
+                    className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-accent font-medium disabled:opacity-50"
+                  >
+                    {saving ? 'Creating...' : 'Create Client User'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Edit Modal */}
+          {editingClient && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+                <div className="p-6 border-b">
+                  <h2 className="text-xl font-bold text-accent">Edit Client Details</h2>
+                  <p className="text-sm text-gray-500 mt-1">Update client settings (syncs with Admin Hub)</p>
+                </div>
+                <div className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Practice Name</label>
+                    <input
+                      type="text"
+                      value={editForm.practiceName}
+                      onChange={(e) => setEditForm({...editForm, practiceName: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      placeholder="e.g., ABC Medical Labs"
+                    />
+                    <p className="text-xs text-gray-400 mt-1">Portal URL slug will update if changed</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Logo URL</label>
+                    <input
+                      type="text"
+                      value={editForm.logo}
+                      onChange={(e) => setEditForm({...editForm, logo: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      placeholder="https://example.com/logo.png"
+                    />
+                    {editForm.logo && (
+                      <div className="mt-2 p-2 bg-gray-50 rounded flex items-center gap-2">
+                        <img src={editForm.logo} alt="Preview" className="h-8 object-contain" onError={(e) => e.target.style.display='none'} />
+                        <span className="text-xs text-gray-500">Preview</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="border-t pt-4">
+                    <p className="text-sm font-medium text-gray-700 mb-3">HubSpot Integration IDs</p>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Company ID</label>
+                        <input
+                          type="text"
+                          value={editForm.hubspotCompanyId}
+                          onChange={(e) => setEditForm({...editForm, hubspotCompanyId: e.target.value})}
+                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                          placeholder="e.g., 12345678"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Deal ID</label>
+                        <input
+                          type="text"
+                          value={editForm.hubspotDealId}
+                          onChange={(e) => setEditForm({...editForm, hubspotDealId: e.target.value})}
+                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                          placeholder="e.g., 87654321"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Contact ID</label>
+                        <input
+                          type="text"
+                          value={editForm.hubspotContactId}
+                          onChange={(e) => setEditForm({...editForm, hubspotContactId: e.target.value})}
+                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                          placeholder="e.g., 11223344"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
+                  <button
+                    onClick={handleCancel}
+                    className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium"
+                    disabled={saving}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-accent font-medium disabled:opacity-50"
+                  >
+                    {saving ? 'Saving...' : 'Save Changes'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="bg-blue-50 p-4 rounded-lg text-sm text-blue-700">
-            <p><strong>Note:</strong> To add or edit client users, use the <a href="/admin" className="underline font-medium hover:text-blue-900">Admin Hub</a> &rarr; User Management.</p>
+            <p><strong>Note:</strong> Changes made here sync with the Admin Hub. {!isSuperAdmin && 'To edit advanced permissions, contact a Super Admin.'}</p>
           </div>
         </div>
       );
@@ -3534,8 +4039,9 @@
     
     const Portal = ({ token, user }) => {
       const urlSlug = getSlugFromUrl();
-      const isAdmin = user?.role === 'admin' || user?.hasClientPortalAdminAccess;
-      const slug = user?.slug || urlSlug;
+      // Super Admin, Manager, or users with hasClientPortalAdminAccess can access admin features
+      const isAdmin = user?.role === 'admin' || user?.isManager || user?.hasClientPortalAdminAccess;
+      const slug = user?.slug || urlSlug || (isAdmin ? 'admin' : null);
 
       // URL routing helper functions
       const getPageFromUrl = () => {
@@ -3603,7 +4109,7 @@
               api.getPortalData(token),
               api.getPortalSettings(),
               api.getAnnouncements(),
-              api.getClientDocuments(slug)
+              api.getClientDocuments(slug, token)
             ]);
             setData(portalData);
             setSettings(portalSettings);
@@ -3643,7 +4149,7 @@
           if (activePage === 'admin_clients') return <AdminClientsPage token={token} />;
           // Admin views aggregate inventory reports across all clients
           if (activePage === 'reports') return <AdminReportsPage token={token} onNavigate={navigateTo} />;
-          if (activePage === 'submission_history') return <SubmissionHistoryPage token={token} slug={slug} isAdmin={true} onNavigate={navigateTo} />;
+          if (activePage === 'submission_history') return <SubmissionHistoryPage token={token} slug={slug} isAdmin={true} onNavigate={navigateTo} currentUser={user} />;
         }
 
         // Client pages
@@ -3651,7 +4157,7 @@
         if (activePage === 'milestones') return <MilestonesPage data={data} onNavigate={navigateTo} />;
         if (activePage === 'inventory') return <InventoryPage token={token} slug={slug} />;
         if (activePage === 'reports') return <ReportsPage token={token} slug={slug} onNavigate={navigateTo} />;
-        if (activePage === 'submission_history') return <SubmissionHistoryPage token={token} slug={slug} isAdmin={false} onNavigate={navigateTo} />;
+        if (activePage === 'submission_history') return <SubmissionHistoryPage token={token} slug={slug} isAdmin={false} onNavigate={navigateTo} currentUser={user} />;
         if (activePage === 'support') return <SupportPage settings={settings} token={token} userData={data?.user} activeTab={activeSubTab} onTabChange={(tab) => navigateTo('support', tab)} />;
         if (activePage === 'files') return <FilesPage settings={settings} documents={documents} token={token} projects={data?.projects || []} userData={data?.user} />;
         
@@ -3717,8 +4223,8 @@
         if (!token || !user) {
           return <LoginPage slug={null} onLogin={handleLogin} />;
         }
-        // Admin users or users with Client Portal Admin access get the admin portal view directly at /portal
-        if (user.role === 'admin' || user.hasClientPortalAdminAccess) {
+        // Super Admin, Manager, or users with Client Portal Admin access get the admin portal view directly at /portal
+        if (user.role === 'admin' || user.isManager || user.hasClientPortalAdminAccess) {
           return <Portal token={token} user={user} />;
         }
         // Client users logged in from central portal - redirect to their portal

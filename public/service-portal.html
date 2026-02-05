@@ -64,11 +64,27 @@
     // Helper function to handle fetch responses
     const handleResponse = async (response) => {
       if (!response.ok) {
+        // Auto-redirect to login on auth failure (expired/invalid token)
+        if (response.status === 401 || response.status === 403) {
+          try {
+            const errData = await response.clone().json();
+            if (errData.error === 'Invalid token' || errData.error === 'User not found' || response.status === 401) {
+              localStorage.removeItem('service_token');
+              localStorage.removeItem('service_user');
+              localStorage.removeItem('unified_token');
+              localStorage.removeItem('unified_user');
+              window.location.href = '/';
+              throw new Error('Session expired. Redirecting to login...');
+            }
+          } catch (redirectErr) {
+            if (redirectErr.message.includes('Session expired')) throw redirectErr;
+          }
+        }
         try {
           const errorData = await response.json();
           throw new Error(errorData.error || `HTTP error ${response.status}`);
         } catch (e) {
-          if (e.message.includes('HTTP error')) throw e;
+          if (e.message.includes('HTTP error') || e.message.includes('Session expired')) throw e;
           throw new Error(`HTTP error ${response.status}`);
         }
       }
@@ -82,7 +98,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, password })
         }).then(handleResponse).then(result => {
-          // Verify user has service portal access
+          // Verify user has service portal access (super admin, vendor, or explicit access - NOT managers)
           if (result.user && result.user.role !== 'admin' && !result.user.hasServicePortalAccess && result.user.role !== 'vendor') {
             return { error: 'Access denied. You do not have Service Portal access.' };
           }
@@ -116,6 +132,78 @@
       getServiceReport: (token, reportId) =>
         fetch(`${API_URL}/api/service-reports/${reportId}`, {
           headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+      getAssignedReports: (token) => {
+        console.log('🌐 API CALL: GET /api/service-reports/assigned');
+        return fetch(`${API_URL}/api/service-reports/assigned`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+          .then(response => {
+            console.log('📥 Response status:', response.status, response.statusText);
+            return handleResponse(response);
+          })
+          .then(data => {
+            console.log('✅ Assigned reports response:', data);
+            return data;
+          })
+          .catch(err => {
+            console.error('❌ API Error:', err);
+            return { error: err.message || 'Network error' };
+          });
+      },
+
+      completeAssignedReport: (token, reportId, reportData) =>
+        fetch(`${API_URL}/api/service-reports/${reportId}/complete`, {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(reportData)
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+      // Assignment APIs (for admins and managers)
+      getTechnicians: (token) =>
+        fetch(`${API_URL}/api/service-portal/technicians`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+      assignServiceReport: (token, reportData) =>
+        fetch(`${API_URL}/api/service-reports/assign`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(reportData)
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+      uploadServiceReportPhotos: (token, reportId, files) => {
+        const formData = new FormData();
+        files.forEach(file => formData.append('photos', file));
+        return fetch(`${API_URL}/api/service-reports/${reportId}/photos`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: formData
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' }));
+      },
+
+      uploadServiceReportFiles: (token, reportId, files) => {
+        const formData = new FormData();
+        files.forEach(file => formData.append('files', file));
+        return fetch(`${API_URL}/api/service-reports/${reportId}/files`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: formData
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' }));
+      },
+
+      // Vendor management APIs
+      createVendor: (token, vendorData) =>
+        fetch(`${API_URL}/api/users`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...vendorData, role: 'vendor' })
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+      getAllClients: (token) =>
+        fetch(`${API_URL}/api/clients`, {
+          headers: { 'Authorization': `Bearer ${token}` }
         }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' }))
     };
 
@@ -134,7 +222,12 @@
       wrench: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437l1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008z"/></svg>,
       check: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>,
       beaker: <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5"/></svg>,
-      chartBar: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>
+      chartBar: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>,
+      users: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/></svg>,
+      trash: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>,
+      userPlus: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM4 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 0110.374 21c-2.331 0-4.512-.645-6.374-1.766z"/></svg>,
+      assign: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z"/></svg>,
+      photo: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"/></svg>
     };
 
     // Login Page Component
@@ -235,11 +328,33 @@
 
     // Sidebar Component
     const Sidebar = ({ activePage, onNavigate, user, isMobileOpen, onClose }) => {
-      const menuItems = [
+      // Check if user can assign reports (super admin or manager with service portal access)
+      const canAssignReports = user?.role === 'admin' || (user?.isManager && user?.hasServicePortalAccess);
+
+      // Debug logging
+      console.log('Sidebar user data:', { role: user?.role, isManager: user?.isManager, hasServicePortalAccess: user?.hasServicePortalAccess, canAssignReports });
+
+      // Admins and managers don't submit reports - they view and assign them
+      const isAdminOrManager = user?.role === 'admin' || user?.isManager;
+
+      const baseMenuItems = [
         { id: 'home', label: 'Dashboard', icon: Icons.home },
-        { id: 'new_report', label: 'New Service Report', icon: Icons.plus },
+        ...(!isAdminOrManager ? [{ id: 'new_report', label: 'New Service Report', icon: Icons.plus }] : []),
         { id: 'reports', label: 'Service Reports', icon: Icons.folder }
       ];
+
+      // Build menu items based on user role
+      let menuItems = [...baseMenuItems];
+
+      // Add Assigned Reports for vendors and technicians (those who receive assignments)
+      if (user?.role === 'vendor' || user?.hasServicePortalAccess) {
+        menuItems.push({ id: 'assigned_reports', label: 'Assigned Reports', icon: Icons.clipboard });
+      }
+
+      // Add Assign Report option for admins and managers (those who can assign to others)
+      if (canAssignReports) {
+        menuItems.push({ id: 'assign_report', label: 'Assign Report', icon: Icons.assign });
+      }
 
       const handleNavigate = (id) => {
         onNavigate(id);
@@ -270,7 +385,9 @@
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-gray-900 truncate">{user?.name || 'Technician'}</p>
                   <p className="text-xs text-primary-600 font-medium">
-                    {user?.role === 'admin' ? 'Administrator' : 'Service Technician'}
+                    {user?.role === 'admin' ? 'Super Admin' :
+                     user?.isManager ? 'Manager' :
+                     user?.role === 'vendor' ? 'Vendor' : 'Service Technician'}
                   </p>
                 </div>
               </div>
@@ -322,7 +439,7 @@
     };
 
     // Dashboard Home Page
-    const HomePage = ({ user, onNavigate, recentReports }) => {
+    const HomePage = ({ user, onNavigate, recentReports, assignedReports = [], onEditAssignment }) => {
       return (
         <div className="space-y-6 animate-fade-in">
           {/* Dynamic Banner Header */}
@@ -338,18 +455,62 @@
             </div>
           </div>
 
-          {/* Quick Actions */}
-          <div className="grid md:grid-cols-3 gap-5">
-            <button
-              onClick={() => onNavigate('new_report')}
-              className="card-modern p-6 text-left group hover:border-primary-200 transition-all"
-            >
-              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white mb-4 shadow-md group-hover:scale-105 transition-transform">
-                {React.cloneElement(Icons.plus, { className: 'w-7 h-7' })}
+          {/* Assigned Service Visits Section */}
+          {assignedReports.length > 0 && (
+            <div className="card-modern p-6 border-l-4 border-red-500 bg-red-50/30">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center text-red-600">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">Assigned Service Visits</h2>
+                  <p className="text-sm text-gray-600">You have {assignedReports.length} pending service visit{assignedReports.length > 1 ? 's' : ''} to complete</p>
+                </div>
               </div>
-              <h3 className="font-semibold text-gray-900">New Service Report</h3>
-              <p className="text-sm text-gray-500 mt-1">Submit a new service report</p>
-            </button>
+              <div className="space-y-3">
+                {assignedReports.map(report => (
+                  <div key={report.id} className="bg-white rounded-xl p-4 border border-red-100 hover:border-red-200 transition">
+                    <div className="flex items-center justify-between flex-wrap gap-3">
+                      <div className="flex-1">
+                        <p className="font-semibold text-gray-900">{report.clientFacilityName}</p>
+                        <div className="flex flex-wrap items-center gap-2 mt-1 text-sm text-gray-600">
+                          {report.serviceType && <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">{report.serviceType}</span>}
+                          {report.serviceCompletionDate && <span>Due: {new Date(report.serviceCompletionDate).toLocaleDateString()}</span>}
+                        </div>
+                        {report.managerNotes && (
+                          <p className="text-xs text-gray-500 mt-2 line-clamp-1">Note: {report.managerNotes}</p>
+                        )}
+                        <p className="text-xs text-gray-400 mt-1">Assigned by {report.assignedByName} on {new Date(report.assignedAt).toLocaleDateString()}</p>
+                      </div>
+                      <button
+                        onClick={() => onEditAssignment(report)}
+                        className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition text-sm flex items-center gap-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/></svg>
+                        Complete Report
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Quick Actions */}
+          <div className={`grid ${user?.role === 'admin' || user?.isManager ? 'md:grid-cols-2' : 'md:grid-cols-3'} gap-5`}>
+            {/* New Service Report - only for vendors/technicians, not admins/managers */}
+            {user?.role !== 'admin' && !user?.isManager && (
+              <button
+                onClick={() => onNavigate('new_report')}
+                className="card-modern p-6 text-left group hover:border-primary-200 transition-all"
+              >
+                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white mb-4 shadow-md group-hover:scale-105 transition-transform">
+                  {React.cloneElement(Icons.plus, { className: 'w-7 h-7' })}
+                </div>
+                <h3 className="font-semibold text-gray-900">New Service Report</h3>
+                <p className="text-sm text-gray-500 mt-1">Submit a new service report</p>
+              </button>
+            )}
             <button
               onClick={() => onNavigate('reports')}
               className="card-modern p-6 text-left group hover:border-purple-200 transition-all"
@@ -364,7 +525,11 @@
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-500 font-medium">My Reports</p>
-                  <p className="text-3xl font-bold text-primary-500 mt-1">{recentReports?.length || 0}</p>
+                  <p className="text-3xl font-bold text-primary-500 mt-1">{(recentReports?.length || 0) + (assignedReports?.length || 0)}</p>
+                  <div className="flex gap-3 mt-1 text-xs text-gray-500">
+                    <span>{recentReports?.length || 0} submitted</span>
+                    {assignedReports?.length > 0 && <span className="text-red-500">{assignedReports.length} pending</span>}
+                  </div>
                 </div>
                 <div className="w-14 h-14 rounded-xl bg-primary-50 flex items-center justify-center text-primary-500">
                   {React.cloneElement(Icons.document, { className: 'w-7 h-7' })}
@@ -397,8 +562,14 @@
                         {new Date(report.serviceDate || report.serviceCompletionDate || report.createdAt).toLocaleDateString()}
                       </p>
                     </div>
-                    <span className="text-xs bg-success-50 text-success-600 px-3 py-1.5 rounded-full font-medium">
-                      Completed
+                    <span className={`text-xs px-3 py-1.5 rounded-full font-medium ${
+                      report.status === 'assigned'
+                        ? 'bg-warning-50 text-warning-600'
+                        : report.status === 'submitted'
+                          ? 'bg-success-50 text-success-600'
+                          : 'bg-success-50 text-success-600'
+                    }`}>
+                      {report.status === 'assigned' ? 'Assigned' : 'Completed'}
                     </span>
                   </div>
                 ))}
@@ -545,6 +716,7 @@
           validationStartDate: new Date().toISOString().split('T')[0],
           validationEndDate: new Date().toISOString().split('T')[0],
           trainingProvided: '',
+          testProcedures: '',
           validationResults: '',
           validationReportFile: null,
           validationReportFileName: '',
@@ -623,6 +795,7 @@
           validationStartDate: new Date().toISOString().split('T')[0],
           validationEndDate: new Date().toISOString().split('T')[0],
           trainingProvided: '',
+          testProcedures: '',
           validationResults: '',
           validationReportFile: null,
           validationReportFileName: '',
@@ -714,6 +887,11 @@
         }
         if (isValidation && !formData.validationResults) {
           setError('Please fill in the validation results');
+          setLoading(false);
+          return;
+        }
+        if (isValidation && !formData.testProcedures) {
+          setError('Please fill in the test procedures');
           setLoading(false);
           return;
         }
@@ -1021,6 +1199,19 @@
                       </div>
                     </div>
 
+                    {/* Test Procedures */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Test Procedures *</label>
+                      <textarea
+                        value={formData.testProcedures}
+                        onChange={(e) => updateField('testProcedures', e.target.value)}
+                        rows={4}
+                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                        placeholder="Describe the test procedures used during validation (e.g., precision, accuracy, linearity, reportable range, reference interval verification)..."
+                        required
+                      />
+                    </div>
+
                     {/* Training Provided */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Training Provided</label>
@@ -1223,7 +1414,7 @@
     };
 
     // Service Reports Repository Page
-    const ReportsPage = ({ token, onViewReport }) => {
+    const ReportsPage = ({ token, onViewReport, currentUser }) => {
       const [reports, setReports] = useState([]);
       const [loading, setLoading] = useState(true);
       const [searchTerm, setSearchTerm] = useState('');
@@ -1231,6 +1422,20 @@
       const [dateFrom, setDateFrom] = useState('');
       const [dateTo, setDateTo] = useState('');
       const [clients, setClients] = useState([]);
+      const [selectedReports, setSelectedReports] = useState(new Set());
+      const [deleting, setDeleting] = useState(false);
+
+      // Super Admins can delete any, Service Technicians can delete their own
+      const isSuperAdmin = currentUser?.role === 'admin';
+      const isServiceTechnician = currentUser?.role === 'vendor' || currentUser?.hasServicePortalAccess;
+      const canDeleteAny = isSuperAdmin || isServiceTechnician;
+
+      // Check if current user can delete a specific report
+      const canDeleteReport = (report) => {
+        if (isSuperAdmin) return true;
+        if (isServiceTechnician && report.technicianId === currentUser?.id) return true;
+        return false;
+      };
 
       useEffect(() => {
         loadReports();
@@ -1264,6 +1469,7 @@
         loadReports();
       };
 
+      // Filter reports based on search term
       const filteredReports = reports.filter(report => {
         if (searchTerm && !report.clientFacilityName?.toLowerCase().includes(searchTerm.toLowerCase()) &&
             !report.serviceType?.toLowerCase().includes(searchTerm.toLowerCase()) &&
@@ -1272,6 +1478,67 @@
         }
         return true;
       });
+
+      // Get reports that current user can delete
+      const deletableReports = filteredReports.filter(r => canDeleteReport(r));
+
+      const toggleSelectAll = () => {
+        if (selectedReports.size === deletableReports.length && deletableReports.length > 0) {
+          setSelectedReports(new Set());
+        } else {
+          setSelectedReports(new Set(deletableReports.map(r => r.id)));
+        }
+      };
+
+      const toggleSelect = (reportId) => {
+        const newSelected = new Set(selectedReports);
+        if (newSelected.has(reportId)) {
+          newSelected.delete(reportId);
+        } else {
+          newSelected.add(reportId);
+        }
+        setSelectedReports(newSelected);
+      };
+
+      const handleDeleteSelected = async () => {
+        if (!canDeleteAny) return;
+
+        const selectedIds = [...selectedReports];
+        if (selectedIds.length === 0) {
+          alert('No reports selected');
+          return;
+        }
+
+        const confirmMessage = `Are you sure you want to delete ${selectedIds.length} service report(s)? This action cannot be undone.`;
+        if (!confirm(confirmMessage)) return;
+
+        setDeleting(true);
+        try {
+          const response = await fetch(`${API_URL}/api/service-reports`, {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ reportIds: selectedIds })
+          });
+
+          const data = await response.json();
+
+          if (response.ok) {
+            alert(`Successfully deleted ${data.deletedCount} report(s)`);
+            setSelectedReports(new Set());
+            loadReports();
+          } else {
+            alert(data.error || 'Failed to delete reports');
+          }
+        } catch (error) {
+          console.error('Delete error:', error);
+          alert('Failed to delete reports');
+        } finally {
+          setDeleting(false);
+        }
+      };
 
       return (
         <div className="space-y-6">
@@ -1342,6 +1609,32 @@
             </form>
           </div>
 
+          {/* Selection Info & Delete Button (Super Admin and Service Technicians) */}
+          {canDeleteAny && deletableReports.length > 0 && (
+            <div className="bg-white p-4 rounded-xl shadow-sm flex flex-wrap items-center justify-between gap-4">
+              <div className="text-sm text-gray-600">
+                {selectedReports.size > 0 ? (
+                  <span className="font-medium text-primary">{selectedReports.size} of {deletableReports.length} deletable reports selected</span>
+                ) : (
+                  <span>{filteredReports.length} reports found ({deletableReports.length} deletable)</span>
+                )}
+              </div>
+              {selectedReports.size > 0 && (
+                <button
+                  onClick={handleDeleteSelected}
+                  disabled={deleting}
+                  className="bg-red-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-red-700 transition-colors flex items-center gap-2 text-sm disabled:opacity-50"
+                >
+                  {deleting ? (
+                    <><div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div> Deleting...</>
+                  ) : (
+                    <>{Icons.trash} Delete Selected ({selectedReports.size})</>
+                  )}
+                </button>
+              )}
+            </div>
+          )}
+
           <div className="bg-white rounded-xl shadow-sm overflow-hidden">
             {loading ? (
               <div className="flex items-center justify-center py-12">
@@ -1351,6 +1644,16 @@
               <table className="w-full">
                 <thead className="bg-gray-50 border-b">
                   <tr>
+                    {canDeleteAny && deletableReports.length > 0 && (
+                      <th className="px-4 py-3 text-left">
+                        <input
+                          type="checkbox"
+                          checked={selectedReports.size === deletableReports.length && deletableReports.length > 0}
+                          onChange={toggleSelectAll}
+                          className="rounded"
+                        />
+                      </th>
+                    )}
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Date</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Client</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Service Type</th>
@@ -1361,7 +1664,21 @@
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {filteredReports.map((report, idx) => (
-                    <tr key={report.id || idx} className="hover:bg-gray-50">
+                    <tr key={report.id || idx} className={`hover:bg-gray-50 ${selectedReports.has(report.id) ? 'bg-blue-50' : ''}`}>
+                      {canDeleteAny && deletableReports.length > 0 && (
+                        <td className="px-4 py-4">
+                          {canDeleteReport(report) ? (
+                            <input
+                              type="checkbox"
+                              checked={selectedReports.has(report.id)}
+                              onChange={() => toggleSelect(report.id)}
+                              className="rounded"
+                            />
+                          ) : (
+                            <span className="text-gray-300">-</span>
+                          )}
+                        </td>
+                      )}
                       <td className="px-6 py-4 text-sm text-gray-900">
                         {new Date(report.serviceCompletionDate || report.createdAt).toLocaleDateString()}
                       </td>
@@ -1375,13 +1692,44 @@
                         {report.hubspotTicketNumber || '-'}
                       </td>
                       <td className="px-6 py-4">
-                        <button
-                          onClick={() => onViewReport(report)}
-                          className="text-primary hover:text-accent flex items-center gap-1"
-                        >
-                          {Icons.eye}
-                          <span className="text-sm">View</span>
-                        </button>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => onViewReport(report)}
+                            className="text-primary hover:text-accent flex items-center gap-1"
+                          >
+                            {Icons.eye}
+                            <span className="text-sm">View</span>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const tkn = localStorage.getItem('service_token') || localStorage.getItem('token') || localStorage.getItem('unified_token');
+                              fetch(`${API_URL}/api/service-reports/${report.id}/pdf`, {
+                                headers: { 'Authorization': `Bearer ${tkn}` }
+                              })
+                              .then(resp => {
+                                if (!resp.ok) throw new Error('Download failed');
+                                return resp.blob();
+                              })
+                              .then(blob => {
+                                const url = window.URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = `Service_Report_${(report.clientFacilityName || 'Report').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+                                document.body.appendChild(a);
+                                a.click();
+                                window.URL.revokeObjectURL(url);
+                                a.remove();
+                              })
+                              .catch(err => alert('Failed to download PDF: ' + err.message));
+                            }}
+                            className="text-gray-500 hover:text-primary flex items-center gap-1"
+                            title="Download PDF"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                            <span className="text-sm">PDF</span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1401,9 +1749,32 @@
 
     // View Report Page
     const ViewReportPage = ({ report, onBack }) => {
+      const token = localStorage.getItem('service_token') || localStorage.getItem('token') || localStorage.getItem('unified_token');
+
+      const handleDownloadPDF = () => {
+        fetch(`${API_URL}/api/service-reports/${report.id}/pdf`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+        .then(resp => {
+          if (!resp.ok) throw new Error('Download failed');
+          return resp.blob();
+        })
+        .then(blob => {
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `Service_Report_${(report.clientFacilityName || 'Report').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+          a.remove();
+        })
+        .catch(err => alert('Failed to download PDF: ' + err.message));
+      };
+
       return (
         <div className="space-y-6">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center justify-between">
             <button
               onClick={onBack}
               className="flex items-center gap-2 text-primary hover:text-accent"
@@ -1412,6 +1783,13 @@
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
               </svg>
               Back to Reports
+            </button>
+            <button
+              onClick={handleDownloadPDF}
+              className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition font-medium text-sm shadow-sm"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+              Download PDF
             </button>
           </div>
 
@@ -1533,6 +1911,12 @@
                       </div>
                     )}
 
+                    {/* Test Procedures */}
+                    <div>
+                      <p className="text-sm text-gray-500">Test Procedures</p>
+                      <p className="font-medium whitespace-pre-wrap bg-gray-50 p-3 rounded-lg">{report.testProcedures || '-'}</p>
+                    </div>
+
                     {/* Training Provided */}
                     <div>
                       <p className="text-sm text-gray-500">Training Provided</p>
@@ -1593,6 +1977,90 @@
               </div>
             </div>
 
+            {/* Assignment Info - if this was an assigned report */}
+            {report.assignedById && (
+              <div className="p-6 border-b bg-blue-50/30">
+                <h2 className="text-lg font-bold text-accent mb-4">ASSIGNMENT DETAILS</h2>
+                <div className="grid md:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <p className="text-sm text-gray-500">Assigned By</p>
+                    <p className="font-medium">{report.assignedByName || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Assigned On</p>
+                    <p className="font-medium">{report.assignedAt ? new Date(report.assignedAt).toLocaleDateString() : '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Assigned To</p>
+                    <p className="font-medium">{report.assignedToName || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Status</p>
+                    <p className="font-medium">
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${
+                        report.status === 'assigned' ? 'bg-yellow-100 text-yellow-700' :
+                        report.status === 'submitted' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+                      }`}>
+                        {report.status === 'assigned' ? 'Pending' : report.status === 'submitted' ? 'Completed' : report.status}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+
+                {/* Manager Notes */}
+                {report.managerNotes && (
+                  <div className="mt-4 p-4 bg-blue-100/50 border border-blue-200 rounded-lg">
+                    <h3 className="font-semibold text-blue-800 mb-2 text-sm">Manager Notes</h3>
+                    <p className="text-sm text-blue-900 whitespace-pre-wrap">{report.managerNotes}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Reference Photos & Files */}
+            {((report.photos && report.photos.length > 0) || (report.clientFiles && report.clientFiles.length > 0)) && (
+              <div className="p-6 border-b">
+                <h2 className="text-lg font-bold text-accent mb-4">ATTACHMENTS</h2>
+
+                {/* Photos */}
+                {report.photos && report.photos.length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-sm text-gray-500 mb-2">Reference Photos</p>
+                    <div className="flex flex-wrap gap-3">
+                      {report.photos.map((photo, idx) => (
+                        <a key={photo.id || idx} href={photo.url} target="_blank" rel="noopener noreferrer" className="block group">
+                          <img src={photo.url} alt={photo.name || 'Reference photo'} className="w-24 h-24 object-cover rounded-lg border border-gray-200 group-hover:border-primary-500 transition shadow-sm" />
+                          {photo.name && <p className="text-xs text-gray-500 mt-1 truncate w-24">{photo.name}</p>}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Files */}
+                {report.clientFiles && report.clientFiles.length > 0 && (
+                  <div>
+                    <p className="text-sm text-gray-500 mb-2">Client Files</p>
+                    <div className="space-y-2">
+                      {report.clientFiles.map((file, idx) => (
+                        <a key={file.id || idx} href={file.url} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border hover:bg-gray-100 hover:border-primary-300 transition">
+                          <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center text-primary-600">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-gray-900 truncate">{file.name}</p>
+                            {file.uploadedAt && <p className="text-xs text-gray-500">Uploaded {new Date(file.uploadedAt).toLocaleDateString()}</p>}
+                          </div>
+                          <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Signatures */}
             <div className="p-6">
               <h2 className="text-lg font-bold text-accent mb-4">SIGNATURES</h2>
@@ -1626,6 +2094,1059 @@
       );
     };
 
+    // Assigned Reports Page - Shows reports assigned to the current vendor/technician
+    const AssignedReportsPage = ({ assignedReports, onEditAssignment, onBack }) => {
+      return (
+        <div className="space-y-6 animate-fade-in">
+          {/* Header */}
+          <div className="relative rounded-2xl overflow-hidden shadow-lg" style={{minHeight: '140px'}}>
+            <div className="absolute inset-0 bg-cover bg-center" style={{backgroundImage: 'url(/banners/banner-service.jpg)'}}></div>
+            <div className="absolute inset-0 bg-gradient-to-r from-red-700/90 via-red-600/70 to-transparent"></div>
+            <div className="relative p-6 flex items-center min-h-[140px]">
+              <div className="text-white">
+                <h1 className="text-2xl font-bold drop-shadow-sm">Assigned Service Reports</h1>
+                <p className="mt-1 text-white/80 text-sm">Complete your assigned service visits</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Summary Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="card-modern p-5 border-l-4 border-red-500">
+              <p className="text-sm text-gray-500">Pending</p>
+              <p className="text-2xl font-bold text-red-600">{assignedReports.length}</p>
+            </div>
+          </div>
+
+          {/* Assigned Reports List */}
+          <div className="card-modern">
+            <div className="p-6 border-b">
+              <h2 className="text-lg font-bold text-gray-900">Your Assigned Service Visits</h2>
+              <p className="text-sm text-gray-500 mt-1">Click on a report to complete and submit</p>
+            </div>
+
+            {assignedReports.length > 0 ? (
+              <div className="divide-y">
+                {assignedReports.map(report => (
+                  <div key={report.id} className="p-6 hover:bg-gray-50 transition">
+                    <div className="flex items-center justify-between flex-wrap gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center text-red-600">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z"/></svg>
+                          </div>
+                          <div>
+                            <h3 className="font-semibold text-gray-900">{report.clientFacilityName}</h3>
+                            <p className="text-sm text-gray-500">{report.customerName || 'No customer name'}</p>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          {report.serviceType && (
+                            <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">
+                              {report.serviceType}
+                            </span>
+                          )}
+                          {report.serviceCompletionDate && (
+                            <span className="text-xs text-gray-500">
+                              Due: {new Date(report.serviceCompletionDate).toLocaleDateString()}
+                            </span>
+                          )}
+                          <span className="px-2 py-1 bg-warning-50 text-warning-600 rounded text-xs font-medium">
+                            Pending
+                          </span>
+                        </div>
+
+                        {report.managerNotes && (
+                          <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                            <p className="text-xs font-medium text-blue-800 mb-1">Manager Notes:</p>
+                            <p className="text-sm text-blue-900">{report.managerNotes}</p>
+                          </div>
+                        )}
+
+                        <div className="mt-2 text-xs text-gray-400">
+                          Assigned by {report.assignedByName} on {new Date(report.assignedAt).toLocaleDateString()}
+                        </div>
+
+                        {/* Show photos/files count if any */}
+                        <div className="mt-2 flex items-center gap-4 text-xs text-gray-500">
+                          {report.photos && report.photos.length > 0 && (
+                            <span className="flex items-center gap-1">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"/></svg>
+                              {report.photos.length} photo{report.photos.length > 1 ? 's' : ''}
+                            </span>
+                          )}
+                          {report.clientFiles && report.clientFiles.length > 0 && (
+                            <span className="flex items-center gap-1">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
+                              {report.clientFiles.length} file{report.clientFiles.length > 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => onEditAssignment(report)}
+                        className="px-5 py-2.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition flex items-center gap-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/></svg>
+                        Complete Report
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-12 text-center">
+                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900">All caught up!</h3>
+                <p className="text-gray-500 mt-1">You have no pending service visits to complete.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    };
+
+    // Complete Assignment Page - For technicians to complete assigned service reports
+    const CompleteAssignmentPage = ({ token, user, assignment, onSuccess, onCancel }) => {
+      const [formData, setFormData] = useState({
+        descriptionOfWork: '',
+        materialsUsed: '',
+        solution: '',
+        outstandingIssues: '',
+        validationResults: '',
+        validationStartDate: '',
+        validationEndDate: '',
+        trainingProvided: '',
+        testProcedures: '',
+        recommendations: '',
+        analyzersValidated: [],
+        serviceCompletionDate: assignment.serviceCompletionDate || new Date().toISOString().split('T')[0],
+        analyzerSerialNumber: assignment.analyzerSerialNumber || ''
+      });
+      const [customerSignature, setCustomerSignature] = useState(null);
+      const [technicianSignature, setTechnicianSignature] = useState(null);
+      const [submitting, setSubmitting] = useState(false);
+
+      const serviceTypes = ['Analyzer Hardware', 'Inventory', 'LIS/EMR', 'Billing & Fees', 'Compliance', 'Training', 'Validations'];
+      const isValidation = assignment.serviceType === 'Validations';
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!formData.descriptionOfWork) {
+          alert('Please fill in the description of work');
+          return;
+        }
+        setSubmitting(true);
+        try {
+          const reportData = {
+            ...formData,
+            customerSignature,
+            customerSignatureDate: customerSignature ? new Date().toISOString().split('T')[0] : null,
+            technicianSignature,
+            technicianSignatureDate: technicianSignature ? new Date().toISOString().split('T')[0] : null
+          };
+
+          const result = await api.completeAssignedReport(token, assignment.id, reportData);
+          if (result.error) {
+            alert('Error: ' + result.error);
+          } else {
+            alert('Service report submitted successfully!');
+            onSuccess();
+          }
+        } catch (err) {
+          alert('Error submitting report: ' + err.message);
+        }
+        setSubmitting(false);
+      };
+
+      return (
+        <div className="space-y-6 animate-fade-in">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <button onClick={onCancel} className="flex items-center gap-2 text-gray-600 hover:text-primary-500">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+              Back
+            </button>
+          </div>
+
+          <div className="card-modern overflow-hidden">
+            <div className="bg-gradient-to-r from-red-600 to-red-700 text-white p-6">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z"/></svg>
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold">Complete Service Report</h1>
+                  <p className="opacity-90">Assigned by {assignment.assignedByName}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Pre-filled Assignment Info (Read-only) */}
+            <div className="p-6 bg-gray-50 border-b">
+              <h2 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">1</span>
+                Assignment Details (Read-only)
+              </h2>
+              <div className="grid md:grid-cols-2 gap-4 text-sm">
+                <div><span className="text-gray-500">Client:</span> <span className="font-medium">{assignment.clientFacilityName}</span></div>
+                <div><span className="text-gray-500">Customer:</span> <span className="font-medium">{assignment.customerName || '-'}</span></div>
+                <div><span className="text-gray-500">Address:</span> <span className="font-medium">{assignment.address || '-'}</span></div>
+                <div><span className="text-gray-500">Service Type:</span> <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">{assignment.serviceType || '-'}</span></div>
+                <div><span className="text-gray-500">Analyzer:</span> <span className="font-medium">{assignment.analyzerModel || '-'} {assignment.analyzerSerialNumber ? `(S/N: ${assignment.analyzerSerialNumber})` : ''}</span></div>
+                <div><span className="text-gray-500">Ticket #:</span> <span className="font-medium">{assignment.hubspotTicketNumber || '-'}</span></div>
+              </div>
+
+              {/* Manager Notes */}
+              {assignment.managerNotes && (
+                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <h3 className="font-semibold text-blue-800 mb-2 text-sm">Manager Notes</h3>
+                  <p className="text-sm text-blue-900 whitespace-pre-wrap">{assignment.managerNotes}</p>
+                </div>
+              )}
+
+              {/* Photos */}
+              {assignment.photos && assignment.photos.length > 0 && (
+                <div className="mt-4">
+                  <h3 className="font-semibold text-gray-700 mb-2 text-sm">Reference Photos</h3>
+                  <div className="flex flex-wrap gap-3">
+                    {assignment.photos.map((photo, idx) => (
+                      <a key={photo.id || idx} href={photo.url} target="_blank" rel="noopener noreferrer" className="block">
+                        <img src={photo.url} alt={photo.name} className="w-20 h-20 object-cover rounded-lg border hover:opacity-80 transition" />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Client Files */}
+              {assignment.clientFiles && assignment.clientFiles.length > 0 && (
+                <div className="mt-4">
+                  <h3 className="font-semibold text-gray-700 mb-2 text-sm">Client Files</h3>
+                  <div className="space-y-2">
+                    {assignment.clientFiles.map((file, idx) => (
+                      <a key={file.id || idx} href={file.url} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-2 p-2 bg-white rounded border hover:bg-gray-50 transition text-sm">
+                        {Icons.folder}
+                        <span className="text-primary-500 hover:underline">{file.name}</span>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Technician Form */}
+            <form onSubmit={handleSubmit} className="p-6 space-y-6">
+              <h2 className="font-bold text-gray-900 flex items-center gap-2">
+                <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">2</span>
+                Your Service Details
+              </h2>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Service Date *</label>
+                  <input type="date" value={formData.serviceCompletionDate} onChange={(e) => setFormData({...formData, serviceCompletionDate: e.target.value})}
+                    className="input-modern w-full px-4 py-3" required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Analyzer Serial Number (S/N)</label>
+                  <input type="text" value={formData.analyzerSerialNumber} onChange={(e) => setFormData({...formData, analyzerSerialNumber: e.target.value})}
+                    className="input-modern w-full px-4 py-3" placeholder="e.g., 601744124" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description of Work Performed *</label>
+                <textarea value={formData.descriptionOfWork} onChange={(e) => setFormData({...formData, descriptionOfWork: e.target.value})}
+                  rows={4} className="input-modern w-full px-4 py-3" placeholder="Describe the work performed during this service visit..." required />
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Materials Used</label>
+                  <textarea value={formData.materialsUsed} onChange={(e) => setFormData({...formData, materialsUsed: e.target.value})}
+                    rows={3} className="input-modern w-full px-4 py-3" placeholder="List materials, parts, or supplies used..." />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Solution Provided</label>
+                  <textarea value={formData.solution} onChange={(e) => setFormData({...formData, solution: e.target.value})}
+                    rows={3} className="input-modern w-full px-4 py-3" placeholder="Describe the solution or fix implemented..." />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Outstanding Issues / Recommendations</label>
+                <textarea value={formData.outstandingIssues} onChange={(e) => setFormData({...formData, outstandingIssues: e.target.value})}
+                  rows={3} className="input-modern w-full px-4 py-3" placeholder="Note any issues that need follow-up or recommendations for the client..." />
+              </div>
+
+              {/* Validation-specific fields */}
+              {isValidation && (
+                <div className="border-t pt-6">
+                  <h3 className="font-semibold text-gray-900 mb-4">Validation Details</h3>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Validation Start Date</label>
+                      <input type="date" value={formData.validationStartDate} onChange={(e) => setFormData({...formData, validationStartDate: e.target.value})}
+                        className="input-modern w-full px-4 py-3" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Validation End Date</label>
+                      <input type="date" value={formData.validationEndDate} onChange={(e) => setFormData({...formData, validationEndDate: e.target.value})}
+                        className="input-modern w-full px-4 py-3" />
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Test Procedures *</label>
+                    <textarea value={formData.testProcedures} onChange={(e) => setFormData({...formData, testProcedures: e.target.value})}
+                      rows={3} className="input-modern w-full px-4 py-3" placeholder="Describe the test procedures used (e.g., precision, accuracy, linearity, reportable range, reference interval verification)..." required />
+                  </div>
+                  <div className="mt-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Training Provided</label>
+                    <textarea value={formData.trainingProvided} onChange={(e) => setFormData({...formData, trainingProvided: e.target.value})}
+                      rows={2} className="input-modern w-full px-4 py-3" placeholder="Describe any training provided to staff..." />
+                  </div>
+                  <div className="mt-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Validation Results *</label>
+                    <textarea value={formData.validationResults} onChange={(e) => setFormData({...formData, validationResults: e.target.value})}
+                      rows={3} className="input-modern w-full px-4 py-3" placeholder="Describe validation results..." required />
+                  </div>
+                </div>
+              )}
+
+              {/* Signatures */}
+              <div className="border-t pt-6">
+                <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
+                  <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">3</span>
+                  Signatures
+                </h2>
+                <div className="grid md:grid-cols-2 gap-6">
+                  <SignaturePad label="Customer Signature" onSave={setCustomerSignature} />
+                  <SignaturePad label="Technician Signature" onSave={setTechnicianSignature} />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t">
+                <button type="button" onClick={onCancel} className="px-6 py-3 border rounded-xl hover:bg-gray-50 font-medium">Cancel</button>
+                <button type="submit" disabled={submitting} className="btn-primary px-8 py-3 text-white rounded-xl font-medium disabled:opacity-50">
+                  {submitting ? 'Submitting...' : 'Submit Service Report'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      );
+    };
+
+    // Assign Report Page Component (for admins and managers)
+    const AssignReportPage = ({ token, user, clients, onSuccess }) => {
+      const [technicians, setTechnicians] = useState([]);
+      const [allClients, setAllClients] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [submitting, setSubmitting] = useState(false);
+      const [error, setError] = useState('');
+      const [success, setSuccess] = useState('');
+
+      // Form state
+      const [formData, setFormData] = useState({
+        assignedToId: '', clientFacilityName: '', customerName: '', address: '',
+        serviceType: '', analyzerModel: '', analyzerSerialNumber: '',
+        hubspotTicketNumber: '', serviceCompletionDate: '', managerNotes: ''
+      });
+
+      // File upload state
+      const [photos, setPhotos] = useState([]);
+      const [files, setFiles] = useState([]);
+      const [photoPreviewUrls, setPhotoPreviewUrls] = useState([]);
+      const [fileNames, setFileNames] = useState([]);
+      const photoInputRef = useRef(null);
+      const fileInputRef = useRef(null);
+
+      // Add Vendor Modal state
+      const [showVendorModal, setShowVendorModal] = useState(false);
+      const [vendorFormData, setVendorFormData] = useState({ name: '', email: '', password: '', assignedClients: [] });
+      const [vendorSaving, setVendorSaving] = useState(false);
+      const [vendorError, setVendorError] = useState('');
+
+      // HubSpot Import state
+      const [hubspotTicketId, setHubspotTicketId] = useState('');
+      const [importing, setImporting] = useState(false);
+      const [importError, setImportError] = useState('');
+      const [importSuccess, setImportSuccess] = useState('');
+
+      const serviceTypes = ['Analyzer Hardware', 'Inventory', 'LIS/EMR', 'Billing & Fees', 'Compliance', 'Training', 'Validations'];
+
+      useEffect(() => {
+        loadData();
+      }, []);
+
+      const loadData = async () => {
+        setLoading(true);
+        const [techData, clientData] = await Promise.all([
+          api.getTechnicians(token),
+          api.getAllClients(token)
+        ]);
+        if (!techData.error) setTechnicians(techData);
+        if (!clientData.error) setAllClients(clientData);
+        setLoading(false);
+      };
+
+      const handleClientSelect = (clientName) => {
+        const client = (clients.length > 0 ? clients : allClients).find(c => (c.name || c.clientName) === clientName);
+        if (client) {
+          setFormData(prev => ({
+            ...prev,
+            clientFacilityName: client.name || client.clientName || '',
+            address: client.address || '',
+            hubspotCompanyId: client.hubspotCompanyId || ''
+          }));
+        }
+      };
+
+      const handlePhotoSelect = (e) => {
+        const selectedFiles = Array.from(e.target.files);
+        setPhotos(prev => [...prev, ...selectedFiles]);
+        const newUrls = selectedFiles.map(file => URL.createObjectURL(file));
+        setPhotoPreviewUrls(prev => [...prev, ...newUrls]);
+      };
+
+      const handleFileSelect = (e) => {
+        const selectedFiles = Array.from(e.target.files);
+        setFiles(prev => [...prev, ...selectedFiles]);
+        setFileNames(prev => [...prev, ...selectedFiles.map(f => f.name)]);
+      };
+
+      const removePhoto = (idx) => {
+        URL.revokeObjectURL(photoPreviewUrls[idx]);
+        setPhotos(prev => prev.filter((_, i) => i !== idx));
+        setPhotoPreviewUrls(prev => prev.filter((_, i) => i !== idx));
+      };
+
+      const removeFile = (idx) => {
+        setFiles(prev => prev.filter((_, i) => i !== idx));
+        setFileNames(prev => prev.filter((_, i) => i !== idx));
+      };
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!formData.assignedToId || !formData.clientFacilityName) {
+          setError('Please select a technician/vendor and a client');
+          return;
+        }
+
+        setSubmitting(true);
+        setError('');
+
+        try {
+          const result = await api.assignServiceReport(token, formData);
+          if (result.error) {
+            setError(result.error);
+            setSubmitting(false);
+            return;
+          }
+
+          // Upload photos if any
+          if (photos.length > 0) {
+            await api.uploadServiceReportPhotos(token, result.id, photos);
+          }
+
+          // Upload files if any
+          if (files.length > 0) {
+            await api.uploadServiceReportFiles(token, result.id, files);
+          }
+
+          setSuccess('Report assigned successfully!');
+          // Reset form
+          setFormData({
+            assignedToId: '', clientFacilityName: '', customerName: '', address: '',
+            serviceType: '', analyzerModel: '', analyzerSerialNumber: '',
+            hubspotTicketNumber: '', serviceCompletionDate: '', managerNotes: ''
+          });
+          setPhotos([]);
+          setFiles([]);
+          setPhotoPreviewUrls([]);
+          setFileNames([]);
+
+          setTimeout(() => {
+            setSuccess('');
+            if (onSuccess) onSuccess();
+          }, 2000);
+        } catch (err) {
+          setError('Failed to assign report. Please try again.');
+        } finally {
+          setSubmitting(false);
+        }
+      };
+
+      const handleCreateVendor = async (e) => {
+        e.preventDefault();
+        if (!vendorFormData.name || !vendorFormData.email || !vendorFormData.password) {
+          setVendorError('Please fill in all required fields');
+          return;
+        }
+
+        setVendorSaving(true);
+        setVendorError('');
+
+        try {
+          const result = await api.createVendor(token, vendorFormData);
+          if (result.error) {
+            setVendorError(result.error);
+            setVendorSaving(false);
+            return;
+          }
+
+          // Refresh technicians list
+          const techData = await api.getTechnicians(token);
+          if (!techData.error) setTechnicians(techData);
+
+          // Close modal and reset form
+          setShowVendorModal(false);
+          setVendorFormData({ name: '', email: '', password: '', assignedClients: [] });
+          setSuccess('Vendor created successfully!');
+          setTimeout(() => setSuccess(''), 3000);
+        } catch (err) {
+          setVendorError('Failed to create vendor. Please try again.');
+        } finally {
+          setVendorSaving(false);
+        }
+      };
+
+      const handleImportFromHubSpot = async () => {
+        if (!hubspotTicketId.trim()) {
+          setImportError('Please enter a HubSpot ticket ID');
+          return;
+        }
+
+        setImporting(true);
+        setImportError('');
+        setImportSuccess('');
+
+        try {
+          const response = await fetch(`/api/hubspot/ticket/${hubspotTicketId.trim()}/map-to-service-report`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+
+          const data = await response.json();
+
+          if (!response.ok || data.error) {
+            setImportError(data.error || data.details || 'Failed to fetch ticket from HubSpot');
+            setImporting(false);
+            return;
+          }
+
+          // Populate form with mapped data
+          setFormData({
+            assignedToId: data.assignedToId || '',
+            clientFacilityName: data.clientFacilityName || '',
+            customerName: data.customerName || '',
+            address: formData.address, // Keep existing if not provided
+            serviceType: data.serviceType || '',
+            analyzerModel: formData.analyzerModel, // Keep existing
+            analyzerSerialNumber: data.analyzerSerialNumber || '',
+            hubspotTicketNumber: data.hubspotTicketNumber || '',
+            serviceCompletionDate: data.serviceCompletionDate || '',
+            managerNotes: data.managerNotes || ''
+          });
+
+          // If company is found, trigger client select to auto-fill address
+          if (data.clientFacilityName) {
+            handleClientSelect(data.clientFacilityName);
+          }
+
+          setImportSuccess('Ticket data imported successfully!');
+
+          if (data.hubspotOwnerNotMatched) {
+            setImportError('Warning: HubSpot ticket owner could not be matched to an internal user. Please manually select an assignee.');
+          }
+
+          // Clear success message after 5 seconds
+          setTimeout(() => setImportSuccess(''), 5000);
+        } catch (err) {
+          setImportError('Failed to import ticket. Please check the ticket ID and try again.');
+          console.error('Import error:', err);
+        } finally {
+          setImporting(false);
+        }
+      };
+
+      if (loading) {
+        return (
+          <div className="flex items-center justify-center py-12">
+            <div className="text-center">
+              <svg className="animate-spin w-8 h-8 text-primary-500 mx-auto mb-3" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+              </svg>
+              <p className="text-gray-500">Loading...</p>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="space-y-6 animate-fade-in">
+          {/* Header */}
+          <div className="card-modern p-6">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white shadow-lg">
+                {Icons.assign}
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">Assign Service Report</h1>
+                <p className="text-gray-500">Pre-populate details and assign a service visit to a technician or vendor</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Success/Error Messages */}
+          {success && (
+            <div className="bg-success-50 text-success-600 px-4 py-3 rounded-xl flex items-center gap-2">
+              {Icons.check}
+              <span>{success}</span>
+            </div>
+          )}
+          {error && (
+            <div className="bg-danger-50 text-danger-600 px-4 py-3 rounded-xl flex items-center gap-2">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* HubSpot Import Section */}
+          <div className="card-modern p-6 bg-gradient-to-r from-orange-50 to-yellow-50 border-l-4 border-orange-500">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-orange-500 flex items-center justify-center text-white flex-shrink-0">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"/>
+                </svg>
+              </div>
+              <div className="flex-1">
+                <h3 className="font-bold text-gray-900 mb-1">Import from HubSpot Ticket</h3>
+                <p className="text-sm text-gray-600 mb-4">Auto-populate this form by importing data from a HubSpot ticket</p>
+
+                {importSuccess && (
+                  <div className="bg-success-50 text-success-600 px-3 py-2 rounded-lg flex items-center gap-2 mb-3 text-sm">
+                    {Icons.check}
+                    <span>{importSuccess}</span>
+                  </div>
+                )}
+                {importError && (
+                  <div className="bg-danger-50 text-danger-600 px-3 py-2 rounded-lg flex items-center gap-2 mb-3 text-sm">
+                    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                    <span>{importError}</span>
+                  </div>
+                )}
+
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <div className="flex-1">
+                    <input
+                      type="text"
+                      value={hubspotTicketId}
+                      onChange={(e) => setHubspotTicketId(e.target.value)}
+                      placeholder="Enter HubSpot Ticket ID (e.g., 12345678)"
+                      className="input-modern w-full px-4 py-3"
+                      disabled={importing}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleImportFromHubSpot}
+                    disabled={importing || !hubspotTicketId.trim()}
+                    className="px-6 py-3 bg-orange-500 text-white rounded-xl font-medium hover:bg-orange-600 transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  >
+                    {importing ? (
+                      <>
+                        <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                        </svg>
+                        <span>Importing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"/>
+                        </svg>
+                        <span>Import Ticket</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  The ticket ID can be found in the HubSpot ticket URL or ticket details
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Assignment Section */}
+            <div className="card-modern p-6 border-l-4 border-blue-500">
+              <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
+                <span className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 text-sm">1</span>
+                Assignment
+              </h2>
+              <div className="flex flex-col sm:flex-row gap-4 sm:items-end">
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Assign To *</label>
+                  <select
+                    value={formData.assignedToId}
+                    onChange={(e) => setFormData({...formData, assignedToId: e.target.value})}
+                    className="input-modern w-full px-4 py-3"
+                    required
+                  >
+                    <option value="">Select a technician or vendor...</option>
+                    {technicians.map(tech => (
+                      <option key={tech.id} value={tech.id}>
+                        {tech.name} {tech.role === 'vendor' ? '(Vendor)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowVendorModal(true)}
+                  className="px-4 py-3 bg-orange-500 text-white rounded-xl font-medium hover:bg-orange-600 transition flex items-center justify-center gap-2 whitespace-nowrap w-full sm:w-auto"
+                >
+                  {Icons.userPlus}
+                  Add New Vendor
+                </button>
+              </div>
+            </div>
+
+            {/* Client Information Section */}
+            <div className="card-modern p-6">
+              <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
+                <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">2</span>
+                Client Information
+              </h2>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Client/Facility Name *</label>
+                  <select
+                    value={formData.clientFacilityName}
+                    onChange={(e) => handleClientSelect(e.target.value)}
+                    className="input-modern w-full px-4 py-3"
+                    required
+                  >
+                    <option value="">Select a client...</option>
+                    {(clients.length > 0 ? clients : allClients).map((client, idx) => (
+                      <option key={idx} value={client.name || client.clientName}>
+                        {client.name || client.clientName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Customer Name</label>
+                  <input
+                    type="text"
+                    value={formData.customerName}
+                    onChange={(e) => setFormData({...formData, customerName: e.target.value})}
+                    className="input-modern w-full px-4 py-3"
+                    placeholder="Contact name"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                  <input
+                    type="text"
+                    value={formData.address}
+                    onChange={(e) => setFormData({...formData, address: e.target.value})}
+                    className="input-modern w-full px-4 py-3"
+                    placeholder="Service address"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Service Details Section */}
+            <div className="card-modern p-6">
+              <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
+                <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">3</span>
+                Service Details
+              </h2>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Service Type</label>
+                  <select
+                    value={formData.serviceType}
+                    onChange={(e) => setFormData({...formData, serviceType: e.target.value})}
+                    className="input-modern w-full px-4 py-3"
+                  >
+                    <option value="">Select service type...</option>
+                    {serviceTypes.map(type => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Target Completion Date</label>
+                  <input
+                    type="date"
+                    value={formData.serviceCompletionDate}
+                    onChange={(e) => setFormData({...formData, serviceCompletionDate: e.target.value})}
+                    className="input-modern w-full px-4 py-3"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Analyzer Model</label>
+                  <input
+                    type="text"
+                    value={formData.analyzerModel}
+                    onChange={(e) => setFormData({...formData, analyzerModel: e.target.value})}
+                    className="input-modern w-full px-4 py-3"
+                    placeholder="e.g., DZLite C270"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Analyzer Serial Number</label>
+                  <input
+                    type="text"
+                    value={formData.analyzerSerialNumber}
+                    onChange={(e) => setFormData({...formData, analyzerSerialNumber: e.target.value})}
+                    className="input-modern w-full px-4 py-3"
+                    placeholder="e.g., 601744124"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">HubSpot Ticket #</label>
+                  <input
+                    type="text"
+                    value={formData.hubspotTicketNumber}
+                    onChange={(e) => setFormData({...formData, hubspotTicketNumber: e.target.value})}
+                    className="input-modern w-full px-4 py-3"
+                    placeholder="Enter ticket number"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Manager Notes Section */}
+            <div className="card-modern p-6 border-l-4 border-yellow-500">
+              <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
+                <span className="w-6 h-6 bg-yellow-100 rounded-full flex items-center justify-center text-yellow-600 text-sm">4</span>
+                Manager Notes
+              </h2>
+              <textarea
+                value={formData.managerNotes}
+                onChange={(e) => setFormData({...formData, managerNotes: e.target.value})}
+                rows={4}
+                className="input-modern w-full px-4 py-3"
+                placeholder="Add instructions or notes for the technician..."
+              />
+            </div>
+
+            {/* Reference Photos Section */}
+            <div className="card-modern p-6">
+              <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
+                <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">5</span>
+                Reference Photos
+              </h2>
+              <p className="text-sm text-gray-500 mb-3">Upload photos for technician reference (equipment photos, location details, etc.)</p>
+              <input
+                type="file"
+                ref={photoInputRef}
+                onChange={handlePhotoSelect}
+                accept="image/*"
+                multiple
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => photoInputRef.current?.click()}
+                className="px-4 py-2 border-2 border-dashed border-gray-300 rounded-xl hover:border-primary-500 text-gray-600 hover:text-primary-600 transition flex items-center gap-2"
+              >
+                {Icons.photo} Add Photos
+              </button>
+              {photoPreviewUrls.length > 0 && (
+                <div className="flex flex-wrap gap-3 mt-4">
+                  {photoPreviewUrls.map((url, idx) => (
+                    <div key={idx} className="relative">
+                      <img src={url} alt={`Preview ${idx + 1}`} className="w-24 h-24 object-cover rounded-xl border" />
+                      <button
+                        type="button"
+                        onClick={() => removePhoto(idx)}
+                        className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Client Files Section */}
+            <div className="card-modern p-6">
+              <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
+                <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">6</span>
+                Client Files
+              </h2>
+              <p className="text-sm text-gray-500 mb-3">Upload relevant documents (service manuals, previous reports, etc.)</p>
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileSelect}
+                multiple
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="px-4 py-2 border-2 border-dashed border-gray-300 rounded-xl hover:border-primary-500 text-gray-600 hover:text-primary-600 transition flex items-center gap-2"
+              >
+                {Icons.folder} Add Files
+              </button>
+              {fileNames.length > 0 && (
+                <div className="space-y-2 mt-4">
+                  {fileNames.map((name, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                      <span className="text-sm text-gray-700 flex items-center gap-2">
+                        {Icons.document} {name}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeFile(idx)}
+                        className="text-red-500 hover:text-red-700 text-sm font-medium"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Submit Buttons */}
+            <div className="flex justify-end gap-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setFormData({
+                    assignedToId: '', clientFacilityName: '', customerName: '', address: '',
+                    serviceType: '', analyzerModel: '', analyzerSerialNumber: '',
+                    hubspotTicketNumber: '', serviceCompletionDate: '', managerNotes: ''
+                  });
+                  setPhotos([]);
+                  setFiles([]);
+                  setPhotoPreviewUrls([]);
+                  setFileNames([]);
+                }}
+                className="px-6 py-3 border rounded-xl hover:bg-gray-50 font-medium"
+              >
+                Clear Form
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="btn-primary px-8 py-3 text-white rounded-xl font-medium disabled:opacity-50 flex items-center gap-2"
+              >
+                {submitting ? (
+                  <>
+                    <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                    Assigning...
+                  </>
+                ) : 'Assign Report'}
+              </button>
+            </div>
+          </form>
+
+          {/* Add Vendor Modal */}
+          {showVendorModal && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto animate-fade-in">
+                <div className="p-6 border-b flex justify-between items-center sticky top-0 bg-white rounded-t-2xl">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center text-orange-600">
+                      {Icons.userPlus}
+                    </div>
+                    <h3 className="text-xl font-bold text-gray-900">Add New Vendor</h3>
+                  </div>
+                  <button onClick={() => { setShowVendorModal(false); setVendorError(''); }} className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-lg transition">
+                    {Icons.close}
+                  </button>
+                </div>
+                <form onSubmit={handleCreateVendor} className="p-6 space-y-4">
+                  {vendorError && (
+                    <div className="bg-danger-50 text-danger-600 px-4 py-3 rounded-xl text-sm">
+                      {vendorError}
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                    <input
+                      type="text"
+                      value={vendorFormData.name}
+                      onChange={(e) => setVendorFormData({...vendorFormData, name: e.target.value})}
+                      className="input-modern w-full px-4 py-3"
+                      placeholder="Vendor name"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                    <input
+                      type="email"
+                      value={vendorFormData.email}
+                      onChange={(e) => setVendorFormData({...vendorFormData, email: e.target.value})}
+                      className="input-modern w-full px-4 py-3"
+                      placeholder="vendor@example.com"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Password *</label>
+                    <input
+                      type="password"
+                      value={vendorFormData.password}
+                      onChange={(e) => setVendorFormData({...vendorFormData, password: e.target.value})}
+                      className="input-modern w-full px-4 py-3"
+                      placeholder="Create a password"
+                      required
+                    />
+                  </div>
+                  <div className="flex gap-3 pt-4">
+                    <button
+                      type="button"
+                      onClick={() => { setShowVendorModal(false); setVendorError(''); }}
+                      className="flex-1 px-4 py-3 border rounded-xl hover:bg-gray-50 font-medium"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={vendorSaving}
+                      className="flex-1 px-4 py-3 bg-orange-500 text-white rounded-xl hover:bg-orange-600 font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {vendorSaving ? (
+                        <>
+                          <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                          Creating...
+                        </>
+                      ) : 'Create Vendor'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+
     // Main App Component
     const App = () => {
       // Check multiple token sources - service_token, unified_token, or admin_token
@@ -1645,6 +3166,8 @@
       const [data, setData] = useState(null);
       const [clients, setClients] = useState([]);
       const [viewingReport, setViewingReport] = useState(null);
+      const [assignedReports, setAssignedReports] = useState([]);
+      const [editingAssignment, setEditingAssignment] = useState(null);
 
       useEffect(() => {
         if (token) {
@@ -1652,11 +3175,44 @@
         }
       }, [token]);
 
+      // Handle browser back/forward cache (bfcache) - re-validate auth when page is restored
+      useEffect(() => {
+        const handlePageShow = (event) => {
+          // Check if page was restored from bfcache
+          if (event.persisted) {
+            // Re-check localStorage for valid tokens
+            const storedToken = localStorage.getItem('service_token') || localStorage.getItem('unified_token') || localStorage.getItem('admin_token');
+            const storedUserData = localStorage.getItem('service_user') || localStorage.getItem('unified_user') || localStorage.getItem('admin_user');
+
+            if (!storedToken || !storedUserData) {
+              // Tokens were cleared (user logged out), update React state
+              setToken(null);
+              setUser(null);
+            }
+          }
+        };
+
+        window.addEventListener('pageshow', handlePageShow);
+        return () => window.removeEventListener('pageshow', handlePageShow);
+      }, []);
+
       const loadData = async () => {
-        const [portalData, clientsData] = await Promise.all([
+        console.log('🔄 LOADING DATA - User:', user?.name, 'Role:', user?.role, 'ID:', user?.id);
+
+        const [portalData, clientsData, assignedData] = await Promise.all([
           api.getServicePortalData(token),
-          api.getClients(token)
+          api.getClients(token),
+          api.getAssignedReports(token)
         ]);
+
+        console.log('📊 API RESPONSES:');
+        console.log('  - Portal Data:', portalData?.error || 'OK');
+        console.log('  - Clients:', clientsData?.error || `${clientsData?.length || 0} clients`);
+        console.log('  - Assigned Reports:', assignedData?.error || `${assignedData?.length || 0} reports`);
+
+        if (assignedData && !assignedData.error) {
+          console.log('📋 ASSIGNED REPORTS DETAIL:', JSON.stringify(assignedData, null, 2));
+        }
 
         if (portalData.error === 'Invalid token' || portalData.error?.includes('unauthorized')) {
           handleLogout();
@@ -1670,6 +3226,13 @@
         if (!clientsData.error) {
           setClients(clientsData);
         }
+
+        if (!assignedData.error && Array.isArray(assignedData)) {
+          console.log('✅ Setting assignedReports state to:', assignedData.length, 'reports');
+          setAssignedReports(assignedData);
+        } else {
+          console.log('❌ Not setting assignedReports - Error or not array:', assignedData);
+        }
       };
 
       const handleLogin = (newToken, newUser) => {
@@ -1678,8 +3241,17 @@
       };
 
       const handleLogout = () => {
+        // Clear all portal token keys to prevent stale sessions
         localStorage.removeItem('service_token');
         localStorage.removeItem('service_user');
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        localStorage.removeItem('unified_token');
+        localStorage.removeItem('unified_user');
+        localStorage.removeItem('admin_token');
+        localStorage.removeItem('admin_user');
+        localStorage.removeItem('portal_token');
+        localStorage.removeItem('portal_user');
         setToken(null);
         setUser(null);
       };
@@ -1687,6 +3259,11 @@
       const handleViewReport = (report) => {
         setViewingReport(report);
         setActivePage('view_report');
+      };
+
+      const handleEditAssignment = (assignment) => {
+        setEditingAssignment(assignment);
+        setActivePage('complete_assignment');
       };
 
       if (!token || !user) {
@@ -1706,9 +3283,28 @@
           );
         }
 
+        if (editingAssignment && activePage === 'complete_assignment') {
+          return (
+            <CompleteAssignmentPage
+              token={token}
+              user={user}
+              assignment={editingAssignment}
+              onSuccess={() => {
+                setEditingAssignment(null);
+                loadData();
+                setActivePage('home');
+              }}
+              onCancel={() => {
+                setEditingAssignment(null);
+                setActivePage('home');
+              }}
+            />
+          );
+        }
+
         switch (activePage) {
           case 'home':
-            return <HomePage user={user} onNavigate={setActivePage} recentReports={data?.recentReports || []} />;
+            return <HomePage user={user} onNavigate={setActivePage} recentReports={data?.recentReports || []} assignedReports={assignedReports} onEditAssignment={handleEditAssignment} />;
           case 'new_report':
             return (
               <NewReportPage
@@ -1722,9 +3318,33 @@
               />
             );
           case 'reports':
-            return <ReportsPage token={token} onViewReport={handleViewReport} />;
+            return <ReportsPage token={token} onViewReport={handleViewReport} currentUser={user} />;
+          case 'assigned_reports':
+            return (
+              <AssignedReportsPage
+                assignedReports={assignedReports}
+                onEditAssignment={handleEditAssignment}
+                onBack={() => setActivePage('home')}
+              />
+            );
+          case 'assign_report':
+            // Only show for admins and managers
+            if (user?.role === 'admin' || (user?.isManager && user?.hasServicePortalAccess)) {
+              return (
+                <AssignReportPage
+                  token={token}
+                  user={user}
+                  clients={clients}
+                  onSuccess={() => {
+                    loadData();
+                    setActivePage('home');
+                  }}
+                />
+              );
+            }
+            return <HomePage user={user} onNavigate={setActivePage} recentReports={data?.recentReports || []} assignedReports={assignedReports} onEditAssignment={handleEditAssignment} />;
           default:
-            return <HomePage user={user} onNavigate={setActivePage} recentReports={data?.recentReports || []} />;
+            return <HomePage user={user} onNavigate={setActivePage} recentReports={data?.recentReports || []} assignedReports={assignedReports} onEditAssignment={handleEditAssignment} />;
         }
       };
 
@@ -1748,6 +3368,36 @@
           </div>
 
           <main className="lg:ml-72 p-4 lg:p-8">
+            {/* Assignment Notification Banner */}
+            {assignedReports.length > 0 && activePage !== 'complete_assignment' && (
+              <div className="bg-red-600 text-white px-4 py-3 rounded-xl mb-6 shadow-lg animate-fade-in">
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
+                    </div>
+                    <div>
+                      <p className="font-semibold">You have {assignedReports.length} assigned service visit{assignedReports.length > 1 ? 's' : ''}</p>
+                      <p className="text-sm opacity-90">Click to review and complete the service report</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 flex-wrap">
+                    {assignedReports.slice(0, 2).map(report => (
+                      <button
+                        key={report.id}
+                        onClick={() => handleEditAssignment(report)}
+                        className="px-4 py-2 bg-white text-red-600 rounded-lg font-medium hover:bg-red-50 transition text-sm"
+                      >
+                        {report.clientFacilityName}
+                      </button>
+                    ))}
+                    {assignedReports.length > 2 && (
+                      <span className="px-3 py-2 bg-white/20 rounded-lg text-sm">+{assignedReports.length - 2} more</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
             {renderPage()}
           </main>
         </div>

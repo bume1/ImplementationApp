@@ -248,11 +248,61 @@ async function uploadSoftPilotChecklist(projectName, clientName, htmlContent) {
   }
 }
 
+const SERVICE_REPORTS_FOLDER_ID = '1QUAflJXWcUHc6XRCmj-LPPsdZeDwAm2J';
+
+async function uploadServiceReportPDF(clientName, fileName, pdfBuffer) {
+  try {
+    const drive = await getDriveClient();
+    const { Readable } = require('stream');
+
+    // Create or find client subfolder inside the service reports folder
+    const clientFolderId = await findOrCreateFolder(clientName, SERVICE_REPORTS_FOLDER_ID);
+
+    const fileMetadata = {
+      name: fileName,
+      parents: [clientFolderId]
+    };
+
+    const media = {
+      mimeType: 'application/pdf',
+      body: Readable.from([pdfBuffer])
+    };
+
+    const response = await drive.files.create({
+      resource: fileMetadata,
+      media: media,
+      fields: 'id, name, webViewLink, webContentLink'
+    });
+
+    // Make file viewable by anyone with link
+    await drive.permissions.create({
+      fileId: response.data.id,
+      requestBody: {
+        role: 'reader',
+        type: 'anyone'
+      }
+    });
+
+    console.log(`✅ Uploaded service report PDF to Google Drive: ${response.data.name}`);
+
+    return {
+      fileId: response.data.id,
+      fileName: response.data.name,
+      webViewLink: response.data.webViewLink,
+      webContentLink: response.data.webContentLink
+    };
+  } catch (error) {
+    console.error('Error uploading service report PDF to Google Drive:', error.message);
+    throw error;
+  }
+}
+
 module.exports = {
   testConnection,
   findOrCreateFolder,
   uploadHtmlFile,
   uploadSoftPilotChecklist,
   uploadTaskFile,
-  deleteFile
+  deleteFile,
+  uploadServiceReportPDF
 };

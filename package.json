@@ -4,7 +4,9 @@
   "description": "Multi-project launch tracker with templates and HubSpot integration",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "changelog": "node changelog-generator.js",
+    "changelog:version": "node changelog-generator.js"
   },
   "dependencies": {
     "@hubspot/api-client": "^13.4.0",

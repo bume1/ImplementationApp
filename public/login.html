@@ -110,7 +110,7 @@
         setResetMessage('');
 
         try {
-          const response = await fetch('/api/auth/request-password-reset', {
+          const response = await fetch('/api/auth/forgot-password', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email })
@@ -313,7 +313,8 @@
     // Portal Hub - Landing page after login showing available portals
     const PortalHub = ({ user, token, onLogout }) => {
       const [showFeedbackModal, setShowFeedbackModal] = useState(false);
-      const isAdmin = user.role === 'admin';
+      const isAdmin = user.role === 'admin'; // Super Admin
+      const isManager = user.isManager && !isAdmin; // Manager (limited admin access)
       const isTeamMember = user.role === 'user';
       const isVendor = user.role === 'vendor';
       const isClient = user.role === 'client';
@@ -321,12 +322,14 @@
       // Build list of available portals based on permissions
       const availablePortals = [];
 
-      // Admin Hub - admins or users with hasAdminHubAccess
-      if (isAdmin || user.hasAdminHubAccess) {
+      // Admin Hub - super admins, managers, or users with hasAdminHubAccess
+      if (isAdmin || isManager || user.hasAdminHubAccess) {
         availablePortals.push({
           id: 'admin',
           name: 'Admin Hub',
-          description: 'Central administration, user management, and service portal',
+          description: isManager
+            ? 'Service portal management (limited access)'
+            : 'Central administration, user management, and service portal',
           icon: Icons.admin,
           color: 'from-primary-500 to-primary-700',
           path: '/admin'
@@ -346,7 +349,7 @@
         });
       }
 
-      // Service Portal - admins, users with hasServicePortalAccess, or vendors
+      // Service Portal - super admins, users with hasServicePortalAccess, or vendors (NOT managers)
       if (isAdmin || user.hasServicePortalAccess || isVendor) {
         availablePortals.push({
           id: 'service',
@@ -358,8 +361,8 @@
         });
       }
 
-      // Client Portal Admin - admins or users with hasClientPortalAdminAccess
-      if (isAdmin || user.hasClientPortalAdminAccess) {
+      // Client Portal Admin - super admins, managers, or users with hasClientPortalAdminAccess
+      if (isAdmin || isManager || user.hasClientPortalAdminAccess) {
         availablePortals.push({
           id: 'clientPortalAdmin',
           name: 'Client Portal Admin',
@@ -387,7 +390,7 @@
         availablePortals.push({
           id: 'knowledge',
           name: 'Knowledge Hub',
-          description: 'Guides, tutorials, and documentation for using Thrive 365 Labs',
+          description: 'Guides, tutorials, and documentation for using the Thrive 365 Labs Portal Hub',
           icon: Icons.knowledge,
           color: 'from-indigo-500 to-indigo-700',
           path: '/knowledge'
@@ -410,7 +413,20 @@
               <div className="flex items-center gap-4">
                 <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-10" />
                 <div>
-                  <h1 className="text-xl font-bold text-accent">Portal Hub</h1>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-xl font-bold text-accent">Portal Hub</h1>
+                    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                      isAdmin ? 'bg-purple-100 text-purple-700' :
+                      isManager ? 'bg-indigo-100 text-indigo-700' :
+                      isClient ? 'bg-blue-100 text-blue-700' :
+                      isVendor ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                    }`}>{
+                      isAdmin ? 'Super Admin' :
+                      isManager ? 'Manager' :
+                      isClient ? 'Client' :
+                      isVendor ? 'Vendor' : 'Team Member'
+                    }</span>
+                  </div>
                   <p className="text-sm text-gray-500">Welcome back, {user.practiceName || user.name}</p>
                 </div>
               </div>
@@ -480,7 +496,7 @@
                 <div>
                   <p className="text-gray-500">Role</p>
                   <p className="font-medium capitalize">
-                    {user.role === 'user' ? 'Team Member' : user.role === 'vendor' ? 'External Vendor' : user.role}
+                    {isAdmin ? 'Super Admin' : isManager ? 'Manager' : user.role === 'user' ? 'Team Member' : user.role === 'vendor' ? 'External Vendor' : user.role === 'client' ? 'Client' : user.role}
                   </p>
                 </div>
               </div>
@@ -684,12 +700,7 @@
       };
 
       const handleLogout = () => {
-        localStorage.removeItem('unified_token');
-        localStorage.removeItem('unified_user');
-        localStorage.removeItem('admin_token');
-        localStorage.removeItem('admin_user');
-        localStorage.removeItem('portal_token');
-        localStorage.removeItem('portal_user');
+        localStorage.clear();
         setToken(null);
         setUser(null);
         setShowPasswordChange(false);
