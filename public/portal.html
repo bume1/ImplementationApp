@@ -2230,13 +2230,13 @@
     };
 
     const SupportPage = ({ settings, token, userData, activeTab: propActiveTab, onTabChange }) => {
-      const [reports, setReports] = useState([]);
+      const [tickets, setTickets] = useState([]);
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState(null);
       const [localActiveTab, setLocalActiveTab] = useState(propActiveTab || 'history');
-      const [expandedReport, setExpandedReport] = useState(null);
+      const [expandedTicket, setExpandedTicket] = useState(null);
+      const [statusFilter, setStatusFilter] = useState('all');
 
-      // Use prop tab if provided (for URL routing), otherwise use local state
       const activeTab = propActiveTab || localActiveTab;
       const setActiveTab = (tab) => {
         if (onTabChange) {
@@ -2248,24 +2248,28 @@
 
       useEffect(() => {
         if (token) {
-          fetchServiceReports();
+          fetchTickets();
         } else {
           setLoading(false);
         }
       }, [token]);
 
-      const fetchServiceReports = async () => {
+      const fetchTickets = async () => {
+        setLoading(true);
+        setError(null);
         try {
-          const response = await fetch(`${API_URL}/api/client/service-reports`, {
+          const response = await fetch(`${API_URL}/api/client/hubspot/tickets`, {
             headers: { 'Authorization': `Bearer ${token}` }
           });
           const data = await response.json();
-          if (data.reports) {
-            setReports(data.reports);
+          if (data.error) {
+            setError(data.error);
+          } else {
+            setTickets(data.tickets || []);
           }
         } catch (err) {
-          console.error('Error fetching service reports:', err);
-          setError('Unable to load service history');
+          console.error('Error fetching support tickets:', err);
+          setError('Unable to load support tickets');
         } finally {
           setLoading(false);
         }
@@ -2277,6 +2281,9 @@
           year: 'numeric', month: 'short', day: 'numeric'
         });
       };
+
+      const filteredTickets = statusFilter === 'all' ? tickets
+        : tickets.filter(t => t.status === statusFilter);
 
       return (
         <div className="space-y-6">
@@ -2303,7 +2310,7 @@
                 className={`py-4 px-4 font-medium transition flex items-center justify-center gap-2 ${activeTab === 'history' ? '' : 'text-gray-600 hover:bg-gray-50 border-r'}`}
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
-                <span>Service History</span>
+                <span>Support Tickets</span>
               </button>
               <button
                 onClick={() => setActiveTab('submit')}
@@ -2316,14 +2323,25 @@
             </div>
 
             <div className="p-6">
-              {/* Service History Tab */}
+              {/* Support Tickets Tab */}
               {activeTab === 'history' && (
                 <div>
                   <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-semibold text-gray-800">Your Service History</h2>
-                    <button onClick={fetchServiceReports} className="text-primary hover:text-accent text-sm flex items-center gap-1">
-                      {Icons.refresh || '↻'} Refresh
-                    </button>
+                    <h2 className="text-lg font-semibold text-gray-800">Your Support Tickets</h2>
+                    <div className="flex items-center gap-3">
+                      <select
+                        value={statusFilter}
+                        onChange={(e) => setStatusFilter(e.target.value)}
+                        className="text-sm border rounded-lg px-3 py-1.5 text-gray-600 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      >
+                        <option value="all">All Tickets</option>
+                        <option value="Open">Open</option>
+                        <option value="Closed">Closed</option>
+                      </select>
+                      <button onClick={fetchTickets} className="text-primary hover:text-accent text-sm flex items-center gap-1">
+                        {Icons.refresh || '\u21bb'} Refresh
+                      </button>
+                    </div>
                   </div>
 
                   {loading ? (
@@ -2333,47 +2351,71 @@
                   ) : error ? (
                     <div className="text-center py-12 text-red-500">
                       <p>{error}</p>
-                      <button onClick={fetchServiceReports} className="mt-4 text-primary hover:underline">Try again</button>
+                      <button onClick={fetchTickets} className="mt-4 text-primary hover:underline">Try again</button>
                     </div>
-                  ) : reports.length === 0 ? (
+                  ) : filteredTickets.length === 0 ? (
                     <div className="text-center py-12 text-gray-500">
                       <div className="flex justify-center mb-4 text-green-400">{React.cloneElement(Icons.check, { className: 'w-16 h-16' })}</div>
-                      <p className="font-medium">No service reports</p>
-                      <p className="text-sm mt-2">No service reports have been filed for your account yet.</p>
+                      <p className="font-medium">No support tickets</p>
+                      <p className="text-sm mt-2">{statusFilter !== 'all' ? `No ${statusFilter.toLowerCase()} tickets found.` : 'No support tickets have been filed for your account yet.'}</p>
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {reports.map(report => (
-                        <div key={report.id} className="border rounded-lg overflow-hidden">
+                      {filteredTickets.map(ticket => (
+                        <div key={ticket.id} className="border rounded-lg overflow-hidden">
                           <button
-                            onClick={() => setExpandedReport(expandedReport === report.id ? null : report.id)}
+                            onClick={() => setExpandedTicket(expandedTicket === ticket.id ? null : ticket.id)}
                             className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition text-left"
                           >
-                            <div className="flex-1">
-                              <p className="font-medium text-gray-800">{report.serviceType}</p>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-gray-800 truncate">{ticket.subject}</p>
                               <div className="flex flex-wrap items-center gap-3 mt-1 text-sm text-gray-500">
-                                <span>Completed: {formatDate(report.completedAt)}</span>
-                                <span>Technician: {report.technicianName}</span>
-                                {report.ticketNumber && (
-                                  <span className="text-primary font-medium">Ticket #{report.ticketNumber}</span>
+                                <span>Opened: {formatDate(ticket.createdAt)}</span>
+                                {ticket.closedAt && <span>Closed: {formatDate(ticket.closedAt)}</span>}
+                                {ticket.serviceReport && (
+                                  <span className="text-primary font-medium flex items-center gap-1">
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                    Service Report Attached
+                                  </span>
                                 )}
                               </div>
                             </div>
-                            <span className="px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-200">
-                              {report.status}
+                            <span className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ml-3 ${
+                              ticket.status === 'Open'
+                                ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                                : 'bg-gray-100 text-gray-600 border border-gray-200'
+                            }`}>
+                              {ticket.status}
                             </span>
                           </button>
-                          {expandedReport === report.id && (
+                          {expandedTicket === ticket.id && (
                             <div className="px-4 pb-4 border-t bg-gray-50">
-                              {report.description && (
+                              {ticket.description && (
                                 <div className="pt-3">
-                                  <p className="text-xs font-medium text-gray-500 mb-1">Work Description:</p>
-                                  <p className="text-sm text-gray-600 whitespace-pre-wrap">{report.description}</p>
+                                  <p className="text-xs font-medium text-gray-500 mb-1">Description:</p>
+                                  <p className="text-sm text-gray-600 whitespace-pre-wrap">{ticket.description}</p>
                                 </div>
                               )}
-                              <div className="mt-3 pt-3 border-t border-gray-200 text-sm text-gray-500">
-                                <p>Service reports are available in your <a href="#" onClick={(e) => { e.preventDefault(); window.location.hash = '#/files'; }} className="text-primary hover:underline">Files</a> section.</p>
-                              </div>
+                              {/* Linked Service Report */}
+                              {ticket.serviceReport && (
+                                <div className="mt-3 pt-3 border-t border-gray-200">
+                                  <p className="text-xs font-medium text-gray-500 mb-2">Service Report:</p>
+                                  <div className="bg-white rounded-lg border p-3">
+                                    <div className="flex items-start justify-between">
+                                      <div>
+                                        <p className="font-medium text-sm text-gray-800">{ticket.serviceReport.serviceType}</p>
+                                        <p className="text-xs text-gray-500 mt-1">
+                                          Technician: {ticket.serviceReport.technicianName} &middot; Completed: {formatDate(ticket.serviceReport.completedAt)}
+                                        </p>
+                                        {ticket.serviceReport.description && (
+                                          <p className="text-xs text-gray-500 mt-1 line-clamp-2">{ticket.serviceReport.description}</p>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <p className="text-xs text-gray-400 mt-2">Full report available in your Files section under Service Reports.</p>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
@@ -2609,20 +2651,6 @@
               )}
               
               <form onSubmit={handleFileUpload} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    className="w-full border rounded-lg p-2"
-                  >
-                    <option value="">Select category (optional)</option>
-                    {categories.map(c => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-                </div>
-                
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">File</label>
                   <input
