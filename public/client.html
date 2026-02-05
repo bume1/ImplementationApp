@@ -819,10 +819,16 @@
       }
 
       const visibleTasks = data.tasks.filter(t => t.showToClient !== false);
-      const completedTasks = visibleTasks.filter(t => t.completed);
-      const progressPercent = visibleTasks.length > 0 
-        ? Math.round((completedTasks.length / visibleTasks.length) * 100) 
-        : 0;
+      // Use server-calculated overall progress (based on ALL tasks, matching admin dashboard)
+      // Falls back to client-visible calculation if server doesn't provide it
+      const progressPercent = data.project.overallProgressPercent !== undefined
+        ? data.project.overallProgressPercent
+        : (() => {
+            const completedTasks = visibleTasks.filter(t => t.completed);
+            return visibleTasks.length > 0
+              ? Math.round((completedTasks.length / visibleTasks.length) * 100)
+              : 0;
+          })();
 
       return (
         <div className="min-h-screen bg-gray-50">
