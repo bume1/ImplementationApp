@@ -2770,8 +2770,8 @@
                 className={`py-4 px-4 font-medium transition flex items-center justify-center gap-2 ${activeTab === 'history' ? '' : 'text-gray-600 hover:bg-gray-50 border-r'}`}
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
-                <span className="hidden sm:inline">Service Reports</span>
-                <span className="sm:hidden">Reports</span>
+                <span className="hidden sm:inline">Service History</span>
+                <span className="sm:hidden">History</span>
                 {pendingSignatureCount > 0 && (
                   <span className="ml-1 w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center bg-orange-500 text-white">
                     {pendingSignatureCount}
@@ -2799,11 +2799,11 @@
             </div>
 
             <div className="p-6">
-              {/* Service Reports Tab */}
+              {/* Service History Tab */}
               {activeTab === 'history' && (
                 <div>
                   <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-semibold text-gray-800">Service Reports</h2>
+                    <h2 className="text-lg font-semibold text-gray-800">Your Service History</h2>
                     <button onClick={fetchServiceReports} className="text-primary hover:text-accent text-sm flex items-center gap-1">
                       {Icons.refresh || '\u21bb'} Refresh
                     </button>
