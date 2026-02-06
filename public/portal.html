@@ -52,7 +52,7 @@
   <div id="root"></div>
   
   <script type="text/babel">
-    const { useState, useEffect } = React;
+    const { useState, useEffect, useRef } = React;
     
     const API_URL = window.location.origin;
     
@@ -3603,6 +3603,27 @@
         hubspotContactId: ''
       });
 
+      const createLogoInputRef = useRef(null);
+      const editLogoInputRef = useRef(null);
+
+      const handleLogoUpload = (e, formType) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        if (file.size > 2 * 1024 * 1024) {
+          setMessage('Error: Logo must be less than 2MB');
+          return;
+        }
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (formType === 'create') {
+            setCreateForm(prev => ({ ...prev, logo: reader.result }));
+          } else {
+            setEditForm(prev => ({ ...prev, logo: reader.result }));
+          }
+        };
+        reader.readAsDataURL(file);
+      };
+
       // Get current user to check if Super Admin
       const currentUser = JSON.parse(localStorage.getItem('portal_user') || localStorage.getItem('admin_user') || '{}');
       const isSuperAdmin = currentUser?.role === 'admin';
@@ -3858,20 +3879,17 @@
                     <p className="text-xs text-gray-400 mt-1">Will auto-generate portal URL slug</p>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Logo URL</label>
-                    <input
-                      type="text"
-                      value={createForm.logo}
-                      onChange={(e) => setCreateForm({...createForm, logo: e.target.value})}
-                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                      placeholder="https://example.com/logo.png"
-                    />
-                    {createForm.logo && (
-                      <div className="mt-2 p-2 bg-gray-50 rounded flex items-center gap-2">
-                        <img src={createForm.logo} alt="Preview" className="h-8 object-contain" onError={(e) => e.target.style.display='none'} />
-                        <span className="text-xs text-gray-500">Preview</span>
-                      </div>
-                    )}
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Practice Logo</label>
+                    <div className="flex items-center gap-4">
+                      {createForm.logo && <img src={createForm.logo} alt="Logo" className="h-16 w-16 object-contain border rounded" />}
+                      <input type="file" ref={createLogoInputRef} accept="image/png,image/jpeg" onChange={(e) => handleLogoUpload(e, 'create')} className="hidden" />
+                      <button type="button" onClick={() => createLogoInputRef.current?.click()}
+                        className="px-4 py-2 border border-primary text-primary rounded-lg hover:bg-primary hover:text-white transition flex items-center gap-2 text-sm font-medium">
+                        {Icons.upload} Upload Logo
+                      </button>
+                      {createForm.logo && <button type="button" onClick={() => setCreateForm({...createForm, logo: ''})} className="text-red-600 text-sm hover:text-red-800">Remove</button>}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Max 2MB, PNG or JPEG</p>
                   </div>
                   <div className="border-t pt-4">
                     <p className="text-sm font-medium text-gray-700 mb-3">HubSpot Integration IDs (Optional)</p>
@@ -3962,20 +3980,17 @@
                     <p className="text-xs text-gray-400 mt-1">Portal URL slug will update if changed</p>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Logo URL</label>
-                    <input
-                      type="text"
-                      value={editForm.logo}
-                      onChange={(e) => setEditForm({...editForm, logo: e.target.value})}
-                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                      placeholder="https://example.com/logo.png"
-                    />
-                    {editForm.logo && (
-                      <div className="mt-2 p-2 bg-gray-50 rounded flex items-center gap-2">
-                        <img src={editForm.logo} alt="Preview" className="h-8 object-contain" onError={(e) => e.target.style.display='none'} />
-                        <span className="text-xs text-gray-500">Preview</span>
-                      </div>
-                    )}
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Practice Logo</label>
+                    <div className="flex items-center gap-4">
+                      {editForm.logo && <img src={editForm.logo} alt="Logo" className="h-16 w-16 object-contain border rounded" />}
+                      <input type="file" ref={editLogoInputRef} accept="image/png,image/jpeg" onChange={(e) => handleLogoUpload(e, 'edit')} className="hidden" />
+                      <button type="button" onClick={() => editLogoInputRef.current?.click()}
+                        className="px-4 py-2 border border-primary text-primary rounded-lg hover:bg-primary hover:text-white transition flex items-center gap-2 text-sm font-medium">
+                        {Icons.upload} Upload Logo
+                      </button>
+                      {editForm.logo && <button type="button" onClick={() => setEditForm({...editForm, logo: ''})} className="text-red-600 text-sm hover:text-red-800">Remove</button>}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Max 2MB, PNG or JPEG</p>
                   </div>
                   <div className="border-t pt-4">
                     <p className="text-sm font-medium text-gray-700 mb-3">HubSpot Integration IDs</p>
