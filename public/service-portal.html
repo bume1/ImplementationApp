@@ -217,6 +217,26 @@
         }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' }));
       },
 
+      uploadTechnicianPhotos: (token, reportId, files) => {
+        const formData = new FormData();
+        files.forEach(file => formData.append('photos', file));
+        return fetch(`${API_URL}/api/service-reports/${reportId}/technician-photos`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: formData
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' }));
+      },
+
+      uploadTechnicianFiles: (token, reportId, files) => {
+        const formData = new FormData();
+        files.forEach(file => formData.append('files', file));
+        return fetch(`${API_URL}/api/service-reports/${reportId}/technician-files`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: formData
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' }));
+      },
+
       // Vendor management APIs
       createVendor: (token, vendorData) =>
         fetch(`${API_URL}/api/users`, {
@@ -463,6 +483,12 @@
                   localStorage.removeItem('service_user');
                   localStorage.removeItem('unified_token');
                   localStorage.removeItem('unified_user');
+                  localStorage.removeItem('token');
+                  localStorage.removeItem('user');
+                  localStorage.removeItem('admin_token');
+                  localStorage.removeItem('admin_user');
+                  localStorage.removeItem('portal_token');
+                  localStorage.removeItem('portal_user');
                   window.location.href = '/';
                 }}
                 className="w-full text-left px-4 py-2.5 text-red-600 hover:bg-red-50 rounded-xl flex items-center gap-3 transition font-medium text-sm"
@@ -682,6 +708,7 @@
       const canvasRef = useRef(null);
       const [isDrawing, setIsDrawing] = useState(false);
       const [hasSignature, setHasSignature] = useState(!!initialValue);
+      const hasDrawnRef = useRef(false);
 
       useEffect(() => {
         if (initialValue && canvasRef.current) {
@@ -691,6 +718,7 @@
             ctx.drawImage(img, 0, 0);
           };
           img.src = initialValue;
+          hasDrawnRef.current = true;
         }
       }, [initialValue]);
 
@@ -708,6 +736,7 @@
 
       const draw = (e) => {
         if (!isDrawing) return;
+        hasDrawnRef.current = true;
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
         const rect = canvas.getBoundingClientRect();
@@ -724,9 +753,12 @@
       const stopDrawing = () => {
         if (isDrawing) {
           setIsDrawing(false);
-          setHasSignature(true);
-          if (onSave) {
-            onSave(canvasRef.current.toDataURL());
+          // Only save if user actually drew something (not just clicked/tapped)
+          if (hasDrawnRef.current) {
+            setHasSignature(true);
+            if (onSave) {
+              onSave(canvasRef.current.toDataURL());
+            }
           }
         }
       };
@@ -736,8 +768,9 @@
         const ctx = canvas.getContext('2d');
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         setHasSignature(false);
+        hasDrawnRef.current = false;
         if (onSave) {
-          onSave('');
+          onSave(null);
         }
       };
 
@@ -2250,6 +2283,64 @@
               </div>
             )}
 
+            {/* Technician Attachments */}
+            {((report.technicianPhotos && report.technicianPhotos.length > 0) || (report.technicianFiles && report.technicianFiles.length > 0)) && (
+              <div className="p-6 border-b">
+                <h2 className="text-lg font-bold text-accent mb-4">TECHNICIAN ATTACHMENTS</h2>
+
+                {/* Technician Photos */}
+                {report.technicianPhotos && report.technicianPhotos.length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-sm text-gray-500 mb-2">Technician Photos</p>
+                    <div className="flex flex-wrap gap-3">
+                      {report.technicianPhotos.map((photo, idx) => (
+                        <div key={photo.id || idx} className="group">
+                          {photo.url || photo.driveFileId ? (
+                            <React.Fragment>
+                              <a href={photo.webViewLink || getDownloadUrl(photo)} target="_blank" rel="noopener noreferrer" className="block">
+                                <img src={getPhotoSrc(photo)} alt={photo.name || 'Technician photo'} className="w-24 h-24 object-cover rounded-lg border border-gray-200 group-hover:border-primary-500 transition shadow-sm" />
+                              </a>
+                              {photo.name && <p className="text-xs text-gray-500 mt-1 truncate w-24">{photo.name}</p>}
+                              <a href={getDownloadUrl(photo)} download={photo.name} className="text-xs text-primary hover:text-accent mt-1 flex items-center gap-1">
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                Download
+                              </a>
+                            </React.Fragment>
+                          ) : (
+                            <div className="w-24 h-24 flex items-center justify-center rounded-lg border border-red-200 bg-red-50">
+                              <p className="text-xs text-red-400 text-center px-1">File unavailable</p>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Technician Files */}
+                {report.technicianFiles && report.technicianFiles.length > 0 && (
+                  <div>
+                    <p className="text-sm text-gray-500 mb-2">Technician Files</p>
+                    <div className="space-y-2">
+                      {report.technicianFiles.map((file, idx) => (
+                        <a key={file.id || idx} href={getDownloadUrl(file)} download={file.name} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border hover:bg-gray-100 hover:border-primary-300 transition">
+                          <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center text-primary-600">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-gray-900 truncate">{file.name}</p>
+                            {file.uploadedAt && <p className="text-xs text-gray-500">Uploaded {new Date(file.uploadedAt).toLocaleDateString()}</p>}
+                          </div>
+                          <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Signatures */}
             <div className="p-6">
               <h2 className="text-lg font-bold text-accent mb-4">SIGNATURES</h2>
@@ -2760,8 +2851,40 @@
       const [technicianLastName, setTechnicianLastName] = useState(user?.name?.split(' ').slice(1).join(' ') || '');
       const [submitting, setSubmitting] = useState(false);
 
+      // Technician file upload state
+      const [techPhotos, setTechPhotos] = useState([]);
+      const [techFiles, setTechFiles] = useState([]);
+      const [techPhotoPreviewUrls, setTechPhotoPreviewUrls] = useState([]);
+      const [techFileNames, setTechFileNames] = useState([]);
+      const techPhotoInputRef = useRef(null);
+      const techFileInputRef = useRef(null);
+
       const serviceTypes = ['Analyzer Hardware', 'Inventory', 'LIS/EMR', 'Compliance', 'Training', 'Validations'];
       const isValidation = assignment.serviceType === 'Validations';
+
+      const handleTechPhotoSelect = (e) => {
+        const selectedFiles = Array.from(e.target.files);
+        setTechPhotos(prev => [...prev, ...selectedFiles]);
+        const newUrls = selectedFiles.map(file => URL.createObjectURL(file));
+        setTechPhotoPreviewUrls(prev => [...prev, ...newUrls]);
+      };
+
+      const handleTechFileSelect = (e) => {
+        const selectedFiles = Array.from(e.target.files);
+        setTechFiles(prev => [...prev, ...selectedFiles]);
+        setTechFileNames(prev => [...prev, ...selectedFiles.map(f => f.name)]);
+      };
+
+      const removeTechPhoto = (idx) => {
+        URL.revokeObjectURL(techPhotoPreviewUrls[idx]);
+        setTechPhotos(prev => prev.filter((_, i) => i !== idx));
+        setTechPhotoPreviewUrls(prev => prev.filter((_, i) => i !== idx));
+      };
+
+      const removeTechFile = (idx) => {
+        setTechFiles(prev => prev.filter((_, i) => i !== idx));
+        setTechFileNames(prev => prev.filter((_, i) => i !== idx));
+      };
 
       const handleSubmit = async (e) => {
         e.preventDefault();
@@ -2782,6 +2905,22 @@
             technicianFirstName,
             technicianLastName
           };
+
+          // Upload technician photos if any
+          if (techPhotos.length > 0) {
+            const photoResult = await api.uploadTechnicianPhotos(token, assignment.id, techPhotos);
+            if (photoResult.error) {
+              console.error('Photo upload error:', photoResult.error);
+            }
+          }
+
+          // Upload technician files if any
+          if (techFiles.length > 0) {
+            const fileResult = await api.uploadTechnicianFiles(token, assignment.id, techFiles);
+            if (fileResult.error) {
+              console.error('File upload error:', fileResult.error);
+            }
+          }
 
           const result = await api.completeAssignedReport(token, assignment.id, reportData);
           if (result.error) {
@@ -2966,10 +3105,89 @@
                 </div>
               )}
 
+              {/* Attachments - Photos & Files */}
+              <div className="border-t pt-6">
+                <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-1">
+                  <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">3</span>
+                  Attachments
+                </h2>
+                <p className="text-sm text-gray-500 mb-4 ml-8">Upload photos or files from the service visit</p>
+
+                <div className="grid md:grid-cols-2 gap-6">
+                  {/* Photos */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Photos</label>
+                    <input
+                      ref={techPhotoInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handleTechPhotoSelect}
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => techPhotoInputRef.current?.click()}
+                      className="w-full border-2 border-dashed border-gray-300 rounded-xl p-4 text-center hover:border-primary-400 hover:bg-primary-50/50 transition cursor-pointer"
+                    >
+                      <svg className="w-8 h-8 mx-auto text-gray-400 mb-1" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z"/><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z"/></svg>
+                      <p className="text-sm text-gray-500">Click to add photos</p>
+                    </button>
+                    {techPhotoPreviewUrls.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-3">
+                        {techPhotoPreviewUrls.map((url, idx) => (
+                          <div key={idx} className="relative group">
+                            <img src={url} alt={`Photo ${idx + 1}`} className="w-16 h-16 object-cover rounded-lg border" />
+                            <button type="button" onClick={() => removeTechPhoto(idx)}
+                              className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+                              &times;
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Files */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Files</label>
+                    <input
+                      ref={techFileInputRef}
+                      type="file"
+                      multiple
+                      onChange={handleTechFileSelect}
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => techFileInputRef.current?.click()}
+                      className="w-full border-2 border-dashed border-gray-300 rounded-xl p-4 text-center hover:border-primary-400 hover:bg-primary-50/50 transition cursor-pointer"
+                    >
+                      <svg className="w-8 h-8 mx-auto text-gray-400 mb-1" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
+                      <p className="text-sm text-gray-500">Click to add files</p>
+                    </button>
+                    {techFileNames.length > 0 && (
+                      <div className="space-y-1.5 mt-3">
+                        {techFileNames.map((name, idx) => (
+                          <div key={idx} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg border text-sm group">
+                            <svg className="w-4 h-4 text-primary-500 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
+                            <span className="flex-1 truncate text-gray-700">{name}</span>
+                            <button type="button" onClick={() => removeTechFile(idx)}
+                              className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               {/* Signatures */}
               <div className="border-t pt-6">
                 <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
-                  <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">3</span>
+                  <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">4</span>
                   Signatures
                 </h2>
                 <div className="grid md:grid-cols-2 gap-6">

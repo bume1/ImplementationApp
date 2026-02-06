@@ -3922,70 +3922,75 @@ app.get('/api/client/service-reports', authenticateToken, async (req, res) => {
 
     // Filter reports for this client by:
     // 1. Matching hubspotCompanyId
-    // 2. Or matching client name/practice name (fallback)
-    // Only show reports that are completed or need client signature (not 'assigned' - still with technician)
+    // 2. Or matching client name/practice name (bidirectional fallback)
     const clientReports = serviceReports.filter(report => {
-      // Skip reports still being worked on by technician
-      if (report.status === 'assigned') return false;
-
+      // Match by hubspotCompanyId first
       if (hubspotCompanyId && report.hubspotCompanyId === hubspotCompanyId) {
         return true;
       }
-      // Fallback: match by client name
-      const reportClient = (report.clientFacilityName || '').toLowerCase();
-      const userPractice = practiceName.toLowerCase();
-      if (userPractice && reportClient.includes(userPractice)) {
+      // Fallback: bidirectional match by client name
+      const reportClient = (report.clientFacilityName || '').toLowerCase().trim();
+      const userPractice = practiceName.toLowerCase().trim();
+      if (userPractice && reportClient && (reportClient.includes(userPractice) || userPractice.includes(reportClient))) {
         return true;
       }
       return false;
     });
 
-    // Sort: signature_needed reports first, then by date (newest first)
+    // Sort: signature_needed first, then assigned (scheduled), then by date (newest first)
     clientReports.sort((a, b) => {
-      if (a.status === 'signature_needed' && b.status !== 'signature_needed') return -1;
-      if (b.status === 'signature_needed' && a.status !== 'signature_needed') return 1;
+      const statusOrder = { 'signature_needed': 0, 'assigned': 1 };
+      const aOrder = statusOrder[a.status] ?? 2;
+      const bOrder = statusOrder[b.status] ?? 2;
+      if (aOrder !== bOrder) return aOrder - bOrder;
       return new Date(b.createdAt) - new Date(a.createdAt);
     });
 
     console.log(`📋 Found ${clientReports.length} service reports for ${clientUser.username}`);
 
     // Map to a format for the frontend with full details for report viewing and signing
-    const reports = clientReports.map(r => ({
-      id: r.id,
-      subject: `${r.serviceType || 'Service Report'} - ${r.clientFacilityName}`,
-      serviceType: r.serviceType || '',
-      technicianName: r.technicianName || r.serviceProviderName || '',
-      ticketNumber: r.hubspotTicketId || r.hubspotTicketNumber || null,
-      createdAt: r.createdAt,
-      completedAt: r.serviceCompletionDate || r.completedAt || r.createdAt,
-      status: r.status === 'signature_needed' ? 'Signature Needed' : 'Completed',
-      rawStatus: r.status,
-      // Full report details for client viewing
-      clientFacilityName: r.clientFacilityName || '',
-      customerName: r.customerName || '',
-      address: r.address || '',
-      analyzerModel: r.analyzerModel || '',
-      analyzerSerialNumber: r.analyzerSerialNumber || '',
-      serviceCompletionDate: r.serviceCompletionDate || '',
-      descriptionOfWork: r.descriptionOfWork || '',
-      materialsUsed: r.materialsUsed || '',
-      solution: r.solution || '',
-      outstandingIssues: r.outstandingIssues || '',
-      recommendations: r.recommendations || '',
-      // Validation-specific fields
-      validationResults: r.validationResults || '',
-      validationStartDate: r.validationStartDate || '',
-      validationEndDate: r.validationEndDate || '',
-      testProcedures: r.testProcedures || '',
-      trainingProvided: r.trainingProvided || '',
-      // Signature info
-      customerSignature: r.customerSignature || null,
-      customerSignatureDate: r.customerSignatureDate || null,
-      technicianSignature: r.technicianSignature || null,
-      technicianSignatureDate: r.technicianSignatureDate || null,
-      pdfUrl: r.pdfUrl || null,
-      driveFileId: r.driveFileId || null
-    }));
+    const reports = clientReports.map(r => {
+      const isAssigned = r.status === 'assigned';
+      return {
+        id: r.id,
+        subject: `${r.serviceType || 'Service Report'} - ${r.clientFacilityName}`,
+        serviceType: r.serviceType || '',
+        technicianName: isAssigned ? (r.assignedToName || 'Scheduled') : (r.technicianName || r.serviceProviderName || ''),
+        ticketNumber: r.hubspotTicketId || r.hubspotTicketNumber || null,
+        createdAt: r.createdAt,
+        completedAt: isAssigned ? null : (r.serviceCompletionDate || r.completedAt || r.createdAt),
+        status: r.status === 'signature_needed' ? 'Signature Needed' : r.status === 'assigned' ? 'Scheduled' : 'Completed',
+        rawStatus: r.status,
+        // Full report details for client viewing (limited for assigned reports)
+        clientFacilityName: r.clientFacilityName || '',
+        customerName: r.customerName || '',
+        address: r.address || '',
+        analyzerModel: r.analyzerModel || '',
+        analyzerSerialNumber: isAssigned ? '' : (r.analyzerSerialNumber || ''),
+        serviceCompletionDate: isAssigned ? '' : (r.serviceCompletionDate || ''),
+        descriptionOfWork: isAssigned ? '' : (r.descriptionOfWork || ''),
+        materialsUsed: isAssigned ? '' : (r.materialsUsed || ''),
+        solution: isAssigned ? '' : (r.solution || ''),
+        outstandingIssues: isAssigned ? '' : (r.outstandingIssues || ''),
+        recommendations: isAssigned ? '' : (r.recommendations || ''),
+        // Validation-specific fields
+        validationResults: isAssigned ? '' : (r.validationResults || ''),
+        validationStartDate: isAssigned ? '' : (r.validationStartDate || ''),
+        validationEndDate: isAssigned ? '' : (r.validationEndDate || ''),
+        testProcedures: isAssigned ? '' : (r.testProcedures || ''),
+        trainingProvided: isAssigned ? '' : (r.trainingProvided || ''),
+        // Signature info
+        customerSignature: isAssigned ? null : (r.customerSignature || null),
+        customerSignatureDate: isAssigned ? null : (r.customerSignatureDate || null),
+        technicianSignature: isAssigned ? null : (r.technicianSignature || null),
+        technicianSignatureDate: isAssigned ? null : (r.technicianSignatureDate || null),
+        pdfUrl: isAssigned ? null : (r.pdfUrl || null),
+        driveFileId: isAssigned ? null : (r.driveFileId || null),
+        // Scheduled visit info for assigned reports
+        scheduledDate: isAssigned ? (r.serviceCompletionDate || null) : null,
+        assignedToName: isAssigned ? (r.assignedToName || '') : null
+      };
+    });
 
     const pendingSignatureCount = reports.filter(r => r.rawStatus === 'signature_needed').length;
 
@@ -4029,14 +4034,14 @@ app.put('/api/client/service-reports/:id/sign', authenticateToken, async (req, r
 
     const report = serviceReports[reportIndex];
 
-    // Verify this report belongs to the client
+    // Verify this report belongs to the client (bidirectional name matching)
     let isClientReport = false;
     if (hubspotCompanyId && report.hubspotCompanyId === hubspotCompanyId) {
       isClientReport = true;
     } else {
-      const reportClient = (report.clientFacilityName || '').toLowerCase();
-      const userPractice = practiceName.toLowerCase();
-      if (userPractice && reportClient.includes(userPractice)) {
+      const reportClient = (report.clientFacilityName || '').toLowerCase().trim();
+      const userPractice = practiceName.toLowerCase().trim();
+      if (userPractice && reportClient && (reportClient.includes(userPractice) || userPractice.includes(reportClient))) {
         isClientReport = true;
       }
     }
@@ -7199,7 +7204,9 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
     // Determine status based on whether customer signed on-site
     // If customer signature is provided (data URL), report is fully complete ('submitted')
     // If no customer signature, report needs client portal signing ('signature_needed')
-    const hasCustomerSignature = customerSignature && typeof customerSignature === 'string' && customerSignature.startsWith('data:image');
+    // A blank canvas toDataURL() is ~6000 chars; require > 7000 to ensure actual drawing content
+    const hasCustomerSignature = customerSignature && typeof customerSignature === 'string'
+      && customerSignature.startsWith('data:image') && customerSignature.length > 7000;
     const completionStatus = hasCustomerSignature ? 'submitted' : 'signature_needed';
 
     // Update the report with technician-provided info
@@ -7491,6 +7498,143 @@ app.post('/api/service-reports/:id/files', authenticateToken, upload.array('file
     res.json({ clientFiles: serviceReports[reportIndex].clientFiles });
   } catch (error) {
     console.error('Upload client files error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Upload technician photos to assigned service report (assigned technician only)
+app.post('/api/service-reports/:id/technician-photos', authenticateToken, requireServiceAccess, upload.array('photos', 10), async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'No photos provided' });
+    }
+
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = serviceReports[reportIndex];
+
+    // Only the assigned technician or admin can upload technician photos
+    const isAssignedToUser = String(report.assignedToId) === String(req.user.id);
+    if (!isAssignedToUser && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Not authorized to upload photos to this report' });
+    }
+
+    const technicianPhotos = report.technicianPhotos || [];
+    const clientName = report.clientFacilityName || 'Unknown Client';
+
+    for (const file of req.files) {
+      const fileId = uuidv4();
+      const ext = path.extname(file.originalname) || '.jpg';
+      const fileName = `tech_${fileId}${ext}`;
+
+      try {
+        const driveResult = await googledrive.uploadServiceReportAttachment(
+          clientName, fileName, file.buffer, file.mimetype || 'image/jpeg'
+        );
+
+        technicianPhotos.push({
+          id: fileId,
+          name: file.originalname,
+          url: driveResult.webContentLink,
+          webViewLink: driveResult.webViewLink,
+          thumbnailLink: driveResult.thumbnailLink,
+          driveFileId: driveResult.fileId,
+          uploadedAt: new Date().toISOString(),
+          uploadedBy: req.user.name
+        });
+      } catch (driveErr) {
+        console.error('Google Drive technician photo upload failed, skipping:', driveErr.message);
+        technicianPhotos.push({
+          id: fileId,
+          name: file.originalname,
+          url: null,
+          uploadError: driveErr.message,
+          uploadedAt: new Date().toISOString(),
+          uploadedBy: req.user.name
+        });
+      }
+    }
+
+    serviceReports[reportIndex].technicianPhotos = technicianPhotos;
+    serviceReports[reportIndex].updatedAt = new Date().toISOString();
+    await db.set('service_reports', serviceReports);
+
+    res.json({ technicianPhotos: serviceReports[reportIndex].technicianPhotos });
+  } catch (error) {
+    console.error('Upload technician photos error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Upload technician files to assigned service report (assigned technician only)
+app.post('/api/service-reports/:id/technician-files', authenticateToken, requireServiceAccess, upload.array('files', 10), async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'No files provided' });
+    }
+
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = serviceReports[reportIndex];
+
+    // Only the assigned technician or admin can upload technician files
+    const isAssignedToUser = String(report.assignedToId) === String(req.user.id);
+    if (!isAssignedToUser && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Not authorized to upload files to this report' });
+    }
+
+    const technicianFiles = report.technicianFiles || [];
+    const clientName = report.clientFacilityName || 'Unknown Client';
+
+    for (const file of req.files) {
+      const fileId = uuidv4();
+      const ext = path.extname(file.originalname) || '';
+      const fileName = `tech_${fileId}${ext}`;
+
+      try {
+        const driveResult = await googledrive.uploadServiceReportAttachment(
+          clientName, fileName, file.buffer, file.mimetype || 'application/octet-stream'
+        );
+
+        technicianFiles.push({
+          id: fileId,
+          name: file.originalname,
+          url: driveResult.webContentLink,
+          webViewLink: driveResult.webViewLink,
+          driveFileId: driveResult.fileId,
+          uploadedAt: new Date().toISOString(),
+          uploadedBy: req.user.name
+        });
+      } catch (driveErr) {
+        console.error('Google Drive technician file upload failed, skipping:', driveErr.message);
+        technicianFiles.push({
+          id: fileId,
+          name: file.originalname,
+          url: null,
+          uploadError: driveErr.message,
+          uploadedAt: new Date().toISOString(),
+          uploadedBy: req.user.name
+        });
+      }
+    }
+
+    serviceReports[reportIndex].technicianFiles = technicianFiles;
+    serviceReports[reportIndex].updatedAt = new Date().toISOString();
+    await db.set('service_reports', serviceReports);
+
+    res.json({ technicianFiles: serviceReports[reportIndex].technicianFiles });
+  } catch (error) {
+    console.error('Upload technician files error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -8629,6 +8773,24 @@ app.listen(PORT, () => {
       if (docsUpdated) {
         await db.set('client_documents', clientDocs);
         console.log('✅ Migration: Fixed service report documents missing active field');
+      }
+
+      // Migration 5: Fix report 973c316c - was marked 'submitted' without valid customer signature
+      // Caused by blank canvas toDataURL() passing the data:image check
+      const fixReportId = '973c316c-7b88-4de5-881c-fb340d69e092';
+      const fixIdx = serviceReports.findIndex(r => r.id === fixReportId);
+      if (fixIdx !== -1 && serviceReports[fixIdx].status === 'submitted') {
+        const sig = serviceReports[fixIdx].customerSignature;
+        const hasRealSignature = sig && typeof sig === 'string' && sig.startsWith('data:image') && sig.length > 7000;
+        if (!hasRealSignature) {
+          serviceReports[fixIdx].status = 'signature_needed';
+          serviceReports[fixIdx].customerSignature = null;
+          serviceReports[fixIdx].customerSignatureDate = null;
+          serviceReports[fixIdx].submittedAt = null;
+          serviceReports[fixIdx].updatedAt = new Date().toISOString();
+          await db.set('service_reports', serviceReports);
+          console.log('✅ Migration: Fixed report 973c316c status to signature_needed (blank canvas signature)');
+        }
       }
     } catch (e) {
       console.error('Migration error (non-blocking):', e.message);
