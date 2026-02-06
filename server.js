@@ -651,6 +651,110 @@ async function initializeTicketPolling() {
   }
 }
 
+// Cascade update: propagate name changes to all related data stores
+// Called when a user's name or practiceName changes
+async function cascadeUserNameUpdate(userId, oldName, newName, oldPracticeName, newPracticeName) {
+  const changes = [];
+
+  // Update service reports
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    let srUpdated = false;
+    serviceReports.forEach(r => {
+      // Update technician name references
+      if (oldName && newName && oldName !== newName) {
+        if (r.technicianName === oldName) { r.technicianName = newName; srUpdated = true; }
+        if (r.serviceProviderName === oldName) { r.serviceProviderName = newName; srUpdated = true; }
+        if (r.assignedToName === oldName) { r.assignedToName = newName; srUpdated = true; }
+        if (r.assignedByName === oldName) { r.assignedByName = newName; srUpdated = true; }
+        if (r.technicianId === userId && r.technicianName !== newName) { r.technicianName = newName; srUpdated = true; }
+        if (r.assignedToId === userId && r.assignedToName !== newName) { r.assignedToName = newName; srUpdated = true; }
+      }
+      // Update client facility name references
+      if (oldPracticeName && newPracticeName && oldPracticeName !== newPracticeName) {
+        if (r.clientFacilityName === oldPracticeName) { r.clientFacilityName = newPracticeName; srUpdated = true; }
+      }
+    });
+    if (srUpdated) {
+      await db.set('service_reports', serviceReports);
+      changes.push('service_reports');
+    }
+  } catch (err) {
+    console.error('Cascade update service_reports error:', err.message);
+  }
+
+  // Update validation reports
+  try {
+    const validationReports = (await db.get('validation_reports')) || [];
+    let vrUpdated = false;
+    validationReports.forEach(r => {
+      if (oldName && newName && oldName !== newName) {
+        if (r.technicianName === oldName) { r.technicianName = newName; vrUpdated = true; }
+        if (r.serviceProviderName === oldName) { r.serviceProviderName = newName; vrUpdated = true; }
+        if (r.assignedToName === oldName) { r.assignedToName = newName; vrUpdated = true; }
+      }
+      if (oldPracticeName && newPracticeName && oldPracticeName !== newPracticeName) {
+        if (r.clientFacilityName === oldPracticeName) { r.clientFacilityName = newPracticeName; vrUpdated = true; }
+        if (r.clientName === oldPracticeName) { r.clientName = newPracticeName; vrUpdated = true; }
+      }
+    });
+    if (vrUpdated) {
+      await db.set('validation_reports', validationReports);
+      changes.push('validation_reports');
+    }
+  } catch (err) {
+    console.error('Cascade update validation_reports error:', err.message);
+  }
+
+  // Update client_documents titles that reference the old name
+  if (oldPracticeName && newPracticeName && oldPracticeName !== newPracticeName) {
+    try {
+      const clientDocuments = (await db.get('client_documents')) || [];
+      let docsUpdated = false;
+      clientDocuments.forEach(d => {
+        if (d.title && d.title.includes(oldPracticeName)) {
+          d.title = d.title.replace(oldPracticeName, newPracticeName);
+          docsUpdated = true;
+        }
+        if (d.description && d.description.includes(oldPracticeName)) {
+          d.description = d.description.replace(oldPracticeName, newPracticeName);
+          docsUpdated = true;
+        }
+      });
+      if (docsUpdated) {
+        await db.set('client_documents', clientDocuments);
+        changes.push('client_documents');
+      }
+    } catch (err) {
+      console.error('Cascade update client_documents error:', err.message);
+    }
+  }
+
+  // Update project clientName references
+  if (oldPracticeName && newPracticeName && oldPracticeName !== newPracticeName) {
+    try {
+      const projects = await getProjects();
+      let projUpdated = false;
+      projects.forEach(p => {
+        if (p.clientName === oldPracticeName) {
+          p.clientName = newPracticeName;
+          projUpdated = true;
+        }
+      });
+      if (projUpdated) {
+        await db.set('projects', projects);
+        changes.push('projects');
+      }
+    } catch (err) {
+      console.error('Cascade update projects error:', err.message);
+    }
+  }
+
+  if (changes.length > 0) {
+    console.log(`🔄 Cascade name update for user ${userId}: updated ${changes.join(', ')}`);
+  }
+}
+
 // Auth middleware (accepts token from header or query param for downloads)
 const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -1307,6 +1411,10 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
     const idx = users.findIndex(u => u.id === userId);
     if (idx === -1) return res.status(404).json({ error: 'User not found' });
 
+    // Capture old values before update for cascade propagation
+    const oldName = users[idx].name;
+    const oldPracticeName = users[idx].practiceName;
+
     if (name) users[idx].name = name;
     if (email) users[idx].email = email;
     if (role) users[idx].role = role;
@@ -1358,6 +1466,16 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
 
     await db.set('users', users);
     invalidateUsersCache();
+
+    // Cascade name changes to all related data stores (non-blocking)
+    const newName = users[idx].name;
+    const newPracticeName = users[idx].practiceName;
+    if ((oldName && newName && oldName !== newName) || (oldPracticeName && newPracticeName && oldPracticeName !== newPracticeName)) {
+      cascadeUserNameUpdate(userId, oldName, newName, oldPracticeName, newPracticeName).catch(err => {
+        console.error('Cascade update error (non-blocking):', err.message);
+      });
+    }
+
     res.json({
       id: users[idx].id,
       email: users[idx].email,
@@ -1421,13 +1539,25 @@ app.put('/api/client-portal/clients/:clientId', authenticateToken, requireClient
       return res.status(403).json({ error: 'Can only edit client users through this endpoint' });
     }
 
+    // Capture old values for cascade update
+    const oldName = users[idx].name;
+    const oldPracticeName = users[idx].practiceName;
+
     // Update only allowed client details fields
     if (practiceName !== undefined) {
       users[idx].practiceName = practiceName;
       // Regenerate slug if practice name changes
       if (practiceName) {
+        const oldSlug = users[idx].slug;
         const existingSlugs = users.filter((u, i) => i !== idx && u.slug).map(u => u.slug);
-        users[idx].slug = generateClientSlug(practiceName, existingSlugs);
+        const newSlug = generateClientSlug(practiceName, existingSlugs);
+        if (oldSlug && oldSlug !== newSlug) {
+          if (!users[idx].previousSlugs) users[idx].previousSlugs = [];
+          if (!users[idx].previousSlugs.includes(oldSlug)) {
+            users[idx].previousSlugs.push(oldSlug);
+          }
+        }
+        users[idx].slug = newSlug;
       }
     }
     if (logo !== undefined) users[idx].logo = logo;
@@ -1440,6 +1570,15 @@ app.put('/api/client-portal/clients/:clientId', authenticateToken, requireClient
     users[idx].updatedBy = req.user.id;
 
     await db.set('users', users);
+    invalidateUsersCache();
+
+    // Cascade name changes to all related data stores (non-blocking)
+    const newPracticeName = users[idx].practiceName;
+    if (oldPracticeName && newPracticeName && oldPracticeName !== newPracticeName) {
+      cascadeUserNameUpdate(clientId, oldName, oldName, oldPracticeName, newPracticeName).catch(err => {
+        console.error('Cascade update error (non-blocking):', err.message);
+      });
+    }
 
     // Log the activity
     await logActivity(
@@ -2265,6 +2404,36 @@ app.put('/api/projects/:id', authenticateToken, async (req, res) => {
     }
     
     await db.set('projects', projects);
+
+    // Cascade clientName changes to service/validation reports (non-blocking)
+    if (newClientName && newClientName !== oldClientName) {
+      (async () => {
+        try {
+          const serviceReports = (await db.get('service_reports')) || [];
+          let srUpdated = false;
+          serviceReports.forEach(r => {
+            if (r.clientFacilityName === oldClientName) {
+              r.clientFacilityName = newClientName;
+              srUpdated = true;
+            }
+          });
+          if (srUpdated) await db.set('service_reports', serviceReports);
+
+          const validationReports = (await db.get('validation_reports')) || [];
+          let vrUpdated = false;
+          validationReports.forEach(r => {
+            if (r.clientFacilityName === oldClientName) { r.clientFacilityName = newClientName; vrUpdated = true; }
+            if (r.clientName === oldClientName) { r.clientName = newClientName; vrUpdated = true; }
+          });
+          if (vrUpdated) await db.set('validation_reports', validationReports);
+
+          console.log(`🔄 Cascade project clientName update: "${oldClientName}" → "${newClientName}"`);
+        } catch (err) {
+          console.error('Cascade project clientName update error:', err.message);
+        }
+      })();
+    }
+
     res.json(projects[idx]);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
@@ -3920,7 +4089,7 @@ app.get('/api/client/service-reports', authenticateToken, async (req, res) => {
     // Deduplicate
     const uniqueClientNames = [...new Set(clientNames)];
 
-    console.log(`📋 Service reports fetch for ${clientUser.username}:`);
+    console.log(`📋 Service reports fetch for ${clientUser.email}:`);
     console.log(`   - Company ID: "${hubspotCompanyId}"`);
     console.log(`   - Slug: "${clientSlug}"`);
     console.log(`   - Practice: "${practiceName}"`);
@@ -3930,12 +4099,26 @@ app.get('/api/client/service-reports', authenticateToken, async (req, res) => {
     // Fetch all service reports
     const serviceReports = (await db.get('service_reports')) || [];
 
+    // Also fetch client_documents to cross-reference by slug
+    // (documents linked to service reports are reliably matched by slug)
+    const clientDocuments = (await db.get('client_documents')) || [];
+    const slugLinkedReportIds = new Set(
+      clientDocuments
+        .filter(d => d.active && d.serviceReportId && (d.slug === clientSlug || d.shareWithAll))
+        .map(d => d.serviceReportId)
+    );
+
     // Filter reports for this client by:
     // 1. Matching hubspotCompanyId
     // 2. Or bidirectional name matching (practiceName or user name vs clientFacilityName)
+    // 3. Or cross-referenced via client_documents linked to this client's slug
     const clientReports = serviceReports.filter(report => {
       // Match by hubspotCompanyId first
       if (hubspotCompanyId && report.hubspotCompanyId === hubspotCompanyId) {
+        return true;
+      }
+      // Match by slug cross-reference via client_documents
+      if (slugLinkedReportIds.has(report.id)) {
         return true;
       }
       // Fallback: bidirectional match by any of the client's names
@@ -3955,7 +4138,7 @@ app.get('/api/client/service-reports', authenticateToken, async (req, res) => {
       return new Date(b.createdAt) - new Date(a.createdAt);
     });
 
-    console.log(`📋 Found ${clientReports.length}/${serviceReports.length} service reports for ${clientUser.username}`);
+    console.log(`📋 Found ${clientReports.length}/${serviceReports.length} service reports for ${clientUser.email} (slug-linked: ${slugLinkedReportIds.size})`);
     if (clientReports.length === 0 && serviceReports.length > 0) {
       console.log(`   ⚠️ No matches. Report facility names: ${serviceReports.slice(0, 5).map(r => `"${r.clientFacilityName}"`).join(', ')}`);
     }
@@ -4035,6 +4218,7 @@ app.put('/api/client/service-reports/:id/sign', authenticateToken, async (req, r
     }
 
     const hubspotCompanyId = clientUser.hubspotCompanyId || '';
+    const clientSlug = clientUser.slug || '';
     const practiceName = clientUser.practiceName || '';
     const userName = clientUser.name || '';
 
@@ -4053,11 +4237,18 @@ app.put('/api/client/service-reports/:id/sign', authenticateToken, async (req, r
 
     const report = serviceReports[reportIndex];
 
-    // Verify this report belongs to the client (bidirectional name matching)
+    // Verify this report belongs to the client
     let isClientReport = false;
     if (hubspotCompanyId && report.hubspotCompanyId === hubspotCompanyId) {
       isClientReport = true;
-    } else {
+    }
+    if (!isClientReport) {
+      // Check slug cross-reference via client_documents
+      const clientDocuments = (await db.get('client_documents')) || [];
+      const slugLinked = clientDocuments.some(d => d.active && d.serviceReportId === report.id && (d.slug === clientSlug || d.shareWithAll));
+      if (slugLinked) isClientReport = true;
+    }
+    if (!isClientReport) {
       const reportClient = (report.clientFacilityName || '').toLowerCase().trim();
       if (reportClient && uniqueClientNames.some(name => reportClient.includes(name) || name.includes(reportClient))) {
         isClientReport = true;
@@ -4139,6 +4330,47 @@ app.put('/api/client/service-reports/:id/sign', authenticateToken, async (req, r
       }
     }
 
+    // Re-upload signed PDF to Google Drive if original was uploaded
+    if (signedReport.driveFileId) {
+      try {
+        const reportDate = new Date(signedReport.serviceCompletionDate || signedReport.createdAt).toLocaleDateString();
+        console.log(`📄 Re-uploading signed PDF to Google Drive for: ${signedReport.clientFacilityName}`);
+        const pdfBuffer = await pdfGenerator.generateServiceReportPDF(signedReport, signedReport.technicianName || signedReport.serviceProviderName || 'N/A');
+        const driveReportDate = reportDate.replace(/\//g, '-');
+        const driveFileName = `Service_Report_${signedReport.clientFacilityName.replace(/[^a-zA-Z0-9]/g, '_')}_${driveReportDate}_SIGNED.pdf`;
+
+        // Delete old Drive file and upload new signed version
+        try { await googledrive.deleteFile(signedReport.driveFileId); } catch (e) { /* ignore */ }
+        const driveResult = await googledrive.uploadFile(pdfBuffer, driveFileName, 'application/pdf');
+        serviceReports[reportIndex].driveFileId = driveResult.fileId;
+        serviceReports[reportIndex].driveWebViewLink = driveResult.webViewLink;
+        serviceReports[reportIndex].driveWebContentLink = driveResult.webContentLink;
+        await db.set('service_reports', serviceReports);
+        console.log(`✅ Signed PDF re-uploaded to Google Drive: ${driveFileName}`);
+      } catch (driveError) {
+        console.error('Google Drive re-upload error (non-blocking):', driveError.message);
+      }
+    }
+
+    // Update linked client_documents entry to reflect signed status
+    try {
+      const clientDocuments = (await db.get('client_documents')) || [];
+      let docsUpdated = false;
+      clientDocuments.forEach(doc => {
+        if (doc.serviceReportId === signedReport.id) {
+          const reportDate = new Date(signedReport.serviceCompletionDate || signedReport.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'numeric', day: 'numeric' });
+          doc.title = `${signedReport.serviceType === 'Validations' ? 'Validation' : 'Service'} Report - ${reportDate} (Signed)`;
+          doc.updatedAt = new Date().toISOString();
+          docsUpdated = true;
+        }
+      });
+      if (docsUpdated) {
+        await db.set('client_documents', clientDocuments);
+      }
+    } catch (docErr) {
+      console.error('Client documents update error (non-blocking):', docErr.message);
+    }
+
     res.json({
       success: true,
       message: 'Service report signed successfully',
@@ -4174,6 +4406,7 @@ app.get('/api/client/service-reports/:id/pdf', authenticateToken, async (req, re
       }
 
       const hubspotCompanyId = clientUser.hubspotCompanyId || '';
+      const clientSlug = clientUser.slug || '';
       const practiceName = clientUser.practiceName || '';
       const userName = clientUser.name || '';
       const reportClient = (report.clientFacilityName || '').toLowerCase().trim();
@@ -4184,7 +4417,12 @@ app.get('/api/client/service-reports/:id/pdf', authenticateToken, async (req, re
         .filter(Boolean);
       const uniqueClientNames = [...new Set(clientNames)];
 
+      // Also check slug cross-reference via client_documents
+      const clientDocuments = (await db.get('client_documents')) || [];
+      const slugLinked = clientDocuments.some(d => d.active && d.serviceReportId === report.id && (d.slug === clientSlug || d.shareWithAll));
+
       const isMatch = (hubspotCompanyId && report.hubspotCompanyId === hubspotCompanyId) ||
+                      slugLinked ||
                       (reportClient && uniqueClientNames.some(name => reportClient.includes(name) || name.includes(reportClient)));
 
       if (!isMatch) {
