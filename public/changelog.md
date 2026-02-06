@@ -4,6 +4,12 @@
 
 ---
 
+### Version 2.9.1 - February 6, 2026
+
+#### Bug Fixes
+- Fix service report visibility, auto-update PDFs on sign, cascade name changes
+
+
 ### Version 2.9.0 - February 6, 2026
 
 #### New Features
