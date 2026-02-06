@@ -3910,28 +3910,37 @@ app.get('/api/client/service-reports', authenticateToken, async (req, res) => {
 
     const hubspotCompanyId = clientUser.hubspotCompanyId || '';
     const clientSlug = clientUser.slug || '';
-    const practiceName = clientUser.practiceName || clientUser.name || '';
+    const practiceName = clientUser.practiceName || '';
+    const userName = clientUser.name || '';
+
+    // Build list of names to match against (practiceName and name separately)
+    const clientNames = [practiceName, userName]
+      .map(n => n.toLowerCase().trim())
+      .filter(Boolean);
+    // Deduplicate
+    const uniqueClientNames = [...new Set(clientNames)];
 
     console.log(`📋 Service reports fetch for ${clientUser.username}:`);
     console.log(`   - Company ID: "${hubspotCompanyId}"`);
     console.log(`   - Slug: "${clientSlug}"`);
     console.log(`   - Practice: "${practiceName}"`);
+    console.log(`   - Name: "${userName}"`);
+    console.log(`   - Match names: ${JSON.stringify(uniqueClientNames)}`);
 
     // Fetch all service reports
     const serviceReports = (await db.get('service_reports')) || [];
 
     // Filter reports for this client by:
     // 1. Matching hubspotCompanyId
-    // 2. Or matching client name/practice name (bidirectional fallback)
+    // 2. Or bidirectional name matching (practiceName or user name vs clientFacilityName)
     const clientReports = serviceReports.filter(report => {
       // Match by hubspotCompanyId first
       if (hubspotCompanyId && report.hubspotCompanyId === hubspotCompanyId) {
         return true;
       }
-      // Fallback: bidirectional match by client name
+      // Fallback: bidirectional match by any of the client's names
       const reportClient = (report.clientFacilityName || '').toLowerCase().trim();
-      const userPractice = practiceName.toLowerCase().trim();
-      if (userPractice && reportClient && (reportClient.includes(userPractice) || userPractice.includes(reportClient))) {
+      if (reportClient && uniqueClientNames.some(name => reportClient.includes(name) || name.includes(reportClient))) {
         return true;
       }
       return false;
@@ -3946,7 +3955,10 @@ app.get('/api/client/service-reports', authenticateToken, async (req, res) => {
       return new Date(b.createdAt) - new Date(a.createdAt);
     });
 
-    console.log(`📋 Found ${clientReports.length} service reports for ${clientUser.username}`);
+    console.log(`📋 Found ${clientReports.length}/${serviceReports.length} service reports for ${clientUser.username}`);
+    if (clientReports.length === 0 && serviceReports.length > 0) {
+      console.log(`   ⚠️ No matches. Report facility names: ${serviceReports.slice(0, 5).map(r => `"${r.clientFacilityName}"`).join(', ')}`);
+    }
 
     // Map to a format for the frontend with full details for report viewing and signing
     const reports = clientReports.map(r => {
@@ -4023,7 +4035,14 @@ app.put('/api/client/service-reports/:id/sign', authenticateToken, async (req, r
     }
 
     const hubspotCompanyId = clientUser.hubspotCompanyId || '';
-    const practiceName = clientUser.practiceName || clientUser.name || '';
+    const practiceName = clientUser.practiceName || '';
+    const userName = clientUser.name || '';
+
+    // Build list of names to match against
+    const clientNames = [practiceName, userName]
+      .map(n => n.toLowerCase().trim())
+      .filter(Boolean);
+    const uniqueClientNames = [...new Set(clientNames)];
 
     const serviceReports = (await db.get('service_reports')) || [];
     const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
@@ -4040,8 +4059,7 @@ app.put('/api/client/service-reports/:id/sign', authenticateToken, async (req, r
       isClientReport = true;
     } else {
       const reportClient = (report.clientFacilityName || '').toLowerCase().trim();
-      const userPractice = practiceName.toLowerCase().trim();
-      if (userPractice && reportClient && (reportClient.includes(userPractice) || userPractice.includes(reportClient))) {
+      if (reportClient && uniqueClientNames.some(name => reportClient.includes(name) || name.includes(reportClient))) {
         isClientReport = true;
       }
     }
@@ -4156,11 +4174,18 @@ app.get('/api/client/service-reports/:id/pdf', authenticateToken, async (req, re
       }
 
       const hubspotCompanyId = clientUser.hubspotCompanyId || '';
-      const practiceName = (clientUser.practiceName || clientUser.name || '').toLowerCase();
-      const reportClient = (report.clientFacilityName || '').toLowerCase();
+      const practiceName = clientUser.practiceName || '';
+      const userName = clientUser.name || '';
+      const reportClient = (report.clientFacilityName || '').toLowerCase().trim();
+
+      // Build list of names to match against
+      const clientNames = [practiceName, userName]
+        .map(n => n.toLowerCase().trim())
+        .filter(Boolean);
+      const uniqueClientNames = [...new Set(clientNames)];
 
       const isMatch = (hubspotCompanyId && report.hubspotCompanyId === hubspotCompanyId) ||
-                      (practiceName && reportClient.includes(practiceName));
+                      (reportClient && uniqueClientNames.some(name => reportClient.includes(name) || name.includes(reportClient)));
 
       if (!isMatch) {
         return res.status(403).json({ error: 'Not authorized to access this report' });

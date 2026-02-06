@@ -2699,9 +2699,6 @@
         );
       }
 
-      const pendingReports = reports.filter(r => r.rawStatus === 'signature_needed');
-      const completedReports = reports.filter(r => r.rawStatus === 'submitted');
-
       const getStatusBadge = (report) => {
         if (report.rawStatus === 'signature_needed') {
           return (
@@ -2744,7 +2741,7 @@
           </div>
 
           {/* Pending Signature Alert Banner */}
-          {pendingSignatureCount > 0 && (
+          {pendingSignatureCount > 0 && activeTab !== 'history' && (
             <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-center gap-4">
               <div className="flex-shrink-0 w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
                 <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
@@ -2756,7 +2753,7 @@
                 <p className="text-sm text-orange-600">Please review and sign to complete.</p>
               </div>
               <button
-                onClick={() => setActiveTab('signatures')}
+                onClick={() => setActiveTab('history')}
                 className="px-4 py-2 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 transition-colors text-sm whitespace-nowrap"
               >
                 Review & Sign
@@ -2766,7 +2763,7 @@
 
           {/* Tab Navigation */}
           <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-            <div className="grid grid-cols-4 border-b">
+            <div className="grid grid-cols-3 border-b">
               <button
                 onClick={() => setActiveTab('history')}
                 style={activeTab === 'history' ? {backgroundColor: '#045E9F', color: 'white'} : {}}
@@ -2775,19 +2772,8 @@
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
                 <span className="hidden sm:inline">Service History</span>
                 <span className="sm:hidden">History</span>
-              </button>
-              <button
-                onClick={() => setActiveTab('signatures')}
-                style={activeTab === 'signatures' ? {backgroundColor: '#045E9F', color: 'white'} : {}}
-                className={`py-4 px-4 font-medium transition flex items-center justify-center gap-2 relative ${activeTab === 'signatures' ? '' : 'text-gray-600 hover:bg-gray-50 border-r'}`}
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                <span className="hidden sm:inline">Pending Signatures</span>
-                <span className="sm:hidden">Sign</span>
                 {pendingSignatureCount > 0 && (
-                  <span className={`ml-1 w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center ${
-                    activeTab === 'signatures' ? 'bg-white text-primary' : 'bg-orange-500 text-white'
-                  }`}>
+                  <span className="ml-1 w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center bg-orange-500 text-white">
                     {pendingSignatureCount}
                   </span>
                 )}
@@ -2823,6 +2809,18 @@
                     </button>
                   </div>
 
+                  {/* Pending Signatures Alert inside the tab */}
+                  {pendingSignatureCount > 0 && (
+                    <div className="mb-4 bg-orange-50 border border-orange-200 rounded-lg p-3 flex items-center gap-3">
+                      <div className="flex-shrink-0 w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center">
+                        <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                      </div>
+                      <p className="text-sm font-medium text-orange-800">
+                        {pendingSignatureCount} report{pendingSignatureCount > 1 ? 's' : ''} pending your signature - tap to review & sign
+                      </p>
+                    </div>
+                  )}
+
                   {loading ? (
                     <div className="flex justify-center py-12">
                       <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent"></div>
@@ -2841,7 +2839,13 @@
                   ) : (
                     <div className="space-y-3">
                       {reports.map(report => (
-                        <div key={report.id} className={`border rounded-lg overflow-hidden ${report.rawStatus === 'signature_needed' ? 'border-orange-300' : report.rawStatus === 'assigned' ? 'border-blue-200 bg-blue-50/30' : ''}`}>
+                        <div key={report.id} className={`border rounded-lg overflow-hidden ${report.rawStatus === 'signature_needed' ? 'border-orange-300 bg-orange-50/30' : report.rawStatus === 'assigned' ? 'border-blue-200 bg-blue-50/30' : ''}`}>
+                          {report.rawStatus === 'signature_needed' && (
+                            <div className="bg-orange-100 px-4 py-1.5 flex items-center gap-2 border-b border-orange-200">
+                              <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                              <span className="text-xs font-semibold text-orange-700 uppercase tracking-wide">Pending Signature</span>
+                            </div>
+                          )}
                           <button
                             onClick={() => report.rawStatus !== 'assigned' ? setViewingReport(report) : null}
                             className={`w-full p-4 flex items-center justify-between transition text-left ${report.rawStatus === 'assigned' ? 'cursor-default' : 'hover:bg-gray-50'}`}
@@ -2872,56 +2876,6 @@
                               )}
                             </div>
                           </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Pending Signatures Tab */}
-              {activeTab === 'signatures' && (
-                <div>
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-semibold text-gray-800">Reports Awaiting Your Signature</h2>
-                    <button onClick={fetchServiceReports} className="text-primary hover:text-accent text-sm flex items-center gap-1">
-                      {Icons.refresh || '\u21bb'} Refresh
-                    </button>
-                  </div>
-
-                  {loading ? (
-                    <div className="flex justify-center py-12">
-                      <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent"></div>
-                    </div>
-                  ) : pendingReports.length === 0 ? (
-                    <div className="text-center py-12 text-gray-500">
-                      <svg className="w-16 h-16 text-green-300 mx-auto mb-4" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                      <p className="font-medium">All caught up!</p>
-                      <p className="text-sm mt-2">No service reports need your signature right now.</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {pendingReports.map(report => (
-                        <div key={report.id} className="border-2 border-orange-200 rounded-lg overflow-hidden bg-orange-50/30">
-                          <div className="p-4 flex items-center justify-between">
-                            <div className="flex-1">
-                              <p className="font-medium text-gray-800">{report.serviceType || 'Service Report'}</p>
-                              <div className="flex flex-wrap items-center gap-3 mt-1 text-sm text-gray-500">
-                                <span>{formatDate(report.completedAt)}</span>
-                                <span>Technician: {report.technicianName}</span>
-                                {report.ticketNumber && (
-                                  <span className="text-primary font-medium">Ticket #{report.ticketNumber}</span>
-                                )}
-                              </div>
-                            </div>
-                            <button
-                              onClick={() => setViewingReport(report)}
-                              className="px-4 py-2 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 transition-colors text-sm flex items-center gap-2"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                              Review & Sign
-                            </button>
-                          </div>
                         </div>
                       ))}
                     </div>
