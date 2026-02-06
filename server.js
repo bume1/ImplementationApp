@@ -4554,6 +4554,11 @@ app.get('/api/client/service-reports/:id/pdf', authenticateToken, async (req, re
       return res.status(404).json({ error: 'Report not found' });
     }
 
+    // Require signature before allowing client to download
+    if (req.user.role === 'client' && report.status === 'signature_needed') {
+      return res.status(403).json({ error: 'Signature required before downloading this report. Please sign the report in the Files area first.' });
+    }
+
     // For clients, verify the report belongs to them
     if (req.user.role === config.ROLES.CLIENT) {
       const users = await getUsers();

@@ -2610,14 +2610,13 @@
       );
     };
 
-    const SupportPage = ({ settings, token, userData, activeTab: propActiveTab, onTabChange }) => {
+    const SupportPage = ({ settings, token, userData, activeTab: propActiveTab, onTabChange, onNavigateToFile }) => {
       const [reports, setReports] = useState([]);
       const [pendingSignatureCount, setPendingSignatureCount] = useState(0);
       const [tickets, setTickets] = useState([]);
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState(null);
       const [localActiveTab, setLocalActiveTab] = useState(propActiveTab || 'history');
-      const [viewingReport, setViewingReport] = useState(null);
       const [expandedTicket, setExpandedTicket] = useState(null);
       const [statusFilter, setStatusFilter] = useState('all');
 
@@ -2682,22 +2681,6 @@
         });
       };
 
-      const handleReportSigned = (reportId) => {
-        // Refresh reports after signing
-        setTimeout(() => fetchServiceReports(), 1000);
-      };
-
-      // If viewing a specific report, show the detail view
-      if (viewingReport) {
-        return (
-          <ServiceReportDetail
-            report={viewingReport}
-            token={token}
-            onBack={() => { setViewingReport(null); fetchServiceReports(); }}
-            onSigned={handleReportSigned}
-          />
-        );
-      }
 
       const getStatusBadge = (report) => {
         if (report.rawStatus === 'signature_needed') {
@@ -2753,10 +2736,10 @@
                 <p className="text-sm text-orange-600">Please review and sign to complete.</p>
               </div>
               <button
-                onClick={() => setActiveTab('history')}
+                onClick={() => onNavigateToFile && onNavigateToFile(null)}
                 className="px-4 py-2 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 transition-colors text-sm whitespace-nowrap"
               >
-                Review & Sign
+                Go to Files to Sign
               </button>
             </div>
           )}
@@ -2816,7 +2799,7 @@
                         <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                       </div>
                       <p className="text-sm font-medium text-orange-800">
-                        {pendingSignatureCount} report{pendingSignatureCount > 1 ? 's' : ''} pending your signature - tap to review & sign
+                        {pendingSignatureCount} report{pendingSignatureCount > 1 ? 's' : ''} pending your signature — sign in Files to download
                       </p>
                     </div>
                   )}
@@ -2839,43 +2822,39 @@
                   ) : (
                     <div className="space-y-3">
                       {reports.map(report => (
-                        <div key={report.id} className={`border rounded-lg overflow-hidden ${report.rawStatus === 'signature_needed' ? 'border-orange-300 bg-orange-50/30' : report.rawStatus === 'assigned' ? 'border-blue-200 bg-blue-50/30' : ''}`}>
-                          {report.rawStatus === 'signature_needed' && (
-                            <div className="bg-orange-100 px-4 py-1.5 flex items-center gap-2 border-b border-orange-200">
-                              <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                              <span className="text-xs font-semibold text-orange-700 uppercase tracking-wide">Pending Signature</span>
-                            </div>
-                          )}
-                          <button
-                            onClick={() => report.rawStatus !== 'assigned' ? setViewingReport(report) : null}
-                            className={`w-full p-4 flex items-center justify-between transition text-left ${report.rawStatus === 'assigned' ? 'cursor-default' : 'hover:bg-gray-50'}`}
-                          >
-                            <div className="flex-1">
+                        <div key={report.id} className={`border rounded-lg p-4 flex items-center justify-between ${report.rawStatus === 'signature_needed' ? 'border-orange-300 bg-orange-50/30' : report.rawStatus === 'assigned' ? 'border-blue-200 bg-blue-50/30' : 'border-gray-200'}`}>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
                               <p className="font-medium text-gray-800">{report.serviceType || 'Service Report'}</p>
-                              <div className="flex flex-wrap items-center gap-3 mt-1 text-sm text-gray-500">
-                                {report.rawStatus === 'assigned' ? (
-                                  <>
-                                    <span>Technician: {report.assignedToName || report.technicianName}</span>
-                                    {report.scheduledDate && <span>Scheduled: {formatDate(report.scheduledDate)}</span>}
-                                  </>
-                                ) : (
-                                  <>
-                                    <span>{formatDate(report.completedAt)}</span>
-                                    <span>Technician: {report.technicianName}</span>
-                                  </>
-                                )}
-                                {report.ticketNumber && (
-                                  <span className="text-primary font-medium">Ticket #{report.ticketNumber}</span>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
                               {getStatusBadge(report)}
-                              {report.rawStatus !== 'assigned' && (
-                                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-3 mt-1.5 text-sm text-gray-500">
+                              {report.rawStatus === 'assigned' ? (
+                                <>
+                                  <span>Technician: {report.assignedToName || report.technicianName}</span>
+                                  {report.scheduledDate && <span>Scheduled: {formatDate(report.scheduledDate)}</span>}
+                                </>
+                              ) : (
+                                <>
+                                  <span>{formatDate(report.completedAt || report.serviceCompletionDate)}</span>
+                                  <span>Technician: {report.technicianName}</span>
+                                </>
+                              )}
+                              {report.ticketNumber && (
+                                <span className="text-primary font-medium">Ticket #{report.ticketNumber}</span>
                               )}
                             </div>
-                          </button>
+                          </div>
+                          {report.rawStatus !== 'assigned' && onNavigateToFile && (
+                            <button
+                              onClick={() => onNavigateToFile(report.id)}
+                              className="ml-4 flex-shrink-0 flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-primary hover:text-accent hover:bg-primary/5 rounded-lg transition"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                              View Report
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                            </button>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -3053,19 +3032,54 @@
       );
     };
     
-    const FilesPage = ({ settings, documents: initialDocuments, token, projects, userData }) => {
+    const FilesPage = ({ settings, documents: initialDocuments, token, projects, userData, highlightServiceReportId }) => {
       const [documents, setDocuments] = useState(initialDocuments || []);
       const [selectedFile, setSelectedFile] = useState(null);
       const [category, setCategory] = useState('');
       const [note, setNote] = useState('');
       const [uploading, setUploading] = useState(false);
       const [uploadMessage, setUploadMessage] = useState(null);
-      
+      const [serviceReportStatuses, setServiceReportStatuses] = useState({});
+      const [signingReportId, setSigningReportId] = useState(null);
+      const [customerSignature, setCustomerSignature] = useState('');
+      const [signSubmitting, setSignSubmitting] = useState(false);
+      const [signError, setSignError] = useState(null);
+      const highlightRef = useRef(null);
+
       const slug = localStorage.getItem('portal_user') ? JSON.parse(localStorage.getItem('portal_user')).slug : null;
-      
+
       // Check if user has any HubSpot IDs configured for uploads
       const hasHubSpotConfig = userData?.hubspotCompanyId || userData?.hubspotDealId || userData?.hubspotContactId;
-      
+
+      // Fetch service report statuses to know which need signatures
+      useEffect(() => {
+        const fetchStatuses = async () => {
+          try {
+            const response = await fetch(`${API_URL}/api/client/service-reports`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await response.json();
+            if (data.reports) {
+              const statusMap = {};
+              data.reports.forEach(r => { statusMap[r.id] = r.rawStatus || r.status; });
+              setServiceReportStatuses(statusMap);
+            }
+          } catch (err) {
+            console.error('Error fetching service report statuses:', err);
+          }
+        };
+        if (token) fetchStatuses();
+      }, [token]);
+
+      // Scroll to highlighted report when navigating from Service History
+      useEffect(() => {
+        if (highlightServiceReportId && highlightRef.current) {
+          setTimeout(() => {
+            highlightRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 300);
+        }
+      }, [highlightServiceReportId, serviceReportStatuses]);
+
       const refreshDocuments = async () => {
         if (!slug) return;
         try {
@@ -3078,7 +3092,65 @@
           console.error('Failed to refresh documents:', err);
         }
       };
-      
+
+      // Handle signing a service report from the Files area
+      const handleSignReport = async () => {
+        if (!signingReportId) return;
+        if (!customerSignature || !customerSignature.startsWith('data:image')) {
+          setSignError('Please provide your signature before submitting.');
+          return;
+        }
+        setSignSubmitting(true);
+        setSignError(null);
+        try {
+          const response = await fetch(`${API_URL}/api/client/service-reports/${signingReportId}/sign`, {
+            method: 'PUT',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              customerSignature,
+              customerSignatureDate: new Date().toISOString().split('T')[0]
+            })
+          });
+          const result = await response.json();
+          if (!response.ok) {
+            setSignError(result.error || 'Failed to submit signature');
+            return;
+          }
+          // Update status locally, close modal, refresh docs
+          setServiceReportStatuses(prev => ({ ...prev, [signingReportId]: 'submitted' }));
+          const signedId = signingReportId;
+          setSigningReportId(null);
+          setCustomerSignature('');
+          refreshDocuments();
+          // Auto-download the now-signed report
+          try {
+            const pdfResp = await fetch(`${API_URL}/api/client/service-reports/${signedId}/pdf`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (pdfResp.ok) {
+              const blob = await pdfResp.blob();
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = 'Service_Report.pdf';
+              document.body.appendChild(a);
+              a.click();
+              window.URL.revokeObjectURL(url);
+              a.remove();
+            }
+          } catch (dlErr) {
+            console.error('Auto-download after signing failed:', dlErr);
+          }
+        } catch (err) {
+          setSignError('Network error. Please try again.');
+        } finally {
+          setSignSubmitting(false);
+        }
+      };
+
       const adminDocs = (documents || []).filter(doc => doc.uploadedBy !== 'client');
       const clientUploads = (documents || []).filter(doc => doc.uploadedBy === 'client');
       
@@ -3150,12 +3222,18 @@
                     <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">{cat}</h3>
                     <div className="space-y-2">
                       {docs.map(doc => {
-                        const downloadUrl = doc.serviceReportId
-                          ? `${API_URL}/api/client/service-reports/${doc.serviceReportId}/pdf`
-                          : doc.url;
-                        const handleDownload = (e) => {
+                        const reportStatus = doc.serviceReportId ? serviceReportStatuses[doc.serviceReportId] : null;
+                        const needsSignature = reportStatus === 'signature_needed';
+                        const isSigned = reportStatus === 'submitted';
+                        const isHighlighted = highlightServiceReportId && doc.serviceReportId === highlightServiceReportId;
+
+                        const handleDocAction = (e) => {
+                          e.preventDefault();
                           if (doc.serviceReportId) {
-                            e.preventDefault();
+                            if (needsSignature) {
+                              setSigningReportId(doc.serviceReportId);
+                              return;
+                            }
                             fetch(`${API_URL}/api/client/service-reports/${doc.serviceReportId}/pdf`, {
                               headers: { 'Authorization': `Bearer ${token}` }
                             })
@@ -3176,27 +3254,70 @@
                             .catch(err => alert('Failed to download report: ' + err.message));
                           }
                         };
+
+                        // Non-service-report documents: simple download link
+                        if (!doc.serviceReportId) {
+                          return (
+                            <a
+                              key={doc.id}
+                              href={doc.url || '#'}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-3 p-3 rounded-lg border hover:bg-gray-50 transition group cursor-pointer"
+                            >
+                              <span className="text-2xl">📄</span>
+                              <div className="flex-1">
+                                <p className="font-medium text-gray-800 group-hover:text-primary">{doc.title}</p>
+                                {doc.description && <p className="text-sm text-gray-500">{doc.description}</p>}
+                              </div>
+                              <span className="text-primary text-sm font-medium flex items-center gap-1">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                Download
+                              </span>
+                            </a>
+                          );
+                        }
+
+                        // Service report documents: signature-aware rendering
                         return (
-                          <a
+                          <div
                             key={doc.id}
-                            href={downloadUrl || '#'}
-                            target={doc.serviceReportId ? undefined : '_blank'}
-                            rel={doc.serviceReportId ? undefined : 'noopener noreferrer'}
-                            onClick={handleDownload}
-                            className="flex items-center gap-3 p-3 rounded-lg border hover:bg-gray-50 transition group cursor-pointer"
+                            ref={isHighlighted ? highlightRef : null}
+                            className={`flex items-center gap-3 p-3 rounded-lg border transition ${
+                              isHighlighted ? 'ring-2 ring-primary bg-primary/5 border-primary/30' :
+                              needsSignature ? 'border-orange-200 bg-orange-50/50' :
+                              'hover:bg-gray-50'
+                            }`}
                           >
-                            <span className="text-2xl">{doc.serviceReportId ? '📋' : '📄'}</span>
-                            <div className="flex-1">
-                              <p className="font-medium text-gray-800 group-hover:text-primary">{doc.title}</p>
-                              {doc.description && (
-                                <p className="text-sm text-gray-500">{doc.description}</p>
+                            <span className="text-2xl">📋</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-gray-800">{doc.title}</p>
+                              {doc.description && <p className="text-sm text-gray-500">{doc.description}</p>}
+                              {needsSignature && (
+                                <p className="text-xs text-orange-600 font-medium mt-1">Signature required before download</p>
                               )}
                             </div>
-                            <span className="text-primary text-sm font-medium flex items-center gap-1">
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                              Download PDF
-                            </span>
-                          </a>
+                            {needsSignature ? (
+                              <button
+                                onClick={handleDocAction}
+                                className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 transition whitespace-nowrap"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                Sign & Download
+                              </button>
+                            ) : (
+                              <button
+                                onClick={handleDocAction}
+                                className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg hover:bg-gray-100 transition whitespace-nowrap"
+                              >
+                                {isSigned && <span className="text-green-600 text-xs font-semibold">✓ Signed</span>}
+                                <span className="text-primary flex items-center gap-1">
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                  Download PDF
+                                </span>
+                              </button>
+                            )}
+                          </div>
                         );
                       })}
                     </div>
@@ -3317,6 +3438,62 @@
                 html = html.replace(/javascript\s*:/gi, '');
                 return html;
               })() }} />
+            </div>
+          )}
+
+          {/* Signature Modal for unsigned service reports */}
+          {signingReportId && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => { setSigningReportId(null); setCustomerSignature(''); setSignError(null); }}>
+              <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-bold text-gray-900">Sign Service Report</h3>
+                  <button onClick={() => { setSigningReportId(null); setCustomerSignature(''); setSignError(null); }} className="text-gray-400 hover:text-gray-600">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                </div>
+
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                  <p className="text-sm text-orange-800">
+                    Your signature is required to acknowledge this service report. Once signed, the report PDF will download automatically.
+                  </p>
+                </div>
+
+                <SignaturePad
+                  label="Your Signature"
+                  onSave={(sig) => setCustomerSignature(sig)}
+                />
+
+                {signError && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">{signError}</div>
+                )}
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => { setSigningReportId(null); setCustomerSignature(''); setSignError(null); }}
+                    className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition"
+                    disabled={signSubmitting}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSignReport}
+                    disabled={signSubmitting || !customerSignature}
+                    className="flex-1 px-4 py-2.5 bg-primary text-white rounded-lg font-medium hover:bg-accent transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {signSubmitting ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                        Submitting...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                        Sign & Download
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -4647,12 +4824,19 @@
       const [documents, setDocuments] = useState([]);
       const [loading, setLoading] = useState(true);
       const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+      const [highlightServiceReportId, setHighlightServiceReportId] = useState(null);
 
       // Navigate with URL update
       const navigateTo = (page, tab = null) => {
         setActivePage(page);
         setActiveSubTab(tab);
         updateUrl(page, tab);
+      };
+
+      // Navigate from Service History to Files with a specific report highlighted
+      const navigateToFile = (serviceReportId) => {
+        setHighlightServiceReportId(serviceReportId || null);
+        navigateTo('files');
       };
 
       // Handle browser back/forward
@@ -4730,8 +4914,8 @@
         if (activePage === 'inventory') return <InventoryPage token={token} slug={slug} />;
         if (activePage === 'reports') return <ReportsPage token={token} slug={slug} onNavigate={navigateTo} />;
         if (activePage === 'submission_history') return <SubmissionHistoryPage token={token} slug={slug} isAdmin={false} onNavigate={navigateTo} currentUser={user} />;
-        if (activePage === 'support') return <SupportPage settings={settings} token={token} userData={data?.user} activeTab={activeSubTab} onTabChange={(tab) => navigateTo('support', tab)} />;
-        if (activePage === 'files') return <FilesPage settings={settings} documents={documents} token={token} projects={data?.projects || []} userData={data?.user} />;
+        if (activePage === 'support') return <SupportPage settings={settings} token={token} userData={data?.user} activeTab={activeSubTab} onTabChange={(tab) => navigateTo('support', tab)} onNavigateToFile={navigateToFile} />;
+        if (activePage === 'files') return <FilesPage settings={settings} documents={documents} token={token} projects={data?.projects || []} userData={data?.user} highlightServiceReportId={highlightServiceReportId} />;
         
         return null;
       };
