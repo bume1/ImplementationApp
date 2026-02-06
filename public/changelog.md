@@ -4,6 +4,18 @@
 
 ---
 
+### Version 2.9.0 - February 6, 2026
+
+#### New Features
+- Add client portal service report signing and 3-tier status system
+
+#### Bug Fixes
+- Fix service portal issues: technician uploads, signature validation, client visibility, sign-out
+
+#### Changes
+- Remove Pending Signatures tab, show pending status inline in Service Reports tab
+
+
 ### Version 2.8.0 - February 6, 2026
 
 #### New Features
