@@ -18,12 +18,60 @@ const COLORS = {
 };
 
 /**
+ * Fetch a photo from a URL and return as a Buffer
+ * Works with Google Drive URLs and other public URLs
+ */
+async function fetchPhotoBuffer(photo) {
+  // Determine the best URL to fetch from
+  let url = null;
+  if (photo.driveFileId) {
+    // Use Google Drive direct export URL for reliable image fetching
+    url = `https://drive.google.com/uc?id=${photo.driveFileId}&export=download`;
+  } else if (photo.webContentLink) {
+    url = photo.webContentLink;
+  } else if (photo.url && (photo.url.startsWith('http://') || photo.url.startsWith('https://'))) {
+    url = photo.url;
+  }
+
+  if (!url) return null;
+
+  try {
+    const response = await fetch(url, { redirect: 'follow' });
+    if (!response.ok) return null;
+    const arrayBuffer = await response.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+  } catch (e) {
+    console.error(`Failed to fetch photo ${photo.name || photo.id}: ${e.message}`);
+    return null;
+  }
+}
+
+/**
+ * Pre-fetch all photo buffers for a report
+ */
+async function fetchReportPhotos(photos) {
+  if (!photos || photos.length === 0) return [];
+
+  const results = [];
+  for (const photo of photos) {
+    const buffer = await fetchPhotoBuffer(photo);
+    if (buffer && buffer.length > 0) {
+      results.push({ ...photo, buffer });
+    }
+  }
+  return results;
+}
+
+/**
  * Generate a Service Report PDF
  * @param {Object} reportData - The service report data
  * @param {string} technicianName - Name of the technician who created the report
  * @returns {Promise<Buffer>} PDF as a Buffer
  */
 async function generateServiceReportPDF(reportData, technicianName) {
+  // Pre-fetch all photo images before generating the PDF
+  const photoBuffers = await fetchReportPhotos(reportData.photos);
+
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({
@@ -136,6 +184,49 @@ async function generateServiceReportPDF(reportData, technicianName) {
         }
       }
 
+      // REFERENCE PHOTOS Section (if any photos were fetched)
+      if (photoBuffers && photoBuffers.length > 0) {
+        doc.addPage();
+        y = 50;
+        doc.fontSize(11).fillColor(COLORS.accent).font('Helvetica-Bold');
+        doc.text('REFERENCE PHOTOS', 50, y);
+        doc.moveTo(50, y + 15).lineTo(210, y + 15).strokeColor(COLORS.accent).lineWidth(1).stroke();
+        y += 30;
+
+        const photoWidth = 240;
+        const photoHeight = 180;
+        const gap = 20;
+
+        for (let i = 0; i < photoBuffers.length; i++) {
+          const pb = photoBuffers[i];
+          const col = i % 2;
+          const x = 50 + col * (photoWidth + gap);
+
+          // New row: check if we need a new page
+          if (col === 0 && i > 0) {
+            y += photoHeight + 30;
+          }
+          if (y + photoHeight + 20 > 720) {
+            doc.addPage();
+            y = 50;
+          }
+
+          try {
+            doc.image(pb.buffer, x, y, { fit: [photoWidth, photoHeight], align: 'center', valign: 'center' });
+            doc.rect(x, y, photoWidth, photoHeight).strokeColor(COLORS.gray).lineWidth(0.5).stroke();
+          } catch (imgErr) {
+            doc.rect(x, y, photoWidth, photoHeight).strokeColor(COLORS.gray).lineWidth(0.5).stroke();
+            doc.fontSize(9).fillColor(COLORS.lightGray).font('Helvetica-Oblique');
+            doc.text('(Image could not be rendered)', x + 50, y + photoHeight / 2 - 5);
+          }
+          // Caption
+          doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica');
+          doc.text(pb.name || `Photo ${i + 1}`, x, y + photoHeight + 3, { width: photoWidth, align: 'center' });
+        }
+        // Advance y past the last row
+        y += photoHeight + 30;
+      }
+
       // Check if we need a new page for signatures
       if (y > 600) {
         doc.addPage();
@@ -165,8 +256,17 @@ async function generateServiceReportPDF(reportData, technicianName) {
         doc.fontSize(10).fillColor(COLORS.lightGray).font('Helvetica-Oblique');
         doc.text('(Not signed)', 120, y + 35);
       }
-      doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica');
-      doc.text(`Date: ${reportData.customerSignatureDate || '-'}`, 50, y + 70);
+      // Customer name
+      const customerName = [reportData.customerFirstName, reportData.customerLastName].filter(Boolean).join(' ');
+      if (customerName) {
+        doc.fontSize(9).fillColor(COLORS.darkGray).font('Helvetica');
+        doc.text(customerName, 50, y + 68);
+        doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica');
+        doc.text(`Date: ${reportData.customerSignatureDate || '-'}`, 50, y + 82);
+      } else {
+        doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica');
+        doc.text(`Date: ${reportData.customerSignatureDate || '-'}`, 50, y + 70);
+      }
 
       // Technician signature
       doc.fontSize(9).fillColor(COLORS.darkGray).font('Helvetica-Bold');
@@ -184,8 +284,17 @@ async function generateServiceReportPDF(reportData, technicianName) {
         doc.fontSize(10).fillColor(COLORS.lightGray).font('Helvetica-Oblique');
         doc.text('(Not signed)', 370, y + 35);
       }
-      doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica');
-      doc.text(`Date: ${reportData.technicianSignatureDate || '-'}`, 300, y + 70);
+      // Technician name
+      const techName = [reportData.technicianFirstName, reportData.technicianLastName].filter(Boolean).join(' ');
+      if (techName) {
+        doc.fontSize(9).fillColor(COLORS.darkGray).font('Helvetica');
+        doc.text(techName, 300, y + 68);
+        doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica');
+        doc.text(`Date: ${reportData.technicianSignatureDate || '-'}`, 300, y + 82);
+      } else {
+        doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica');
+        doc.text(`Date: ${reportData.technicianSignatureDate || '-'}`, 300, y + 70);
+      }
 
       // Footer
       doc.fontSize(8).fillColor(COLORS.lightGray).font('Helvetica-Oblique');
@@ -224,10 +333,17 @@ function drawFieldTable(doc, rows, x, startY) {
   rows.forEach(row => {
     if (row.length === 4) {
       drawFieldRow(doc, row[0], row[1], x, y, row[2], row[3]);
+      // Calculate row height based on longest value text in the row
+      const val1Width = 130;
+      const val2Width = 130;
+      const val1Height = doc.fontSize(10).font('Helvetica').heightOfString(row[1] || '-', { width: val1Width });
+      const val2Height = doc.fontSize(10).font('Helvetica').heightOfString(row[3] || '-', { width: val2Width });
+      y += Math.max(18, Math.max(val1Height, val2Height) + 4);
     } else if (row.length === 2) {
       drawFieldRow(doc, row[0], row[1], x, y);
+      const valHeight = doc.fontSize(10).font('Helvetica').heightOfString(row[1] || '-', { width: 380 });
+      y += Math.max(18, valHeight + 4);
     }
-    y += 18;
   });
 
   return y;
@@ -270,6 +386,9 @@ function drawAnalyzersTable(doc, analyzers, x, startY) {
  * @returns {Promise<Buffer>} PDF as a Buffer
  */
 async function generateValidationReportPDF(reportData, technicianName) {
+  // Pre-fetch all photo images before generating the PDF
+  const photoBuffers = await fetchReportPhotos(reportData.photos);
+
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({
@@ -377,6 +496,49 @@ async function generateValidationReportPDF(reportData, technicianName) {
         y += Math.ceil(reportData.nextSteps.length / 80) * 14 + 10;
       }
 
+      // REFERENCE PHOTOS Section (if any photos were fetched)
+      if (photoBuffers && photoBuffers.length > 0) {
+        doc.addPage();
+        y = 50;
+        doc.fontSize(11).fillColor(COLORS.accent).font('Helvetica-Bold');
+        doc.text('REFERENCE PHOTOS', 50, y);
+        doc.moveTo(50, y + 15).lineTo(210, y + 15).strokeColor(COLORS.accent).lineWidth(1).stroke();
+        y += 30;
+
+        const photoWidth = 240;
+        const photoHeight = 180;
+        const gap = 20;
+
+        for (let i = 0; i < photoBuffers.length; i++) {
+          const pb = photoBuffers[i];
+          const col = i % 2;
+          const x = 50 + col * (photoWidth + gap);
+
+          // New row: check if we need a new page
+          if (col === 0 && i > 0) {
+            y += photoHeight + 30;
+          }
+          if (y + photoHeight + 20 > 720) {
+            doc.addPage();
+            y = 50;
+          }
+
+          try {
+            doc.image(pb.buffer, x, y, { fit: [photoWidth, photoHeight], align: 'center', valign: 'center' });
+            doc.rect(x, y, photoWidth, photoHeight).strokeColor(COLORS.gray).lineWidth(0.5).stroke();
+          } catch (imgErr) {
+            doc.rect(x, y, photoWidth, photoHeight).strokeColor(COLORS.gray).lineWidth(0.5).stroke();
+            doc.fontSize(9).fillColor(COLORS.lightGray).font('Helvetica-Oblique');
+            doc.text('(Image could not be rendered)', x + 50, y + photoHeight / 2 - 5);
+          }
+          // Caption
+          doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica');
+          doc.text(pb.name || `Photo ${i + 1}`, x, y + photoHeight + 3, { width: photoWidth, align: 'center' });
+        }
+        // Advance y past the last row
+        y += photoHeight + 30;
+      }
+
       // Check if we need a new page for signatures
       if (y > 580) {
         doc.addPage();
@@ -406,8 +568,17 @@ async function generateValidationReportPDF(reportData, technicianName) {
         doc.fontSize(10).fillColor(COLORS.lightGray).font('Helvetica-Oblique');
         doc.text('(Not signed)', 120, y + 35);
       }
-      doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica');
-      doc.text(`Date: ${reportData.customerSignatureDate || '-'}`, 50, y + 70);
+      // Customer name
+      const customerName = [reportData.customerFirstName, reportData.customerLastName].filter(Boolean).join(' ');
+      if (customerName) {
+        doc.fontSize(9).fillColor(COLORS.darkGray).font('Helvetica');
+        doc.text(customerName, 50, y + 68);
+        doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica');
+        doc.text(`Date: ${reportData.customerSignatureDate || '-'}`, 50, y + 82);
+      } else {
+        doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica');
+        doc.text(`Date: ${reportData.customerSignatureDate || '-'}`, 50, y + 70);
+      }
 
       // Technician signature
       doc.fontSize(9).fillColor(COLORS.darkGray).font('Helvetica-Bold');
@@ -425,8 +596,17 @@ async function generateValidationReportPDF(reportData, technicianName) {
         doc.fontSize(10).fillColor(COLORS.lightGray).font('Helvetica-Oblique');
         doc.text('(Not signed)', 370, y + 35);
       }
-      doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica');
-      doc.text(`Date: ${reportData.technicianSignatureDate || '-'}`, 300, y + 70);
+      // Technician name
+      const techName = [reportData.technicianFirstName, reportData.technicianLastName].filter(Boolean).join(' ');
+      if (techName) {
+        doc.fontSize(9).fillColor(COLORS.darkGray).font('Helvetica');
+        doc.text(techName, 300, y + 68);
+        doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica');
+        doc.text(`Date: ${reportData.technicianSignatureDate || '-'}`, 300, y + 82);
+      } else {
+        doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica');
+        doc.text(`Date: ${reportData.technicianSignatureDate || '-'}`, 300, y + 70);
+      }
 
       // Footer
       doc.fontSize(8).fillColor(COLORS.lightGray).font('Helvetica-Oblique');

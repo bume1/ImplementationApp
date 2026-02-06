@@ -4,6 +4,170 @@
 
 ---
 
+### Version 2.8.0 - February 6, 2026
+
+#### New Features
+- Add admin/manager edit capability for submitted service reports
+- Add admin/manager edit capability for submitted service reports
+- Fix broken service report photos and add NANI report to client files
+- Remove Billing & Fees service type, add signer name fields to signatures
+- Add service report PDF download and Google Drive upload
+- Hide New Service Report button from admins and managers in service portal
+- Add support tickets pipeline, fix service report visibility, multi-user portals, fix broken photos
+- Fix client portal redirect cycle: add missing auth tokens to client-documents API calls
+- Add v2.7.1 changelog documenting all security, bug, and performance fixes
+- Add HubSpot ticket polling as webhook workaround with selective filtering
+- Add HubSpot ticket integration for Service Report auto-assignment
+- Add comprehensive CLAUDE.md for AI assistant guidance
+- Add comprehensive debugging tools and update changelog to v2.7.5
+
+#### Bug Fixes
+- Fix announcements Create/Edit/Delete for managers in Client Portal Admin
+- Automate changelog updates, remove manual controls, fix version ordering
+- Move photo/file storage to Google Drive, normalize task boards, fix NANI report
+- Fix client completion percentage to use all tasks instead of only client-visible ones
+- Fix ReferenceError: move /uploads middleware after authenticateToken definition
+- Fix documented gotchas from Security & Risk Analysis (#3-#18)
+- Fix P2 edge cases, validation gaps, and cross-portal consistency
+- Fix P1 authorization holes, logic bugs, and frontend error handling
+- Fix P0 security vulnerabilities and critical bugs
+- Fix duplicate isManager variable declaration
+- Fix service report photo and file storage path mismatch
+
+#### Changes
+- Move Assigned Reports access from sidebar to My Reports dashboard card
+- Include attached photos in downloadable service report PDFs
+- Remove phase numbers from client portal milestone headers
+- Change default polling filter mode from keyword to property
+
+
+### Version 2.7.5 - January 2026
+
+#### New Features
+- Allow managers to add client users from Client Portal admin view
+- Add detailed frontend console logging for assigned reports debugging
+- Add comprehensive logging and robust string-based ID comparison
+- Add debug logging to Service Portal assigned reports endpoint
+- Add 30-minute edit window for submitted service reports
+- Remove Assigned Clients section from Add New Vendor modal
+- Add collapsible phases and fix tag persistence in edit mode
+- Add debug logging to Service Portal sidebar for role visibility issue
+- Move Assign Report feature to Service Portal with Add Vendor popup
+- Add Assign Report tab to Service Portal admin and fix validation form field order
+- Add Knowledge Hub admin interface and dynamic content management
+- Add Knowledge Hub API and update guide with service admin documentation
+- Add Service Report Admin access permission for managers
+- Add service report assignment feature for managers and technicians
+- Add full phase titles to client portal and client view
+- Update task template and project phases for new launch structure
+- Update project tasks and UI to reflect new phase structure
+- Add client-facing README for Thrive 365 Labs
+- Force password change for new users created by super admin
+
+#### Bug Fixes
+- Fix service report photo and file storage path mismatch
+- Fix priority and pinned announcement features
+- Fix service report counter double-counting assigned reports
+- CRITICAL FIX: Move /assigned route before /:id to fix 404 error
+- Fix Knowledge Hub text formatting - properly render bold text and clean sections
+- Vendor workflow - remove broken client filtering and fix ID comparisons
+- Fix Service Portal assigned report workflow and display issues
+- Fix vendor dropdown visibility on mobile devices
+- Fix Service Portal assigned report workflow and display issues
+- Fix browser back button auth bypass and enhance Knowledge Hub
+- Fix blank Service Reports page caused by JavaScript errors
+
+#### Improvements
+- Update changelog for Version 2.7.4 [skip ci]
+- Update changelog with v2.7.3 and improve automation
+- Update Knowledge Hub Quick Tips for internal users
+- Update Service Portal and Knowledge Hub with improvements
+- Update all phase labels to accurately reflect the project's 10 phases
+- Update README to v2.7.2 with security improvements
+
+#### Changes
+- Make analyzer serial number editable for technicians completing assigned reports
+- Simplify service report admin access to use existing Service Portal checkbox
+- Sync client views with internal project board phases
+- Remove redundant Submission History section from Reports view
+- Remove Replit references from README for white-labeling
+
+
+### Version 2.7.4 - January 2026
+
+#### New Features
+- Allow managers to add client users from Client Portal admin view
+- Add detailed frontend console logging for assigned reports debugging
+- Add comprehensive logging and robust string-based ID comparison
+- Add debug logging to Service Portal assigned reports endpoint
+- Add 30-minute edit window for submitted service reports
+- Remove Assigned Clients section from Add New Vendor modal
+- Add collapsible phases and fix tag persistence in edit mode
+- Add debug logging to Service Portal sidebar for role visibility issue
+- Move Assign Report feature to Service Portal with Add Vendor popup
+- Add Assign Report tab to Service Portal admin and fix validation form field order
+- Add Knowledge Hub admin interface and dynamic content management
+- Add Knowledge Hub API and update guide with service admin documentation
+- Add Service Report Admin access permission for managers
+- Add service report assignment feature for managers and technicians
+- Add full phase titles to client portal and client view
+- Update task template and project phases for new launch structure
+- Update project tasks and UI to reflect new phase structure
+- Add client-facing README for Thrive 365 Labs
+- Force password change for new users created by super admin
+
+#### Bug Fixes
+- Fix priority and pinned announcement features
+- Fix service report counter double-counting assigned reports
+- CRITICAL FIX: Move /assigned route before /:id to fix 404 error
+- Fix Knowledge Hub text formatting - properly render bold text and clean sections
+- Vendor workflow - remove broken client filtering and fix ID comparisons
+- Fix Service Portal assigned report workflow and display issues
+- Fix vendor dropdown visibility on mobile devices
+- Fix Service Portal assigned report workflow and display issues
+- Fix browser back button auth bypass and enhance Knowledge Hub
+- Fix blank Service Reports page caused by JavaScript errors
+
+#### Improvements
+- Update changelog with v2.7.3 and improve automation
+- Update Knowledge Hub Quick Tips for internal users
+- Update Service Portal and Knowledge Hub with improvements
+- Update all phase labels to accurately reflect the project's 10 phases
+- Update README to v2.7.2 with security improvements
+
+#### Changes
+- Make analyzer serial number editable for technicians completing assigned reports
+- Simplify service report admin access to use existing Service Portal checkbox
+- Sync client views with internal project board phases
+- Remove redundant Submission History section from Reports view
+- Remove Replit references from README for white-labeling
+
+
+### Version 2.7.3 - January 26, 2026
+
+#### New Features
+- Allow managers to add client users from Client Portal admin view
+- Add collapsible phases feature with improved tag persistence in edit mode
+- Add 30-minute edit window for submitted service reports
+
+#### Improvements
+- Update Knowledge Hub Quick Tips for internal users
+- Enhance Knowledge Hub text formatting with proper bold text rendering
+- Add comprehensive logging for Service Portal assigned reports
+- Improve vendor workflow with ID comparison fixes
+- Remove Assigned Clients section from Add New Vendor modal for cleaner UX
+
+#### Bug Fixes
+- Fix priority and pinned announcement features
+- Make analyzer serial number editable for technicians completing assigned reports
+- Fix service report counter double-counting assigned reports
+- CRITICAL FIX: Move /assigned route before /:id to fix 404 error
+- Fix Service Portal assigned report workflow and display issues
+- Fix vendor dropdown visibility on mobile devices
+- Fix Knowledge Hub text formatting issues
+
+---
+
 ### Version 2.7.2 - January 2026
 
 #### Security Improvements
@@ -259,4 +423,4 @@
 
 ---
 
-*Last Updated: January 20, 2026*
+*Last Updated: February 3, 2026*

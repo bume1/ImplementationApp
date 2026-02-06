@@ -141,6 +141,49 @@ function getLatestVersionTag() {
   return tags.length > 0 ? tags[0] : null;
 }
 
+// Commits to exclude from changelog (deployment, generic, noise)
+const EXCLUDED_PATTERNS = [
+  /^published your app/i,
+  /^published\s+app/i,
+  /^deploy/i,
+  /^deployment/i,
+  /^merge (branch|pull request)/i,
+  /^initial commit$/i,
+  /^wip\b/i,
+  /^work in progress/i,
+  /^\[skip ci\]/i,
+  /^\[ci skip\]/i,
+  /^update dependencies$/i,
+  /^bump version/i,
+  /^release\s+v?\d+\.\d+\.\d+$/i,
+  /^version\s+v?\d+\.\d+\.\d+$/i,
+  /^revert/i,
+  /^formatting$/i,
+  /^whitespace$/i,
+  /^typo$/i,
+  /^test$/i,
+  /^testing$/i
+];
+
+// Check if commit should be excluded
+function shouldExcludeCommit(message) {
+  const trimmed = message.trim();
+
+  // Check against exclusion patterns
+  for (const pattern of EXCLUDED_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      return true;
+    }
+  }
+
+  // Exclude very short commits (likely meaningless)
+  if (trimmed.length < 10) {
+    return true;
+  }
+
+  return false;
+}
+
 // Group commits by category
 function groupCommitsByCategory(commits) {
   const grouped = {};
@@ -151,6 +194,9 @@ function groupCommitsByCategory(commits) {
     // Skip merge commits and generic commits
     if (commit.message.toLowerCase().startsWith('merge ')) return;
     if (commit.message.toLowerCase() === 'initial commit') return;
+
+    // Skip excluded patterns (deployment, published app, etc.)
+    if (shouldExcludeCommit(commit.message)) return;
 
     if (!grouped[parsed.category]) {
       grouped[parsed.category] = {
@@ -356,31 +402,152 @@ async function generateChangelogFromCommits(version = null, sinceTag = null) {
   return generateChangelogEntry(version, sections);
 }
 
+// Compare two semver version strings, return >0 if a > b, <0 if a < b, 0 if equal
+function compareVersions(a, b) {
+  const pa = (a || '0').replace(/^Version\s+/i, '').split('.').map(n => parseInt(n) || 0);
+  const pb = (b || '0').replace(/^Version\s+/i, '').split('.').map(n => parseInt(n) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const diff = (pa[i] || 0) - (pb[i] || 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+// Auto-update changelog on server startup
+// Checks for new git commits since last processed, generates a new entry if needed
+async function autoUpdateChangelog(db) {
+  try {
+    // Get current HEAD commit hash
+    let currentHash;
+    try {
+      currentHash = execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
+    } catch (e) {
+      console.log('Auto-changelog: Not a git repository, skipping');
+      return;
+    }
+
+    // Check if we've already processed this commit
+    const lastHash = await db.get('changelog_last_commit_hash');
+    if (lastHash === currentHash) {
+      return; // No new commits since last check
+    }
+
+    // Get existing changelog entries
+    let changelog = (await db.get('changelog')) || [];
+
+    // Clean up: strip "Version " prefix from any existing entries
+    let cleaned = false;
+    for (const entry of changelog) {
+      if (entry.version && /^Version\s+/i.test(entry.version)) {
+        entry.version = entry.version.replace(/^Version\s+/i, '');
+        cleaned = true;
+      }
+    }
+    if (cleaned) {
+      await db.set('changelog', changelog);
+    }
+
+    // Get commits since last processed hash
+    let commits = [];
+    if (lastHash) {
+      commits = getRecentCommits(lastHash, 200);
+      // If hash is invalid (force push, rebase), fall back to recent commits
+      if (commits.length === 0) {
+        commits = getRecentCommits(null, 50);
+      }
+    } else {
+      commits = getRecentCommits(null, 50);
+    }
+
+    if (commits.length === 0) {
+      await db.set('changelog_last_commit_hash', currentHash);
+      return;
+    }
+
+    // Group by category (filters out excluded commits)
+    const sections = groupCommitsByCategory(commits);
+
+    if (sections.length === 0) {
+      // No meaningful commits to log
+      await db.set('changelog_last_commit_hash', currentHash);
+      return;
+    }
+
+    // Determine next version number
+    // Collect all known versions from DB entries and static baseline
+    const allVersions = changelog.map(e => e.version);
+    allVersions.push('2.7.4'); // Known static max as baseline
+
+    // Find the highest version
+    let maxParts = [0, 0, 0];
+    for (const v of allVersions) {
+      const parts = (v || '').replace(/^Version\s+/i, '').split('.').map(n => parseInt(n) || 0);
+      while (parts.length < 3) parts.push(0);
+      if (compareVersions(parts.join('.'), maxParts.join('.')) > 0) {
+        maxParts = [parts[0], parts[1], parts[2]];
+      }
+    }
+
+    // Check if any commit is a feature (for minor vs patch bump)
+    const hasFeature = sections.some(s => s.label === 'New Features');
+    if (hasFeature) {
+      maxParts[1] = (maxParts[1] || 0) + 1;
+      maxParts[2] = 0;
+    } else {
+      maxParts[2] = (maxParts[2] || 0) + 1;
+    }
+    const nextVersion = maxParts.join('.');
+
+    // Create new changelog entry
+    const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    const newEntry = {
+      id: Date.now().toString(),
+      version: nextVersion,
+      date: dateStr,
+      sections: sections.map(s => ({
+        title: s.label,
+        color: s.color,
+        items: s.items.map(i => i.message)
+      })),
+      isCurrent: true,
+      createdAt: new Date().toISOString(),
+      autoGenerated: true,
+      commitHash: currentHash
+    };
+
+    // Mark all existing as not current
+    changelog.forEach(e => e.isCurrent = false);
+
+    // Add new entry at beginning
+    changelog.unshift(newEntry);
+    await db.set('changelog', changelog);
+    await db.set('changelog_last_commit_hash', currentHash);
+
+    // Also update changelog.md (non-critical)
+    try {
+      await updateChangelogMd(`Version ${nextVersion}`, dateStr, sections);
+    } catch (e) {
+      // Non-critical, just log
+      console.log('Auto-changelog: Could not update changelog.md:', e.message);
+    }
+
+    const totalItems = sections.reduce((sum, s) => sum + s.items.length, 0);
+    console.log(`✅ Auto-changelog: Generated v${nextVersion} with ${totalItems} items from ${commits.length} commits`);
+  } catch (error) {
+    console.error('Auto-changelog error (non-blocking):', error.message);
+  }
+}
+
 // Export for use in server
 module.exports = {
   generateChangelogFromCommits,
+  autoUpdateChangelog,
   parseCommitMessage,
   groupCommitsByCategory,
   getRecentCommits,
   generateChangelogEntry,
+  compareVersions,
   updateReadmeVersion,
-  syncAllChangelogFiles
+  syncAllChangelogFiles,
+  shouldExcludeCommit
 };
-
-// CLI usage
-if (require.main === module) {
-  const version = process.argv[2] || null;
-  const sinceTag = process.argv[3] || null;
-
-  generateChangelogFromCommits(version, sinceTag)
-    .then(entry => {
-      if (entry) {
-        console.log('\n✅ Changelog entry generated:');
-        console.log(JSON.stringify(entry, null, 2));
-      }
-    })
-    .catch(err => {
-      console.error('Error:', err.message);
-      process.exit(1);
-    });
-}
