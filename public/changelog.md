@@ -4,6 +4,43 @@
 
 ---
 
+### Version 2.8.0 - February 6, 2026
+
+#### New Features
+- Add admin/manager edit capability for submitted service reports
+- Add admin/manager edit capability for submitted service reports
+- Fix broken service report photos and add NANI report to client files
+- Remove Billing & Fees service type, add signer name fields to signatures
+- Add service report PDF download and Google Drive upload
+- Hide New Service Report button from admins and managers in service portal
+- Add support tickets pipeline, fix service report visibility, multi-user portals, fix broken photos
+- Fix client portal redirect cycle: add missing auth tokens to client-documents API calls
+- Add v2.7.1 changelog documenting all security, bug, and performance fixes
+- Add HubSpot ticket polling as webhook workaround with selective filtering
+- Add HubSpot ticket integration for Service Report auto-assignment
+- Add comprehensive CLAUDE.md for AI assistant guidance
+- Add comprehensive debugging tools and update changelog to v2.7.5
+
+#### Bug Fixes
+- Fix announcements Create/Edit/Delete for managers in Client Portal Admin
+- Automate changelog updates, remove manual controls, fix version ordering
+- Move photo/file storage to Google Drive, normalize task boards, fix NANI report
+- Fix client completion percentage to use all tasks instead of only client-visible ones
+- Fix ReferenceError: move /uploads middleware after authenticateToken definition
+- Fix documented gotchas from Security & Risk Analysis (#3-#18)
+- Fix P2 edge cases, validation gaps, and cross-portal consistency
+- Fix P1 authorization holes, logic bugs, and frontend error handling
+- Fix P0 security vulnerabilities and critical bugs
+- Fix duplicate isManager variable declaration
+- Fix service report photo and file storage path mismatch
+
+#### Changes
+- Move Assigned Reports access from sidebar to My Reports dashboard card
+- Include attached photos in downloadable service report PDFs
+- Remove phase numbers from client portal milestone headers
+- Change default polling filter mode from keyword to property
+
+
 ### Version 2.7.5 - January 2026
 
 #### New Features
