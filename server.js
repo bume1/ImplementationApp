@@ -3923,7 +3923,11 @@ app.get('/api/client/service-reports', authenticateToken, async (req, res) => {
     // Filter reports for this client by:
     // 1. Matching hubspotCompanyId
     // 2. Or matching client name/practice name (fallback)
+    // Only show reports that are completed or need client signature (not 'assigned' - still with technician)
     const clientReports = serviceReports.filter(report => {
+      // Skip reports still being worked on by technician
+      if (report.status === 'assigned') return false;
+
       if (hubspotCompanyId && report.hubspotCompanyId === hubspotCompanyId) {
         return true;
       }
@@ -3936,30 +3940,190 @@ app.get('/api/client/service-reports', authenticateToken, async (req, res) => {
       return false;
     });
 
-    // Sort by creation date, newest first
-    clientReports.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    // Sort: signature_needed reports first, then by date (newest first)
+    clientReports.sort((a, b) => {
+      if (a.status === 'signature_needed' && b.status !== 'signature_needed') return -1;
+      if (b.status === 'signature_needed' && a.status !== 'signature_needed') return 1;
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
 
     console.log(`📋 Found ${clientReports.length} service reports for ${clientUser.username}`);
 
-    // Map to a cleaner format for the frontend
+    // Map to a format for the frontend with full details for report viewing and signing
     const reports = clientReports.map(r => ({
       id: r.id,
-      subject: `${r.serviceType} - ${r.clientFacilityName}`,
-      serviceType: r.serviceType,
-      technicianName: r.technicianName || r.serviceProviderName,
+      subject: `${r.serviceType || 'Service Report'} - ${r.clientFacilityName}`,
+      serviceType: r.serviceType || '',
+      technicianName: r.technicianName || r.serviceProviderName || '',
       ticketNumber: r.hubspotTicketId || r.hubspotTicketNumber || null,
       createdAt: r.createdAt,
-      completedAt: r.serviceCompletionDate || r.createdAt,
-      status: 'Completed',
-      description: r.descriptionOfWork || r.validationResults || '',
+      completedAt: r.serviceCompletionDate || r.completedAt || r.createdAt,
+      status: r.status === 'signature_needed' ? 'Signature Needed' : 'Completed',
+      rawStatus: r.status,
+      // Full report details for client viewing
+      clientFacilityName: r.clientFacilityName || '',
+      customerName: r.customerName || '',
+      address: r.address || '',
+      analyzerModel: r.analyzerModel || '',
+      analyzerSerialNumber: r.analyzerSerialNumber || '',
+      serviceCompletionDate: r.serviceCompletionDate || '',
+      descriptionOfWork: r.descriptionOfWork || '',
+      materialsUsed: r.materialsUsed || '',
+      solution: r.solution || '',
+      outstandingIssues: r.outstandingIssues || '',
+      recommendations: r.recommendations || '',
+      // Validation-specific fields
+      validationResults: r.validationResults || '',
+      validationStartDate: r.validationStartDate || '',
+      validationEndDate: r.validationEndDate || '',
+      testProcedures: r.testProcedures || '',
+      trainingProvided: r.trainingProvided || '',
+      // Signature info
+      customerSignature: r.customerSignature || null,
+      customerSignatureDate: r.customerSignatureDate || null,
+      technicianSignature: r.technicianSignature || null,
+      technicianSignatureDate: r.technicianSignatureDate || null,
       pdfUrl: r.pdfUrl || null,
       driveFileId: r.driveFileId || null
     }));
 
-    res.json({ reports, count: reports.length });
+    const pendingSignatureCount = reports.filter(r => r.rawStatus === 'signature_needed').length;
+
+    res.json({ reports, count: reports.length, pendingSignatureCount });
   } catch (error) {
     console.error('Error fetching client service reports:', error);
     res.status(500).json({ error: error.message || 'Failed to fetch service reports' });
+  }
+});
+
+// Client signs a service report that is pending their signature
+app.put('/api/client/service-reports/:id/sign', authenticateToken, async (req, res) => {
+  try {
+    // Only clients can use this endpoint
+    if (req.user.role !== 'client') {
+      return res.status(403).json({ error: 'Client access required' });
+    }
+
+    const { customerSignature, customerSignatureDate } = req.body;
+
+    if (!customerSignature || !customerSignature.startsWith('data:image')) {
+      return res.status(400).json({ error: 'A valid signature is required' });
+    }
+
+    // Get fresh user data for matching
+    const users = await getUsers();
+    const clientUser = users.find(u => u.id === req.user.id);
+    if (!clientUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const hubspotCompanyId = clientUser.hubspotCompanyId || '';
+    const practiceName = clientUser.practiceName || clientUser.name || '';
+
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = serviceReports[reportIndex];
+
+    // Verify this report belongs to the client
+    let isClientReport = false;
+    if (hubspotCompanyId && report.hubspotCompanyId === hubspotCompanyId) {
+      isClientReport = true;
+    } else {
+      const reportClient = (report.clientFacilityName || '').toLowerCase();
+      const userPractice = practiceName.toLowerCase();
+      if (userPractice && reportClient.includes(userPractice)) {
+        isClientReport = true;
+      }
+    }
+
+    if (!isClientReport) {
+      return res.status(403).json({ error: 'Not authorized to sign this report' });
+    }
+
+    // Verify report is in signature_needed status
+    if (report.status !== 'signature_needed') {
+      return res.status(400).json({ error: `Report is not awaiting signature (current status: ${report.status})` });
+    }
+
+    // Apply the customer signature and mark as fully complete
+    serviceReports[reportIndex] = {
+      ...report,
+      status: 'submitted',
+      customerSignature,
+      customerSignatureDate: customerSignatureDate || new Date().toISOString().split('T')[0],
+      customerSignedFromPortal: true,
+      customerSignedAt: new Date().toISOString(),
+      customerSignedBy: clientUser.name || clientUser.email,
+      submittedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    await db.set('service_reports', serviceReports);
+
+    const signedReport = serviceReports[reportIndex];
+
+    console.log(`✅ Client ${clientUser.name || clientUser.email} signed service report ${signedReport.id} from portal`);
+
+    // Log activity
+    try {
+      await logActivity(
+        req.user.id,
+        clientUser.name || clientUser.email,
+        'service_report_client_signed',
+        'service_report',
+        signedReport.id,
+        { clientName: signedReport.clientFacilityName, serviceType: signedReport.serviceType, signedFrom: 'client_portal' }
+      );
+    } catch (logErr) {
+      console.log('Could not log activity:', logErr.message);
+    }
+
+    // Now that the report is fully signed, upload PDF to HubSpot
+    if (signedReport.hubspotCompanyId && hubspot.isValidRecordId(signedReport.hubspotCompanyId)) {
+      try {
+        const reportDate = new Date(signedReport.serviceCompletionDate || signedReport.createdAt).toLocaleDateString();
+        console.log(`📄 Generating PDF for client-signed service report: ${signedReport.clientFacilityName}`);
+        const pdfBuffer = await pdfGenerator.generateServiceReportPDF(signedReport, signedReport.technicianName);
+
+        const fileName = `Service_Report_${signedReport.clientFacilityName.replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate.replace(/\//g, '-')}.pdf`;
+        const noteText = `Service Report Completed (Client Signed via Portal)\n\nClient: ${signedReport.clientFacilityName}\nService Type: ${signedReport.serviceType}\nTechnician: ${signedReport.technicianName}\nSigned by: ${clientUser.name || clientUser.email}\nTicket #: ${signedReport.hubspotTicketNumber || 'N/A'}`;
+
+        const uploadResult = await hubspot.uploadFileAndAttachToRecord(
+          signedReport.hubspotCompanyId,
+          pdfBuffer.toString('base64'),
+          fileName,
+          noteText,
+          {
+            recordType: 'companies',
+            folderPath: '/service-reports',
+            notePrefix: '[Service Portal]',
+            isBase64: true
+          }
+        );
+
+        serviceReports[reportIndex].hubspotFileId = uploadResult.fileId;
+        serviceReports[reportIndex].hubspotNoteId = uploadResult.noteId;
+        await db.set('service_reports', serviceReports);
+
+        console.log(`✅ Client-signed service report PDF uploaded to HubSpot for company ${signedReport.hubspotCompanyId}`);
+      } catch (hubspotError) {
+        console.error('HubSpot upload error (non-blocking):', hubspotError.message);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Service report signed successfully',
+      reportId: signedReport.id
+    });
+  } catch (error) {
+    console.error('Error signing service report:', error);
+    res.status(500).json({ error: 'Failed to sign service report' });
   }
 });
 
@@ -7032,10 +7196,16 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
       analyzerSerialNumber
     } = req.body;
 
+    // Determine status based on whether customer signed on-site
+    // If customer signature is provided (data URL), report is fully complete ('submitted')
+    // If no customer signature, report needs client portal signing ('signature_needed')
+    const hasCustomerSignature = customerSignature && typeof customerSignature === 'string' && customerSignature.startsWith('data:image');
+    const completionStatus = hasCustomerSignature ? 'submitted' : 'signature_needed';
+
     // Update the report with technician-provided info
     serviceReports[reportIndex] = {
       ...existingReport,
-      status: 'submitted',
+      status: completionStatus,
       technicianId: req.user.id,
       technicianName: req.user.name,
       // Technician-editable fields
@@ -7062,7 +7232,7 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
       analyzerSerialNumber: analyzerSerialNumber || existingReport.analyzerSerialNumber,
       serviceProviderName: req.user.name,
       completedAt: new Date().toISOString(),
-      submittedAt: new Date().toISOString(),
+      submittedAt: hasCustomerSignature ? new Date().toISOString() : null,
       updatedAt: new Date().toISOString()
     };
 
@@ -7074,14 +7244,15 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
     await logActivity(
       req.user.id,
       req.user.name,
-      'service_report_completed',
+      hasCustomerSignature ? 'service_report_completed' : 'service_report_pending_signature',
       'service_report',
       completedReport.id,
-      { clientName: completedReport.clientFacilityName, serviceType: completedReport.serviceType }
+      { clientName: completedReport.clientFacilityName, serviceType: completedReport.serviceType, status: completionStatus }
     );
 
-    // Upload to HubSpot if company ID is available
-    if (completedReport.hubspotCompanyId && hubspot.isValidRecordId(completedReport.hubspotCompanyId)) {
+    // Upload to HubSpot if company ID is available and report is fully complete
+    // For signature_needed reports, upload happens after client signs
+    if (hasCustomerSignature && completedReport.hubspotCompanyId && hubspot.isValidRecordId(completedReport.hubspotCompanyId)) {
       try {
         const reportDate = new Date(completedReport.serviceCompletionDate || completedReport.createdAt).toLocaleDateString();
         console.log(`📄 Generating PDF for completed assigned service report: ${completedReport.clientFacilityName}`);
