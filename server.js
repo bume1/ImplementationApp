@@ -2701,8 +2701,8 @@ app.get('/api/announcements', async (req, res) => {
   }
 });
 
-// Create announcement (admin only)
-app.post('/api/announcements', authenticateToken, requireAdmin, async (req, res) => {
+// Create announcement (admin, managers, client portal admins)
+app.post('/api/announcements', authenticateToken, requireClientPortalAdmin, async (req, res) => {
   try {
     const { title, content, type, priority, pinned, targetAll, targetClients, attachmentUrl, attachmentName } = req.body;
     if (!title || !content) {
@@ -2734,8 +2734,8 @@ app.post('/api/announcements', authenticateToken, requireAdmin, async (req, res)
   }
 });
 
-// Update announcement (admin only)
-app.put('/api/announcements/:id', authenticateToken, requireAdmin, async (req, res) => {
+// Update announcement (admin, managers, client portal admins)
+app.put('/api/announcements/:id', authenticateToken, requireClientPortalAdmin, async (req, res) => {
   try {
     const { title, content, type, priority, pinned, targetAll, targetClients, attachmentUrl, attachmentName } = req.body;
     const announcements = (await db.get('announcements')) || [];
@@ -2761,8 +2761,8 @@ app.put('/api/announcements/:id', authenticateToken, requireAdmin, async (req, r
   }
 });
 
-// Delete announcement (admin only)
-app.delete('/api/announcements/:id', authenticateToken, requireAdmin, async (req, res) => {
+// Delete announcement (admin, managers, client portal admins)
+app.delete('/api/announcements/:id', authenticateToken, requireClientPortalAdmin, async (req, res) => {
   try {
     const announcements = (await db.get('announcements')) || [];
     const filtered = announcements.filter(a => a.id !== req.params.id);
@@ -6143,9 +6143,10 @@ const requireServiceAccess = (req, res, next) => {
 app.get('/api/service-portal/data', authenticateToken, requireServiceAccess, async (req, res) => {
   try {
     const serviceReports = (await db.get('service_reports')) || [];
+    const isAdminOrManager = req.user.role === 'admin' || (req.user.isManager && req.user.hasServicePortalAccess);
     let userReports;
 
-    if (req.user.role === 'admin' || (req.user.isManager && req.user.hasServicePortalAccess)) {
+    if (isAdminOrManager) {
       // Super Admins and Managers with Service Portal access see all reports
       userReports = serviceReports;
     } else if (req.user.role === 'vendor') {
@@ -6164,6 +6165,10 @@ app.get('/api/service-portal/data', authenticateToken, requireServiceAccess, asy
       );
     }
 
+    // For admin stats: count open (assigned) and closed (submitted) across ALL reports
+    const openCount = serviceReports.filter(r => r.status === 'assigned').length;
+    const closedCount = serviceReports.filter(r => r.status === 'submitted').length;
+
     // Exclude assigned reports from recentReports since they're tracked separately in assignedReports
     // This prevents double-counting in the "My Reports" counter
     userReports = userReports.filter(r => r.status !== 'assigned');
@@ -6173,7 +6178,12 @@ app.get('/api/service-portal/data', authenticateToken, requireServiceAccess, asy
 
     res.json({
       recentReports: userReports.slice(0, 10),
-      totalReports: userReports.length
+      totalReports: userReports.length,
+      // Admin-specific stats for dashboard
+      isAdminView: isAdminOrManager,
+      allReportsCount: serviceReports.length,
+      openCount,
+      closedCount
     });
   } catch (error) {
     console.error('Service portal data error:', error);
@@ -6411,7 +6421,8 @@ app.post('/api/service-reports', authenticateToken, requireServiceAccess, async 
           driveWebContentLink: newReport.driveWebContentLink || null,
           createdAt: new Date().toISOString(),
           uploadedBy: 'system',
-          uploadedByName: 'Thrive 365 Labs'
+          uploadedByName: 'Thrive 365 Labs',
+          active: true
         };
 
         clientDocuments.push(newDocument);
@@ -6588,17 +6599,18 @@ app.put('/api/service-reports/:id', authenticateToken, requireServiceAccess, asy
 
     const existingReport = serviceReports[reportIndex];
 
-    // Only allow editing own reports unless admin
+    // Only allow editing own reports unless admin or manager
     // Convert to strings for reliable comparison
     const isTechnician = String(existingReport.technicianId || '') === String(req.user.id);
     const isAssigned = String(existingReport.assignedToId || '') === String(req.user.id);
-    if (req.user.role !== 'admin' && !isTechnician && !isAssigned) {
+    const isManagerUser = req.user.isManager;
+    if (req.user.role !== 'admin' && !isManagerUser && !isTechnician && !isAssigned) {
       console.log(`Edit authorization failed: technicianId="${existingReport.technicianId}" and assignedToId="${existingReport.assignedToId}" don't match userId="${req.user.id}"`);
       return res.status(403).json({ error: 'Not authorized to edit this report' });
     }
 
-    // Check 30-minute edit window for submitted reports (admins can always edit)
-    if (req.user.role !== 'admin' && existingReport.submittedAt) {
+    // Check 30-minute edit window for submitted reports (admins and managers can always edit)
+    if (req.user.role !== 'admin' && !isManagerUser && existingReport.submittedAt) {
       const submittedTime = new Date(existingReport.submittedAt);
       const currentTime = new Date();
       const minutesElapsed = (currentTime - submittedTime) / (1000 * 60);
@@ -6618,7 +6630,15 @@ app.put('/api/service-reports/:id', authenticateToken, requireServiceAccess, asy
       'issueDescription', 'workPerformed', 'partsUsed', 'recommendations',
       'followUpRequired', 'followUpDate', 'followUpNotes',
       'technicianNotes', 'clientSignature', 'technicianSignature',
-      'photos', 'attachments', 'readings', 'testResults'
+      'photos', 'attachments', 'readings', 'testResults',
+      'clientFacilityName', 'customerName', 'address', 'analyzerModel',
+      'analyzerSerialNumber', 'serviceType', 'descriptionOfWork',
+      'materialsUsed', 'solution', 'outstandingIssues',
+      'serviceCompletionDate', 'serviceProviderName',
+      'customerSignature', 'customerSignatureDate',
+      'customerFirstName', 'customerLastName',
+      'technicianFirstName', 'technicianLastName',
+      'technicianSignatureDate'
     ];
     const sanitizedReportUpdates = {};
     for (const key of serviceReportAllowedFields) {
@@ -7002,8 +7022,12 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
       analyzersValidated,
       customerSignature,
       customerSignatureDate,
+      customerFirstName,
+      customerLastName,
       technicianSignature,
       technicianSignatureDate,
+      technicianFirstName,
+      technicianLastName,
       serviceCompletionDate,
       analyzerSerialNumber
     } = req.body;
@@ -7028,8 +7052,12 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
       analyzersValidated: analyzersValidated || existingReport.analyzersValidated,
       customerSignature: customerSignature || existingReport.customerSignature,
       customerSignatureDate: customerSignatureDate || existingReport.customerSignatureDate,
+      customerFirstName: customerFirstName || existingReport.customerFirstName,
+      customerLastName: customerLastName || existingReport.customerLastName,
       technicianSignature: technicianSignature || existingReport.technicianSignature,
       technicianSignatureDate: technicianSignatureDate || existingReport.technicianSignatureDate,
+      technicianFirstName: technicianFirstName || existingReport.technicianFirstName,
+      technicianLastName: technicianLastName || existingReport.technicianLastName,
       serviceCompletionDate: serviceCompletionDate || existingReport.serviceCompletionDate || new Date().toISOString().split('T')[0],
       analyzerSerialNumber: analyzerSerialNumber || existingReport.analyzerSerialNumber,
       serviceProviderName: req.user.name,
@@ -7181,26 +7209,41 @@ app.post('/api/service-reports/:id/photos', authenticateToken, upload.array('pho
 
     const report = serviceReports[reportIndex];
     const photos = report.photos || [];
+    const clientName = report.clientFacilityName || 'Unknown Client';
 
-    // Save photos to uploads directory (must match /uploads static middleware path)
-    const uploadDir = path.join(__dirname, 'uploads', 'service-photos');
-    await fs.mkdir(uploadDir, { recursive: true });
-
+    // Upload photos to Google Drive for persistent storage
     for (const file of req.files) {
       const fileId = uuidv4();
       const ext = path.extname(file.originalname) || '.jpg';
       const fileName = `${fileId}${ext}`;
-      const filePath = path.join(uploadDir, fileName);
 
-      await fs.writeFile(filePath, file.buffer);
+      try {
+        const driveResult = await googledrive.uploadServiceReportAttachment(
+          clientName, fileName, file.buffer, file.mimetype || 'image/jpeg'
+        );
 
-      photos.push({
-        id: fileId,
-        name: file.originalname,
-        url: `/uploads/service-photos/${fileName}`,
-        uploadedAt: new Date().toISOString(),
-        uploadedBy: req.user.name
-      });
+        photos.push({
+          id: fileId,
+          name: file.originalname,
+          url: driveResult.webContentLink,
+          webViewLink: driveResult.webViewLink,
+          thumbnailLink: driveResult.thumbnailLink,
+          driveFileId: driveResult.fileId,
+          uploadedAt: new Date().toISOString(),
+          uploadedBy: req.user.name
+        });
+      } catch (driveErr) {
+        console.error('Google Drive photo upload failed, skipping:', driveErr.message);
+        // Still record the photo metadata even if Drive upload fails
+        photos.push({
+          id: fileId,
+          name: file.originalname,
+          url: null,
+          uploadError: driveErr.message,
+          uploadedAt: new Date().toISOString(),
+          uploadedBy: req.user.name
+        });
+      }
     }
 
     serviceReports[reportIndex].photos = photos;
@@ -7235,26 +7278,39 @@ app.post('/api/service-reports/:id/files', authenticateToken, upload.array('file
 
     const report = serviceReports[reportIndex];
     const clientFiles = report.clientFiles || [];
+    const clientName = report.clientFacilityName || 'Unknown Client';
 
-    // Save files to uploads directory (must match /uploads static middleware path)
-    const uploadDir = path.join(__dirname, 'uploads', 'service-files');
-    await fs.mkdir(uploadDir, { recursive: true });
-
+    // Upload files to Google Drive for persistent storage
     for (const file of req.files) {
       const fileId = uuidv4();
       const ext = path.extname(file.originalname) || '';
       const fileName = `${fileId}${ext}`;
-      const filePath = path.join(uploadDir, fileName);
 
-      await fs.writeFile(filePath, file.buffer);
+      try {
+        const driveResult = await googledrive.uploadServiceReportAttachment(
+          clientName, fileName, file.buffer, file.mimetype || 'application/octet-stream'
+        );
 
-      clientFiles.push({
-        id: fileId,
-        name: file.originalname,
-        url: `/uploads/service-files/${fileName}`,
-        uploadedAt: new Date().toISOString(),
-        uploadedBy: req.user.name
-      });
+        clientFiles.push({
+          id: fileId,
+          name: file.originalname,
+          url: driveResult.webContentLink,
+          webViewLink: driveResult.webViewLink,
+          driveFileId: driveResult.fileId,
+          uploadedAt: new Date().toISOString(),
+          uploadedBy: req.user.name
+        });
+      } catch (driveErr) {
+        console.error('Google Drive file upload failed, skipping:', driveErr.message);
+        clientFiles.push({
+          id: fileId,
+          name: file.originalname,
+          url: null,
+          uploadError: driveErr.message,
+          uploadedAt: new Date().toISOString(),
+          uploadedBy: req.user.name
+        });
+      }
     }
 
     serviceReports[reportIndex].clientFiles = clientFiles;
@@ -7286,10 +7342,14 @@ app.delete('/api/service-reports/:id/photos/:photoId', authenticateToken, async 
     const photo = (report.photos || []).find(p => p.id === req.params.photoId);
 
     if (photo) {
-      // Delete file from disk
+      // Delete file from Google Drive (or local disk for legacy uploads)
       try {
-        const filePath = path.join(__dirname, photo.url);
-        await fs.unlink(filePath);
+        if (photo.driveFileId) {
+          await googledrive.deleteFile(photo.driveFileId);
+        } else if (photo.url && photo.url.startsWith('/uploads/')) {
+          const filePath = path.join(__dirname, photo.url);
+          await fs.unlink(filePath);
+        }
       } catch (e) { /* file may not exist */ }
     }
 
@@ -7322,10 +7382,14 @@ app.delete('/api/service-reports/:id/files/:fileId', authenticateToken, async (r
     const file = (report.clientFiles || []).find(f => f.id === req.params.fileId);
 
     if (file) {
-      // Delete file from disk
+      // Delete file from Google Drive (or local disk for legacy uploads)
       try {
-        const filePath = path.join(__dirname, file.url);
-        await fs.unlink(filePath);
+        if (file.driveFileId) {
+          await googledrive.deleteFile(file.driveFileId);
+        } else if (file.url && file.url.startsWith('/uploads/')) {
+          const filePath = path.join(__dirname, file.url);
+          await fs.unlink(filePath);
+        }
       } catch (e) { /* file may not exist */ }
     }
 
@@ -7902,199 +7966,17 @@ app.get('/changelog', (req, res) => {
 
 // ============== CHANGELOG API ==============
 
-// Get all changelog entries (public)
+// Get all changelog entries (public, sorted by version descending)
 app.get('/api/changelog', async (req, res) => {
   try {
     const changelog = (await db.get('changelog')) || [];
+    // Sort by semver descending (newest first)
+    changelog.sort((a, b) => {
+      return changelogGenerator.compareVersions(b.version, a.version);
+    });
     res.json(changelog);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Add new changelog version (admin only)
-app.post('/api/changelog', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { version, date, sections } = req.body;
-    if (!version || !sections) {
-      return res.status(400).json({ error: 'Version and sections are required' });
-    }
-
-    const changelog = (await db.get('changelog')) || [];
-
-    // Mark all existing as not current
-    changelog.forEach(entry => entry.isCurrent = false);
-
-    const newEntry = {
-      id: Date.now().toString(),
-      version,
-      date: date || new Date().toISOString().split('T')[0],
-      sections, // Array of { title, items: [], color?: 'primary'|'red' }
-      isCurrent: true,
-      createdAt: new Date().toISOString(),
-      createdBy: req.user.email
-    };
-
-    changelog.unshift(newEntry);
-    await db.set('changelog', changelog);
-
-    res.json({ message: 'Changelog entry added', entry: newEntry });
-  } catch (error) {
-    console.error('Changelog create error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Update changelog entry (admin only)
-app.put('/api/changelog/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { version, date, sections, isCurrent } = req.body;
-
-    const changelog = (await db.get('changelog')) || [];
-    const idx = changelog.findIndex(c => c.id === id);
-    if (idx === -1) return res.status(404).json({ error: 'Entry not found' });
-
-    // If marking as current, unmark others
-    if (isCurrent) {
-      changelog.forEach(entry => entry.isCurrent = false);
-    }
-
-    changelog[idx] = {
-      ...changelog[idx],
-      version: version || changelog[idx].version,
-      date: date || changelog[idx].date,
-      sections: sections || changelog[idx].sections,
-      isCurrent: isCurrent !== undefined ? isCurrent : changelog[idx].isCurrent,
-      updatedAt: new Date().toISOString(),
-      updatedBy: req.user.email
-    };
-
-    await db.set('changelog', changelog);
-    res.json({ message: 'Changelog updated' });
-  } catch (error) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Add section to existing changelog version (admin only)
-app.post('/api/changelog/:id/section', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { title, items, color } = req.body;
-
-    if (!title || !items || !Array.isArray(items)) {
-      return res.status(400).json({ error: 'Title and items array required' });
-    }
-
-    const changelog = (await db.get('changelog')) || [];
-    const idx = changelog.findIndex(c => c.id === id);
-    if (idx === -1) return res.status(404).json({ error: 'Entry not found' });
-
-    changelog[idx].sections.push({ title, items, color: color || 'primary' });
-    changelog[idx].updatedAt = new Date().toISOString();
-    changelog[idx].updatedBy = req.user.email;
-
-    await db.set('changelog', changelog);
-    res.json({ message: 'Section added' });
-  } catch (error) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Delete changelog entry (admin only)
-app.delete('/api/changelog/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { id } = req.params;
-    let changelog = (await db.get('changelog')) || [];
-    changelog = changelog.filter(c => c.id !== id);
-    await db.set('changelog', changelog);
-    res.json({ message: 'Changelog deleted' });
-  } catch (error) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Generate changelog from git commits (admin only)
-app.post('/api/changelog/generate', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { version, sinceTag } = req.body;
-
-    console.log('📋 Generating changelog from git commits...');
-
-    // Generate changelog entry from commits
-    const entry = await changelogGenerator.generateChangelogFromCommits(version, sinceTag);
-
-    if (!entry) {
-      return res.status(400).json({ error: 'No commits found to generate changelog' });
-    }
-
-    // Get existing changelog
-    const changelog = (await db.get('changelog')) || [];
-
-    // Mark all existing as not current
-    changelog.forEach(e => e.isCurrent = false);
-
-    // Add metadata
-    entry.createdBy = req.user.email;
-    entry.generatedFromGit = true;
-
-    // Add new entry at the beginning
-    changelog.unshift(entry);
-    await db.set('changelog', changelog);
-
-    // Log activity
-    await logActivity(
-      req.user.id,
-      req.user.name,
-      'changelog_generated',
-      'changelog',
-      entry.id,
-      { version: entry.version, sectionsCount: entry.sections.length }
-    );
-
-    res.json({
-      message: 'Changelog generated successfully',
-      entry
-    });
-  } catch (error) {
-    console.error('Changelog generation error:', error);
-    res.status(500).json({ error: 'Failed to generate changelog: ' + error.message });
-  }
-});
-
-// Preview changelog from git commits (admin only, doesn't save)
-app.get('/api/changelog/preview', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { sinceTag, maxCommits } = req.query;
-
-    // Get recent commits
-    const commits = changelogGenerator.getRecentCommits(sinceTag, parseInt(maxCommits) || 50);
-
-    if (commits.length === 0) {
-      return res.json({ commits: [], sections: [] });
-    }
-
-    // Group by category
-    const sections = changelogGenerator.groupCommitsByCategory(commits);
-
-    res.json({
-      commitCount: commits.length,
-      commits: commits.slice(0, 20).map(c => ({
-        hash: c.hash.substring(0, 7),
-        message: c.message,
-        date: c.date
-      })),
-      sections: sections.map(s => ({
-        label: s.label,
-        color: s.color,
-        itemCount: s.items.length,
-        items: s.items.map(i => i.message)
-      }))
-    });
-  } catch (error) {
-    console.error('Changelog preview error:', error);
-    res.status(500).json({ error: 'Failed to preview changelog' });
   }
 });
 
@@ -8466,4 +8348,256 @@ app.listen(PORT, () => {
 
   // Start HubSpot ticket polling (webhook workaround)
   initializeTicketPolling();
+
+  // One-time migrations for service reports
+  (async () => {
+    try {
+      const serviceReports = (await db.get('service_reports')) || [];
+      let reportsUpdated = false;
+
+      // Migration 1: Add signer names to NANI service report
+      const naniReportId = '26a15b8d-fc8b-4687-8316-46764c8bcdc1';
+      const naniIdx = serviceReports.findIndex(r => r.id === naniReportId);
+      if (naniIdx !== -1 && !serviceReports[naniIdx].customerFirstName) {
+        serviceReports[naniIdx].customerFirstName = 'Terra';
+        serviceReports[naniIdx].customerLastName = 'Hearn';
+        serviceReports[naniIdx].technicianFirstName = 'Jeff';
+        serviceReports[naniIdx].technicianLastName = 'Gray';
+        reportsUpdated = true;
+        console.log('✅ Migration: Added signer names to NANI service report');
+      }
+
+      // Migration 2: Clean up broken local filesystem photo/file URLs across ALL reports
+      // Photos stored at /uploads/ are lost on Replit restart (ephemeral filesystem)
+      // Mark them so the UI shows "unavailable" instead of broken images
+      for (let i = 0; i < serviceReports.length; i++) {
+        const report = serviceReports[i];
+        if (report.photos) {
+          for (let j = 0; j < report.photos.length; j++) {
+            const photo = report.photos[j];
+            if (photo.url && photo.url.startsWith('/uploads/') && !photo.driveFileId) {
+              // Local file URL - these files are lost on Replit restart
+              // Clear the URL so the UI shows "unavailable"
+              report.photos[j].url = null;
+              report.photos[j].lostLocalUrl = photo.url;
+              reportsUpdated = true;
+            }
+          }
+        }
+        if (report.clientFiles) {
+          for (let j = 0; j < report.clientFiles.length; j++) {
+            const file = report.clientFiles[j];
+            if (file.url && file.url.startsWith('/uploads/') && !file.driveFileId) {
+              file.url = null;
+              file.lostLocalUrl = file.url;
+              reportsUpdated = true;
+            }
+          }
+        }
+      }
+
+      if (reportsUpdated) {
+        await db.set('service_reports', serviceReports);
+        console.log('✅ Migration: Cleaned up broken local file URLs in service reports');
+      }
+
+      // Migration 3: Add NANI report to client documents if not already there
+      if (naniIdx !== -1) {
+        const clientDocuments = (await db.get('client_documents')) || [];
+        const alreadyAdded = clientDocuments.some(d => d.serviceReportId === naniReportId);
+        if (!alreadyAdded) {
+          const users = (await db.get('users')) || [];
+          const report = serviceReports[naniIdx];
+          const clientFacility = (report.clientFacilityName || '').toLowerCase();
+          const reportCompanyId = report.hubspotCompanyId || '';
+
+          const client = users.find(u => {
+            if (u.role !== 'client') return false;
+            if (reportCompanyId && u.hubspotCompanyId && String(u.hubspotCompanyId) === String(reportCompanyId)) return true;
+            if (clientFacility && u.practiceName?.toLowerCase().includes('nani')) return true;
+            if (clientFacility && u.practiceName?.toLowerCase().includes('indiana kidney')) return true;
+            if (clientFacility && u.name?.toLowerCase().includes('nani')) return true;
+            return false;
+          });
+
+          if (client && client.slug) {
+            const reportDate = new Date(report.serviceCompletionDate || report.createdAt).toLocaleDateString();
+            clientDocuments.push({
+              id: uuidv4(),
+              slug: client.slug,
+              title: `Service Report - ${reportDate}`,
+              description: `${report.serviceType} - ${report.serviceProviderName || report.technicianName || 'Jeff Gray'}`,
+              category: 'Service Reports',
+              serviceReportId: naniReportId,
+              serviceType: report.serviceType,
+              driveWebViewLink: report.driveWebViewLink || null,
+              driveWebContentLink: report.driveWebContentLink || null,
+              createdAt: new Date().toISOString(),
+              uploadedBy: 'system',
+              uploadedByName: 'Thrive 365 Labs',
+              active: true
+            });
+            await db.set('client_documents', clientDocuments);
+            console.log(`✅ Migration: Added NANI service report to client files for slug "${client.slug}"`);
+          } else {
+            console.log('⚠️ Migration: Could not find NANI client user to add service report to files');
+          }
+        }
+      }
+
+      // Migration 4: Fix service report client documents missing 'active' field
+      // This ensures all service reports added to client files are visible in the portal
+      const clientDocs = (await db.get('client_documents')) || [];
+      let docsUpdated = false;
+      for (let i = 0; i < clientDocs.length; i++) {
+        if (clientDocs[i].serviceReportId && clientDocs[i].active !== true) {
+          clientDocs[i].active = true;
+          docsUpdated = true;
+        }
+      }
+      if (docsUpdated) {
+        await db.set('client_documents', clientDocs);
+        console.log('✅ Migration: Fixed service report documents missing active field');
+      }
+    } catch (e) {
+      console.error('Migration error (non-blocking):', e.message);
+    }
+  })();
+
+  // One-time migration: Normalize all project task boards to template structure
+  // Fixes broken stage/category breakdowns by setting all stages to "Tasks"
+  // and re-mapping phases to match the canonical template where possible
+  (async () => {
+    try {
+      const migrationKey = 'migration_tasks_normalized_v1';
+      const alreadyRun = await db.get(migrationKey);
+      if (alreadyRun) return;
+
+      console.log('🔄 Migration: Normalizing project task boards to template structure...');
+
+      // Load the template to build title -> phase lookup
+      const templatePath = require('path').join(__dirname, 'template-biolis-au480-clia.json');
+      const templateRaw = await fs.readFile(templatePath, 'utf8');
+      const templateTasks = JSON.parse(templateRaw);
+
+      // Build normalized title -> phase mapping for fuzzy matching
+      const titleToPhase = {};
+      templateTasks.forEach(t => {
+        const normalizedTitle = t.taskTitle.trim().toLowerCase();
+        titleToPhase[normalizedTitle] = t.phase;
+      });
+
+      // Also build a mapping of old stage names to phases for tasks that used stage as a phase-like value
+      const oldStageToPhase = {
+        'contract & initial setup': 'Phase 1',
+        'billing, clia & hiring': 'Phase 2',
+        'tech infrastructure & lis integration': 'Phase 3',
+        'tech infrastructure': 'Phase 3',
+        'inventory forecasting & procurement': 'Phase 4',
+        'inventory forecasting': 'Phase 4',
+        'supply orders & logistics': 'Phase 5',
+        'supply orders': 'Phase 5',
+        'onboarding & welcome calls': 'Phase 6',
+        'onboarding': 'Phase 6',
+        'virtual soft pilot & prep': 'Phase 7',
+        'virtual soft pilot': 'Phase 7',
+        'soft pilot': 'Phase 7',
+        'training & full validation': 'Phase 8',
+        'training & validation': 'Phase 8',
+        'training/validation': 'Phase 8',
+        'go-live': 'Phase 9',
+        'go live': 'Phase 9',
+        'golive': 'Phase 9',
+        'post-launch support & optimization': 'Phase 10',
+        'post-launch': 'Phase 10',
+        'post launch': 'Phase 10'
+      };
+
+      const validPhases = new Set(['Phase 1', 'Phase 2', 'Phase 3', 'Phase 4', 'Phase 5', 'Phase 6', 'Phase 7', 'Phase 8', 'Phase 9', 'Phase 10']);
+
+      const projects = await getProjects();
+      let totalFixedStages = 0;
+      let totalFixedPhases = 0;
+      let projectsUpdated = 0;
+
+      for (const project of projects) {
+        // Skip NANI projects - their board is already correct
+        const projectName = (project.name || '').toLowerCase();
+        const clientName = (project.clientName || '').toLowerCase();
+        if (projectName.includes('nani') || clientName.includes('nani') || clientName.includes('indiana kidney')) {
+          continue;
+        }
+
+        const tasks = await getRawTasks(project.id);
+        if (!tasks || tasks.length === 0) continue;
+
+        let modified = false;
+
+        for (let i = 0; i < tasks.length; i++) {
+          const task = tasks[i];
+
+          // Fix stage: normalize everything to "Tasks"
+          if (task.stage && task.stage !== 'Tasks') {
+            // Before overwriting, check if stage was being used as a phase hint
+            const oldStage = (task.stage || '').trim().toLowerCase();
+            if (!validPhases.has(task.phase) && oldStageToPhase[oldStage]) {
+              tasks[i].phase = oldStageToPhase[oldStage];
+              totalFixedPhases++;
+            }
+            tasks[i].stage = 'Tasks';
+            totalFixedStages++;
+            modified = true;
+          }
+
+          // Fix phase: try to match task title to template
+          const normalizedTitle = (task.taskTitle || '').trim().toLowerCase();
+          if (normalizedTitle && titleToPhase[normalizedTitle]) {
+            const correctPhase = titleToPhase[normalizedTitle];
+            if (task.phase !== correctPhase) {
+              tasks[i].phase = correctPhase;
+              totalFixedPhases++;
+              modified = true;
+            }
+          }
+
+          // Ensure phase is valid (Phase 1 through Phase 10)
+          if (!validPhases.has(task.phase)) {
+            // Try to extract phase number from non-standard format
+            const phaseMatch = (task.phase || '').match(/phase\s*(\d+)/i);
+            if (phaseMatch && parseInt(phaseMatch[1]) >= 1 && parseInt(phaseMatch[1]) <= 10) {
+              tasks[i].phase = `Phase ${phaseMatch[1]}`;
+              totalFixedPhases++;
+              modified = true;
+            } else {
+              // Try mapping from old stage-like phase names
+              const lowerPhase = (task.phase || '').trim().toLowerCase();
+              if (oldStageToPhase[lowerPhase]) {
+                tasks[i].phase = oldStageToPhase[lowerPhase];
+                totalFixedPhases++;
+                modified = true;
+              } else {
+                // Default unrecognized phases to Phase 1
+                tasks[i].phase = 'Phase 1';
+                totalFixedPhases++;
+                modified = true;
+              }
+            }
+          }
+        }
+
+        if (modified) {
+          await db.set(`tasks_${project.id}`, tasks);
+          projectsUpdated++;
+        }
+      }
+
+      await db.set(migrationKey, { ranAt: new Date().toISOString(), projectsUpdated, totalFixedStages, totalFixedPhases });
+      console.log(`✅ Migration: Normalized ${totalFixedStages} stages and ${totalFixedPhases} phases across ${projectsUpdated} projects`);
+    } catch (e) {
+      console.error('Task normalization migration error (non-blocking):', e.message);
+    }
+  })();
+
+  // Auto-generate changelog from git commits on startup
+  changelogGenerator.autoUpdateChangelog(db);
 });
