@@ -4,6 +4,15 @@
 
 ---
 
+### Version 2.10.0 - February 6, 2026
+
+#### New Features
+- Add centralized config module and wire into server.js
+
+#### Changes
+- Simplify service workflow: move signing to Files area, streamline Service History
+
+
 ### Version 2.9.1 - February 6, 2026
 
 #### Bug Fixes
