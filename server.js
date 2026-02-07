@@ -3195,7 +3195,7 @@ app.get('/api/client-portal/data', authenticateToken, async (req, res) => {
       .filter(a => {
         // Project-based activities for assigned projects
         if ((req.user.assignedProjects || []).includes(a.projectId) &&
-            ['task_completed', 'stage_completed', 'phase_completed'].includes(a.action)) {
+            ['task_completed', 'stage_completed', 'phase_completed', 'phase8_auto_updated'].includes(a.action)) {
           return true;
         }
         // Client-specific activities (by userId or slug match)
@@ -6132,6 +6132,102 @@ async function checkStageAndPhaseCompletion(projectId, tasks, completedTask) {
   }
 }
 
+// Auto-update Phase 8 tasks when validation events occur
+// Matches service report client to project, then marks relevant Phase 8 tasks complete
+async function autoUpdatePhase8Tasks(reportData, eventType, technicianName) {
+  try {
+    const projects = await getProjects();
+    const clientFacility = (reportData.clientFacilityName || '').toLowerCase();
+    const reportCompanyId = reportData.hubspotCompanyId || '';
+
+    // Find matching project by HubSpot company ID or client name
+    const project = projects.find(p => {
+      if (reportCompanyId && p.hubspotRecordId && String(p.hubspotRecordId) === String(reportCompanyId)) return true;
+      if (reportCompanyId && p.hubspotCompanyId && String(p.hubspotCompanyId) === String(reportCompanyId)) return true;
+      if (clientFacility && p.clientName?.toLowerCase() === clientFacility) return true;
+      if (clientFacility && p.name?.toLowerCase().includes(clientFacility)) return true;
+      return false;
+    });
+
+    if (!project) {
+      console.log(`⚠️ Phase 8 auto-update: No matching project for "${reportData.clientFacilityName}"`);
+      return;
+    }
+
+    const tasks = await getRawTasks(project.id);
+    const phase8Tasks = tasks.filter(t => t.phase === 'Phase 8');
+    if (phase8Tasks.length === 0) {
+      console.log(`⚠️ Phase 8 auto-update: No Phase 8 tasks in project ${project.id}`);
+      return;
+    }
+
+    let tasksUpdated = 0;
+    const now = new Date().toISOString();
+
+    // Task title patterns to match for each event type
+    // Uses lowercase includes() for flexible matching across different template versions
+    const markComplete = (task) => {
+      if (!task.completed) {
+        task.completed = true;
+        task.dateCompleted = now;
+        tasksUpdated++;
+      }
+    };
+
+    if (eventType === 'validation_started') {
+      // When validation starts: mark setup/prep tasks complete
+      phase8Tasks.forEach(task => {
+        const title = (task.taskTitle || '').toLowerCase();
+        if (title.includes('training & validation') ||
+            title.includes('review install sop') ||
+            title.includes('begin validation') ||
+            title.includes('setup reagents') ||
+            title.includes('setup cals') ||
+            title.includes('setup qcs')) {
+          markComplete(task);
+        }
+      });
+    } else if (eventType === 'validation_completed') {
+      // When validation completes: mark ALL Phase 8 tasks complete
+      // This covers all study tasks (intraprecision, interprecision, linearity, etc.)
+      phase8Tasks.forEach(task => {
+        markComplete(task);
+      });
+    }
+
+    if (tasksUpdated > 0) {
+      await db.set(`tasks_${project.id}`, tasks);
+
+      await logActivity(
+        'system',
+        'System',
+        'phase8_auto_updated',
+        'project',
+        project.id,
+        {
+          event: eventType,
+          tasksCompleted: tasksUpdated,
+          clientName: reportData.clientFacilityName,
+          technician: technicianName
+        }
+      );
+
+      console.log(`✅ Phase 8 auto-update: ${tasksUpdated} tasks marked complete in project "${project.name}" (${eventType})`);
+
+      // Trigger stage/phase completion check for HubSpot sync
+      const updatedTasks = await getTasks(project.id);
+      const lastCompleted = updatedTasks.find(t => t.phase === 'Phase 8' && t.completed);
+      if (lastCompleted) {
+        await checkStageAndPhaseCompletion(project.id, updatedTasks, lastCompleted);
+      }
+    }
+
+    return { projectId: project.id, projectName: project.name, tasksUpdated };
+  } catch (error) {
+    console.error('Phase 8 auto-update error (non-blocking):', error.message);
+  }
+}
+
 // ============== REPORTING ==============
 app.get('/api/reporting', authenticateToken, async (req, res) => {
   try {
@@ -8250,6 +8346,9 @@ app.post('/api/service-reports/start-validation', authenticateToken, requireServ
       { clientName: reportData.clientFacilityName, expectedDays: reportData.expectedDays || 'flexible' }
     );
 
+    // Auto-update Phase 8 tasks in matching project
+    await autoUpdatePhase8Tasks(newReport, 'validation_started', req.user.name);
+
     res.json(newReport);
   } catch (error) {
     console.error('Start validation error:', error);
@@ -8416,6 +8515,9 @@ app.put('/api/service-reports/:id/complete-validation', authenticateToken, requi
       { clientName: completedReport.clientFacilityName, daysLogged: segments.length, status: completionStatus }
     );
 
+    // Auto-update Phase 8 tasks in matching project (mark all complete)
+    await autoUpdatePhase8Tasks(completedReport, 'validation_completed', req.user.name);
+
     // Upload to HubSpot if company ID is available
     if (completedReport.hubspotCompanyId && hubspot.isValidRecordId(completedReport.hubspotCompanyId)) {
       try {
@@ -8555,6 +8657,53 @@ app.get('/api/client-portal/validation-progress', authenticateToken, async (req,
     res.json(validations);
   } catch (error) {
     console.error('Client validation progress error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get active validations for a specific project (used by implementation app)
+app.get('/api/projects/:projectId/active-validations', authenticateToken, async (req, res) => {
+  try {
+    const projects = await getProjects();
+    const project = projects.find(p => p.id === req.params.projectId);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const serviceReports = (await db.get('service_reports')) || [];
+    const clientName = (project.clientName || '').toLowerCase();
+    const companyId = project.hubspotRecordId || project.hubspotCompanyId || '';
+
+    const validations = serviceReports.filter(r => {
+      if (r.serviceType !== 'Validations') return false;
+      if (r.status !== 'validation_in_progress') return false;
+      if (companyId && r.hubspotCompanyId && String(r.hubspotCompanyId) === String(companyId)) return true;
+      if (clientName && r.clientFacilityName?.toLowerCase() === clientName) return true;
+      return false;
+    }).map(r => ({
+      id: r.id,
+      technicianName: r.technicianName,
+      analyzerModel: r.analyzerModel,
+      analyzerSerialNumber: r.analyzerSerialNumber,
+      validationStartDate: r.validationStartDate,
+      expectedDays: r.expectedDays,
+      daysLogged: Array.isArray(r.validationSegments) ? r.validationSegments.length : 0,
+      segments: (Array.isArray(r.validationSegments) ? r.validationSegments : []).map(s => ({
+        day: s.day,
+        date: s.date,
+        testsPerformed: s.testsPerformed,
+        results: s.results,
+        observations: s.observations,
+        status: s.status
+      })),
+      status: r.status,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt
+    }));
+
+    res.json(validations);
+  } catch (error) {
+    console.error('Get project active validations error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
