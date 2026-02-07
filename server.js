@@ -7156,6 +7156,25 @@ app.get('/api/service-reports/assigned', authenticateToken, requireServiceAccess
   }
 });
 
+// Get active (in-progress) validations for current technician
+app.get('/api/service-reports/active-validations', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    const activeValidations = serviceReports.filter(r => {
+      if (r.status !== 'validation_in_progress') return false;
+      // Show to admin, or to the technician who owns it
+      if (req.user.role === config.ROLES.ADMIN) return true;
+      return String(r.technicianId) === String(req.user.id) ||
+             String(r.assignedToId) === String(req.user.id);
+    });
+
+    res.json(activeValidations);
+  } catch (error) {
+    console.error('Get active validations error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Download service report PDF (service portal users)
 app.get('/api/service-reports/:id/pdf', authenticateToken, requireServiceAccess, async (req, res) => {
   try {
@@ -8174,6 +8193,373 @@ app.put('/api/service-reports/:id/manager-notes', authenticateToken, async (req,
     res.status(500).json({ error: 'Server error' });
   }
 });
+
+// ===== MULTI-DAY VALIDATION TRACKING =====
+
+// Start a multi-day validation (creates report with validation_in_progress status)
+app.post('/api/service-reports/start-validation', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const reportData = req.body;
+
+    if (!reportData.clientFacilityName || !reportData.testProcedures) {
+      return res.status(400).json({ error: 'Client facility and test procedures are required' });
+    }
+
+    const serviceReports = (await db.get('service_reports')) || [];
+
+    const firstSegment = {
+      day: 1,
+      date: reportData.firstDayDate || new Date().toISOString().split('T')[0],
+      testsPerformed: reportData.firstDayTests || '',
+      results: reportData.firstDayResults || '',
+      observations: reportData.firstDayObservations || '',
+      photos: [],
+      status: 'complete',
+      submittedAt: new Date().toISOString()
+    };
+
+    const newReport = {
+      id: uuidv4(),
+      ...reportData,
+      status: 'validation_in_progress',
+      serviceType: 'Validations',
+      validationSegments: [firstSegment],
+      expectedDays: reportData.expectedDays || null,
+      technicianId: req.user.id,
+      technicianName: req.user.name,
+      serviceProviderName: req.user.name,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    // Remove one-off fields that were just for the first day
+    delete newReport.firstDayDate;
+    delete newReport.firstDayTests;
+    delete newReport.firstDayResults;
+    delete newReport.firstDayObservations;
+
+    serviceReports.push(newReport);
+    await db.set('service_reports', serviceReports);
+
+    await logActivity(
+      req.user.id,
+      req.user.name,
+      'validation_started',
+      'service_report',
+      newReport.id,
+      { clientName: reportData.clientFacilityName, expectedDays: reportData.expectedDays || 'flexible' }
+    );
+
+    res.json(newReport);
+  } catch (error) {
+    console.error('Start validation error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Add/update a daily segment to an in-progress validation
+app.put('/api/service-reports/:id/segment', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = serviceReports[reportIndex];
+
+    // Only the assigned technician or report creator can add segments
+    const isOwner = String(report.technicianId) === String(req.user.id) ||
+                    String(report.assignedToId) === String(req.user.id);
+    if (!isOwner && req.user.role !== config.ROLES.ADMIN) {
+      return res.status(403).json({ error: 'Not authorized to update this validation' });
+    }
+
+    if (report.status !== 'validation_in_progress') {
+      return res.status(400).json({ error: 'This validation is not in progress' });
+    }
+
+    const { day, date, testsPerformed, results, observations, status } = req.body;
+    if (!testsPerformed) {
+      return res.status(400).json({ error: 'Tests performed is required' });
+    }
+
+    const segments = Array.isArray(report.validationSegments) ? report.validationSegments : [];
+    const existingIndex = segments.findIndex(s => s.day === day);
+
+    const segment = {
+      day: day || segments.length + 1,
+      date: date || new Date().toISOString().split('T')[0],
+      testsPerformed,
+      results: results || '',
+      observations: observations || '',
+      photos: [],
+      status: status || 'complete',
+      submittedAt: new Date().toISOString()
+    };
+
+    if (existingIndex >= 0) {
+      segments[existingIndex] = { ...segments[existingIndex], ...segment };
+    } else {
+      segments.push(segment);
+    }
+
+    serviceReports[reportIndex].validationSegments = segments;
+    serviceReports[reportIndex].updatedAt = new Date().toISOString();
+
+    // Update expected days if provided
+    if (req.body.expectedDays !== undefined) {
+      serviceReports[reportIndex].expectedDays = req.body.expectedDays;
+    }
+
+    await db.set('service_reports', serviceReports);
+
+    await logActivity(
+      req.user.id,
+      req.user.name,
+      'validation_day_logged',
+      'service_report',
+      report.id,
+      { clientName: report.clientFacilityName, day: segment.day, totalDays: segments.length }
+    );
+
+    res.json(serviceReports[reportIndex]);
+  } catch (error) {
+    console.error('Add validation segment error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Complete a multi-day validation (transition from validation_in_progress to submitted/signature_needed)
+app.put('/api/service-reports/:id/complete-validation', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = serviceReports[reportIndex];
+
+    const isOwner = String(report.technicianId) === String(req.user.id) ||
+                    String(report.assignedToId) === String(req.user.id);
+    if (!isOwner && req.user.role !== config.ROLES.ADMIN) {
+      return res.status(403).json({ error: 'Not authorized to complete this validation' });
+    }
+
+    if (report.status !== 'validation_in_progress') {
+      return res.status(400).json({ error: 'This validation is not in progress' });
+    }
+
+    const segments = Array.isArray(report.validationSegments) ? report.validationSegments : [];
+    if (segments.length === 0) {
+      return res.status(400).json({ error: 'At least one day must be logged before completing' });
+    }
+
+    const {
+      validationResults, trainingProvided, recommendations,
+      technicianSignature, technicianSignatureDate, technicianFirstName, technicianLastName,
+      customerSignature, customerSignatureDate, customerFirstName, customerLastName
+    } = req.body;
+
+    if (!validationResults) {
+      return res.status(400).json({ error: 'Overall validation results are required' });
+    }
+    if (!technicianSignature) {
+      return res.status(400).json({ error: 'Technician signature is required' });
+    }
+
+    // Determine final dates from segments
+    const sortedDates = segments.map(s => s.date).sort();
+    const validationStartDate = sortedDates[0];
+    const validationEndDate = sortedDates[sortedDates.length - 1];
+
+    // Check customer signature
+    const hasCustomerSignature = customerSignature && typeof customerSignature === 'string'
+      && customerSignature.startsWith('data:image') && customerSignature.length > 7000;
+    const completionStatus = hasCustomerSignature ? 'submitted' : 'signature_needed';
+
+    serviceReports[reportIndex] = {
+      ...report,
+      status: completionStatus,
+      validationResults,
+      trainingProvided: trainingProvided || '',
+      recommendations: recommendations || '',
+      validationStartDate,
+      validationEndDate,
+      technicianSignature,
+      technicianSignatureDate: technicianSignatureDate || new Date().toISOString().split('T')[0],
+      technicianFirstName: technicianFirstName || req.user.name.split(' ')[0],
+      technicianLastName: technicianLastName || req.user.name.split(' ').slice(1).join(' '),
+      customerSignature: customerSignature || '',
+      customerSignatureDate: customerSignatureDate || '',
+      customerFirstName: customerFirstName || '',
+      customerLastName: customerLastName || '',
+      serviceCompletionDate: validationEndDate,
+      completedAt: new Date().toISOString(),
+      submittedAt: hasCustomerSignature ? new Date().toISOString() : null,
+      updatedAt: new Date().toISOString()
+    };
+
+    await db.set('service_reports', serviceReports);
+
+    const completedReport = serviceReports[reportIndex];
+
+    await logActivity(
+      req.user.id,
+      req.user.name,
+      hasCustomerSignature ? 'validation_completed' : 'validation_pending_signature',
+      'service_report',
+      completedReport.id,
+      { clientName: completedReport.clientFacilityName, daysLogged: segments.length, status: completionStatus }
+    );
+
+    // Upload to HubSpot if company ID is available
+    if (completedReport.hubspotCompanyId && hubspot.isValidRecordId(completedReport.hubspotCompanyId)) {
+      try {
+        const reportDate = new Date(completedReport.serviceCompletionDate || completedReport.createdAt).toLocaleDateString();
+        const pdfBuffer = await pdfGenerator.generateServiceReportPDF(completedReport, req.user.name);
+        const fileName = `Validation_Report_${completedReport.clientFacilityName.replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate.replace(/\//g, '-')}.pdf`;
+        const noteText = `Validation Report Completed\n\nClient: ${completedReport.clientFacilityName}\nTechnician: ${req.user.name}\nDays: ${segments.length}\nDates: ${validationStartDate} to ${validationEndDate}`;
+
+        const uploadResult = await hubspot.uploadFileAndAttachToRecord(
+          completedReport.hubspotCompanyId,
+          pdfBuffer.toString('base64'),
+          fileName,
+          noteText,
+          { recordType: 'companies', folderPath: '/service-reports', notePrefix: '[Service Portal]', isBase64: true }
+        );
+
+        serviceReports[reportIndex].hubspotFileId = uploadResult.fileId;
+        serviceReports[reportIndex].hubspotNoteId = uploadResult.noteId;
+        await db.set('service_reports', serviceReports);
+      } catch (hubspotError) {
+        console.error('HubSpot upload error (non-blocking):', hubspotError.message);
+      }
+    }
+
+    // Upload PDF to Google Drive
+    try {
+      const driveReportDate = new Date(completedReport.serviceCompletionDate || completedReport.createdAt).toLocaleDateString();
+      const driveFileName = `Validation_Report_${completedReport.clientFacilityName.replace(/[^a-zA-Z0-9]/g, '_')}_${driveReportDate.replace(/\//g, '-')}.pdf`;
+      const drivePdfBuffer = await pdfGenerator.generateServiceReportPDF(completedReport, req.user.name);
+
+      const driveResult = await googledrive.uploadServiceReportPDF(
+        completedReport.clientFacilityName || 'Unknown Client',
+        driveFileName,
+        drivePdfBuffer
+      );
+
+      serviceReports[reportIndex].driveFileId = driveResult.fileId;
+      serviceReports[reportIndex].driveWebViewLink = driveResult.webViewLink;
+      serviceReports[reportIndex].driveWebContentLink = driveResult.webContentLink;
+      await db.set('service_reports', serviceReports);
+    } catch (driveError) {
+      console.error('Google Drive upload error (non-blocking):', driveError.message);
+    }
+
+    // Auto-add to client's Files section
+    try {
+      const users = (await db.get('users')) || [];
+      const clientFacility = (completedReport.clientFacilityName || '').toLowerCase();
+      const reportCompanyId = completedReport.hubspotCompanyId || '';
+
+      const client = users.find(u => {
+        if (u.role !== config.ROLES.CLIENT) return false;
+        if (reportCompanyId && u.hubspotCompanyId && String(u.hubspotCompanyId) === String(reportCompanyId)) return true;
+        if (clientFacility && u.practiceName?.toLowerCase() === clientFacility) return true;
+        if (clientFacility && u.name?.toLowerCase() === clientFacility) return true;
+        return false;
+      });
+
+      if (client && client.slug) {
+        const clientDocuments = (await db.get('client_documents')) || [];
+        const alreadyAdded = clientDocuments.some(d => d.serviceReportId === completedReport.id);
+        if (!alreadyAdded) {
+          const reportDate = new Date(completedReport.serviceCompletionDate || completedReport.createdAt).toLocaleDateString();
+          clientDocuments.push({
+            id: uuidv4(),
+            slug: client.slug,
+            title: `Validation Report - ${reportDate}`,
+            description: `${segments.length}-day validation - ${completedReport.technicianName || req.user.name}`,
+            category: 'Service Reports',
+            serviceReportId: completedReport.id,
+            serviceType: 'Validations',
+            driveWebViewLink: serviceReports[reportIndex].driveWebViewLink || null,
+            driveWebContentLink: serviceReports[reportIndex].driveWebContentLink || null,
+            createdAt: new Date().toISOString(),
+            uploadedBy: 'system',
+            uploadedByName: 'Thrive 365 Labs'
+          });
+          await db.set('client_documents', clientDocuments);
+        }
+      }
+    } catch (clientDocError) {
+      console.error('Client document auto-upload error (non-blocking):', clientDocError.message);
+    }
+
+    res.json(serviceReports[reportIndex]);
+  } catch (error) {
+    console.error('Complete validation error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get validation progress for client portal (by slug)
+app.get('/api/client-portal/validation-progress', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== config.ROLES.CLIENT) {
+      return res.status(403).json({ error: 'Client access required' });
+    }
+
+    const clientSlug = req.user.slug;
+    if (!clientSlug) {
+      return res.json([]);
+    }
+
+    // Find service reports matching this client
+    const serviceReports = (await db.get('service_reports')) || [];
+    const users = (await db.get('users')) || [];
+    const clientUser = users.find(u => u.id === req.user.id);
+    const clientFacility = (clientUser?.practiceName || clientUser?.name || '').toLowerCase();
+    const clientCompanyId = clientUser?.hubspotCompanyId || '';
+
+    const validations = serviceReports.filter(r => {
+      if (r.serviceType !== 'Validations') return false;
+      if (r.status !== 'validation_in_progress') return false;
+      // Match by company ID or facility name
+      if (clientCompanyId && r.hubspotCompanyId && String(r.hubspotCompanyId) === String(clientCompanyId)) return true;
+      if (clientFacility && r.clientFacilityName?.toLowerCase() === clientFacility) return true;
+      return false;
+    }).map(r => ({
+      id: r.id,
+      technicianName: r.technicianName,
+      analyzerModel: r.analyzerModel,
+      analyzerSerialNumber: r.analyzerSerialNumber,
+      validationStartDate: r.validationStartDate,
+      expectedDays: r.expectedDays,
+      daysLogged: Array.isArray(r.validationSegments) ? r.validationSegments.length : 0,
+      segments: (Array.isArray(r.validationSegments) ? r.validationSegments : []).map(s => ({
+        day: s.day,
+        date: s.date,
+        testsPerformed: s.testsPerformed,
+        results: s.results,
+        observations: s.observations,
+        status: s.status
+      })),
+      updatedAt: r.updatedAt
+    }));
+
+    res.json(validations);
+  } catch (error) {
+    console.error('Client validation progress error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ===== END MULTI-DAY VALIDATION TRACKING =====
 
 // Get service portal technicians/vendors for assignment dropdown
 app.get('/api/service-portal/technicians', authenticateToken, async (req, res) => {
