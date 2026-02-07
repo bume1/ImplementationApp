@@ -3018,8 +3018,8 @@ app.get('/api/client-portal/data', authenticateToken, async (req, res) => {
     }));
     
     // Filter activities to client-safe events
-    // Include project-based activities (task completion, etc.)
-    // AND client-specific activities (inventory, file uploads)
+    // Include project-based activities AND client-specific activities
+    const clientSlug = req.user.slug || '';
     const clientActivities = activities
       .filter(a => {
         // Project-based activities for assigned projects
@@ -3027,11 +3027,17 @@ app.get('/api/client-portal/data', authenticateToken, async (req, res) => {
             ['task_completed', 'stage_completed', 'phase_completed'].includes(a.action)) {
           return true;
         }
-        // Client-specific activities (by slug or userId)
-        if (a.userId === req.user.id || a.details?.slug === req.user.slug) {
-          if (['inventory_submitted', 'hubspot_file_upload', 'support_ticket_submitted'].includes(a.action)) {
+        // Client-specific activities (by userId or slug match)
+        if (a.userId === req.user.id || (clientSlug && (a.details?.slug === clientSlug || a.details?.clientSlug === clientSlug))) {
+          if (['inventory_submitted', 'hubspot_file_upload', 'support_ticket_submitted',
+               'document_added', 'service_report_client_signed', 'form_submitted',
+               'inventory_submissions_deleted'].includes(a.action)) {
             return true;
           }
+        }
+        // Documents shared with all clients
+        if (a.action === 'document_added' && !a.details?.slug) {
+          return true;
         }
         return false;
       })
@@ -3125,6 +3131,21 @@ app.get('/api/client-documents/:slug', authenticateToken, async (req, res) => {
     const clientDocs = documents.filter(d =>
       d.active && (d.slug === req.params.slug || d.shareWithAll === true)
     );
+
+    // Enrich service report docs with their current status
+    const serviceReportIds = clientDocs.filter(d => d.serviceReportId).map(d => d.serviceReportId);
+    if (serviceReportIds.length > 0) {
+      const serviceReports = (await db.get('service_reports')) || [];
+      clientDocs.forEach(doc => {
+        if (doc.serviceReportId) {
+          const report = serviceReports.find(r => r.id === doc.serviceReportId);
+          if (report) {
+            doc.reportStatus = report.status;
+          }
+        }
+      });
+    }
+
     res.json(clientDocs);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
@@ -3161,8 +3182,9 @@ app.post('/api/client-documents', authenticateToken, requireAdmin, async (req, r
     await db.set('client_documents', documents);
 
     // Log activity
-    await logActivity(null, 'document_added', req.user.name, {
+    await logActivity(null, req.user.name, 'document_added', 'client_document', newDoc.id, {
       documentTitle: title,
+      slug: shareWithAll ? null : slug,
       clientSlug: shareWithAll ? 'ALL CLIENTS' : slug
     });
 
@@ -3275,8 +3297,9 @@ app.post('/api/client-documents/:slug/upload', authenticateToken, requireAdmin, 
     await db.set('client_documents', documents);
 
     // Log activity
-    await logActivity(null, 'document_added', req.user.name, {
+    await logActivity(null, req.user.name, 'document_added', 'client_document', newDoc.id, {
       documentTitle: newDoc.title,
+      slug: isAllClients ? null : slugParam,
       clientSlug: isAllClients ? 'ALL CLIENTS' : slugParam
     });
 
