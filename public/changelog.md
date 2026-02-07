@@ -4,6 +4,12 @@
 
 ---
 
+### Version 2.10.1 - February 7, 2026
+
+#### Changes
+- Remove service reports API from Service History, use client_documents instead
+
+
 ### Version 2.10.0 - February 6, 2026
 
 #### New Features
