@@ -550,7 +550,7 @@
             </h2>
               {data?.activities && data.activities.length > 0 ? (
                 <div className="space-y-2">
-                  {data.activities.slice(0, 5).map((act, idx) => {
+                  {data.activities.slice(0, 10).map((act, idx) => {
                     const getIcon = () => {
                       if (act.action === 'inventory_submitted') return { icon: Icons.clipboard, color: 'text-blue-500' };
                       if (act.action === 'hubspot_file_upload') return { icon: Icons.folder, color: 'text-green-500' };
@@ -559,17 +559,23 @@
                       if (act.action === 'phase_completed') return { icon: Icons.target, color: 'text-yellow-500' };
                       if (act.action === 'stage_completed') return { icon: Icons.target, color: 'text-orange-500' };
                       if (act.action === 'task_completed') return { icon: Icons.target, color: 'text-green-500' };
+                      if (act.action === 'document_added') return { icon: Icons.folder, color: 'text-primary' };
+                      if (act.action === 'service_report_client_signed') return { icon: Icons.check, color: 'text-green-600' };
+                      if (act.action === 'inventory_submissions_deleted') return { icon: Icons.clipboard, color: 'text-red-500' };
                       return { icon: Icons.activity, color: 'text-gray-500' };
                     };
                     const getLabel = () => {
                       if (act.action === 'inventory_submitted') return `Inventory submitted (${act.details?.itemCount || 0} items)`;
-                      if (act.action === 'hubspot_file_upload') return `File uploaded: ${act.details || 'Document'}`;
+                      if (act.action === 'hubspot_file_upload') return `File uploaded: ${typeof act.details === 'string' ? act.details : 'Document'}`;
                       if (act.action === 'support_ticket_submitted') return 'Support ticket submitted';
                       if (act.action === 'form_submitted') return `Form submitted: ${act.formType || 'Unknown'}`;
                       if (act.action === 'phase_completed') return `Phase completed: ${act.details?.phase || ''}`;
                       if (act.action === 'stage_completed') return `Stage completed: ${act.details?.stage || ''}`;
                       if (act.action === 'task_completed') return act.details?.taskTitle || 'Task completed';
-                      return act.details || 'Activity recorded';
+                      if (act.action === 'document_added') return `New document: ${act.details?.documentTitle || 'File shared'}`;
+                      if (act.action === 'service_report_client_signed') return `Service report signed: ${act.details?.serviceType || 'Report'}`;
+                      if (act.action === 'inventory_submissions_deleted') return `Inventory submissions removed`;
+                      return typeof act.details === 'string' ? act.details : 'Activity recorded';
                     };
                     const { icon, color } = getIcon();
                     return (
@@ -2946,7 +2952,6 @@
       const [note, setNote] = useState('');
       const [uploading, setUploading] = useState(false);
       const [uploadMessage, setUploadMessage] = useState(null);
-      const [serviceReportStatuses, setServiceReportStatuses] = useState({});
       const [signingReportId, setSigningReportId] = useState(null);
       const [customerSignature, setCustomerSignature] = useState('');
       const [signSubmitting, setSignSubmitting] = useState(false);
@@ -2958,26 +2963,6 @@
       // Check if user has any HubSpot IDs configured for uploads
       const hasHubSpotConfig = userData?.hubspotCompanyId || userData?.hubspotDealId || userData?.hubspotContactId;
 
-      // Fetch service report statuses to know which need signatures
-      useEffect(() => {
-        const fetchStatuses = async () => {
-          try {
-            const response = await fetch(`${API_URL}/api/client/service-reports`, {
-              headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const data = await response.json();
-            if (data.reports) {
-              const statusMap = {};
-              data.reports.forEach(r => { statusMap[r.id] = r.rawStatus || r.status; });
-              setServiceReportStatuses(statusMap);
-            }
-          } catch (err) {
-            console.error('Error fetching service report statuses:', err);
-          }
-        };
-        if (token) fetchStatuses();
-      }, [token]);
-
       // Scroll to highlighted report when navigating from Service History
       useEffect(() => {
         if (highlightServiceReportId && highlightRef.current) {
@@ -2985,7 +2970,7 @@
             highlightRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
           }, 300);
         }
-      }, [highlightServiceReportId, serviceReportStatuses]);
+      }, [highlightServiceReportId, documents]);
 
       const refreshDocuments = async () => {
         if (!slug) return;
@@ -3027,7 +3012,7 @@
             return;
           }
           // Update status locally, close modal, refresh docs
-          setServiceReportStatuses(prev => ({ ...prev, [signingReportId]: 'submitted' }));
+          setDocuments(prev => prev.map(d => d.serviceReportId === signingReportId ? { ...d, reportStatus: 'submitted' } : d));
           const signedId = signingReportId;
           setSigningReportId(null);
           setCustomerSignature('');
@@ -3129,7 +3114,7 @@
                     <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">{cat}</h3>
                     <div className="space-y-2">
                       {docs.map(doc => {
-                        const reportStatus = doc.serviceReportId ? serviceReportStatuses[doc.serviceReportId] : null;
+                        const reportStatus = doc.serviceReportId ? doc.reportStatus : null;
                         const needsSignature = reportStatus === 'signature_needed';
                         const isSigned = reportStatus === 'submitted';
                         const isHighlighted = highlightServiceReportId && doc.serviceReportId === highlightServiceReportId;
@@ -4848,6 +4833,30 @@
           />
           
           <main className="flex-1 lg:ml-64 p-4 lg:p-8 mt-16 lg:mt-0 max-w-7xl">
+            {/* Signature Required Banner */}
+            {!isAdmin && (() => {
+              const unsignedCount = (documents || []).filter(d => d.serviceReportId && d.reportStatus === 'signature_needed').length;
+              if (unsignedCount === 0) return null;
+              return (
+                <div className="mb-6 bg-red-50 border border-red-300 rounded-xl p-4 flex items-center gap-4 shadow-sm">
+                  <div className="flex-shrink-0 w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                    <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-red-800">
+                      {unsignedCount} service report{unsignedCount > 1 ? 's' : ''} requires your signature
+                    </p>
+                    <p className="text-sm text-red-600">Please sign to download your service report{unsignedCount > 1 ? 's' : ''}.</p>
+                  </div>
+                  <button
+                    onClick={() => navigateToFile(null)}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors text-sm whitespace-nowrap"
+                  >
+                    Go to Files
+                  </button>
+                </div>
+              );
+            })()}
             {renderPage()}
             
             <footer className="mt-12 text-center text-sm text-gray-500">
