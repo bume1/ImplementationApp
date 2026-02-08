@@ -12,15 +12,16 @@ const hubspot = require('./hubspot');
 const googledrive = require('./googledrive');
 const pdfGenerator = require('./pdf-generator');
 const changelogGenerator = require('./changelog-generator');
+const config = require('./config');
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }
+  limits: { fileSize: config.MAX_FILE_SIZE }
 });
 
 // Concurrent upload limiter to prevent memory exhaustion (Gotcha #12)
-// Files are memory-only (10MB each); limit concurrent uploads to prevent OOM
-const MAX_CONCURRENT_UPLOADS = 5;
+// Files are memory-only; limit concurrent uploads to prevent OOM
+const MAX_CONCURRENT_UPLOADS = config.MAX_CONCURRENT_UPLOADS;
 let _activeUploads = 0;
 
 const uploadLimiter = (req, res, next) => {
@@ -35,11 +36,15 @@ const uploadLimiter = (req, res, next) => {
 
 const app = express();
 const db = new Database();
-const PORT = process.env.PORT || 3000;
+const PORT = config.PORT;
 
 // HubSpot ticket polling timer reference
 let hubspotPollingTimer = null;
-const JWT_SECRET = process.env.JWT_SECRET || 'thrive365-secret-change-in-production';
+const JWT_SECRET = config.JWT_SECRET;
+const HUBSPOT_STAGE_CACHE_TTL = config.HUBSPOT_STAGE_CACHE_TTL;
+const HUBSPOT_POLL_MIN_SECONDS = config.HUBSPOT_POLL_MIN_SECONDS;
+const HUBSPOT_POLL_MAX_SECONDS = config.HUBSPOT_POLL_MAX_SECONDS;
+const INVENTORY_EXPIRY_WARNING_DAYS = config.INVENTORY_EXPIRY_WARNING_DAYS;
 
 // Startup security warnings
 if (!process.env.JWT_SECRET) {
@@ -48,26 +53,20 @@ if (!process.env.JWT_SECRET) {
 }
 
 app.use(cors());
-app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.json({ limit: config.BODY_PARSER_LIMIT }));
 
 // Static file options with no-cache headers for development
 const staticOptions = {
   etag: false,
   lastModified: false,
-  setHeaders: (res, path) => {
-    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    res.set('Pragma', 'no-cache');
-    res.set('Expires', '0');
-    res.set('Surrogate-Control', 'no-store');
+  setHeaders: (res) => {
+    Object.entries(config.NO_CACHE_HEADERS).forEach(([k, v]) => res.set(k, v));
   }
 };
 
 // Disable caching to prevent stale content issues
 app.use((req, res, next) => {
-  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  res.set('Pragma', 'no-cache');
-  res.set('Expires', '0');
-  res.set('Surrogate-Control', 'no-store');
+  Object.entries(config.NO_CACHE_HEADERS).forEach(([k, v]) => res.set(k, v));
   next();
 });
 
@@ -111,14 +110,14 @@ app.get('/thrive365labslaunch', (req, res) => {
 (async () => {
   try {
     const users = await db.get('users') || [];
-    if (!users.find(u => u.email === 'bianca@thrive365labs.com')) {
-      const hashedPassword = await bcrypt.hash('Thrive2025!', 10);
+    if (!users.find(u => u.email === config.DEFAULT_ADMIN.EMAIL)) {
+      const hashedPassword = await bcrypt.hash(config.DEFAULT_ADMIN.PASSWORD, config.BCRYPT_SALT_ROUNDS);
       users.push({
         id: uuidv4(),
-        email: 'bianca@thrive365labs.com',
-        name: 'Bianca Ume',
+        email: config.DEFAULT_ADMIN.EMAIL,
+        name: config.DEFAULT_ADMIN.NAME,
         password: hashedPassword,
-        role: 'admin',
+        role: config.ROLES.ADMIN,
         createdAt: new Date().toISOString()
       });
       await db.set('users', users);
@@ -135,7 +134,7 @@ app.get('/thrive365labslaunch', (req, res) => {
 // Short-lived user cache to reduce DB reads on every authenticated request (Gotcha #6)
 // 5-second TTL ensures permission changes take effect within seconds while reducing O(n) lookups
 let _usersCache = { data: null, lastRefresh: 0 };
-const USERS_CACHE_TTL = 5000; // 5 seconds
+const USERS_CACHE_TTL = config.USERS_CACHE_TTL;
 
 const getUsers = async () => {
   const now = Date.now();
@@ -207,7 +206,7 @@ const getTasks = async (projectId) => {
 };
 
 // Activity logging helper
-const ACTIVITY_LOG_MAX = 2000;
+const ACTIVITY_LOG_MAX = config.ACTIVITY_LOG_MAX_ENTRIES;
 
 const logActivity = async (userId, userName, action, entityType, entityId, details, projectId = null) => {
   try {
@@ -274,11 +273,11 @@ async function loadTemplate() {
 function getDefaultPollingConfig() {
   return {
     enabled: true,
-    intervalSeconds: 60,
+    intervalSeconds: config.HUBSPOT_POLL_INTERVAL_SECONDS,
     startedAt: new Date().toISOString(),
     lastPollTime: null,
     processedTicketIds: [],
-    targetStages: ['assigned', 'vendor escalation'],
+    targetStages: config.HUBSPOT_TARGET_STAGES,
     resolvedStageIds: [],
     stageIdsCachedAt: null,
     filter: {
@@ -311,7 +310,7 @@ async function pollHubSpotTickets() {
       ? Date.now() - new Date(config.stageIdsCachedAt).getTime()
       : Infinity;
 
-    if (!config.resolvedStageIds || !config.resolvedStageIds.length || cacheAge > 3600000) {
+    if (!config.resolvedStageIds || !config.resolvedStageIds.length || cacheAge > HUBSPOT_STAGE_CACHE_TTL) {
       try {
         const pipelines = await hubspot.getTicketPipelines();
         const targetLabels = config.targetStages.map(s => s.toLowerCase());
@@ -421,20 +420,6 @@ async function pollHubSpotTickets() {
     );
     const users = (await db.get('users')) || [];
 
-    const serviceTypeMapping = {
-      'analyzer hardware': 'Analyzer Hardware',
-      'inventory': 'Inventory',
-      'lis/emr': 'LIS/EMR',
-      'lis': 'LIS/EMR',
-      'emr': 'LIS/EMR',
-      'billing & fees': 'Billing & Fees',
-      'billing': 'Billing & Fees',
-      'compliance': 'Compliance',
-      'training': 'Training',
-      'validations': 'Validations',
-      'validation': 'Validations'
-    };
-
     let reportsCreated = 0;
 
     for (const candidate of filteredCandidates) {
@@ -470,7 +455,7 @@ async function pollHubSpotTickets() {
             if (hubspotOwner.email) {
               const userByEmail = users.find(u =>
                 u.email && u.email.toLowerCase() === hubspotOwner.email.toLowerCase() &&
-                (u.role === 'vendor' || u.role === 'admin' || u.hasServicePortalAccess)
+                (u.role === config.ROLES.VENDOR || u.role === config.ROLES.ADMIN || u.hasServicePortalAccess)
               );
               if (userByEmail) {
                 assignedToId = userByEmail.id;
@@ -482,7 +467,7 @@ async function pollHubSpotTickets() {
               const fullName = `${hubspotOwner.firstName} ${hubspotOwner.lastName}`;
               const userByName = users.find(u =>
                 u.name && u.name.toLowerCase() === fullName.toLowerCase() &&
-                (u.role === 'vendor' || u.role === 'admin' || u.hasServicePortalAccess)
+                (u.role === config.ROLES.VENDOR || u.role === config.ROLES.ADMIN || u.hasServicePortalAccess)
               );
               if (userByName) {
                 assignedToId = userByName.id;
@@ -503,7 +488,7 @@ async function pollHubSpotTickets() {
 
       // Map service type from issue category
       const issueCategoryLower = (ticket.issueCategory || '').toLowerCase();
-      const serviceType = serviceTypeMapping[issueCategoryLower] || '';
+      const serviceType = config.SERVICE_TYPE_MAP[issueCategoryLower] || '';
 
       // Build manager notes from ticket description and notes
       let managerNotes = '';
@@ -651,6 +636,270 @@ async function initializeTicketPolling() {
   }
 }
 
+// Cascade update: propagate name changes to all related data stores
+// Called when a user's name or practiceName changes
+async function cascadeUserNameUpdate(userId, oldName, newName, oldPracticeName, newPracticeName) {
+  const changes = [];
+
+  // Update service reports
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    let srUpdated = false;
+    serviceReports.forEach(r => {
+      // Update technician name references
+      if (oldName && newName && oldName !== newName) {
+        if (r.technicianName === oldName) { r.technicianName = newName; srUpdated = true; }
+        if (r.serviceProviderName === oldName) { r.serviceProviderName = newName; srUpdated = true; }
+        if (r.assignedToName === oldName) { r.assignedToName = newName; srUpdated = true; }
+        if (r.assignedByName === oldName) { r.assignedByName = newName; srUpdated = true; }
+        if (r.technicianId === userId && r.technicianName !== newName) { r.technicianName = newName; srUpdated = true; }
+        if (r.assignedToId === userId && r.assignedToName !== newName) { r.assignedToName = newName; srUpdated = true; }
+      }
+      // Update client facility name references
+      if (oldPracticeName && newPracticeName && oldPracticeName !== newPracticeName) {
+        if (r.clientFacilityName === oldPracticeName) { r.clientFacilityName = newPracticeName; srUpdated = true; }
+      }
+    });
+    if (srUpdated) {
+      await db.set('service_reports', serviceReports);
+      changes.push('service_reports');
+    }
+  } catch (err) {
+    console.error('Cascade update service_reports error:', err.message);
+  }
+
+  // Update validation reports
+  try {
+    const validationReports = (await db.get('validation_reports')) || [];
+    let vrUpdated = false;
+    validationReports.forEach(r => {
+      if (oldName && newName && oldName !== newName) {
+        if (r.technicianName === oldName) { r.technicianName = newName; vrUpdated = true; }
+        if (r.serviceProviderName === oldName) { r.serviceProviderName = newName; vrUpdated = true; }
+        if (r.assignedToName === oldName) { r.assignedToName = newName; vrUpdated = true; }
+      }
+      if (oldPracticeName && newPracticeName && oldPracticeName !== newPracticeName) {
+        if (r.clientFacilityName === oldPracticeName) { r.clientFacilityName = newPracticeName; vrUpdated = true; }
+        if (r.clientName === oldPracticeName) { r.clientName = newPracticeName; vrUpdated = true; }
+      }
+    });
+    if (vrUpdated) {
+      await db.set('validation_reports', validationReports);
+      changes.push('validation_reports');
+    }
+  } catch (err) {
+    console.error('Cascade update validation_reports error:', err.message);
+  }
+
+  // Update client_documents titles that reference the old name
+  if (oldPracticeName && newPracticeName && oldPracticeName !== newPracticeName) {
+    try {
+      const clientDocuments = (await db.get('client_documents')) || [];
+      let docsUpdated = false;
+      clientDocuments.forEach(d => {
+        if (d.title && d.title.includes(oldPracticeName)) {
+          d.title = d.title.replace(oldPracticeName, newPracticeName);
+          docsUpdated = true;
+        }
+        if (d.description && d.description.includes(oldPracticeName)) {
+          d.description = d.description.replace(oldPracticeName, newPracticeName);
+          docsUpdated = true;
+        }
+      });
+      if (docsUpdated) {
+        await db.set('client_documents', clientDocuments);
+        changes.push('client_documents');
+      }
+    } catch (err) {
+      console.error('Cascade update client_documents error:', err.message);
+    }
+  }
+
+  // Update project clientName references
+  if (oldPracticeName && newPracticeName && oldPracticeName !== newPracticeName) {
+    try {
+      const projects = await getProjects();
+      let projUpdated = false;
+      projects.forEach(p => {
+        if (p.clientName === oldPracticeName) {
+          p.clientName = newPracticeName;
+          projUpdated = true;
+        }
+      });
+      if (projUpdated) {
+        await db.set('projects', projects);
+        changes.push('projects');
+      }
+    } catch (err) {
+      console.error('Cascade update projects error:', err.message);
+    }
+  }
+
+  // Update vendor assignedClients display names if this is a client user
+  if (oldPracticeName && newPracticeName && oldPracticeName !== newPracticeName) {
+    try {
+      const users = await getUsers();
+      let usersUpdated = false;
+      users.forEach(u => {
+        if (u.role === config.ROLES.VENDOR && Array.isArray(u.assignedClients)) {
+          // assignedClients stores client user IDs, but update any cached display names
+          if (u.assignedClientNames && Array.isArray(u.assignedClientNames)) {
+            const idx = u.assignedClientNames.indexOf(oldPracticeName);
+            if (idx !== -1) { u.assignedClientNames[idx] = newPracticeName; usersUpdated = true; }
+          }
+        }
+      });
+      if (usersUpdated) {
+        await db.set('users', users);
+        invalidateUsersCache();
+        changes.push('users (vendor assignedClientNames)');
+      }
+    } catch (err) {
+      console.error('Cascade update vendor assignedClients error:', err.message);
+    }
+  }
+
+  // Update announcements that reference the old name
+  if (oldName && newName && oldName !== newName) {
+    try {
+      const announcements = (await db.get('announcements')) || [];
+      let annUpdated = false;
+      announcements.forEach(a => {
+        if (a.createdByName === oldName) { a.createdByName = newName; annUpdated = true; }
+      });
+      if (annUpdated) {
+        await db.set('announcements', announcements);
+        changes.push('announcements');
+      }
+    } catch (err) {
+      console.error('Cascade update announcements error:', err.message);
+    }
+  }
+
+  if (changes.length > 0) {
+    console.log(`🔄 Cascade name update for user ${userId}: updated ${changes.join(', ')}`);
+  }
+}
+
+// Cascade slug change: migrate inventory keys and update references when a client's slug changes
+async function cascadeSlugChange(userId, oldSlug, newSlug) {
+  if (!oldSlug || !newSlug || oldSlug === newSlug) return;
+  const changes = [];
+
+  // Migrate inventory submissions
+  try {
+    const submissions = await db.get(`inventory_submissions_${oldSlug}`);
+    if (submissions) {
+      await db.set(`inventory_submissions_${newSlug}`, submissions);
+      await db.delete(`inventory_submissions_${oldSlug}`);
+      changes.push('inventory_submissions');
+    }
+  } catch (err) { console.error('Cascade slug inventory_submissions error:', err.message); }
+
+  // Migrate custom inventory items
+  try {
+    const customItems = await db.get(`inventory_custom_${oldSlug}`);
+    if (customItems) {
+      await db.set(`inventory_custom_${newSlug}`, customItems);
+      await db.delete(`inventory_custom_${oldSlug}`);
+      changes.push('inventory_custom');
+    }
+  } catch (err) { console.error('Cascade slug inventory_custom error:', err.message); }
+
+  // Update client_documents slug references
+  try {
+    const clientDocs = (await db.get('client_documents')) || [];
+    let docsUpdated = false;
+    clientDocs.forEach(d => {
+      if (d.slug === oldSlug) { d.slug = newSlug; docsUpdated = true; }
+    });
+    if (docsUpdated) {
+      await db.set('client_documents', clientDocs);
+      changes.push('client_documents');
+    }
+  } catch (err) { console.error('Cascade slug client_documents error:', err.message); }
+
+  // Update service_reports clientSlug references
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    let srUpdated = false;
+    serviceReports.forEach(r => {
+      if (r.clientSlug === oldSlug) { r.clientSlug = newSlug; srUpdated = true; }
+    });
+    if (srUpdated) {
+      await db.set('service_reports', serviceReports);
+      changes.push('service_reports');
+    }
+  } catch (err) { console.error('Cascade slug service_reports error:', err.message); }
+
+  // Update project clientLinkSlug references and track previous slugs
+  try {
+    const projects = await getProjects();
+    let projUpdated = false;
+    projects.forEach(p => {
+      if (p.clientLinkSlug === oldSlug) {
+        if (!Array.isArray(p.previousSlugs)) p.previousSlugs = [];
+        p.previousSlugs.push(oldSlug);
+        p.clientLinkSlug = newSlug;
+        projUpdated = true;
+      }
+    });
+    if (projUpdated) {
+      await db.set('projects', projects);
+      changes.push('projects');
+    }
+  } catch (err) { console.error('Cascade slug projects error:', err.message); }
+
+  if (changes.length > 0) {
+    console.log(`🔄 Cascade slug change for user ${userId}: ${oldSlug} → ${newSlug}, updated ${changes.join(', ')}`);
+  }
+}
+
+// ---- Entity Resolvers ----
+// Resolve current display names from entity IDs at read time
+// This ensures data always reflects current state, not stale snapshots
+
+async function resolveUserName(userId) {
+  if (!userId || userId === 'system') return userId === 'system' ? 'System' : 'Unknown';
+  const users = await getUsers();
+  const user = users.find(u => u.id === userId);
+  return user ? user.name : 'Unknown User';
+}
+
+async function resolveClientData(clientIdOrSlug) {
+  const users = await getUsers();
+  const client = users.find(u =>
+    (u.id === clientIdOrSlug || u.slug === clientIdOrSlug) && u.role === config.ROLES.CLIENT
+  );
+  if (!client) return null;
+  return {
+    id: client.id,
+    name: client.name,
+    practiceName: client.practiceName,
+    slug: client.slug,
+    email: client.email,
+    logo: client.logo
+  };
+}
+
+// Enrich a service report with current entity names at read time
+async function enrichServiceReport(report) {
+  const enriched = { ...report };
+  if (report.assignedToId) {
+    const name = await resolveUserName(report.assignedToId);
+    if (name !== 'Unknown User') enriched.assignedToName = name;
+  }
+  if (report.technicianId) {
+    const name = await resolveUserName(report.technicianId);
+    if (name !== 'Unknown User') enriched.technicianName = name;
+  }
+  if (report.assignedById) {
+    const name = await resolveUserName(report.assignedById);
+    if (name !== 'Unknown User') enriched.assignedByName = name;
+  }
+  return enriched;
+}
+
 // Auth middleware (accepts token from header or query param for downloads)
 const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -703,13 +952,13 @@ const authenticateToken = async (req, res, next) => {
 
 // Authorization helper to check project access
 const canAccessProject = (user, projectId) => {
-  if (user.role === 'admin') return true;
+  if (user.role === config.ROLES.ADMIN) return true;
   return (user.assignedProjects || []).includes(projectId);
 };
 
 // Authorization helper to check write access to a project
 const canWriteProject = (user, projectId) => {
-  if (user.role === 'admin') return true;
+  if (user.role === config.ROLES.ADMIN) return true;
   if (!(user.assignedProjects || []).includes(projectId)) return false;
   const level = (user.projectAccessLevels || {})[projectId];
   return level === 'write' || level === 'admin';
@@ -724,7 +973,7 @@ const generateClientUserSlug = async (practiceName) => {
 
 // Super Admin access - full system access (role === 'admin')
 const requireAdmin = (req, res, next) => {
-  if (req.user.role !== 'admin') {
+  if (req.user.role !== config.ROLES.ADMIN) {
     return res.status(403).json({ error: 'Super Admin access required' });
   }
   next();
@@ -736,7 +985,7 @@ const requireSuperAdmin = requireAdmin;
 // Require Admin Hub access (super admins, managers, or users with hasAdminHubAccess)
 // Note: Managers can access Admin Hub but only Service Portal section (UI handles section visibility)
 const requireAdminHubAccess = (req, res, next) => {
-  if (req.user.role === 'admin' || req.user.isManager || req.user.hasAdminHubAccess) {
+  if (req.user.role === config.ROLES.ADMIN || req.user.isManager || req.user.hasAdminHubAccess) {
     return next();
   }
   return res.status(403).json({ error: 'Admin Hub access required' });
@@ -744,7 +993,7 @@ const requireAdminHubAccess = (req, res, next) => {
 
 // Require Super Admin for sensitive Admin Hub operations (Inbox, User Management)
 const requireAdminHubFullAccess = (req, res, next) => {
-  if (req.user.role === 'admin') {
+  if (req.user.role === config.ROLES.ADMIN) {
     return next();
   }
   return res.status(403).json({ error: 'Super Admin access required for this operation' });
@@ -752,7 +1001,7 @@ const requireAdminHubFullAccess = (req, res, next) => {
 
 // Require Implementations App access
 const requireImplementationsAccess = (req, res, next) => {
-  if (req.user.role === 'admin' || req.user.hasImplementationsAccess ||
+  if (req.user.role === config.ROLES.ADMIN || req.user.hasImplementationsAccess ||
       (req.user.assignedProjects && req.user.assignedProjects.length > 0)) {
     return next();
   }
@@ -761,7 +1010,7 @@ const requireImplementationsAccess = (req, res, next) => {
 
 // Require Client Portal Admin access (super admins, managers, or users with hasClientPortalAdminAccess)
 const requireClientPortalAdmin = (req, res, next) => {
-  if (req.user.role === 'admin' || req.user.isManager || req.user.hasClientPortalAdminAccess) {
+  if (req.user.role === config.ROLES.ADMIN || req.user.isManager || req.user.hasClientPortalAdminAccess) {
     return next();
   }
   return res.status(403).json({ error: 'Client Portal admin access required' });
@@ -785,23 +1034,23 @@ app.post('/api/auth/signup', authenticateToken, requireAdmin, async (req, res) =
       return res.status(400).json({ error: 'Invalid email format' });
     }
     // Validate password strength (min 8 chars, at least one uppercase, one lowercase, one number)
-    if (password.length < 8) {
-      return res.status(400).json({ error: 'Password must be at least 8 characters long' });
+    if (password.length < config.MIN_PASSWORD_LENGTH) {
+      return res.status(400).json({ error: `Password must be at least ${config.MIN_PASSWORD_LENGTH} characters long` });
     }
-    if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
+    if (!config.PASSWORD_REGEX.test(password)) {
       return res.status(400).json({ error: 'Password must contain at least one uppercase letter, one lowercase letter, and one number' });
     }
     const users = await getUsers();
     if (users.find(u => u.email?.toLowerCase() === email.toLowerCase())) {
       return res.status(400).json({ error: 'User already exists' });
     }
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, config.BCRYPT_SALT_ROUNDS);
     users.push({
       id: uuidv4(),
       email: email.toLowerCase().trim(),
       name,
       password: hashedPassword,
-      role: 'user',
+      role: config.ROLES.USER,
       createdAt: new Date().toISOString()
     });
     await db.set('users', users);
@@ -817,7 +1066,7 @@ app.post('/api/auth/signup', authenticateToken, requireAdmin, async (req, res) =
 app.post('/api/users', authenticateToken, async (req, res) => {
   try {
     // Super Admin can create any user type, Managers can only create client users
-    const isSuperAdmin = req.user.role === 'admin';
+    const isSuperAdmin = req.user.role === config.ROLES.ADMIN;
     const isCurrentUserManager = req.user.isManager || false;
 
     if (!isSuperAdmin && !isCurrentUserManager) {
@@ -831,7 +1080,7 @@ app.post('/api/users', authenticateToken, async (req, res) => {
     } = req.body;
 
     // Managers can only create client users
-    if (isCurrentUserManager && !isSuperAdmin && role !== 'client') {
+    if (isCurrentUserManager && !isSuperAdmin && role !== config.ROLES.CLIENT) {
       return res.status(403).json({ error: 'Managers can only create client users' });
     }
 
@@ -842,13 +1091,13 @@ app.post('/api/users', authenticateToken, async (req, res) => {
     if (users.find(u => u.email === email)) {
       return res.status(400).json({ error: 'User already exists with this email' });
     }
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, config.BCRYPT_SALT_ROUNDS);
     const newUser = {
       id: uuidv4(),
       email,
       name,
       password: hashedPassword,
-      role: role || 'user', // admin (super admin), user, client, vendor
+      role: role || config.ROLES.USER, // admin (super admin), user, client, vendor
       // Manager flag - provides limited admin access
       isManager: isManager || false,
       // Permission flags
@@ -863,10 +1112,10 @@ app.post('/api/users', authenticateToken, async (req, res) => {
     };
 
     // Client-specific fields
-    if (role === 'client') {
+    if (role === config.ROLES.CLIENT) {
       // If adding user to an existing portal, inherit slug and practice settings
       if (existingPortalSlug) {
-        const existingClient = users.find(u => u.role === 'client' && u.slug === existingPortalSlug);
+        const existingClient = users.find(u => u.role === config.ROLES.CLIENT && u.slug === existingPortalSlug);
         if (!existingClient) {
           return res.status(400).json({ error: 'Existing portal not found' });
         }
@@ -896,14 +1145,14 @@ app.post('/api/users', authenticateToken, async (req, res) => {
     }
 
     // Vendor-specific fields
-    if (role === 'vendor') {
+    if (role === config.ROLES.VENDOR) {
       newUser.assignedClients = assignedClients || [];
       // Vendors automatically get service portal access
       newUser.hasServicePortalAccess = true;
     }
 
     // User/team member fields
-    if (role === 'user') {
+    if (role === config.ROLES.USER) {
       newUser.assignedProjects = assignedProjects || [];
       newUser.projectAccessLevels = projectAccessLevels || {};
     }
@@ -939,11 +1188,11 @@ app.post('/api/users', authenticateToken, async (req, res) => {
 // Get existing client portals (unique slugs) for adding users to existing portals
 app.get('/api/client-portals', authenticateToken, async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && !req.user.isManager) {
+    if (req.user.role !== config.ROLES.ADMIN && !req.user.isManager) {
       return res.status(403).json({ error: 'Admin access required' });
     }
     const users = await getUsers();
-    const clientUsers = users.filter(u => u.role === 'client' && u.slug);
+    const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT && u.slug);
     // Group by slug to get unique portals with member count
     const portalMap = {};
     for (const u of clientUsers) {
@@ -967,6 +1216,13 @@ app.get('/api/client-portals', authenticateToken, async (req, res) => {
   }
 });
 
+// ===== Public Config Endpoint =====
+// Returns non-sensitive configuration values for frontend portals
+// No authentication required - provides brand, phases, statuses, service types
+app.get('/api/config', (req, res) => {
+  res.json(config.getPublicConfig());
+});
+
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -987,7 +1243,7 @@ app.post('/api/auth/login', async (req, res) => {
     const token = jwt.sign(
       { id: user.id, email: user.email, name: user.name, role: user.role },
       JWT_SECRET,
-      { expiresIn: '24h' }
+      { expiresIn: config.JWT_EXPIRY }
     );
     const isManager = user.isManager || false;
     const userResponse = {
@@ -1009,7 +1265,7 @@ app.post('/api/auth/login', async (req, res) => {
       requirePasswordChange: user.requirePasswordChange || false
     };
     // Include client-specific fields
-    if (user.role === 'client') {
+    if (user.role === config.ROLES.CLIENT) {
       userResponse.practiceName = user.practiceName;
       userResponse.isNewClient = user.isNewClient;
       // Auto-generate slug if client doesn't have one
@@ -1029,7 +1285,7 @@ app.post('/api/auth/login', async (req, res) => {
       }
     }
     // Include project access levels for team members
-    if (user.role === 'user') {
+    if (user.role === config.ROLES.USER) {
       userResponse.projectAccessLevels = user.projectAccessLevels || {};
     }
     res.json({ token, user: userResponse });
@@ -1048,22 +1304,22 @@ app.post('/api/auth/client-login', async (req, res) => {
     }
     const users = await getUsers();
     // Allow clients, admins (super admin), and managers to log into the portal
-    const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase() && (u.role === 'client' || u.role === 'admin' || u.isManager));
+    const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase() && (u.role === config.ROLES.CLIENT || u.role === config.ROLES.ADMIN || u.isManager));
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
     // For clients, optionally verify slug matches if provided
-    if (user.role === 'client' && slug && user.slug !== slug) {
+    if (user.role === config.ROLES.CLIENT && slug && user.slug !== slug) {
       return res.status(400).json({ error: 'Invalid portal access' });
     }
     const token = jwt.sign(
       { id: user.id, email: user.email, name: user.name, role: user.role },
       JWT_SECRET,
-      { expiresIn: '24h' }
+      { expiresIn: config.JWT_EXPIRY }
     );
     const isManager = user.isManager || false;
     // Admin and Manager get 'admin' slug for portal admin access
-    const effectiveSlug = (user.role === 'admin' || isManager) ? 'admin' : user.slug;
+    const effectiveSlug = (user.role === config.ROLES.ADMIN || isManager) ? 'admin' : user.slug;
     res.json({
       token,
       user: {
@@ -1072,7 +1328,7 @@ app.post('/api/auth/client-login', async (req, res) => {
         name: user.name,
         role: user.role,
         isManager: isManager,
-        hasClientPortalAdminAccess: user.hasClientPortalAdminAccess || isManager || user.role === 'admin',
+        hasClientPortalAdminAccess: user.hasClientPortalAdminAccess || isManager || user.role === config.ROLES.ADMIN,
         practiceName: user.practiceName,
         isNewClient: user.isNewClient,
         slug: effectiveSlug,
@@ -1255,7 +1511,7 @@ app.get('/api/admin/activity-log', authenticateToken, requireAdmin, async (req, 
 // ============== USER MANAGEMENT (Super Admin, Manager, and Client Portal Admin) ==============
 app.get('/api/users', authenticateToken, async (req, res) => {
   // Allow super admins, managers, and client portal admins to view users
-  if (req.user.role !== 'admin' && !req.user.isManager && !req.user.hasClientPortalAdminAccess) {
+  if (req.user.role !== config.ROLES.ADMIN && !req.user.isManager && !req.user.hasClientPortalAdminAccess) {
     return res.status(403).json({ error: 'Access denied' });
   }
   try {
@@ -1307,11 +1563,15 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
     const idx = users.findIndex(u => u.id === userId);
     if (idx === -1) return res.status(404).json({ error: 'User not found' });
 
+    // Capture old values before update for cascade propagation
+    const oldName = users[idx].name;
+    const oldPracticeName = users[idx].practiceName;
+
     if (name) users[idx].name = name;
     if (email) users[idx].email = email;
     if (role) users[idx].role = role;
     if (password) {
-      users[idx].password = await bcrypt.hash(password, 10);
+      users[idx].password = await bcrypt.hash(password, config.BCRYPT_SALT_ROUNDS);
       users[idx].requirePasswordChange = true;
       users[idx].lastPasswordReset = new Date().toISOString();
     }
@@ -1334,7 +1594,7 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
     if (practiceName !== undefined) {
       users[idx].practiceName = practiceName;
       // Regenerate slug if practice name changes and user is a client
-      if (users[idx].role === 'client' && practiceName) {
+      if (users[idx].role === config.ROLES.CLIENT && practiceName) {
         const oldSlug = users[idx].slug;
         const existingSlugs = users.filter((u, i) => i !== idx && u.slug).map(u => u.slug);
         const newSlug = generateClientSlug(practiceName, existingSlugs);
@@ -1358,6 +1618,26 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
 
     await db.set('users', users);
     invalidateUsersCache();
+
+    // Cascade name changes to all related data stores (non-blocking)
+    const newName = users[idx].name;
+    const newPracticeName = users[idx].practiceName;
+    if ((oldName && newName && oldName !== newName) || (oldPracticeName && newPracticeName && oldPracticeName !== newPracticeName)) {
+      cascadeUserNameUpdate(userId, oldName, newName, oldPracticeName, newPracticeName).catch(err => {
+        console.error('Cascade update error (non-blocking):', err.message);
+      });
+    }
+
+    // Cascade slug changes (migrate inventory keys, update references)
+    const currentSlug = users[idx].slug;
+    const oldSlugForCascade = users[idx].previousSlugs && users[idx].previousSlugs.length > 0
+      ? users[idx].previousSlugs[users[idx].previousSlugs.length - 1] : null;
+    if (oldSlugForCascade && currentSlug && oldSlugForCascade !== currentSlug) {
+      cascadeSlugChange(userId, oldSlugForCascade, currentSlug).catch(err => {
+        console.error('Cascade slug change error (non-blocking):', err.message);
+      });
+    }
+
     res.json({
       id: users[idx].id,
       email: users[idx].email,
@@ -1417,17 +1697,29 @@ app.put('/api/client-portal/clients/:clientId', authenticateToken, requireClient
     }
 
     // Only allow editing client users
-    if (users[idx].role !== 'client') {
+    if (users[idx].role !== config.ROLES.CLIENT) {
       return res.status(403).json({ error: 'Can only edit client users through this endpoint' });
     }
+
+    // Capture old values for cascade update
+    const oldName = users[idx].name;
+    const oldPracticeName = users[idx].practiceName;
 
     // Update only allowed client details fields
     if (practiceName !== undefined) {
       users[idx].practiceName = practiceName;
       // Regenerate slug if practice name changes
       if (practiceName) {
+        const oldSlug = users[idx].slug;
         const existingSlugs = users.filter((u, i) => i !== idx && u.slug).map(u => u.slug);
-        users[idx].slug = generateClientSlug(practiceName, existingSlugs);
+        const newSlug = generateClientSlug(practiceName, existingSlugs);
+        if (oldSlug && oldSlug !== newSlug) {
+          if (!users[idx].previousSlugs) users[idx].previousSlugs = [];
+          if (!users[idx].previousSlugs.includes(oldSlug)) {
+            users[idx].previousSlugs.push(oldSlug);
+          }
+        }
+        users[idx].slug = newSlug;
       }
     }
     if (logo !== undefined) users[idx].logo = logo;
@@ -1440,6 +1732,25 @@ app.put('/api/client-portal/clients/:clientId', authenticateToken, requireClient
     users[idx].updatedBy = req.user.id;
 
     await db.set('users', users);
+    invalidateUsersCache();
+
+    // Cascade name changes to all related data stores (non-blocking)
+    const newPracticeName = users[idx].practiceName;
+    if (oldPracticeName && newPracticeName && oldPracticeName !== newPracticeName) {
+      cascadeUserNameUpdate(clientId, oldName, oldName, oldPracticeName, newPracticeName).catch(err => {
+        console.error('Cascade update error (non-blocking):', err.message);
+      });
+    }
+
+    // Cascade slug changes (migrate inventory keys, update references)
+    const currentSlug = users[idx].slug;
+    const oldSlugForCascade = users[idx].previousSlugs && users[idx].previousSlugs.length > 0
+      ? users[idx].previousSlugs[users[idx].previousSlugs.length - 1] : null;
+    if (oldSlugForCascade && currentSlug && oldSlugForCascade !== currentSlug) {
+      cascadeSlugChange(clientId, oldSlugForCascade, currentSlug).catch(err => {
+        console.error('Cascade slug change error (non-blocking):', err.message);
+      });
+    }
 
     // Log the activity
     await logActivity(
@@ -1476,11 +1787,11 @@ app.get('/api/team-members', authenticateToken, async (req, res) => {
     const users = await getUsers();
     
     // Filter to team members (admins + users), exclude clients and vendors
-    let filteredUsers = users.filter(u => u.role === 'admin' || u.role === 'user');
+    let filteredUsers = users.filter(u => u.role === config.ROLES.ADMIN || u.role === config.ROLES.USER);
     if (projectId) {
       // Further filter to only users assigned to that project (or admins)
       filteredUsers = filteredUsers.filter(u =>
-        u.role === 'admin' ||
+        u.role === config.ROLES.ADMIN ||
         (u.assignedProjects && u.assignedProjects.includes(projectId))
       );
     }
@@ -1693,7 +2004,7 @@ app.post('/api/projects/:projectId/tasks/bulk-delete', authenticateToken, async 
     const taskIdsSet = new Set(taskIds.map(id => String(id)));
     
     // Check permissions - partial success: delete what user has access to, skip the rest
-    const isAdmin = req.user.role === 'admin';
+    const isAdmin = req.user.role === config.ROLES.ADMIN;
 
     const tasksToDelete = tasks.filter(t => taskIdsSet.has(String(t.id)));
     const deletableIds = new Set();
@@ -1818,7 +2129,7 @@ app.put('/api/projects/:projectId/tasks/:taskId/notes/:noteId', authenticateToke
     const note = tasks[taskIdx].notes[noteIdx];
     
     // Only the author or an admin can edit the note
-    if (note.authorId !== req.user.id && req.user.role !== 'admin') {
+    if (note.authorId !== req.user.id && req.user.role !== config.ROLES.ADMIN) {
       return res.status(403).json({ error: 'You can only edit your own notes' });
     }
     
@@ -1871,7 +2182,7 @@ app.delete('/api/projects/:projectId/tasks/:taskId/notes/:noteId', authenticateT
     const note = tasks[taskIdx].notes[noteIdx];
     
     // Only the author or an admin can delete the note
-    if (note.authorId !== req.user.id && req.user.role !== 'admin') {
+    if (note.authorId !== req.user.id && req.user.role !== config.ROLES.ADMIN) {
       return res.status(403).json({ error: 'You can only delete your own notes' });
     }
     
@@ -2020,7 +2331,7 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
     const templates = await db.get('templates') || [];
     
     // Filter projects based on user access (admins see all, users see assigned only)
-    const isAdmin = req.user.role === 'admin';
+    const isAdmin = req.user.role === config.ROLES.ADMIN;
     if (!isAdmin) {
       const userAssignedProjects = req.user.assignedProjects || [];
       projects = projects.filter(p => userAssignedProjects.includes(p.id));
@@ -2204,9 +2515,8 @@ app.put('/api/projects/:id', authenticateToken, async (req, res) => {
     
     // Validate project status against allowed values
     if (req.body.status !== undefined) {
-      const validStatuses = ['active', 'paused', 'completed'];
-      if (!validStatuses.includes(req.body.status)) {
-        return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
+      if (!config.PROJECT_STATUSES.includes(req.body.status)) {
+        return res.status(400).json({ error: `Invalid status. Must be one of: ${config.PROJECT_STATUSES.join(', ')}` });
       }
     }
 
@@ -2265,6 +2575,36 @@ app.put('/api/projects/:id', authenticateToken, async (req, res) => {
     }
     
     await db.set('projects', projects);
+
+    // Cascade clientName changes to service/validation reports (non-blocking)
+    if (newClientName && newClientName !== oldClientName) {
+      (async () => {
+        try {
+          const serviceReports = (await db.get('service_reports')) || [];
+          let srUpdated = false;
+          serviceReports.forEach(r => {
+            if (r.clientFacilityName === oldClientName) {
+              r.clientFacilityName = newClientName;
+              srUpdated = true;
+            }
+          });
+          if (srUpdated) await db.set('service_reports', serviceReports);
+
+          const validationReports = (await db.get('validation_reports')) || [];
+          let vrUpdated = false;
+          validationReports.forEach(r => {
+            if (r.clientFacilityName === oldClientName) { r.clientFacilityName = newClientName; vrUpdated = true; }
+            if (r.clientName === oldClientName) { r.clientName = newClientName; vrUpdated = true; }
+          });
+          if (vrUpdated) await db.set('validation_reports', validationReports);
+
+          console.log(`🔄 Cascade project clientName update: "${oldClientName}" → "${newClientName}"`);
+        } catch (err) {
+          console.error('Cascade project clientName update error:', err.message);
+        }
+      })();
+    }
+
     res.json(projects[idx]);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
@@ -2273,7 +2613,7 @@ app.put('/api/projects/:id', authenticateToken, async (req, res) => {
 
 app.delete('/api/projects/:id', authenticateToken, async (req, res) => {
   try {
-    if (req.user.role !== 'admin') {
+    if (req.user.role !== config.ROLES.ADMIN) {
       return res.status(403).json({ error: 'Only admins can delete projects' });
     }
     
@@ -2430,7 +2770,7 @@ app.put('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req,
     if (idx === -1) return res.status(404).json({ error: 'Task not found' });
     
     const task = tasks[idx];
-    const isAdmin = req.user.role === 'admin';
+    const isAdmin = req.user.role === config.ROLES.ADMIN;
     const isCreator = task.createdBy === req.user.id;
     const isTemplateTask = !task.createdBy;
 
@@ -2550,7 +2890,7 @@ app.delete('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (r
       return res.status(404).json({ error: 'Task not found' });
     }
     
-    const isAdmin = req.user.role === 'admin';
+    const isAdmin = req.user.role === config.ROLES.ADMIN;
     const isCreator = task.createdBy && task.createdBy === req.user.id;
     const isTemplateTask = !task.createdBy;
     
@@ -2806,7 +3146,7 @@ app.delete('/api/admin/reset-test-data', authenticateToken, requireAdmin, async 
 // Get client portal data for authenticated client
 app.get('/api/client-portal/data', authenticateToken, async (req, res) => {
   try {
-    if (req.user.role !== 'client') {
+    if (req.user.role !== config.ROLES.CLIENT) {
       return res.status(403).json({ error: 'Client access required' });
     }
     
@@ -2849,20 +3189,26 @@ app.get('/api/client-portal/data', authenticateToken, async (req, res) => {
     }));
     
     // Filter activities to client-safe events
-    // Include project-based activities (task completion, etc.)
-    // AND client-specific activities (inventory, file uploads)
+    // Include project-based activities AND client-specific activities
+    const clientSlug = req.user.slug || '';
     const clientActivities = activities
       .filter(a => {
         // Project-based activities for assigned projects
         if ((req.user.assignedProjects || []).includes(a.projectId) &&
-            ['task_completed', 'stage_completed', 'phase_completed'].includes(a.action)) {
+            ['task_completed', 'stage_completed', 'phase_completed', 'phase8_auto_updated'].includes(a.action)) {
           return true;
         }
-        // Client-specific activities (by slug or userId)
-        if (a.userId === req.user.id || a.details?.slug === req.user.slug) {
-          if (['inventory_submitted', 'hubspot_file_upload', 'support_ticket_submitted'].includes(a.action)) {
+        // Client-specific activities (by userId or slug match)
+        if (a.userId === req.user.id || (clientSlug && (a.details?.slug === clientSlug || a.details?.clientSlug === clientSlug))) {
+          if (['inventory_submitted', 'hubspot_file_upload', 'support_ticket_submitted',
+               'document_added', 'service_report_client_signed', 'form_submitted',
+               'inventory_submissions_deleted'].includes(a.action)) {
             return true;
           }
+        }
+        // Documents shared with all clients
+        if (a.action === 'document_added' && !a.details?.slug) {
+          return true;
         }
         return false;
       })
@@ -2929,7 +3275,7 @@ app.get('/api/client-documents', authenticateToken, async (req, res) => {
   try {
     const documents = (await db.get('client_documents')) || [];
 
-    if (req.user.role === 'client') {
+    if (req.user.role === config.ROLES.CLIENT) {
       // Clients see documents for their slug OR documents shared with all clients
       const clientDocs = documents.filter(d =>
         d.active && (d.slug === req.user.slug || d.shareWithAll === true)
@@ -2948,7 +3294,7 @@ app.get('/api/client-documents', authenticateToken, async (req, res) => {
 app.get('/api/client-documents/:slug', authenticateToken, async (req, res) => {
   try {
     // Clients can only access their own slug's documents
-    if (req.user.role === 'client' && req.user.slug !== req.params.slug) {
+    if (req.user.role === config.ROLES.CLIENT && req.user.slug !== req.params.slug) {
       return res.status(403).json({ error: 'Access denied' });
     }
     const documents = (await db.get('client_documents')) || [];
@@ -2956,6 +3302,21 @@ app.get('/api/client-documents/:slug', authenticateToken, async (req, res) => {
     const clientDocs = documents.filter(d =>
       d.active && (d.slug === req.params.slug || d.shareWithAll === true)
     );
+
+    // Enrich service report docs with their current status
+    const serviceReportIds = clientDocs.filter(d => d.serviceReportId).map(d => d.serviceReportId);
+    if (serviceReportIds.length > 0) {
+      const serviceReports = (await db.get('service_reports')) || [];
+      clientDocs.forEach(doc => {
+        if (doc.serviceReportId) {
+          const report = serviceReports.find(r => r.id === doc.serviceReportId);
+          if (report) {
+            doc.reportStatus = report.status;
+          }
+        }
+      });
+    }
+
     res.json(clientDocs);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
@@ -2992,8 +3353,9 @@ app.post('/api/client-documents', authenticateToken, requireAdmin, async (req, r
     await db.set('client_documents', documents);
 
     // Log activity
-    await logActivity(null, 'document_added', req.user.name, {
+    await logActivity(null, req.user.name, 'document_added', 'client_document', newDoc.id, {
       documentTitle: title,
+      slug: shareWithAll ? null : slug,
       clientSlug: shareWithAll ? 'ALL CLIENTS' : slug
     });
 
@@ -3106,8 +3468,9 @@ app.post('/api/client-documents/:slug/upload', authenticateToken, requireAdmin, 
     await db.set('client_documents', documents);
 
     // Log activity
-    await logActivity(null, 'document_added', req.user.name, {
+    await logActivity(null, req.user.name, 'document_added', 'client_document', newDoc.id, {
       documentTitle: newDoc.title,
+      slug: isAllClients ? null : slugParam,
       clientSlug: isAllClients ? 'ALL CLIENTS' : slugParam
     });
 
@@ -3158,7 +3521,7 @@ app.post('/api/hubspot/upload-to-deal', authenticateToken, requireAdmin, uploadL
       user: req.user.name,
       details: `File "${fileName}" uploaded to HubSpot deal ${dealId}`
     });
-    if (activityLog.length > 500) activityLog.length = 500;
+    if (activityLog.length > config.ACTIVITY_LOG_MAX_ENTRIES) activityLog.length = config.ACTIVITY_LOG_MAX_ENTRIES;
     await db.set('activity_log', activityLog);
     
     res.json({ 
@@ -3198,7 +3561,7 @@ app.get('/api/hubspot/deals', authenticateToken, requireAdmin, async (req, res) 
 app.post('/api/client/hubspot/upload', authenticateToken, uploadLimiter, upload.single('file'), async (req, res) => {
   try {
     // Only clients can use this endpoint
-    if (req.user.role !== 'client') {
+    if (req.user.role !== config.ROLES.CLIENT) {
       return res.status(403).json({ error: 'Client access required' });
     }
     
@@ -3329,7 +3692,7 @@ app.post('/api/client/hubspot/upload', authenticateToken, uploadLimiter, upload.
       details: fileName,
       timestamp: new Date().toISOString()
     });
-    if (activityLog.length > 500) activityLog.length = 500;
+    if (activityLog.length > config.ACTIVITY_LOG_MAX_ENTRIES) activityLog.length = config.ACTIVITY_LOG_MAX_ENTRIES;
     await db.set('activity_log', activityLog);
     
     const recordTypes = uploadResults.map(r => r.type).join(', ');
@@ -3457,7 +3820,7 @@ app.post('/api/webhook/hubspot/ticket-stage-change', async (req, res) => {
           if (hubspotOwner.email) {
             const userByEmail = users.find(u =>
               u.email && u.email.toLowerCase() === hubspotOwner.email.toLowerCase() &&
-              (u.role === 'vendor' || u.role === 'admin' || u.hasServicePortalAccess)
+              (u.role === config.ROLES.VENDOR || u.role === config.ROLES.ADMIN || u.hasServicePortalAccess)
             );
             if (userByEmail) {
               assignedToId = userByEmail.id;
@@ -3470,7 +3833,7 @@ app.post('/api/webhook/hubspot/ticket-stage-change', async (req, res) => {
             const fullName = `${hubspotOwner.firstName} ${hubspotOwner.lastName}`;
             const userByName = users.find(u =>
               u.name && u.name.toLowerCase() === fullName.toLowerCase() &&
-              (u.role === 'vendor' || u.role === 'admin' || u.hasServicePortalAccess)
+              (u.role === config.ROLES.VENDOR || u.role === config.ROLES.ADMIN || u.hasServicePortalAccess)
             );
             if (userByName) {
               assignedToId = userByName.id;
@@ -3495,22 +3858,8 @@ app.post('/api/webhook/hubspot/ticket-stage-change', async (req, res) => {
     }
 
     // Map Service Type from Issue Category
-    const serviceTypeMapping = {
-      'analyzer hardware': 'Analyzer Hardware',
-      'inventory': 'Inventory',
-      'lis/emr': 'LIS/EMR',
-      'lis': 'LIS/EMR',
-      'emr': 'LIS/EMR',
-      'billing & fees': 'Billing & Fees',
-      'billing': 'Billing & Fees',
-      'compliance': 'Compliance',
-      'training': 'Training',
-      'validations': 'Validations',
-      'validation': 'Validations'
-    };
-
     const issueCategoryLower = (ticket.issueCategory || '').toLowerCase();
-    const serviceType = serviceTypeMapping[issueCategoryLower] || '';
+    const serviceType = config.SERVICE_TYPE_MAP[issueCategoryLower] || '';
 
     // Combine ticket description and notes into manager notes
     let managerNotes = '';
@@ -3659,7 +4008,7 @@ app.put('/api/admin/ticket-polling/config', authenticateToken, requireAdmin, asy
     // Update allowed fields
     if (updates.enabled !== undefined) config.enabled = Boolean(updates.enabled);
     if (updates.intervalSeconds !== undefined) {
-      config.intervalSeconds = Math.max(30, Math.min(3600, Number(updates.intervalSeconds)));
+      config.intervalSeconds = Math.max(HUBSPOT_POLL_MIN_SECONDS, Math.min(HUBSPOT_POLL_MAX_SECONDS, Number(updates.intervalSeconds)));
     }
     if (updates.targetStages) config.targetStages = updates.targetStages;
 
@@ -3774,7 +4123,7 @@ app.post('/api/admin/ticket-polling/reset', authenticateToken, requireAdmin, asy
 app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
   try {
     // Only clients can use this endpoint
-    if (req.user.role !== 'client') {
+    if (req.user.role !== config.ROLES.CLIENT) {
       return res.status(403).json({ error: 'Client access required' });
     }
 
@@ -3896,7 +4245,7 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
 app.get('/api/client/service-reports', authenticateToken, async (req, res) => {
   try {
     // Only clients can use this endpoint
-    if (req.user.role !== 'client') {
+    if (req.user.role !== config.ROLES.CLIENT) {
       return res.status(403).json({ error: 'Client access required' });
     }
 
@@ -3910,82 +4259,113 @@ app.get('/api/client/service-reports', authenticateToken, async (req, res) => {
 
     const hubspotCompanyId = clientUser.hubspotCompanyId || '';
     const clientSlug = clientUser.slug || '';
-    const practiceName = clientUser.practiceName || clientUser.name || '';
+    const practiceName = clientUser.practiceName || '';
+    const userName = clientUser.name || '';
 
-    console.log(`📋 Service reports fetch for ${clientUser.username}:`);
+    // Build list of names to match against (practiceName and name separately)
+    const clientNames = [practiceName, userName]
+      .map(n => n.toLowerCase().trim())
+      .filter(Boolean);
+    // Deduplicate
+    const uniqueClientNames = [...new Set(clientNames)];
+
+    console.log(`📋 Service reports fetch for ${clientUser.email}:`);
     console.log(`   - Company ID: "${hubspotCompanyId}"`);
     console.log(`   - Slug: "${clientSlug}"`);
     console.log(`   - Practice: "${practiceName}"`);
+    console.log(`   - Name: "${userName}"`);
+    console.log(`   - Match names: ${JSON.stringify(uniqueClientNames)}`);
 
     // Fetch all service reports
     const serviceReports = (await db.get('service_reports')) || [];
 
+    // Also fetch client_documents to cross-reference by slug
+    // (documents linked to service reports are reliably matched by slug)
+    const clientDocuments = (await db.get('client_documents')) || [];
+    const slugLinkedReportIds = new Set(
+      clientDocuments
+        .filter(d => d.active && d.serviceReportId && (d.slug === clientSlug || d.shareWithAll))
+        .map(d => d.serviceReportId)
+    );
+
     // Filter reports for this client by:
     // 1. Matching hubspotCompanyId
-    // 2. Or matching client name/practice name (fallback)
-    // Only show reports that are completed or need client signature (not 'assigned' - still with technician)
+    // 2. Or bidirectional name matching (practiceName or user name vs clientFacilityName)
+    // 3. Or cross-referenced via client_documents linked to this client's slug
     const clientReports = serviceReports.filter(report => {
-      // Skip reports still being worked on by technician
-      if (report.status === 'assigned') return false;
-
+      // Match by hubspotCompanyId first
       if (hubspotCompanyId && report.hubspotCompanyId === hubspotCompanyId) {
         return true;
       }
-      // Fallback: match by client name
-      const reportClient = (report.clientFacilityName || '').toLowerCase();
-      const userPractice = practiceName.toLowerCase();
-      if (userPractice && reportClient.includes(userPractice)) {
+      // Match by slug cross-reference via client_documents
+      if (slugLinkedReportIds.has(report.id)) {
+        return true;
+      }
+      // Fallback: bidirectional match by any of the client's names
+      const reportClient = (report.clientFacilityName || '').toLowerCase().trim();
+      if (reportClient && uniqueClientNames.some(name => reportClient.includes(name) || name.includes(reportClient))) {
         return true;
       }
       return false;
     });
 
-    // Sort: signature_needed reports first, then by date (newest first)
+    // Sort: signature_needed first, then assigned (scheduled), then by date (newest first)
     clientReports.sort((a, b) => {
-      if (a.status === 'signature_needed' && b.status !== 'signature_needed') return -1;
-      if (b.status === 'signature_needed' && a.status !== 'signature_needed') return 1;
+      const statusOrder = { 'signature_needed': 0, 'assigned': 1 };
+      const aOrder = statusOrder[a.status] ?? 2;
+      const bOrder = statusOrder[b.status] ?? 2;
+      if (aOrder !== bOrder) return aOrder - bOrder;
       return new Date(b.createdAt) - new Date(a.createdAt);
     });
 
-    console.log(`📋 Found ${clientReports.length} service reports for ${clientUser.username}`);
+    console.log(`📋 Found ${clientReports.length}/${serviceReports.length} service reports for ${clientUser.email} (slug-linked: ${slugLinkedReportIds.size})`);
+    if (clientReports.length === 0 && serviceReports.length > 0) {
+      console.log(`   ⚠️ No matches. Report facility names: ${serviceReports.slice(0, 5).map(r => `"${r.clientFacilityName}"`).join(', ')}`);
+    }
 
     // Map to a format for the frontend with full details for report viewing and signing
-    const reports = clientReports.map(r => ({
-      id: r.id,
-      subject: `${r.serviceType || 'Service Report'} - ${r.clientFacilityName}`,
-      serviceType: r.serviceType || '',
-      technicianName: r.technicianName || r.serviceProviderName || '',
-      ticketNumber: r.hubspotTicketId || r.hubspotTicketNumber || null,
-      createdAt: r.createdAt,
-      completedAt: r.serviceCompletionDate || r.completedAt || r.createdAt,
-      status: r.status === 'signature_needed' ? 'Signature Needed' : 'Completed',
-      rawStatus: r.status,
-      // Full report details for client viewing
-      clientFacilityName: r.clientFacilityName || '',
-      customerName: r.customerName || '',
-      address: r.address || '',
-      analyzerModel: r.analyzerModel || '',
-      analyzerSerialNumber: r.analyzerSerialNumber || '',
-      serviceCompletionDate: r.serviceCompletionDate || '',
-      descriptionOfWork: r.descriptionOfWork || '',
-      materialsUsed: r.materialsUsed || '',
-      solution: r.solution || '',
-      outstandingIssues: r.outstandingIssues || '',
-      recommendations: r.recommendations || '',
-      // Validation-specific fields
-      validationResults: r.validationResults || '',
-      validationStartDate: r.validationStartDate || '',
-      validationEndDate: r.validationEndDate || '',
-      testProcedures: r.testProcedures || '',
-      trainingProvided: r.trainingProvided || '',
-      // Signature info
-      customerSignature: r.customerSignature || null,
-      customerSignatureDate: r.customerSignatureDate || null,
-      technicianSignature: r.technicianSignature || null,
-      technicianSignatureDate: r.technicianSignatureDate || null,
-      pdfUrl: r.pdfUrl || null,
-      driveFileId: r.driveFileId || null
-    }));
+    const reports = clientReports.map(r => {
+      const isAssigned = r.status === 'assigned';
+      return {
+        id: r.id,
+        subject: `${r.serviceType || 'Service Report'} - ${r.clientFacilityName}`,
+        serviceType: r.serviceType || '',
+        technicianName: isAssigned ? (r.assignedToName || 'Scheduled') : (r.technicianName || r.serviceProviderName || ''),
+        ticketNumber: r.hubspotTicketId || r.hubspotTicketNumber || null,
+        createdAt: r.createdAt,
+        completedAt: isAssigned ? null : (r.serviceCompletionDate || r.completedAt || r.createdAt),
+        status: r.status === 'signature_needed' ? 'Signature Needed' : r.status === 'assigned' ? 'Scheduled' : 'Completed',
+        rawStatus: r.status,
+        // Full report details for client viewing (limited for assigned reports)
+        clientFacilityName: r.clientFacilityName || '',
+        customerName: r.customerName || '',
+        address: r.address || '',
+        analyzerModel: r.analyzerModel || '',
+        analyzerSerialNumber: isAssigned ? '' : (r.analyzerSerialNumber || ''),
+        serviceCompletionDate: isAssigned ? '' : (r.serviceCompletionDate || ''),
+        descriptionOfWork: isAssigned ? '' : (r.descriptionOfWork || ''),
+        materialsUsed: isAssigned ? '' : (r.materialsUsed || ''),
+        solution: isAssigned ? '' : (r.solution || ''),
+        outstandingIssues: isAssigned ? '' : (r.outstandingIssues || ''),
+        recommendations: isAssigned ? '' : (r.recommendations || ''),
+        // Validation-specific fields
+        validationResults: isAssigned ? '' : (r.validationResults || ''),
+        validationStartDate: isAssigned ? '' : (r.validationStartDate || ''),
+        validationEndDate: isAssigned ? '' : (r.validationEndDate || ''),
+        testProcedures: isAssigned ? '' : (r.testProcedures || ''),
+        trainingProvided: isAssigned ? '' : (r.trainingProvided || ''),
+        // Signature info
+        customerSignature: isAssigned ? null : (r.customerSignature || null),
+        customerSignatureDate: isAssigned ? null : (r.customerSignatureDate || null),
+        technicianSignature: isAssigned ? null : (r.technicianSignature || null),
+        technicianSignatureDate: isAssigned ? null : (r.technicianSignatureDate || null),
+        pdfUrl: isAssigned ? null : (r.pdfUrl || null),
+        driveFileId: isAssigned ? null : (r.driveFileId || null),
+        // Scheduled visit info for assigned reports
+        scheduledDate: isAssigned ? (r.serviceCompletionDate || null) : null,
+        assignedToName: isAssigned ? (r.assignedToName || '') : null
+      };
+    });
 
     const pendingSignatureCount = reports.filter(r => r.rawStatus === 'signature_needed').length;
 
@@ -4000,7 +4380,7 @@ app.get('/api/client/service-reports', authenticateToken, async (req, res) => {
 app.put('/api/client/service-reports/:id/sign', authenticateToken, async (req, res) => {
   try {
     // Only clients can use this endpoint
-    if (req.user.role !== 'client') {
+    if (req.user.role !== config.ROLES.CLIENT) {
       return res.status(403).json({ error: 'Client access required' });
     }
 
@@ -4018,7 +4398,15 @@ app.put('/api/client/service-reports/:id/sign', authenticateToken, async (req, r
     }
 
     const hubspotCompanyId = clientUser.hubspotCompanyId || '';
-    const practiceName = clientUser.practiceName || clientUser.name || '';
+    const clientSlug = clientUser.slug || '';
+    const practiceName = clientUser.practiceName || '';
+    const userName = clientUser.name || '';
+
+    // Build list of names to match against
+    const clientNames = [practiceName, userName]
+      .map(n => n.toLowerCase().trim())
+      .filter(Boolean);
+    const uniqueClientNames = [...new Set(clientNames)];
 
     const serviceReports = (await db.get('service_reports')) || [];
     const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
@@ -4033,10 +4421,16 @@ app.put('/api/client/service-reports/:id/sign', authenticateToken, async (req, r
     let isClientReport = false;
     if (hubspotCompanyId && report.hubspotCompanyId === hubspotCompanyId) {
       isClientReport = true;
-    } else {
-      const reportClient = (report.clientFacilityName || '').toLowerCase();
-      const userPractice = practiceName.toLowerCase();
-      if (userPractice && reportClient.includes(userPractice)) {
+    }
+    if (!isClientReport) {
+      // Check slug cross-reference via client_documents
+      const clientDocuments = (await db.get('client_documents')) || [];
+      const slugLinked = clientDocuments.some(d => d.active && d.serviceReportId === report.id && (d.slug === clientSlug || d.shareWithAll));
+      if (slugLinked) isClientReport = true;
+    }
+    if (!isClientReport) {
+      const reportClient = (report.clientFacilityName || '').toLowerCase().trim();
+      if (reportClient && uniqueClientNames.some(name => reportClient.includes(name) || name.includes(reportClient))) {
         isClientReport = true;
       }
     }
@@ -4116,6 +4510,47 @@ app.put('/api/client/service-reports/:id/sign', authenticateToken, async (req, r
       }
     }
 
+    // Re-upload signed PDF to Google Drive if original was uploaded
+    if (signedReport.driveFileId) {
+      try {
+        const reportDate = new Date(signedReport.serviceCompletionDate || signedReport.createdAt).toLocaleDateString();
+        console.log(`📄 Re-uploading signed PDF to Google Drive for: ${signedReport.clientFacilityName}`);
+        const pdfBuffer = await pdfGenerator.generateServiceReportPDF(signedReport, signedReport.technicianName || signedReport.serviceProviderName || 'N/A');
+        const driveReportDate = reportDate.replace(/\//g, '-');
+        const driveFileName = `Service_Report_${signedReport.clientFacilityName.replace(/[^a-zA-Z0-9]/g, '_')}_${driveReportDate}_SIGNED.pdf`;
+
+        // Delete old Drive file and upload new signed version
+        try { await googledrive.deleteFile(signedReport.driveFileId); } catch (e) { /* ignore */ }
+        const driveResult = await googledrive.uploadFile(pdfBuffer, driveFileName, 'application/pdf');
+        serviceReports[reportIndex].driveFileId = driveResult.fileId;
+        serviceReports[reportIndex].driveWebViewLink = driveResult.webViewLink;
+        serviceReports[reportIndex].driveWebContentLink = driveResult.webContentLink;
+        await db.set('service_reports', serviceReports);
+        console.log(`✅ Signed PDF re-uploaded to Google Drive: ${driveFileName}`);
+      } catch (driveError) {
+        console.error('Google Drive re-upload error (non-blocking):', driveError.message);
+      }
+    }
+
+    // Update linked client_documents entry to reflect signed status
+    try {
+      const clientDocuments = (await db.get('client_documents')) || [];
+      let docsUpdated = false;
+      clientDocuments.forEach(doc => {
+        if (doc.serviceReportId === signedReport.id) {
+          const reportDate = new Date(signedReport.serviceCompletionDate || signedReport.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'numeric', day: 'numeric' });
+          doc.title = `${signedReport.serviceType === 'Validations' ? 'Validation' : 'Service'} Report - ${reportDate} (Signed)`;
+          doc.updatedAt = new Date().toISOString();
+          docsUpdated = true;
+        }
+      });
+      if (docsUpdated) {
+        await db.set('client_documents', clientDocuments);
+      }
+    } catch (docErr) {
+      console.error('Client documents update error (non-blocking):', docErr.message);
+    }
+
     res.json({
       success: true,
       message: 'Service report signed successfully',
@@ -4131,7 +4566,7 @@ app.put('/api/client/service-reports/:id/sign', authenticateToken, async (req, r
 // Generates the PDF on-the-fly from stored report data
 app.get('/api/client/service-reports/:id/pdf', authenticateToken, async (req, res) => {
   try {
-    if (req.user.role !== 'client' && req.user.role !== 'admin') {
+    if (req.user.role !== config.ROLES.CLIENT && req.user.role !== config.ROLES.ADMIN) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -4142,8 +4577,13 @@ app.get('/api/client/service-reports/:id/pdf', authenticateToken, async (req, re
       return res.status(404).json({ error: 'Report not found' });
     }
 
+    // Require signature before allowing client to download
+    if (req.user.role === 'client' && report.status === 'signature_needed') {
+      return res.status(403).json({ error: 'Signature required before downloading this report. Please sign the report in the Files area first.' });
+    }
+
     // For clients, verify the report belongs to them
-    if (req.user.role === 'client') {
+    if (req.user.role === config.ROLES.CLIENT) {
       const users = await getUsers();
       const clientUser = users.find(u => u.id === req.user.id);
       if (!clientUser) {
@@ -4151,11 +4591,24 @@ app.get('/api/client/service-reports/:id/pdf', authenticateToken, async (req, re
       }
 
       const hubspotCompanyId = clientUser.hubspotCompanyId || '';
-      const practiceName = (clientUser.practiceName || clientUser.name || '').toLowerCase();
-      const reportClient = (report.clientFacilityName || '').toLowerCase();
+      const clientSlug = clientUser.slug || '';
+      const practiceName = clientUser.practiceName || '';
+      const userName = clientUser.name || '';
+      const reportClient = (report.clientFacilityName || '').toLowerCase().trim();
+
+      // Build list of names to match against
+      const clientNames = [practiceName, userName]
+        .map(n => n.toLowerCase().trim())
+        .filter(Boolean);
+      const uniqueClientNames = [...new Set(clientNames)];
+
+      // Also check slug cross-reference via client_documents
+      const clientDocuments = (await db.get('client_documents')) || [];
+      const slugLinked = clientDocuments.some(d => d.active && d.serviceReportId === report.id && (d.slug === clientSlug || d.shareWithAll));
 
       const isMatch = (hubspotCompanyId && report.hubspotCompanyId === hubspotCompanyId) ||
-                      (practiceName && reportClient.includes(practiceName));
+                      slugLinked ||
+                      (reportClient && uniqueClientNames.some(name => reportClient.includes(name) || name.includes(reportClient)));
 
       if (!isMatch) {
         return res.status(403).json({ error: 'Not authorized to access this report' });
@@ -4173,8 +4626,10 @@ app.get('/api/client/service-reports/:id/pdf', authenticateToken, async (req, re
     const reportDate = new Date(report.serviceCompletionDate || report.createdAt || Date.now()).toLocaleDateString().replace(/\//g, '-');
     const fileName = `Service_Report_${(report.clientFacilityName || 'Report').replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate}.pdf`;
 
+    // Use inline when opened via window.open (token in query) so PDF renders in browser/Replit webview
+    const disposition = req.query.token ? 'inline' : 'attachment';
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Disposition', `${disposition}; filename="${fileName}"`);
     res.setHeader('Content-Length', pdfBuffer.length);
     res.send(pdfBuffer);
   } catch (error) {
@@ -4186,7 +4641,7 @@ app.get('/api/client/service-reports/:id/pdf', authenticateToken, async (req, re
 // Get HubSpot file download URL for clients
 app.get('/api/client/hubspot/file/:fileId', authenticateToken, async (req, res) => {
   try {
-    if (req.user.role !== 'client') {
+    if (req.user.role !== config.ROLES.CLIENT) {
       return res.status(403).json({ error: 'Client access required' });
     }
 
@@ -4274,7 +4729,7 @@ app.post('/api/webhooks/hubspot', async (req, res) => {
       source: 'hubspot_webhook'
     });
     
-    if (activityLog.length > 500) activityLog.length = 500;
+    if (activityLog.length > config.ACTIVITY_LOG_MAX_ENTRIES) activityLog.length = config.ACTIVITY_LOG_MAX_ENTRIES;
     await db.set('activity_log', activityLog);
     
     res.json({ success: true, message: 'Webhook received' });
@@ -4285,17 +4740,12 @@ app.post('/api/webhooks/hubspot', async (req, res) => {
 });
 
 // ============== INVENTORY MANAGEMENT ==============
-const DEFAULT_INVENTORY_ITEMS = [
-  { category: 'Ancillary Supplies', items: ['Acid Wash Solution', 'Alkaline Wash Solution'] },
-  { category: 'Calibrators', items: ['BHB - L1 - Cal', 'Creatinine - L1', 'Creatinine - L2', 'Glucose - L1', 'Hemo - L1', 'HS Nitrite - L1 - Cal', 'HS Nitrite - L2 - Cal', 'HS Nitrite - L3 - Cal', 'Leukocyte Esterase - L1 - Cal', 'Leukocyte Esterase - L2 - Cal', 'Leukocyte Esterase - L3 - Cal', 'Microalbumin - L1', 'Microalbumin - L2', 'Microalbumin - L3', 'Microalbumin - L4', 'Microalbumin - L5', 'Microalbumin - L6', 'Microprotein - L1', 'pH - L1', 'pH - L2', 'SG - L1', 'SG - L2', 'Urobilinogen - L1', 'Urobilinogen - L2', 'Urobilinogen - L3', 'Urobilinogen - L4', 'Urobilinogen - L5'] },
-  { category: 'Controls', items: ['A-Level - L4', 'A-Level - L5', 'A-Level - L6', 'BHB - L1', 'BHB - L2', 'Bilirubin Stock 30', 'Bilirubin Zero', 'Biorad - L1', 'Biorad - L2', 'Hemoglobin 500 - L1', 'Hemoglobin 5000 - L2', 'HS Nitrite - L1', 'HS Nitrite - L2', 'Leukocyte Esterase - L1', 'Leukocyte Esterase - L2', 'Leukocyte Esterase - L3', 'Urobilinogen - Control 1', 'Urobilinogen - Control 2'] },
-  { category: 'Reagent', items: ['BHB - R1', 'BHB - R2', 'Bilirubin - R1', 'Bilirubin - R2', 'Creatinine - R1', 'Creatinine - R2', 'Glucose - R1', 'Hemoglobin - R1', 'HS Nitrite - R1', 'HS Nitrite - R2', 'Leukocyte Esterase - R1', 'Leukocyte Esterase - R2', 'Microalbumin - R1', 'Microalbumin - R2', 'Microprotein - R1', 'pH - R1', 'SG - R1', 'Urobilinogen - R1', 'Urobilinogen - R2'] }
-];
+const DEFAULT_INVENTORY_ITEMS = config.DEFAULT_INVENTORY_ITEMS;
 
 app.get('/api/inventory/custom-items/:slug', authenticateToken, async (req, res) => {
   try {
     const { slug } = req.params;
-    if (req.user.role === 'client' && req.user.slug !== slug) {
+    if (req.user.role === config.ROLES.CLIENT && req.user.slug !== slug) {
       return res.status(403).json({ error: 'Access denied' });
     }
     const customItems = (await db.get(`inventory_custom_${slug}`)) || [];
@@ -4308,7 +4758,7 @@ app.get('/api/inventory/custom-items/:slug', authenticateToken, async (req, res)
 app.post('/api/inventory/custom-items/:slug', authenticateToken, async (req, res) => {
   try {
     const { slug } = req.params;
-    if (req.user.role === 'client' && req.user.slug !== slug) {
+    if (req.user.role === config.ROLES.CLIENT && req.user.slug !== slug) {
       return res.status(403).json({ error: 'Access denied' });
     }
     const { category, itemName } = req.body;
@@ -4328,7 +4778,7 @@ app.post('/api/inventory/custom-items/:slug', authenticateToken, async (req, res
 app.delete('/api/inventory/custom-items/:slug/:itemId', authenticateToken, async (req, res) => {
   try {
     const { slug, itemId } = req.params;
-    if (req.user.role === 'client' && req.user.slug !== slug) {
+    if (req.user.role === config.ROLES.CLIENT && req.user.slug !== slug) {
       return res.status(403).json({ error: 'Access denied' });
     }
     const customItems = (await db.get(`inventory_custom_${slug}`)) || [];
@@ -4365,7 +4815,7 @@ app.put('/api/inventory/template', authenticateToken, requireAdmin, async (req, 
 app.get('/api/inventory/submissions/:slug', authenticateToken, async (req, res) => {
   try {
     const { slug } = req.params;
-    if (req.user.role === 'client' && req.user.slug !== slug) {
+    if (req.user.role === config.ROLES.CLIENT && req.user.slug !== slug) {
       return res.status(403).json({ error: 'Access denied' });
     }
     const allSubmissions = (await db.get('inventory_submissions')) || [];
@@ -4382,7 +4832,7 @@ app.get('/api/inventory/export/:slug', authenticateToken, async (req, res) => {
     const { slug } = req.params;
     const { submissionId } = req.query;
     
-    if (req.user.role === 'client' && req.user.slug !== slug) {
+    if (req.user.role === config.ROLES.CLIENT && req.user.slug !== slug) {
       return res.status(403).json({ error: 'Access denied' });
     }
     
@@ -4440,7 +4890,7 @@ app.get('/api/inventory/export-all', authenticateToken, requireAdmin, async (req
   try {
     const allSubmissions = (await db.get('inventory_submissions')) || [];
     const users = await getUsers();
-    const clientUsers = users.filter(u => u.role === 'client');
+    const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT);
     
     // Get client names mapping
     const clientNames = {};
@@ -4508,7 +4958,7 @@ const normalizeInventoryData = (data) => {
 app.get('/api/inventory/latest/:slug', authenticateToken, async (req, res) => {
   try {
     const { slug } = req.params;
-    if (req.user.role === 'client' && req.user.slug !== slug) {
+    if (req.user.role === config.ROLES.CLIENT && req.user.slug !== slug) {
       return res.status(403).json({ error: 'Access denied' });
     }
     const allSubmissions = (await db.get('inventory_submissions')) || [];
@@ -4538,7 +4988,7 @@ app.post('/api/inventory/submit', authenticateToken, async (req, res) => {
   try {
     const { slug, data } = req.body;
     
-    if (req.user.role === 'client' && req.user.slug !== slug) {
+    if (req.user.role === config.ROLES.CLIENT && req.user.slug !== slug) {
       return res.status(403).json({ error: 'Access denied' });
     }
     
@@ -4576,7 +5026,7 @@ app.post('/api/inventory/submit', authenticateToken, async (req, res) => {
 app.delete('/api/inventory/submissions', authenticateToken, async (req, res) => {
   try {
     // Only allow Super Admins and Managers
-    if (req.user.role !== 'admin' && !req.user.isManager) {
+    if (req.user.role !== config.ROLES.ADMIN && !req.user.isManager) {
       return res.status(403).json({ error: 'Access denied. Only Super Admins and Managers can delete submissions.' });
     }
 
@@ -4618,7 +5068,7 @@ app.delete('/api/inventory/submissions', authenticateToken, async (req, res) => 
 app.get('/api/inventory/report/:slug', authenticateToken, async (req, res) => {
   try {
     const { slug } = req.params;
-    if (req.user.role === 'client' && req.user.slug !== slug) {
+    if (req.user.role === config.ROLES.CLIENT && req.user.slug !== slug) {
       return res.status(403).json({ error: 'Access denied' });
     }
     
@@ -4634,7 +5084,7 @@ app.get('/api/inventory/report/:slug', authenticateToken, async (req, res) => {
     const lowStockItems = [];
     const expiringItems = [];
     const today = new Date();
-    const thirtyDaysFromNow = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const thirtyDaysFromNow = new Date(today.getTime() + INVENTORY_EXPIRY_WARNING_DAYS * 24 * 60 * 60 * 1000);
     
     if (clientSubmissions.length > 0) {
       const latest = clientSubmissions[0].data;
@@ -4791,7 +5241,7 @@ app.get('/api/inventory/report-all', authenticateToken, requireClientPortalAdmin
   try {
     const allSubmissions = (await db.get('inventory_submissions')) || [];
     const users = await getUsers();
-    const clientUsers = users.filter(u => u.role === 'client');
+    const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT);
     
     // Group submissions by slug (client)
     const submissionsBySlug = {};
@@ -4809,7 +5259,7 @@ app.get('/api/inventory/report-all', authenticateToken, requireClientPortalAdmin
     });
     
     const today = new Date();
-    const thirtyDaysFromNow = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const thirtyDaysFromNow = new Date(today.getTime() + INVENTORY_EXPIRY_WARNING_DAYS * 24 * 60 * 60 * 1000);
     
     // Aggregate data across all clients
     const allLowStock = [];
@@ -5052,7 +5502,7 @@ app.post('/api/projects/:id/soft-pilot-checklist', authenticateToken, async (req
 // Manual HubSpot sync for projects where record ID was added after creation
 app.post('/api/projects/:id/hubspot-sync', authenticateToken, async (req, res) => {
   try {
-    if (req.user.role !== 'admin') {
+    if (req.user.role !== config.ROLES.ADMIN) {
       return res.status(403).json({ error: 'Only admins can trigger manual sync' });
     }
     
@@ -5465,7 +5915,7 @@ async function checkAndUpdateHubSpotDealStage(projectId) {
     console.log('📋 Checking phase completion for HubSpot sync...');
     console.log('📋 Stage mapping:', JSON.stringify(mapping));
 
-    const phases = ['Phase 0', 'Phase 1', 'Phase 2', 'Phase 3', 'Phase 4'];
+    const phases = ['Phase 0', ...config.PHASE_ORDER];
     
     for (let i = phases.length - 1; i >= 0; i--) {
       const phase = phases[i];
@@ -5681,6 +6131,102 @@ async function checkStageAndPhaseCompletion(projectId, tasks, completedTask) {
     }
   } catch (error) {
     console.error('Error in stage/phase completion check:', error.message);
+  }
+}
+
+// Auto-update Phase 8 tasks when validation events occur
+// Matches service report client to project, then marks relevant Phase 8 tasks complete
+async function autoUpdatePhase8Tasks(reportData, eventType, technicianName) {
+  try {
+    const projects = await getProjects();
+    const clientFacility = (reportData.clientFacilityName || '').toLowerCase();
+    const reportCompanyId = reportData.hubspotCompanyId || '';
+
+    // Find matching project by HubSpot company ID or client name
+    const project = projects.find(p => {
+      if (reportCompanyId && p.hubspotRecordId && String(p.hubspotRecordId) === String(reportCompanyId)) return true;
+      if (reportCompanyId && p.hubspotCompanyId && String(p.hubspotCompanyId) === String(reportCompanyId)) return true;
+      if (clientFacility && p.clientName?.toLowerCase() === clientFacility) return true;
+      if (clientFacility && p.name?.toLowerCase().includes(clientFacility)) return true;
+      return false;
+    });
+
+    if (!project) {
+      console.log(`⚠️ Phase 8 auto-update: No matching project for "${reportData.clientFacilityName}"`);
+      return;
+    }
+
+    const tasks = await getRawTasks(project.id);
+    const phase8Tasks = tasks.filter(t => t.phase === 'Phase 8');
+    if (phase8Tasks.length === 0) {
+      console.log(`⚠️ Phase 8 auto-update: No Phase 8 tasks in project ${project.id}`);
+      return;
+    }
+
+    let tasksUpdated = 0;
+    const now = new Date().toISOString();
+
+    // Task title patterns to match for each event type
+    // Uses lowercase includes() for flexible matching across different template versions
+    const markComplete = (task) => {
+      if (!task.completed) {
+        task.completed = true;
+        task.dateCompleted = now;
+        tasksUpdated++;
+      }
+    };
+
+    if (eventType === 'validation_started') {
+      // When validation starts: mark setup/prep tasks complete
+      phase8Tasks.forEach(task => {
+        const title = (task.taskTitle || '').toLowerCase();
+        if (title.includes('training & validation') ||
+            title.includes('review install sop') ||
+            title.includes('begin validation') ||
+            title.includes('setup reagents') ||
+            title.includes('setup cals') ||
+            title.includes('setup qcs')) {
+          markComplete(task);
+        }
+      });
+    } else if (eventType === 'validation_completed') {
+      // When validation completes: mark ALL Phase 8 tasks complete
+      // This covers all study tasks (intraprecision, interprecision, linearity, etc.)
+      phase8Tasks.forEach(task => {
+        markComplete(task);
+      });
+    }
+
+    if (tasksUpdated > 0) {
+      await db.set(`tasks_${project.id}`, tasks);
+
+      await logActivity(
+        'system',
+        'System',
+        'phase8_auto_updated',
+        'project',
+        project.id,
+        {
+          event: eventType,
+          tasksCompleted: tasksUpdated,
+          clientName: reportData.clientFacilityName,
+          technician: technicianName
+        }
+      );
+
+      console.log(`✅ Phase 8 auto-update: ${tasksUpdated} tasks marked complete in project "${project.name}" (${eventType})`);
+
+      // Trigger stage/phase completion check for HubSpot sync
+      const updatedTasks = await getTasks(project.id);
+      const lastCompleted = updatedTasks.find(t => t.phase === 'Phase 8' && t.completed);
+      if (lastCompleted) {
+        await checkStageAndPhaseCompletion(project.id, updatedTasks, lastCompleted);
+      }
+    }
+
+    return { projectId: project.id, projectName: project.name, tasksUpdated };
+  } catch (error) {
+    console.error('Phase 8 auto-update error (non-blocking):', error.message);
   }
 }
 
@@ -6265,14 +6811,14 @@ app.post('/api/auth/service-login', async (req, res) => {
     }
 
     // Check if user has service portal access
-    if (user.role !== 'admin' && !user.hasServicePortalAccess) {
+    if (user.role !== config.ROLES.ADMIN && !user.hasServicePortalAccess) {
       return res.status(403).json({ error: 'Access denied. You do not have Service Portal access. Please contact an administrator.' });
     }
 
     const token = jwt.sign(
       { id: user.id, email: user.email, name: user.name, role: user.role, hasServicePortalAccess: user.hasServicePortalAccess },
       JWT_SECRET,
-      { expiresIn: '24h' }
+      { expiresIn: config.JWT_EXPIRY }
     );
     res.json({
       token,
@@ -6281,7 +6827,7 @@ app.post('/api/auth/service-login', async (req, res) => {
         email: user.email,
         name: user.name,
         role: user.role,
-        hasServicePortalAccess: user.hasServicePortalAccess || user.role === 'admin'
+        hasServicePortalAccess: user.hasServicePortalAccess || user.role === config.ROLES.ADMIN
       }
     });
   } catch (error) {
@@ -6293,11 +6839,11 @@ app.post('/api/auth/service-login', async (req, res) => {
 // Middleware to check service portal access
 const requireServiceAccess = (req, res, next) => {
   // Super Admins always have access
-  if (req.user.role === 'admin') return next();
+  if (req.user.role === config.ROLES.ADMIN) return next();
   // Managers have access to service portal (part of their Admin Hub access)
   if (req.user.isManager) return next();
   // Vendors always have service portal access
-  if (req.user.role === 'vendor') return next();
+  if (req.user.role === config.ROLES.VENDOR) return next();
   // Users with explicit service portal access
   if (req.user.hasServicePortalAccess) return next();
   return res.status(403).json({ error: 'Service portal access required' });
@@ -6307,13 +6853,13 @@ const requireServiceAccess = (req, res, next) => {
 app.get('/api/service-portal/data', authenticateToken, requireServiceAccess, async (req, res) => {
   try {
     const serviceReports = (await db.get('service_reports')) || [];
-    const isAdminOrManager = req.user.role === 'admin' || (req.user.isManager && req.user.hasServicePortalAccess);
+    const isAdminOrManager = req.user.role === config.ROLES.ADMIN || (req.user.isManager && req.user.hasServicePortalAccess);
     let userReports;
 
     if (isAdminOrManager) {
       // Super Admins and Managers with Service Portal access see all reports
       userReports = serviceReports;
-    } else if (req.user.role === 'vendor') {
+    } else if (req.user.role === config.ROLES.VENDOR) {
       // Vendors see their own reports + reports assigned to them + reports for their assigned clients
       const assignedClients = req.user.assignedClients || [];
       userReports = serviceReports.filter(r =>
@@ -6378,7 +6924,7 @@ app.get('/api/service-portal/clients', authenticateToken, requireServiceAccess, 
     });
 
     // Also add client users (with HubSpot IDs)
-    users.filter(u => u.role === 'client').forEach(user => {
+    users.filter(u => u.role === config.ROLES.CLIENT).forEach(user => {
       if (user.practiceName) {
         // If client already exists from project, merge HubSpot IDs
         if (clientMap.has(user.practiceName)) {
@@ -6401,7 +6947,7 @@ app.get('/api/service-portal/clients', authenticateToken, requireServiceAccess, 
     let clientList = Array.from(clientMap.values());
 
     // Vendors only see their assigned clients
-    if (req.user.role === 'vendor') {
+    if (req.user.role === config.ROLES.VENDOR) {
       const assignedClients = req.user.assignedClients || [];
       clientList = clientList.filter(c => assignedClients.includes(c.name) || assignedClients.includes(c.clientName));
     }
@@ -6559,7 +7105,7 @@ app.post('/api/service-reports', authenticateToken, requireServiceAccess, async 
 
       // Match client by hubspotCompanyId (most reliable), then by name/practiceName fallback
       const client = users.find(u => {
-        if (u.role !== 'client') return false;
+        if (u.role !== config.ROLES.CLIENT) return false;
         if (reportCompanyId && u.hubspotCompanyId && String(u.hubspotCompanyId) === String(reportCompanyId)) return true;
         if (clientFacility && u.practiceName?.toLowerCase() === clientFacility) return true;
         if (clientFacility && u.name?.toLowerCase() === clientFacility) return true;
@@ -6708,6 +7254,25 @@ app.get('/api/service-reports/assigned', authenticateToken, requireServiceAccess
   }
 });
 
+// Get active (in-progress) validations for current technician
+app.get('/api/service-reports/active-validations', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    const activeValidations = serviceReports.filter(r => {
+      if (r.status !== 'validation_in_progress') return false;
+      // Show to admin, or to the technician who owns it
+      if (req.user.role === config.ROLES.ADMIN) return true;
+      return String(r.technicianId) === String(req.user.id) ||
+             String(r.assignedToId) === String(req.user.id);
+    });
+
+    res.json(activeValidations);
+  } catch (error) {
+    console.error('Get active validations error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Download service report PDF (service portal users)
 app.get('/api/service-reports/:id/pdf', authenticateToken, requireServiceAccess, async (req, res) => {
   try {
@@ -6768,20 +7333,20 @@ app.put('/api/service-reports/:id', authenticateToken, requireServiceAccess, asy
     const isTechnician = String(existingReport.technicianId || '') === String(req.user.id);
     const isAssigned = String(existingReport.assignedToId || '') === String(req.user.id);
     const isManagerUser = req.user.isManager;
-    if (req.user.role !== 'admin' && !isManagerUser && !isTechnician && !isAssigned) {
+    if (req.user.role !== config.ROLES.ADMIN && !isManagerUser && !isTechnician && !isAssigned) {
       console.log(`Edit authorization failed: technicianId="${existingReport.technicianId}" and assignedToId="${existingReport.assignedToId}" don't match userId="${req.user.id}"`);
       return res.status(403).json({ error: 'Not authorized to edit this report' });
     }
 
     // Check 30-minute edit window for submitted reports (admins and managers can always edit)
-    if (req.user.role !== 'admin' && !isManagerUser && existingReport.submittedAt) {
+    if (req.user.role !== config.ROLES.ADMIN && !isManagerUser && existingReport.submittedAt) {
       const submittedTime = new Date(existingReport.submittedAt);
       const currentTime = new Date();
       const minutesElapsed = (currentTime - submittedTime) / (1000 * 60);
 
-      if (minutesElapsed > 30) {
+      if (minutesElapsed > config.SERVICE_REPORT_EDIT_WINDOW_MINUTES) {
         return res.status(403).json({
-          error: 'Edit window has expired. Reports can only be edited within 30 minutes of submission.',
+          error: `Edit window has expired. Reports can only be edited within ${config.SERVICE_REPORT_EDIT_WINDOW_MINUTES} minutes of submission.`,
           minutesElapsed: Math.floor(minutesElapsed)
         });
       }
@@ -6849,8 +7414,8 @@ app.delete('/api/service-reports/:id', authenticateToken, requireAdmin, async (r
 app.delete('/api/service-reports', authenticateToken, async (req, res) => {
   try {
     const { reportIds } = req.body;
-    const isSuperAdmin = req.user.role === 'admin';
-    const isServiceTechnician = req.user.role === 'vendor' || req.user.hasServicePortalAccess;
+    const isSuperAdmin = req.user.role === config.ROLES.ADMIN;
+    const isServiceTechnician = req.user.role === config.ROLES.VENDOR || req.user.hasServicePortalAccess;
 
     // Only Super Admins and Service Technicians can delete
     if (!isSuperAdmin && !isServiceTechnician) {
@@ -6901,7 +7466,7 @@ app.delete('/api/service-reports', authenticateToken, async (req, res) => {
 app.get('/api/hubspot/ticket/:ticketId/map-to-service-report', authenticateToken, async (req, res) => {
   try {
     // Only admins and managers with service portal access can use this endpoint
-    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
+    if (req.user.role !== config.ROLES.ADMIN && !(req.user.isManager && req.user.hasServicePortalAccess)) {
       return res.status(403).json({ error: 'Only admins and managers can import from HubSpot' });
     }
 
@@ -6952,22 +7517,8 @@ app.get('/api/hubspot/ticket/:ticketId/map-to-service-report', authenticateToken
     }
 
     // Map Service Type from Issue Category
-    const serviceTypeMapping = {
-      'analyzer hardware': 'Analyzer Hardware',
-      'inventory': 'Inventory',
-      'lis/emr': 'LIS/EMR',
-      'lis': 'LIS/EMR',
-      'emr': 'LIS/EMR',
-      'billing & fees': 'Billing & Fees',
-      'billing': 'Billing & Fees',
-      'compliance': 'Compliance',
-      'training': 'Training',
-      'validations': 'Validations',
-      'validation': 'Validations'
-    };
-
     const issueCategoryLower = (ticket.issueCategory || '').toLowerCase();
-    const serviceType = serviceTypeMapping[issueCategoryLower] || '';
+    const serviceType = config.SERVICE_TYPE_MAP[issueCategoryLower] || '';
 
     // Combine ticket description and notes into manager notes
     let managerNotes = '';
@@ -7023,7 +7574,7 @@ app.get('/api/hubspot/ticket/:ticketId/map-to-service-report', authenticateToken
 app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
   try {
     // Only admins and managers with service portal access can assign service reports
-    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
+    if (req.user.role !== config.ROLES.ADMIN && !(req.user.isManager && req.user.hasServicePortalAccess)) {
       return res.status(403).json({ error: 'Only admins and managers can assign service reports' });
     }
 
@@ -7063,7 +7614,7 @@ app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
       console.log('Available user IDs:', users.map(u => `${u.id} (${typeof u.id})`));
       return res.status(400).json({ error: 'Assigned user not found' });
     }
-    if (assignedUser.role !== 'vendor' && assignedUser.role !== 'admin' && !assignedUser.hasServicePortalAccess) {
+    if (assignedUser.role !== config.ROLES.VENDOR && assignedUser.role !== config.ROLES.ADMIN && !assignedUser.hasServicePortalAccess) {
       return res.status(400).json({ error: 'Assigned user does not have service portal access' });
     }
 
@@ -7162,7 +7713,7 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
     // Only the assigned technician can complete the report
     // Convert to strings for reliable comparison
     const isAssignedToUser = String(existingReport.assignedToId) === String(req.user.id);
-    if (!isAssignedToUser && req.user.role !== 'admin') {
+    if (!isAssignedToUser && req.user.role !== config.ROLES.ADMIN) {
       console.log(`Authorization failed: assignedToId="${existingReport.assignedToId}" !== userId="${req.user.id}"`);
       return res.status(403).json({ error: 'Not authorized to complete this report' });
     }
@@ -7199,7 +7750,9 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
     // Determine status based on whether customer signed on-site
     // If customer signature is provided (data URL), report is fully complete ('submitted')
     // If no customer signature, report needs client portal signing ('signature_needed')
-    const hasCustomerSignature = customerSignature && typeof customerSignature === 'string' && customerSignature.startsWith('data:image');
+    // A blank canvas toDataURL() is ~6000 chars; require > 7000 to ensure actual drawing content
+    const hasCustomerSignature = customerSignature && typeof customerSignature === 'string'
+      && customerSignature.startsWith('data:image') && customerSignature.length > 7000;
     const completionStatus = hasCustomerSignature ? 'submitted' : 'signature_needed';
 
     // Update the report with technician-provided info
@@ -7313,7 +7866,7 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
       const reportCompanyId = completedReport.hubspotCompanyId || '';
 
       const client = users.find(u => {
-        if (u.role !== 'client') return false;
+        if (u.role !== config.ROLES.CLIENT) return false;
         if (reportCompanyId && u.hubspotCompanyId && String(u.hubspotCompanyId) === String(reportCompanyId)) return true;
         if (clientFacility && u.practiceName?.toLowerCase() === clientFacility) return true;
         if (clientFacility && u.name?.toLowerCase() === clientFacility) return true;
@@ -7363,7 +7916,7 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
 app.post('/api/service-reports/:id/photos', authenticateToken, upload.array('photos', 10), async (req, res) => {
   try {
     // Only admins and managers with service portal access can upload photos
-    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
+    if (req.user.role !== config.ROLES.ADMIN && !(req.user.isManager && req.user.hasServicePortalAccess)) {
       return res.status(403).json({ error: 'Only admins and managers can upload photos' });
     }
 
@@ -7432,7 +7985,7 @@ app.post('/api/service-reports/:id/photos', authenticateToken, upload.array('pho
 app.post('/api/service-reports/:id/files', authenticateToken, upload.array('files', 10), async (req, res) => {
   try {
     // Only admins and managers with service portal access can upload client files
-    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
+    if (req.user.role !== config.ROLES.ADMIN && !(req.user.isManager && req.user.hasServicePortalAccess)) {
       return res.status(403).json({ error: 'Only admins and managers can upload client files' });
     }
 
@@ -7495,10 +8048,147 @@ app.post('/api/service-reports/:id/files', authenticateToken, upload.array('file
   }
 });
 
+// Upload technician photos to assigned service report (assigned technician only)
+app.post('/api/service-reports/:id/technician-photos', authenticateToken, requireServiceAccess, upload.array('photos', 10), async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'No photos provided' });
+    }
+
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = serviceReports[reportIndex];
+
+    // Only the assigned technician or admin can upload technician photos
+    const isAssignedToUser = String(report.assignedToId) === String(req.user.id);
+    if (!isAssignedToUser && req.user.role !== config.ROLES.ADMIN) {
+      return res.status(403).json({ error: 'Not authorized to upload photos to this report' });
+    }
+
+    const technicianPhotos = report.technicianPhotos || [];
+    const clientName = report.clientFacilityName || 'Unknown Client';
+
+    for (const file of req.files) {
+      const fileId = uuidv4();
+      const ext = path.extname(file.originalname) || '.jpg';
+      const fileName = `tech_${fileId}${ext}`;
+
+      try {
+        const driveResult = await googledrive.uploadServiceReportAttachment(
+          clientName, fileName, file.buffer, file.mimetype || 'image/jpeg'
+        );
+
+        technicianPhotos.push({
+          id: fileId,
+          name: file.originalname,
+          url: driveResult.webContentLink,
+          webViewLink: driveResult.webViewLink,
+          thumbnailLink: driveResult.thumbnailLink,
+          driveFileId: driveResult.fileId,
+          uploadedAt: new Date().toISOString(),
+          uploadedBy: req.user.name
+        });
+      } catch (driveErr) {
+        console.error('Google Drive technician photo upload failed, skipping:', driveErr.message);
+        technicianPhotos.push({
+          id: fileId,
+          name: file.originalname,
+          url: null,
+          uploadError: driveErr.message,
+          uploadedAt: new Date().toISOString(),
+          uploadedBy: req.user.name
+        });
+      }
+    }
+
+    serviceReports[reportIndex].technicianPhotos = technicianPhotos;
+    serviceReports[reportIndex].updatedAt = new Date().toISOString();
+    await db.set('service_reports', serviceReports);
+
+    res.json({ technicianPhotos: serviceReports[reportIndex].technicianPhotos });
+  } catch (error) {
+    console.error('Upload technician photos error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Upload technician files to assigned service report (assigned technician only)
+app.post('/api/service-reports/:id/technician-files', authenticateToken, requireServiceAccess, upload.array('files', 10), async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'No files provided' });
+    }
+
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = serviceReports[reportIndex];
+
+    // Only the assigned technician or admin can upload technician files
+    const isAssignedToUser = String(report.assignedToId) === String(req.user.id);
+    if (!isAssignedToUser && req.user.role !== config.ROLES.ADMIN) {
+      return res.status(403).json({ error: 'Not authorized to upload files to this report' });
+    }
+
+    const technicianFiles = report.technicianFiles || [];
+    const clientName = report.clientFacilityName || 'Unknown Client';
+
+    for (const file of req.files) {
+      const fileId = uuidv4();
+      const ext = path.extname(file.originalname) || '';
+      const fileName = `tech_${fileId}${ext}`;
+
+      try {
+        const driveResult = await googledrive.uploadServiceReportAttachment(
+          clientName, fileName, file.buffer, file.mimetype || 'application/octet-stream'
+        );
+
+        technicianFiles.push({
+          id: fileId,
+          name: file.originalname,
+          url: driveResult.webContentLink,
+          webViewLink: driveResult.webViewLink,
+          driveFileId: driveResult.fileId,
+          uploadedAt: new Date().toISOString(),
+          uploadedBy: req.user.name
+        });
+      } catch (driveErr) {
+        console.error('Google Drive technician file upload failed, skipping:', driveErr.message);
+        technicianFiles.push({
+          id: fileId,
+          name: file.originalname,
+          url: null,
+          uploadError: driveErr.message,
+          uploadedAt: new Date().toISOString(),
+          uploadedBy: req.user.name
+        });
+      }
+    }
+
+    serviceReports[reportIndex].technicianFiles = technicianFiles;
+    serviceReports[reportIndex].updatedAt = new Date().toISOString();
+    await db.set('service_reports', serviceReports);
+
+    res.json({ technicianFiles: serviceReports[reportIndex].technicianFiles });
+  } catch (error) {
+    console.error('Upload technician files error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Delete photo from service report (admin/manager with service access only)
 app.delete('/api/service-reports/:id/photos/:photoId', authenticateToken, async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
+    if (req.user.role !== config.ROLES.ADMIN && !(req.user.isManager && req.user.hasServicePortalAccess)) {
       return res.status(403).json({ error: 'Only admins and managers can delete photos' });
     }
 
@@ -7538,7 +8228,7 @@ app.delete('/api/service-reports/:id/photos/:photoId', authenticateToken, async 
 // Delete client file from service report (admin/manager with service access only)
 app.delete('/api/service-reports/:id/files/:fileId', authenticateToken, async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
+    if (req.user.role !== config.ROLES.ADMIN && !(req.user.isManager && req.user.hasServicePortalAccess)) {
       return res.status(403).json({ error: 'Only admins and managers can delete files' });
     }
 
@@ -7578,7 +8268,7 @@ app.delete('/api/service-reports/:id/files/:fileId', authenticateToken, async (r
 // Update manager notes on service report (admin/manager with service access only)
 app.put('/api/service-reports/:id/manager-notes', authenticateToken, async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
+    if (req.user.role !== config.ROLES.ADMIN && !(req.user.isManager && req.user.hasServicePortalAccess)) {
       return res.status(403).json({ error: 'Only admins and managers can update manager notes' });
     }
 
@@ -7602,10 +8292,430 @@ app.put('/api/service-reports/:id/manager-notes', authenticateToken, async (req,
   }
 });
 
+// ===== MULTI-DAY VALIDATION TRACKING =====
+
+// Start a multi-day validation (creates report with validation_in_progress status)
+app.post('/api/service-reports/start-validation', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const reportData = req.body;
+
+    if (!reportData.clientFacilityName || !reportData.testProcedures) {
+      return res.status(400).json({ error: 'Client facility and test procedures are required' });
+    }
+
+    const serviceReports = (await db.get('service_reports')) || [];
+
+    const firstSegment = {
+      day: 1,
+      date: reportData.firstDayDate || new Date().toISOString().split('T')[0],
+      testsPerformed: reportData.firstDayTests || '',
+      results: reportData.firstDayResults || '',
+      observations: reportData.firstDayObservations || '',
+      photos: [],
+      status: 'complete',
+      submittedAt: new Date().toISOString()
+    };
+
+    const newReport = {
+      id: uuidv4(),
+      ...reportData,
+      status: 'validation_in_progress',
+      serviceType: 'Validations',
+      validationSegments: [firstSegment],
+      expectedDays: reportData.expectedDays || null,
+      technicianId: req.user.id,
+      technicianName: req.user.name,
+      serviceProviderName: req.user.name,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    // Remove one-off fields that were just for the first day
+    delete newReport.firstDayDate;
+    delete newReport.firstDayTests;
+    delete newReport.firstDayResults;
+    delete newReport.firstDayObservations;
+
+    serviceReports.push(newReport);
+    await db.set('service_reports', serviceReports);
+
+    await logActivity(
+      req.user.id,
+      req.user.name,
+      'validation_started',
+      'service_report',
+      newReport.id,
+      { clientName: reportData.clientFacilityName, expectedDays: reportData.expectedDays || 'flexible' }
+    );
+
+    // Auto-update Phase 8 tasks in matching project
+    await autoUpdatePhase8Tasks(newReport, 'validation_started', req.user.name);
+
+    res.json(newReport);
+  } catch (error) {
+    console.error('Start validation error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Add/update a daily segment to an in-progress validation
+app.put('/api/service-reports/:id/segment', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = serviceReports[reportIndex];
+
+    // Only the assigned technician or report creator can add segments
+    const isOwner = String(report.technicianId) === String(req.user.id) ||
+                    String(report.assignedToId) === String(req.user.id);
+    if (!isOwner && req.user.role !== config.ROLES.ADMIN) {
+      return res.status(403).json({ error: 'Not authorized to update this validation' });
+    }
+
+    if (report.status !== 'validation_in_progress') {
+      return res.status(400).json({ error: 'This validation is not in progress' });
+    }
+
+    const { day, date, testsPerformed, results, observations, status } = req.body;
+    if (!testsPerformed) {
+      return res.status(400).json({ error: 'Tests performed is required' });
+    }
+
+    const segments = Array.isArray(report.validationSegments) ? report.validationSegments : [];
+    const existingIndex = segments.findIndex(s => s.day === day);
+
+    const segment = {
+      day: day || segments.length + 1,
+      date: date || new Date().toISOString().split('T')[0],
+      testsPerformed,
+      results: results || '',
+      observations: observations || '',
+      photos: [],
+      status: status || 'complete',
+      submittedAt: new Date().toISOString()
+    };
+
+    if (existingIndex >= 0) {
+      segments[existingIndex] = { ...segments[existingIndex], ...segment };
+    } else {
+      segments.push(segment);
+    }
+
+    serviceReports[reportIndex].validationSegments = segments;
+    serviceReports[reportIndex].updatedAt = new Date().toISOString();
+
+    // Update expected days if provided
+    if (req.body.expectedDays !== undefined) {
+      serviceReports[reportIndex].expectedDays = req.body.expectedDays;
+    }
+
+    await db.set('service_reports', serviceReports);
+
+    await logActivity(
+      req.user.id,
+      req.user.name,
+      'validation_day_logged',
+      'service_report',
+      report.id,
+      { clientName: report.clientFacilityName, day: segment.day, totalDays: segments.length }
+    );
+
+    res.json(serviceReports[reportIndex]);
+  } catch (error) {
+    console.error('Add validation segment error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Complete a multi-day validation (transition from validation_in_progress to submitted/signature_needed)
+app.put('/api/service-reports/:id/complete-validation', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = serviceReports[reportIndex];
+
+    const isOwner = String(report.technicianId) === String(req.user.id) ||
+                    String(report.assignedToId) === String(req.user.id);
+    if (!isOwner && req.user.role !== config.ROLES.ADMIN) {
+      return res.status(403).json({ error: 'Not authorized to complete this validation' });
+    }
+
+    if (report.status !== 'validation_in_progress') {
+      return res.status(400).json({ error: 'This validation is not in progress' });
+    }
+
+    const segments = Array.isArray(report.validationSegments) ? report.validationSegments : [];
+    if (segments.length === 0) {
+      return res.status(400).json({ error: 'At least one day must be logged before completing' });
+    }
+
+    const {
+      validationResults, trainingProvided, recommendations,
+      technicianSignature, technicianSignatureDate, technicianFirstName, technicianLastName,
+      customerSignature, customerSignatureDate, customerFirstName, customerLastName
+    } = req.body;
+
+    if (!validationResults) {
+      return res.status(400).json({ error: 'Overall validation results are required' });
+    }
+    if (!technicianSignature) {
+      return res.status(400).json({ error: 'Technician signature is required' });
+    }
+
+    // Determine final dates from segments
+    const sortedDates = segments.map(s => s.date).sort();
+    const validationStartDate = sortedDates[0];
+    const validationEndDate = sortedDates[sortedDates.length - 1];
+
+    // Check customer signature
+    const hasCustomerSignature = customerSignature && typeof customerSignature === 'string'
+      && customerSignature.startsWith('data:image') && customerSignature.length > 7000;
+    const completionStatus = hasCustomerSignature ? 'submitted' : 'signature_needed';
+
+    serviceReports[reportIndex] = {
+      ...report,
+      status: completionStatus,
+      validationResults,
+      trainingProvided: trainingProvided || '',
+      recommendations: recommendations || '',
+      validationStartDate,
+      validationEndDate,
+      technicianSignature,
+      technicianSignatureDate: technicianSignatureDate || new Date().toISOString().split('T')[0],
+      technicianFirstName: technicianFirstName || req.user.name.split(' ')[0],
+      technicianLastName: technicianLastName || req.user.name.split(' ').slice(1).join(' '),
+      customerSignature: customerSignature || '',
+      customerSignatureDate: customerSignatureDate || '',
+      customerFirstName: customerFirstName || '',
+      customerLastName: customerLastName || '',
+      serviceCompletionDate: validationEndDate,
+      completedAt: new Date().toISOString(),
+      submittedAt: hasCustomerSignature ? new Date().toISOString() : null,
+      updatedAt: new Date().toISOString()
+    };
+
+    await db.set('service_reports', serviceReports);
+
+    const completedReport = serviceReports[reportIndex];
+
+    await logActivity(
+      req.user.id,
+      req.user.name,
+      hasCustomerSignature ? 'validation_completed' : 'validation_pending_signature',
+      'service_report',
+      completedReport.id,
+      { clientName: completedReport.clientFacilityName, daysLogged: segments.length, status: completionStatus }
+    );
+
+    // Auto-update Phase 8 tasks in matching project (mark all complete)
+    await autoUpdatePhase8Tasks(completedReport, 'validation_completed', req.user.name);
+
+    // Upload to HubSpot if company ID is available
+    if (completedReport.hubspotCompanyId && hubspot.isValidRecordId(completedReport.hubspotCompanyId)) {
+      try {
+        const reportDate = new Date(completedReport.serviceCompletionDate || completedReport.createdAt).toLocaleDateString();
+        const pdfBuffer = await pdfGenerator.generateServiceReportPDF(completedReport, req.user.name);
+        const fileName = `Validation_Report_${completedReport.clientFacilityName.replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate.replace(/\//g, '-')}.pdf`;
+        const noteText = `Validation Report Completed\n\nClient: ${completedReport.clientFacilityName}\nTechnician: ${req.user.name}\nDays: ${segments.length}\nDates: ${validationStartDate} to ${validationEndDate}`;
+
+        const uploadResult = await hubspot.uploadFileAndAttachToRecord(
+          completedReport.hubspotCompanyId,
+          pdfBuffer.toString('base64'),
+          fileName,
+          noteText,
+          { recordType: 'companies', folderPath: '/service-reports', notePrefix: '[Service Portal]', isBase64: true }
+        );
+
+        serviceReports[reportIndex].hubspotFileId = uploadResult.fileId;
+        serviceReports[reportIndex].hubspotNoteId = uploadResult.noteId;
+        await db.set('service_reports', serviceReports);
+      } catch (hubspotError) {
+        console.error('HubSpot upload error (non-blocking):', hubspotError.message);
+      }
+    }
+
+    // Upload PDF to Google Drive
+    try {
+      const driveReportDate = new Date(completedReport.serviceCompletionDate || completedReport.createdAt).toLocaleDateString();
+      const driveFileName = `Validation_Report_${completedReport.clientFacilityName.replace(/[^a-zA-Z0-9]/g, '_')}_${driveReportDate.replace(/\//g, '-')}.pdf`;
+      const drivePdfBuffer = await pdfGenerator.generateServiceReportPDF(completedReport, req.user.name);
+
+      const driveResult = await googledrive.uploadServiceReportPDF(
+        completedReport.clientFacilityName || 'Unknown Client',
+        driveFileName,
+        drivePdfBuffer
+      );
+
+      serviceReports[reportIndex].driveFileId = driveResult.fileId;
+      serviceReports[reportIndex].driveWebViewLink = driveResult.webViewLink;
+      serviceReports[reportIndex].driveWebContentLink = driveResult.webContentLink;
+      await db.set('service_reports', serviceReports);
+    } catch (driveError) {
+      console.error('Google Drive upload error (non-blocking):', driveError.message);
+    }
+
+    // Auto-add to client's Files section
+    try {
+      const users = (await db.get('users')) || [];
+      const clientFacility = (completedReport.clientFacilityName || '').toLowerCase();
+      const reportCompanyId = completedReport.hubspotCompanyId || '';
+
+      const client = users.find(u => {
+        if (u.role !== config.ROLES.CLIENT) return false;
+        if (reportCompanyId && u.hubspotCompanyId && String(u.hubspotCompanyId) === String(reportCompanyId)) return true;
+        if (clientFacility && u.practiceName?.toLowerCase() === clientFacility) return true;
+        if (clientFacility && u.name?.toLowerCase() === clientFacility) return true;
+        return false;
+      });
+
+      if (client && client.slug) {
+        const clientDocuments = (await db.get('client_documents')) || [];
+        const alreadyAdded = clientDocuments.some(d => d.serviceReportId === completedReport.id);
+        if (!alreadyAdded) {
+          const reportDate = new Date(completedReport.serviceCompletionDate || completedReport.createdAt).toLocaleDateString();
+          clientDocuments.push({
+            id: uuidv4(),
+            slug: client.slug,
+            title: `Validation Report - ${reportDate}`,
+            description: `${segments.length}-day validation - ${completedReport.technicianName || req.user.name}`,
+            category: 'Service Reports',
+            serviceReportId: completedReport.id,
+            serviceType: 'Validations',
+            driveWebViewLink: serviceReports[reportIndex].driveWebViewLink || null,
+            driveWebContentLink: serviceReports[reportIndex].driveWebContentLink || null,
+            createdAt: new Date().toISOString(),
+            uploadedBy: 'system',
+            uploadedByName: 'Thrive 365 Labs'
+          });
+          await db.set('client_documents', clientDocuments);
+        }
+      }
+    } catch (clientDocError) {
+      console.error('Client document auto-upload error (non-blocking):', clientDocError.message);
+    }
+
+    res.json(serviceReports[reportIndex]);
+  } catch (error) {
+    console.error('Complete validation error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get validation progress for client portal (by slug)
+app.get('/api/client-portal/validation-progress', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== config.ROLES.CLIENT) {
+      return res.status(403).json({ error: 'Client access required' });
+    }
+
+    const clientSlug = req.user.slug;
+    if (!clientSlug) {
+      return res.json([]);
+    }
+
+    // Find service reports matching this client
+    const serviceReports = (await db.get('service_reports')) || [];
+    const users = (await db.get('users')) || [];
+    const clientUser = users.find(u => u.id === req.user.id);
+    const clientFacility = (clientUser?.practiceName || clientUser?.name || '').toLowerCase();
+    const clientCompanyId = clientUser?.hubspotCompanyId || '';
+
+    const validations = serviceReports.filter(r => {
+      if (r.serviceType !== 'Validations') return false;
+      if (r.status !== 'validation_in_progress') return false;
+      // Match by company ID or facility name
+      if (clientCompanyId && r.hubspotCompanyId && String(r.hubspotCompanyId) === String(clientCompanyId)) return true;
+      if (clientFacility && r.clientFacilityName?.toLowerCase() === clientFacility) return true;
+      return false;
+    }).map(r => ({
+      id: r.id,
+      technicianName: r.technicianName,
+      analyzerModel: r.analyzerModel,
+      analyzerSerialNumber: r.analyzerSerialNumber,
+      validationStartDate: r.validationStartDate,
+      expectedDays: r.expectedDays,
+      daysLogged: Array.isArray(r.validationSegments) ? r.validationSegments.length : 0,
+      segments: (Array.isArray(r.validationSegments) ? r.validationSegments : []).map(s => ({
+        day: s.day,
+        date: s.date,
+        testsPerformed: s.testsPerformed,
+        results: s.results,
+        observations: s.observations,
+        status: s.status
+      })),
+      updatedAt: r.updatedAt
+    }));
+
+    res.json(validations);
+  } catch (error) {
+    console.error('Client validation progress error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get active validations for a specific project (used by implementation app)
+app.get('/api/projects/:projectId/active-validations', authenticateToken, async (req, res) => {
+  try {
+    const projects = await getProjects();
+    const project = projects.find(p => p.id === req.params.projectId);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const serviceReports = (await db.get('service_reports')) || [];
+    const clientName = (project.clientName || '').toLowerCase();
+    const companyId = project.hubspotRecordId || project.hubspotCompanyId || '';
+
+    const validations = serviceReports.filter(r => {
+      if (r.serviceType !== 'Validations') return false;
+      if (r.status !== 'validation_in_progress') return false;
+      if (companyId && r.hubspotCompanyId && String(r.hubspotCompanyId) === String(companyId)) return true;
+      if (clientName && r.clientFacilityName?.toLowerCase() === clientName) return true;
+      return false;
+    }).map(r => ({
+      id: r.id,
+      technicianName: r.technicianName,
+      analyzerModel: r.analyzerModel,
+      analyzerSerialNumber: r.analyzerSerialNumber,
+      validationStartDate: r.validationStartDate,
+      expectedDays: r.expectedDays,
+      daysLogged: Array.isArray(r.validationSegments) ? r.validationSegments.length : 0,
+      segments: (Array.isArray(r.validationSegments) ? r.validationSegments : []).map(s => ({
+        day: s.day,
+        date: s.date,
+        testsPerformed: s.testsPerformed,
+        results: s.results,
+        observations: s.observations,
+        status: s.status
+      })),
+      status: r.status,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt
+    }));
+
+    res.json(validations);
+  } catch (error) {
+    console.error('Get project active validations error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ===== END MULTI-DAY VALIDATION TRACKING =====
+
 // Get service portal technicians/vendors for assignment dropdown
 app.get('/api/service-portal/technicians', authenticateToken, async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && !(req.user.isManager && req.user.hasServicePortalAccess)) {
+    if (req.user.role !== config.ROLES.ADMIN && !(req.user.isManager && req.user.hasServicePortalAccess)) {
       return res.status(403).json({ error: 'Only admins and managers can access technician list' });
     }
 
@@ -7613,7 +8723,7 @@ app.get('/api/service-portal/technicians', authenticateToken, async (req, res) =
 
     // Filter users with service portal access
     const technicians = users.filter(u =>
-      u.role === 'vendor' || u.role === 'admin' || u.hasServicePortalAccess
+      u.role === config.ROLES.VENDOR || u.role === config.ROLES.ADMIN || u.hasServicePortalAccess
     ).map(u => ({
       id: u.id,
       name: u.name,
@@ -7739,7 +8849,7 @@ app.get('/api/validation-reports', authenticateToken, requireServiceAccess, asyn
     let validationReports = (await db.get('validation_reports')) || [];
 
     // Filter based on user role
-    if (req.user.role !== 'admin') {
+    if (req.user.role !== config.ROLES.ADMIN) {
       validationReports = validationReports.filter(r => r.technicianId === req.user.id);
     }
 
@@ -7808,7 +8918,7 @@ app.put('/api/validation-reports/:id', authenticateToken, requireServiceAccess, 
     const existingReport = validationReports[reportIndex];
 
     // Only allow editing own reports unless admin
-    if (req.user.role !== 'admin' && existingReport.technicianId !== req.user.id) {
+    if (req.user.role !== config.ROLES.ADMIN && existingReport.technicianId !== req.user.id) {
       return res.status(403).json({ error: 'Not authorized to edit this report' });
     }
 
@@ -7860,7 +8970,7 @@ app.get('/api/knowledge/guides', authenticateToken, async (req, res) => {
     // Filter based on user permissions
     const filteredGuides = guides.filter(guide => {
       if (guide.ownerOnly && req.user.email !== 'bianca@thrive365labs.com') return false;
-      if (guide.adminOnly && req.user.role !== 'admin') return false;
+      if (guide.adminOnly && req.user.role !== config.ROLES.ADMIN) return false;
       return true;
     });
     res.json(filteredGuides);
@@ -7882,7 +8992,7 @@ app.get('/api/knowledge/guides/:guideId', authenticateToken, async (req, res) =>
     if (guide.ownerOnly && req.user.email !== 'bianca@thrive365labs.com') {
       return res.status(403).json({ error: 'Access denied' });
     }
-    if (guide.adminOnly && req.user.role !== 'admin') {
+    if (guide.adminOnly && req.user.role !== config.ROLES.ADMIN) {
       return res.status(403).json({ error: 'Access denied' });
     }
     res.json(guide);
@@ -8176,16 +9286,16 @@ app.post('/api/admin/bulk-password-reset', authenticateToken, requireAdmin, asyn
       const user = users[i];
 
       // Skip admin users from bulk reset
-      if (user.role === 'admin') {
+      if (user.role === config.ROLES.ADMIN) {
         results.skipped.push({ email: user.email, reason: 'Admin accounts excluded' });
         continue;
       }
 
       // Filter by userType
-      if (userType === 'clients' && user.role !== 'client') {
+      if (userType === 'clients' && user.role !== config.ROLES.CLIENT) {
         continue;
       }
-      if (userType === 'users' && user.role === 'client') {
+      if (userType === 'users' && user.role === config.ROLES.CLIENT) {
         continue;
       }
       if (userType === 'specific' && (!specificUserIds || !specificUserIds.includes(user.id))) {
@@ -8194,7 +9304,7 @@ app.post('/api/admin/bulk-password-reset', authenticateToken, requireAdmin, asyn
 
       // Generate temp password
       const tempPassword = generateTempPassword(user);
-      const hashedPassword = await bcrypt.hash(tempPassword, 10);
+      const hashedPassword = await bcrypt.hash(tempPassword, config.BCRYPT_SALT_ROUNDS);
 
       // Update user
       users[i].password = hashedPassword;
@@ -8252,7 +9362,7 @@ app.post('/api/admin/reset-user-password/:userId', authenticateToken, requireAdm
 
     // Use custom password or generate temp password
     const newPassword = customPassword || generateTempPassword(user);
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const hashedPassword = await bcrypt.hash(newPassword, config.BCRYPT_SALT_ROUNDS);
 
     users[userIndex].password = hashedPassword;
     users[userIndex].requirePasswordChange = !customPassword; // Only require change for temp passwords
@@ -8302,7 +9412,7 @@ app.post('/api/auth/change-password', authenticateToken, async (req, res) => {
     }
 
     // Hash and save new password
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const hashedPassword = await bcrypt.hash(newPassword, config.BCRYPT_SALT_ROUNDS);
     users[userIndex].password = hashedPassword;
     users[userIndex].requirePasswordChange = false;
     users[userIndex].lastPasswordChange = new Date().toISOString();
@@ -8332,7 +9442,7 @@ app.post('/api/auth/admin-login', async (req, res) => {
       return res.status(400).json({ error: 'Missing credentials' });
     }
     const users = await getUsers();
-    const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase() && (u.role === 'admin' || u.hasAdminHubAccess));
+    const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase() && (u.role === config.ROLES.ADMIN || u.hasAdminHubAccess));
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
@@ -8340,7 +9450,7 @@ app.post('/api/auth/admin-login', async (req, res) => {
     const token = jwt.sign(
       { id: user.id, email: user.email, name: user.name, role: user.role },
       JWT_SECRET,
-      { expiresIn: '24h' }
+      { expiresIn: config.JWT_EXPIRY }
     );
     res.json({
       token,
@@ -8375,11 +9485,11 @@ app.get('/api/admin-hub/dashboard', authenticateToken, requireAdminHubAccess, as
     const stats = {
       totalUsers: users.length,
       // adminUsers kept for backward compatibility (super admins)
-      adminUsers: users.filter(u => u.role === 'admin').length,
-      superAdminUsers: users.filter(u => u.role === 'admin').length,
+      adminUsers: users.filter(u => u.role === config.ROLES.ADMIN).length,
+      superAdminUsers: users.filter(u => u.role === config.ROLES.ADMIN).length,
       managerUsers: users.filter(u => u.isManager).length,
-      clientUsers: users.filter(u => u.role === 'client').length,
-      servicePortalUsers: users.filter(u => u.hasServicePortalAccess || u.role === 'vendor').length,
+      clientUsers: users.filter(u => u.role === config.ROLES.CLIENT).length,
+      servicePortalUsers: users.filter(u => u.hasServicePortalAccess || u.role === config.ROLES.VENDOR).length,
       totalProjects: projects.length,
       activeProjects: projects.filter(p => p.status !== 'completed').length,
       totalServiceReports: serviceReports.length,
@@ -8410,10 +9520,10 @@ app.get('/portal', (req, res) => {
 const findClientBySlugOrRedirect = async (slug, res) => {
   const users = await getUsers();
   // Check current slug first
-  const currentMatch = users.find(u => u.role === 'client' && u.slug === slug);
+  const currentMatch = users.find(u => u.role === config.ROLES.CLIENT && u.slug === slug);
   if (currentMatch) return { user: currentMatch, redirect: false };
   // Check previousSlugs for redirect (slug was changed, old URL still in use)
-  const previousMatch = users.find(u => u.role === 'client' && Array.isArray(u.previousSlugs) && u.previousSlugs.includes(slug));
+  const previousMatch = users.find(u => u.role === config.ROLES.CLIENT && Array.isArray(u.previousSlugs) && u.previousSlugs.includes(slug));
   if (previousMatch) return { user: previousMatch, redirect: true, newSlug: previousMatch.slug };
   return null;
 };
@@ -8454,7 +9564,7 @@ app.get('/portal/:slug/*', async (req, res) => {
 
 // In-memory cache for project slug lookups (avoids DB hit on every root-level request)
 let _projectSlugCache = { slugs: new Set(), previousSlugs: new Map(), lastRefresh: 0 };
-const PROJECT_SLUG_CACHE_TTL = 30000; // 30 seconds
+const PROJECT_SLUG_CACHE_TTL = config.PROJECT_SLUG_CACHE_TTL;
 
 const refreshProjectSlugCache = async () => {
   const now = Date.now();
@@ -8583,7 +9693,7 @@ app.listen(PORT, () => {
           const reportCompanyId = report.hubspotCompanyId || '';
 
           const client = users.find(u => {
-            if (u.role !== 'client') return false;
+            if (u.role !== config.ROLES.CLIENT) return false;
             if (reportCompanyId && u.hubspotCompanyId && String(u.hubspotCompanyId) === String(reportCompanyId)) return true;
             if (clientFacility && u.practiceName?.toLowerCase().includes('nani')) return true;
             if (clientFacility && u.practiceName?.toLowerCase().includes('indiana kidney')) return true;
@@ -8630,6 +9740,24 @@ app.listen(PORT, () => {
         await db.set('client_documents', clientDocs);
         console.log('✅ Migration: Fixed service report documents missing active field');
       }
+
+      // Migration 5: Fix report 973c316c - was marked 'submitted' without valid customer signature
+      // Caused by blank canvas toDataURL() passing the data:image check
+      const fixReportId = '973c316c-7b88-4de5-881c-fb340d69e092';
+      const fixIdx = serviceReports.findIndex(r => r.id === fixReportId);
+      if (fixIdx !== -1 && serviceReports[fixIdx].status === 'submitted') {
+        const sig = serviceReports[fixIdx].customerSignature;
+        const hasRealSignature = sig && typeof sig === 'string' && sig.startsWith('data:image') && sig.length > 7000;
+        if (!hasRealSignature) {
+          serviceReports[fixIdx].status = 'signature_needed';
+          serviceReports[fixIdx].customerSignature = null;
+          serviceReports[fixIdx].customerSignatureDate = null;
+          serviceReports[fixIdx].submittedAt = null;
+          serviceReports[fixIdx].updatedAt = new Date().toISOString();
+          await db.set('service_reports', serviceReports);
+          console.log('✅ Migration: Fixed report 973c316c status to signature_needed (blank canvas signature)');
+        }
+      }
     } catch (e) {
       console.error('Migration error (non-blocking):', e.message);
     }
@@ -8658,33 +9786,9 @@ app.listen(PORT, () => {
         titleToPhase[normalizedTitle] = t.phase;
       });
 
-      // Also build a mapping of old stage names to phases for tasks that used stage as a phase-like value
-      const oldStageToPhase = {
-        'contract & initial setup': 'Phase 1',
-        'billing, clia & hiring': 'Phase 2',
-        'tech infrastructure & lis integration': 'Phase 3',
-        'tech infrastructure': 'Phase 3',
-        'inventory forecasting & procurement': 'Phase 4',
-        'inventory forecasting': 'Phase 4',
-        'supply orders & logistics': 'Phase 5',
-        'supply orders': 'Phase 5',
-        'onboarding & welcome calls': 'Phase 6',
-        'onboarding': 'Phase 6',
-        'virtual soft pilot & prep': 'Phase 7',
-        'virtual soft pilot': 'Phase 7',
-        'soft pilot': 'Phase 7',
-        'training & full validation': 'Phase 8',
-        'training & validation': 'Phase 8',
-        'training/validation': 'Phase 8',
-        'go-live': 'Phase 9',
-        'go live': 'Phase 9',
-        'golive': 'Phase 9',
-        'post-launch support & optimization': 'Phase 10',
-        'post-launch': 'Phase 10',
-        'post launch': 'Phase 10'
-      };
-
-      const validPhases = new Set(['Phase 1', 'Phase 2', 'Phase 3', 'Phase 4', 'Phase 5', 'Phase 6', 'Phase 7', 'Phase 8', 'Phase 9', 'Phase 10']);
+      // Use centralized mappings for legacy stage-to-phase migration
+      const oldStageToPhase = config.LEGACY_STAGE_TO_PHASE;
+      const validPhases = new Set(config.PHASE_ORDER);
 
       const projects = await getProjects();
       let totalFixedStages = 0;
