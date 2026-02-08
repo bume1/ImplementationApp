@@ -4,6 +4,46 @@
 
 ---
 
+### Version 2.12.0 - February 7, 2026
+
+#### New Features
+- Add Phase 8 auto-update integration across all views
+- Add multi-day validation tracking system
+
+
+### Version 2.10.1 - February 7, 2026
+
+#### Changes
+- Remove service reports API from Service History, use client_documents instead
+
+
+### Version 2.10.0 - February 6, 2026
+
+#### New Features
+- Add centralized config module and wire into server.js
+
+#### Changes
+- Simplify service workflow: move signing to Files area, streamline Service History
+
+
+### Version 2.9.1 - February 6, 2026
+
+#### Bug Fixes
+- Fix service report visibility, auto-update PDFs on sign, cascade name changes
+
+
+### Version 2.9.0 - February 6, 2026
+
+#### New Features
+- Add client portal service report signing and 3-tier status system
+
+#### Bug Fixes
+- Fix service portal issues: technician uploads, signature validation, client visibility, sign-out
+
+#### Changes
+- Remove Pending Signatures tab, show pending status inline in Service Reports tab
+
+
 ### Version 2.8.1 - February 6, 2026
 
 #### Bug Fixes

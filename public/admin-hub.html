@@ -1677,6 +1677,8 @@
       const [technicians, setTechnicians] = useState([]);
       const [loading, setLoading] = useState(true);
       const [searchTerm, setSearchTerm] = useState('');
+      const [sortBy, setSortBy] = useState('date_desc');
+      const [statusFilter, setStatusFilter] = useState('');
       const [viewingReport, setViewingReport] = useState(null);
       const [viewingValidation, setViewingValidation] = useState(null);
       const [showNewReport, setShowNewReport] = useState(false);
@@ -1950,13 +1952,26 @@
         setSubmitting(false);
       };
 
-      // Include all reports (submitted and assigned)
-      const allReports = reports;
-      const filteredReports = allReports.filter(r =>
-        r.clientFacilityName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        r.serviceType?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        r.technicianName?.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+      // Include all reports (submitted and assigned) with sort and filter
+      const filteredReports = reports
+        .filter(r => {
+          if (searchTerm && !r.clientFacilityName?.toLowerCase().includes(searchTerm.toLowerCase()) &&
+              !r.serviceType?.toLowerCase().includes(searchTerm.toLowerCase()) &&
+              !r.technicianName?.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+          if (statusFilter && r.status !== statusFilter) return false;
+          return true;
+        })
+        .sort((a, b) => {
+          const dateA = new Date(a.serviceCompletionDate || a.createdAt);
+          const dateB = new Date(b.serviceCompletionDate || b.createdAt);
+          if (sortBy === 'date_desc') return dateB - dateA;
+          if (sortBy === 'date_asc') return dateA - dateB;
+          if (sortBy === 'client_asc') return (a.clientFacilityName || '').localeCompare(b.clientFacilityName || '');
+          if (sortBy === 'client_desc') return (b.clientFacilityName || '').localeCompare(a.clientFacilityName || '');
+          if (sortBy === 'type_asc') return (a.serviceType || '').localeCompare(b.serviceType || '');
+          if (sortBy === 'tech_asc') return (a.technicianName || a.serviceProviderName || '').localeCompare(b.technicianName || b.serviceProviderName || '');
+          return dateB - dateA;
+        });
 
       // Vendor Management Functions
       const handleEditVendor = (vendor) => {
@@ -2350,9 +2365,31 @@
             {/* Reports Tab */}
             {activeTab === 'reports' && (
               <div className="p-6">
-                <div className="mb-4">
-                  <input type="text" placeholder="Search by client, service type, or technician..." value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
+                <div className="flex flex-wrap items-end gap-3 mb-4">
+                  <div className="flex-1 min-w-[200px]">
+                    <input type="text" placeholder="Search by client, service type, or technician..." value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Sort</label>
+                    <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-green-500">
+                      <option value="date_desc">Newest First</option>
+                      <option value="date_asc">Oldest First</option>
+                      <option value="client_asc">Client A-Z</option>
+                      <option value="client_desc">Client Z-A</option>
+                      <option value="type_asc">Service Type</option>
+                      <option value="tech_asc">Technician</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
+                    <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-green-500">
+                      <option value="">All Statuses</option>
+                      <option value="submitted">Complete</option>
+                      <option value="assigned">Pending</option>
+                      <option value="signature_needed">Signature Needed</option>
+                    </select>
+                  </div>
                 </div>
                 {loading ? (
                   <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-4 border-green-600 border-t-transparent"></div></div>
