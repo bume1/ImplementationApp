@@ -4,6 +4,12 @@
 
 ---
 
+### Version 2.12.1 - February 8, 2026
+
+#### Bug Fixes
+- Remove duplicate assigned reports banner, fix PDF download for Replit webview
+
+
 ### Version 2.12.0 - February 7, 2026
 
 #### New Features
