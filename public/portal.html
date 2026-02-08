@@ -2731,6 +2731,8 @@
       const [localActiveTab, setLocalActiveTab] = useState(propActiveTab || 'history');
       const [expandedTicket, setExpandedTicket] = useState(null);
       const [statusFilter, setStatusFilter] = useState('all');
+      const [reportSort, setReportSort] = useState('date_desc');
+      const [reportStatusFilter, setReportStatusFilter] = useState('');
 
       // Derive service visit log from client_documents (slug-based, no separate API needed)
       const serviceReportDocs = (documents || []).filter(doc => doc.serviceReportId && doc.category === 'Service Reports');
