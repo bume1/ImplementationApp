@@ -4626,8 +4626,10 @@ app.get('/api/client/service-reports/:id/pdf', authenticateToken, async (req, re
     const reportDate = new Date(report.serviceCompletionDate || report.createdAt || Date.now()).toLocaleDateString().replace(/\//g, '-');
     const fileName = `Service_Report_${(report.clientFacilityName || 'Report').replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate}.pdf`;
 
+    // Use inline when opened via window.open (token in query) so PDF renders in browser/Replit webview
+    const disposition = req.query.token ? 'inline' : 'attachment';
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Disposition', `${disposition}; filename="${fileName}"`);
     res.setHeader('Content-Length', pdfBuffer.length);
     res.send(pdfBuffer);
   } catch (error) {
