@@ -2840,8 +2840,22 @@
               {/* Service History Tab - powered by client_documents, no separate API */}
               {activeTab === 'history' && (
                 <div>
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                     <h2 className="text-lg font-semibold text-gray-800">Your Service History</h2>
+                    {serviceReportDocs.length > 1 && (
+                      <div className="flex items-center gap-2">
+                        <select value={reportSort} onChange={e => setReportSort(e.target.value)} className="text-xs border rounded-lg px-2 py-1.5 text-gray-600 focus:ring-1 focus:ring-primary">
+                          <option value="date_desc">Newest First</option>
+                          <option value="date_asc">Oldest First</option>
+                          <option value="title_asc">Name A-Z</option>
+                        </select>
+                        <select value={reportStatusFilter} onChange={e => setReportStatusFilter(e.target.value)} className="text-xs border rounded-lg px-2 py-1.5 text-gray-600 focus:ring-1 focus:ring-primary">
+                          <option value="">All</option>
+                          <option value="signature_needed">Needs Signature</option>
+                          <option value="submitted">Signed</option>
+                        </select>
+                      </div>
+                    )}
                   </div>
 
                   {serviceReportDocs.length === 0 ? (
@@ -2855,7 +2869,12 @@
                   ) : (
                     <div className="space-y-3">
                       {serviceReportDocs
-                        .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+                        .filter(d => !reportStatusFilter || d.reportStatus === reportStatusFilter)
+                        .sort((a, b) => {
+                          if (reportSort === 'date_asc') return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
+                          if (reportSort === 'title_asc') return (a.title || '').localeCompare(b.title || '');
+                          return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+                        })
                         .map(doc => (
                         <div key={doc.id} className="border border-gray-200 rounded-lg p-4 flex items-center justify-between hover:bg-gray-50 transition">
                           <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -3047,6 +3066,8 @@
       const [customerSignature, setCustomerSignature] = useState('');
       const [signSubmitting, setSignSubmitting] = useState(false);
       const [signError, setSignError] = useState(null);
+      const [reportSort, setReportSort] = useState('date_desc');
+      const [reportStatusFilter, setReportStatusFilter] = useState('');
       const highlightRef = useRef(null);
 
       const slug = localStorage.getItem('portal_user') ? JSON.parse(localStorage.getItem('portal_user')).slug : null;
