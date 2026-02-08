@@ -2974,24 +2974,7 @@
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          fetch(`${API_URL}/api/client/service-reports/${ticket.serviceReport.id}/pdf`, {
-                                            headers: { 'Authorization': `Bearer ${token}` }
-                                          })
-                                          .then(resp => {
-                                            if (!resp.ok) throw new Error('Download failed');
-                                            return resp.blob();
-                                          })
-                                          .then(blob => {
-                                            const url = window.URL.createObjectURL(blob);
-                                            const a = document.createElement('a');
-                                            a.href = url;
-                                            a.download = `Service_Report_${ticket.serviceReport.serviceType || 'Report'}.pdf`;
-                                            document.body.appendChild(a);
-                                            a.click();
-                                            window.URL.revokeObjectURL(url);
-                                            a.remove();
-                                          })
-                                          .catch(err => alert('Failed to download report: ' + err.message));
+                                          window.open(`${API_URL}/api/client/service-reports/${ticket.serviceReport.id}/pdf?token=${encodeURIComponent(token)}`, '_blank');
                                         }}
                                         className="ml-3 flex items-center gap-1 px-3 py-1.5 bg-primary text-white text-xs font-medium rounded-lg hover:bg-accent transition whitespace-nowrap"
                                       >
@@ -3125,22 +3108,9 @@
           setSigningReportId(null);
           setCustomerSignature('');
           refreshDocuments();
-          // Auto-download the now-signed report
+          // Open the now-signed report PDF in a new tab
           try {
-            const pdfResp = await fetch(`${API_URL}/api/client/service-reports/${signedId}/pdf`, {
-              headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (pdfResp.ok) {
-              const blob = await pdfResp.blob();
-              const url = window.URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = 'Service_Report.pdf';
-              document.body.appendChild(a);
-              a.click();
-              window.URL.revokeObjectURL(url);
-              a.remove();
-            }
+            window.open(`${API_URL}/api/client/service-reports/${signedId}/pdf?token=${encodeURIComponent(token)}`, '_blank');
           } catch (dlErr) {
             console.error('Auto-download after signing failed:', dlErr);
           }
@@ -3234,24 +3204,7 @@
                               setSigningReportId(doc.serviceReportId);
                               return;
                             }
-                            fetch(`${API_URL}/api/client/service-reports/${doc.serviceReportId}/pdf`, {
-                              headers: { 'Authorization': `Bearer ${token}` }
-                            })
-                            .then(resp => {
-                              if (!resp.ok) throw new Error('Download failed');
-                              return resp.blob();
-                            })
-                            .then(blob => {
-                              const url = window.URL.createObjectURL(blob);
-                              const a = document.createElement('a');
-                              a.href = url;
-                              a.download = doc.title.replace(/[^a-zA-Z0-9\s-]/g, '') + '.pdf';
-                              document.body.appendChild(a);
-                              a.click();
-                              window.URL.revokeObjectURL(url);
-                              a.remove();
-                            })
-                            .catch(err => alert('Failed to download report: ' + err.message));
+                            window.open(`${API_URL}/api/client/service-reports/${doc.serviceReportId}/pdf?token=${encodeURIComponent(token)}`, '_blank');
                           }
                         };
 
