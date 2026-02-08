@@ -4577,10 +4577,8 @@ app.get('/api/client/service-reports/:id/pdf', authenticateToken, async (req, re
       return res.status(404).json({ error: 'Report not found' });
     }
 
-    // Require signature before allowing client to download
-    if (req.user.role === 'client' && report.status === 'signature_needed') {
-      return res.status(403).json({ error: 'Signature required before downloading this report. Please sign the report in the Files area first.' });
-    }
+    // Allow clients to preview unsigned reports (inline only), block attachment download
+    const isPreviewOnly = req.user.role === 'client' && report.status === 'signature_needed';
 
     // For clients, verify the report belongs to them
     if (req.user.role === config.ROLES.CLIENT) {
@@ -4615,9 +4613,18 @@ app.get('/api/client/service-reports/:id/pdf', authenticateToken, async (req, re
       }
     }
 
-    // If report has a Google Drive download link, redirect to it
-    if (report.driveWebContentLink) {
-      return res.redirect(report.driveWebContentLink);
+    // If report has a Google Drive download link and is NOT preview-only, try it first
+    // but verify the link is reachable — if 404, fall through to on-the-fly generation
+    if (report.driveWebContentLink && !isPreviewOnly) {
+      try {
+        const driveCheck = await fetch(report.driveWebContentLink, { method: 'HEAD', redirect: 'follow' });
+        if (driveCheck.ok || driveCheck.status === 302 || driveCheck.status === 301) {
+          return res.redirect(report.driveWebContentLink);
+        }
+        console.log(`Google Drive link returned ${driveCheck.status} for report ${report.id}, falling back to PDF generation`);
+      } catch (driveErr) {
+        console.log(`Google Drive link unreachable for report ${report.id}, falling back to PDF generation`);
+      }
     }
 
     // Generate PDF on-the-fly
@@ -4626,8 +4633,8 @@ app.get('/api/client/service-reports/:id/pdf', authenticateToken, async (req, re
     const reportDate = new Date(report.serviceCompletionDate || report.createdAt || Date.now()).toLocaleDateString().replace(/\//g, '-');
     const fileName = `Service_Report_${(report.clientFacilityName || 'Report').replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate}.pdf`;
 
-    // Use inline when opened via window.open (token in query) so PDF renders in browser/Replit webview
-    const disposition = req.query.token ? 'inline' : 'attachment';
+    // Preview-only (unsigned) = always inline; token-based open = inline; otherwise attachment
+    const disposition = (isPreviewOnly || req.query.token) ? 'inline' : 'attachment';
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `${disposition}; filename="${fileName}"`);
     res.setHeader('Content-Length', pdfBuffer.length);
