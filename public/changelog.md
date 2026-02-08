@@ -4,6 +4,13 @@
 
 ---
 
+### Version 2.12.0 - February 7, 2026
+
+#### New Features
+- Add Phase 8 auto-update integration across all views
+- Add multi-day validation tracking system
+
+
 ### Version 2.10.1 - February 7, 2026
 
 #### Changes
