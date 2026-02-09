@@ -4,6 +4,12 @@
 
 ---
 
+### Version 2.16.1 - February 9, 2026
+
+#### Bug Fixes
+- Fix PDF download 404 and allow preview before signing
+
+
 ### Version 2.15.0 - February 9, 2026
 
 #### New Features
