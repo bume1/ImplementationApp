@@ -4,6 +4,13 @@
 
 ---
 
+### Version 2.14.1 - February 9, 2026
+
+#### Bug Fixes
+- Fix client portal validation matching for NANI and similar clients
+- Fix active validations visibility for managers and validation date saving
+
+
 ### Version 2.13.0 - February 9, 2026
 
 #### New Features
