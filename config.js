@@ -67,7 +67,7 @@ const ALL_ROLES = Object.freeze([ROLES.ADMIN, ROLES.USER, ROLES.CLIENT, ROLES.VE
 // ---- Project & Task Statuses ----
 const PROJECT_STATUSES = Object.freeze(['active', 'paused', 'completed']);
 const SUBTASK_STATUSES = Object.freeze(['Pending', 'Complete', 'N/A']);
-const SERVICE_REPORT_STATUSES = Object.freeze(['assigned', 'in_progress', 'signature_needed', 'submitted']);
+const SERVICE_REPORT_STATUSES = Object.freeze(['assigned', 'in_progress', 'validation_in_progress', 'signature_needed', 'submitted']);
 
 // ---- Phases ----
 const STANDARD_PHASES = Object.freeze({

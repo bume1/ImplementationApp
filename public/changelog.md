@@ -50,6 +50,15 @@
 - Remove Pending Signatures tab, show pending status inline in Service Reports tab
 
 
+### Version 2.8.1 - February 6, 2026
+
+#### Bug Fixes
+- Update Service Portal dashboard metrics and fix service report visibility
+
+#### Changes
+- Replace Logo URL text input with file upload button in Client Portal Admin
+
+
 ### Version 2.8.0 - February 6, 2026
 
 #### New Features
