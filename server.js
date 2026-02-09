@@ -8426,15 +8426,23 @@ app.put('/api/service-reports/:id/segment', authenticateToken, requireServiceAcc
 
     const report = serviceReports[reportIndex];
 
-    // Only the assigned technician or report creator can add segments
+    // Only the assigned technician, report creator, admin, or manager can add segments
     const isOwner = String(report.technicianId) === String(req.user.id) ||
                     String(report.assignedToId) === String(req.user.id);
-    if (!isOwner && req.user.role !== config.ROLES.ADMIN) {
+    if (!isOwner && req.user.role !== config.ROLES.ADMIN && !req.user.isManager) {
       return res.status(403).json({ error: 'Not authorized to update this validation' });
     }
 
-    if (report.status !== 'validation_in_progress') {
+    // Allow adding segments to validation_in_progress or assigned Validations-type reports
+    const isValidationActive = report.status === 'validation_in_progress' ||
+      (report.serviceType === 'Validations' && ['assigned', 'in_progress'].includes(report.status));
+    if (!isValidationActive) {
       return res.status(400).json({ error: 'This validation is not in progress' });
+    }
+
+    // Auto-transition status to validation_in_progress when first segment is added
+    if (report.status !== 'validation_in_progress') {
+      serviceReports[reportIndex].status = 'validation_in_progress';
     }
 
     const { day, date, testsPerformed, results, observations, status } = req.body;
@@ -8502,7 +8510,7 @@ app.put('/api/service-reports/:id/complete-validation', authenticateToken, requi
 
     const isOwner = String(report.technicianId) === String(req.user.id) ||
                     String(report.assignedToId) === String(req.user.id);
-    if (!isOwner && req.user.role !== config.ROLES.ADMIN) {
+    if (!isOwner && req.user.role !== config.ROLES.ADMIN && !req.user.isManager) {
       return res.status(403).json({ error: 'Not authorized to complete this validation' });
     }
 
