@@ -4,6 +4,40 @@
 
 ---
 
+### Version 2.15.0 - February 9, 2026
+
+#### New Features
+- Broaden active validation filters and add missing response fields
+
+#### Changes
+- Populate clientSlug on all service reports for reliable client matching
+
+
+### Version 2.14.1 - February 9, 2026
+
+#### Bug Fixes
+- Fix client portal validation matching for NANI and similar clients
+- Fix active validations visibility for managers and validation date saving
+
+
+### Version 2.13.0 - February 9, 2026
+
+#### New Features
+- Add sort and filter controls to all report views across system
+
+#### Bug Fixes
+- Fix PDF download 404 and allow preview before signing
+
+#### Changes
+- Changelog.m
+
+
+### Version 2.12.1 - February 8, 2026
+
+#### Bug Fixes
+- Remove duplicate assigned reports banner, fix PDF download for Replit webview
+
+
 ### Version 2.12.0 - February 7, 2026
 
 #### New Features

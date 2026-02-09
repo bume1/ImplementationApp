@@ -507,6 +507,7 @@ async function pollHubSpotTickets() {
       }
 
       // Create the service report
+      const clientSlugResolved = await resolveClientSlug(ticket.companyName, ticket.companyId);
       const newReport = {
         id: uuidv4(),
         status: 'assigned',
@@ -516,6 +517,7 @@ async function pollHubSpotTickets() {
         assignedByName: 'HubSpot Polling',
         assignedAt: new Date().toISOString(),
         clientFacilityName: ticket.companyName || '',
+        clientSlug: clientSlugResolved,
         customerName: ticket.submittedBy || '',
         serviceProviderName: assignedToName,
         address: '',
@@ -969,6 +971,36 @@ const generateClientUserSlug = async (practiceName) => {
   const users = await getUsers();
   const existingSlugs = users.filter(u => u.slug).map(u => u.slug);
   return generateClientSlug(practiceName, existingSlugs);
+};
+
+// Resolve a clientFacilityName to its matching client slug
+// Uses bidirectional matching to handle name variations
+const resolveClientSlug = async (clientFacilityName, hubspotCompanyId) => {
+  if (!clientFacilityName && !hubspotCompanyId) return '';
+  const users = await getUsers();
+  const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT && u.slug);
+  const facilityLower = (clientFacilityName || '').toLowerCase().trim();
+
+  // 1. Match by hubspotCompanyId (most reliable)
+  if (hubspotCompanyId) {
+    const match = clientUsers.find(u => u.hubspotCompanyId && String(u.hubspotCompanyId) === String(hubspotCompanyId));
+    if (match) return match.slug;
+  }
+
+  // 2. Exact name match on practiceName
+  const exactMatch = clientUsers.find(u => (u.practiceName || '').toLowerCase().trim() === facilityLower);
+  if (exactMatch) return exactMatch.slug;
+
+  // 3. Bidirectional includes match
+  if (facilityLower) {
+    const includesMatch = clientUsers.find(u => {
+      const practice = (u.practiceName || '').toLowerCase().trim();
+      return practice && (practice.includes(facilityLower) || facilityLower.includes(practice));
+    });
+    if (includesMatch) return includesMatch.slug;
+  }
+
+  return '';
 };
 
 // Super Admin access - full system access (role === 'admin')
@@ -3878,6 +3910,7 @@ app.post('/api/webhook/hubspot/ticket-stage-change', async (req, res) => {
     }
 
     // Create the service report
+    const webhookClientSlug = await resolveClientSlug(ticket.companyName, ticket.companyId);
     const newReport = {
       id: uuidv4(),
       // Assignment info
@@ -3889,6 +3922,7 @@ app.post('/api/webhook/hubspot/ticket-stage-change', async (req, res) => {
       assignedAt: new Date().toISOString(),
       // Pre-filled info from HubSpot ticket
       clientFacilityName: ticket.companyName || '',
+      clientSlug: webhookClientSlug,
       customerName: ticket.submittedBy || '',
       serviceProviderName: assignedToName,
       address: '',
@@ -6972,9 +7006,12 @@ app.post('/api/service-reports', authenticateToken, requireServiceAccess, async 
     const reportData = req.body;
     const serviceReports = (await db.get('service_reports')) || [];
 
+    // Resolve clientSlug if not already provided
+    const resolvedSlug = reportData.clientSlug || await resolveClientSlug(reportData.clientFacilityName, reportData.hubspotCompanyId);
     const newReport = {
       id: uuidv4(),
       ...reportData,
+      clientSlug: resolvedSlug,
       technicianId: req.user.id,
       technicianName: req.user.name,
       createdAt: new Date().toISOString(),
@@ -7266,9 +7303,15 @@ app.get('/api/service-reports/active-validations', authenticateToken, requireSer
   try {
     const serviceReports = (await db.get('service_reports')) || [];
     const activeValidations = serviceReports.filter(r => {
-      if (r.status !== 'validation_in_progress') return false;
-      // Show to admin, or to the technician who owns it
-      if (req.user.role === config.ROLES.ADMIN) return true;
+      // Show Validations-type reports that are actively in progress
+      // (includes assigned/in_progress with validation dates, not just validation_in_progress)
+      const isValidationType = r.serviceType === 'Validations';
+      const hasValidationStatus = r.status === 'validation_in_progress';
+      const hasValidationDates = r.validationStartDate || r.validationEndDate;
+      const isActiveStatus = ['assigned', 'in_progress', 'validation_in_progress'].includes(r.status);
+      if (!((hasValidationStatus) || (isValidationType && hasValidationDates && isActiveStatus))) return false;
+      // Show to admin and managers, or to the technician who owns it
+      if (req.user.role === config.ROLES.ADMIN || req.user.isManager) return true;
       return String(r.technicianId) === String(req.user.id) ||
              String(r.assignedToId) === String(req.user.id);
     });
@@ -7374,7 +7417,9 @@ app.put('/api/service-reports/:id', authenticateToken, requireServiceAccess, asy
       'customerSignature', 'customerSignatureDate',
       'customerFirstName', 'customerLastName',
       'technicianFirstName', 'technicianLastName',
-      'technicianSignatureDate'
+      'technicianSignatureDate',
+      'validationStartDate', 'validationEndDate', 'expectedDays',
+      'validationResults', 'trainingProvided'
     ];
     const sanitizedReportUpdates = {};
     for (const key of serviceReportAllowedFields) {
@@ -7599,7 +7644,10 @@ app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
       managerNotes,
       photos,
       clientFiles,
-      serviceCompletionDate
+      serviceCompletionDate,
+      validationStartDate,
+      validationEndDate,
+      expectedDays
     } = req.body;
 
     if (!assignedToId || !clientFacilityName) {
@@ -7627,6 +7675,8 @@ app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
 
     const serviceReports = (await db.get('service_reports')) || [];
 
+    // Resolve clientSlug for reliable client matching
+    const assignClientSlug = await resolveClientSlug(clientFacilityName, hubspotCompanyId);
     const newReport = {
       id: uuidv4(),
       // Assignment info
@@ -7638,6 +7688,7 @@ app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
       assignedAt: new Date().toISOString(),
       // Pre-filled info by manager
       clientFacilityName,
+      clientSlug: assignClientSlug,
       customerName: customerName || '',
       serviceProviderName: assignedUser.name,
       address: address || '',
@@ -7652,6 +7703,10 @@ app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
       managerNotes: managerNotes || '',
       photos: photos || [], // Array of { id, url, name, uploadedAt }
       clientFiles: clientFiles || [], // Array of { id, url, name, uploadedAt }
+      // Validation dates (set by manager, adjustable by technician)
+      validationStartDate: validationStartDate || '',
+      validationEndDate: validationEndDate || '',
+      expectedDays: expectedDays ? parseInt(expectedDays) : null,
       // Technician fields (to be filled when completing)
       technicianId: null,
       technicianName: null,
@@ -7660,8 +7715,6 @@ app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
       solution: '',
       outstandingIssues: '',
       validationResults: '',
-      validationStartDate: '',
-      validationEndDate: '',
       trainingProvided: '',
       testProcedures: '',
       recommendations: '',
@@ -8323,9 +8376,12 @@ app.post('/api/service-reports/start-validation', authenticateToken, requireServ
       submittedAt: new Date().toISOString()
     };
 
+    // Resolve clientSlug if not already provided
+    const validationClientSlug = reportData.clientSlug || await resolveClientSlug(reportData.clientFacilityName, reportData.hubspotCompanyId);
     const newReport = {
       id: uuidv4(),
       ...reportData,
+      clientSlug: validationClientSlug,
       status: 'validation_in_progress',
       serviceType: 'Validations',
       validationSegments: [firstSegment],
@@ -8377,15 +8433,23 @@ app.put('/api/service-reports/:id/segment', authenticateToken, requireServiceAcc
 
     const report = serviceReports[reportIndex];
 
-    // Only the assigned technician or report creator can add segments
+    // Only the assigned technician, report creator, admin, or manager can add segments
     const isOwner = String(report.technicianId) === String(req.user.id) ||
                     String(report.assignedToId) === String(req.user.id);
-    if (!isOwner && req.user.role !== config.ROLES.ADMIN) {
+    if (!isOwner && req.user.role !== config.ROLES.ADMIN && !req.user.isManager) {
       return res.status(403).json({ error: 'Not authorized to update this validation' });
     }
 
-    if (report.status !== 'validation_in_progress') {
+    // Allow adding segments to validation_in_progress or assigned Validations-type reports
+    const isValidationActive = report.status === 'validation_in_progress' ||
+      (report.serviceType === 'Validations' && ['assigned', 'in_progress'].includes(report.status));
+    if (!isValidationActive) {
       return res.status(400).json({ error: 'This validation is not in progress' });
+    }
+
+    // Auto-transition status to validation_in_progress when first segment is added
+    if (report.status !== 'validation_in_progress') {
+      serviceReports[reportIndex].status = 'validation_in_progress';
     }
 
     const { day, date, testsPerformed, results, observations, status } = req.body;
@@ -8453,7 +8517,7 @@ app.put('/api/service-reports/:id/complete-validation', authenticateToken, requi
 
     const isOwner = String(report.technicianId) === String(req.user.id) ||
                     String(report.assignedToId) === String(req.user.id);
-    if (!isOwner && req.user.role !== config.ROLES.ADMIN) {
+    if (!isOwner && req.user.role !== config.ROLES.ADMIN && !req.user.isManager) {
       return res.status(403).json({ error: 'Not authorized to complete this validation' });
     }
 
@@ -8634,23 +8698,52 @@ app.get('/api/client-portal/validation-progress', authenticateToken, async (req,
     const serviceReports = (await db.get('service_reports')) || [];
     const users = (await db.get('users')) || [];
     const clientUser = users.find(u => u.id === req.user.id);
-    const clientFacility = (clientUser?.practiceName || clientUser?.name || '').toLowerCase();
+    const clientFacility = (clientUser?.practiceName || clientUser?.name || '').toLowerCase().trim();
     const clientCompanyId = clientUser?.hubspotCompanyId || '';
 
+    // Build list of names to match against (same pattern as client service reports endpoint)
+    const clientNames = [clientUser?.practiceName, clientUser?.name]
+      .map(n => (n || '').toLowerCase().trim())
+      .filter(Boolean);
+    const uniqueClientNames = [...new Set(clientNames)];
+
+    // Also check client_documents for slug-linked reports
+    const clientDocuments = (await db.get('client_documents')) || [];
+    const slugLinkedReportIds = new Set(
+      clientDocuments
+        .filter(d => d.active && d.serviceReportId && (d.slug === clientSlug || d.shareWithAll))
+        .map(d => d.serviceReportId)
+    );
+
     const validations = serviceReports.filter(r => {
-      if (r.serviceType !== 'Validations') return false;
-      if (r.status !== 'validation_in_progress') return false;
-      // Match by company ID or facility name
+      // Include Validations-type reports that are active (not just validation_in_progress)
+      const isValidationType = r.serviceType === 'Validations';
+      const hasValidationStatus = r.status === 'validation_in_progress';
+      const hasValidationDates = r.validationStartDate || r.validationEndDate;
+      const isActiveStatus = ['assigned', 'in_progress', 'validation_in_progress'].includes(r.status);
+      if (!((hasValidationStatus) || (isValidationType && hasValidationDates && isActiveStatus))) return false;
+      // Primary: match by clientSlug (most reliable)
+      if (r.clientSlug && r.clientSlug === clientSlug) return true;
+      // Match by company ID
       if (clientCompanyId && r.hubspotCompanyId && String(r.hubspotCompanyId) === String(clientCompanyId)) return true;
-      if (clientFacility && r.clientFacilityName?.toLowerCase() === clientFacility) return true;
+      // Match by slug cross-reference via client_documents
+      if (slugLinkedReportIds.has(r.id)) return true;
+      // Fallback: bidirectional name matching
+      const reportClient = (r.clientFacilityName || '').toLowerCase().trim();
+      if (reportClient && uniqueClientNames.some(name => reportClient.includes(name) || name.includes(reportClient))) return true;
       return false;
     }).map(r => ({
       id: r.id,
-      technicianName: r.technicianName,
+      technicianName: r.technicianName || r.assignedToName || 'Scheduled',
       analyzerModel: r.analyzerModel,
       analyzerSerialNumber: r.analyzerSerialNumber,
       validationStartDate: r.validationStartDate,
-      expectedDays: r.expectedDays,
+      validationEndDate: r.validationEndDate,
+      expectedDays: r.expectedDays || (r.validationStartDate && r.validationEndDate
+        ? Math.ceil(Math.abs(new Date(r.validationEndDate) - new Date(r.validationStartDate)) / (1000 * 60 * 60 * 24)) + 1
+        : null),
+      status: r.status,
+      serviceType: r.serviceType,
       daysLogged: Array.isArray(r.validationSegments) ? r.validationSegments.length : 0,
       segments: (Array.isArray(r.validationSegments) ? r.validationSegments : []).map(s => ({
         day: s.day,
@@ -8660,6 +8753,7 @@ app.get('/api/client-portal/validation-progress', authenticateToken, async (req,
         observations: s.observations,
         status: s.status
       })),
+      createdAt: r.createdAt,
       updatedAt: r.updatedAt
     }));
 
@@ -8680,14 +8774,23 @@ app.get('/api/projects/:projectId/active-validations', authenticateToken, async 
     }
 
     const serviceReports = (await db.get('service_reports')) || [];
-    const clientName = (project.clientName || '').toLowerCase();
+    const clientName = (project.clientName || '').toLowerCase().trim();
     const companyId = project.hubspotRecordId || project.hubspotCompanyId || '';
+    const projectSlug = project.clientLinkSlug || '';
 
     const validations = serviceReports.filter(r => {
-      if (r.serviceType !== 'Validations') return false;
-      if (r.status !== 'validation_in_progress') return false;
+      // Include Validations-type reports that are active (not just validation_in_progress)
+      const isValidationType = r.serviceType === 'Validations';
+      const hasValidationStatus = r.status === 'validation_in_progress';
+      const hasValidationDates = r.validationStartDate || r.validationEndDate;
+      const isActiveStatus = ['assigned', 'in_progress', 'validation_in_progress'].includes(r.status);
+      if (!((hasValidationStatus) || (isValidationType && hasValidationDates && isActiveStatus))) return false;
+      // Primary: match by clientSlug (most reliable)
+      if (r.clientSlug && projectSlug && r.clientSlug === projectSlug) return true;
       if (companyId && r.hubspotCompanyId && String(r.hubspotCompanyId) === String(companyId)) return true;
-      if (clientName && r.clientFacilityName?.toLowerCase() === clientName) return true;
+      // Fallback: bidirectional name matching
+      const reportClient = (r.clientFacilityName || '').toLowerCase().trim();
+      if (clientName && reportClient && (reportClient.includes(clientName) || clientName.includes(reportClient))) return true;
       return false;
     }).map(r => ({
       id: r.id,
@@ -9765,6 +9868,45 @@ app.listen(PORT, () => {
           console.log('✅ Migration: Fixed report 973c316c status to signature_needed (blank canvas signature)');
         }
       }
+      // Migration 6: Backfill clientSlug on existing service reports
+      // Resolves the name-mismatch problem by linking reports to client slugs
+      const reportsNeedingSlug = serviceReports.filter(r => !r.clientSlug && r.clientFacilityName);
+      if (reportsNeedingSlug.length > 0) {
+        const allUsers = (await db.get('users')) || [];
+        const clientUsers = allUsers.filter(u => u.role === config.ROLES.CLIENT && u.slug);
+        let slugsAdded = 0;
+        for (const report of reportsNeedingSlug) {
+          const facilityLower = (report.clientFacilityName || '').toLowerCase().trim();
+          let matchedSlug = '';
+          // Match by hubspotCompanyId
+          if (report.hubspotCompanyId) {
+            const match = clientUsers.find(u => u.hubspotCompanyId && String(u.hubspotCompanyId) === String(report.hubspotCompanyId));
+            if (match) matchedSlug = match.slug;
+          }
+          // Exact name match
+          if (!matchedSlug) {
+            const exact = clientUsers.find(u => (u.practiceName || '').toLowerCase().trim() === facilityLower);
+            if (exact) matchedSlug = exact.slug;
+          }
+          // Bidirectional includes
+          if (!matchedSlug && facilityLower) {
+            const incl = clientUsers.find(u => {
+              const p = (u.practiceName || '').toLowerCase().trim();
+              return p && (p.includes(facilityLower) || facilityLower.includes(p));
+            });
+            if (incl) matchedSlug = incl.slug;
+          }
+          if (matchedSlug) {
+            const idx = serviceReports.findIndex(r => r.id === report.id);
+            if (idx !== -1) { serviceReports[idx].clientSlug = matchedSlug; slugsAdded++; }
+          }
+        }
+        if (slugsAdded > 0) {
+          await db.set('service_reports', serviceReports);
+          console.log(`✅ Migration: Backfilled clientSlug on ${slugsAdded}/${reportsNeedingSlug.length} service reports`);
+        }
+      }
+
     } catch (e) {
       console.error('Migration error (non-blocking):', e.message);
     }
