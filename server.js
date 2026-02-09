@@ -7592,7 +7592,10 @@ app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
       managerNotes,
       photos,
       clientFiles,
-      serviceCompletionDate
+      serviceCompletionDate,
+      validationStartDate,
+      validationEndDate,
+      expectedDays
     } = req.body;
 
     if (!assignedToId || !clientFacilityName) {
@@ -7645,6 +7648,10 @@ app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
       managerNotes: managerNotes || '',
       photos: photos || [], // Array of { id, url, name, uploadedAt }
       clientFiles: clientFiles || [], // Array of { id, url, name, uploadedAt }
+      // Validation dates (set by manager, adjustable by technician)
+      validationStartDate: validationStartDate || '',
+      validationEndDate: validationEndDate || '',
+      expectedDays: expectedDays ? parseInt(expectedDays) : null,
       // Technician fields (to be filled when completing)
       technicianId: null,
       technicianName: null,
@@ -7653,8 +7660,6 @@ app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
       solution: '',
       outstandingIssues: '',
       validationResults: '',
-      validationStartDate: '',
-      validationEndDate: '',
       trainingProvided: '',
       testProcedures: '',
       recommendations: '',
