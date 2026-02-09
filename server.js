@@ -7259,7 +7259,13 @@ app.get('/api/service-reports/active-validations', authenticateToken, requireSer
   try {
     const serviceReports = (await db.get('service_reports')) || [];
     const activeValidations = serviceReports.filter(r => {
-      if (r.status !== 'validation_in_progress') return false;
+      // Show Validations-type reports that are actively in progress
+      // (includes assigned/in_progress with validation dates, not just validation_in_progress)
+      const isValidationType = r.serviceType === 'Validations';
+      const hasValidationStatus = r.status === 'validation_in_progress';
+      const hasValidationDates = r.validationStartDate || r.validationEndDate;
+      const isActiveStatus = ['assigned', 'in_progress', 'validation_in_progress'].includes(r.status);
+      if (!((hasValidationStatus) || (isValidationType && hasValidationDates && isActiveStatus))) return false;
       // Show to admin and managers, or to the technician who owns it
       if (req.user.role === config.ROLES.ADMIN || req.user.isManager) return true;
       return String(r.technicianId) === String(req.user.id) ||
@@ -8652,8 +8658,12 @@ app.get('/api/client-portal/validation-progress', authenticateToken, async (req,
     );
 
     const validations = serviceReports.filter(r => {
-      if (r.serviceType !== 'Validations') return false;
-      if (r.status !== 'validation_in_progress') return false;
+      // Include Validations-type reports that are active (not just validation_in_progress)
+      const isValidationType = r.serviceType === 'Validations';
+      const hasValidationStatus = r.status === 'validation_in_progress';
+      const hasValidationDates = r.validationStartDate || r.validationEndDate;
+      const isActiveStatus = ['assigned', 'in_progress', 'validation_in_progress'].includes(r.status);
+      if (!((hasValidationStatus) || (isValidationType && hasValidationDates && isActiveStatus))) return false;
       // Match by company ID
       if (clientCompanyId && r.hubspotCompanyId && String(r.hubspotCompanyId) === String(clientCompanyId)) return true;
       // Match by slug cross-reference via client_documents
@@ -8664,11 +8674,16 @@ app.get('/api/client-portal/validation-progress', authenticateToken, async (req,
       return false;
     }).map(r => ({
       id: r.id,
-      technicianName: r.technicianName,
+      technicianName: r.technicianName || r.assignedToName || 'Scheduled',
       analyzerModel: r.analyzerModel,
       analyzerSerialNumber: r.analyzerSerialNumber,
       validationStartDate: r.validationStartDate,
-      expectedDays: r.expectedDays,
+      validationEndDate: r.validationEndDate,
+      expectedDays: r.expectedDays || (r.validationStartDate && r.validationEndDate
+        ? Math.ceil(Math.abs(new Date(r.validationEndDate) - new Date(r.validationStartDate)) / (1000 * 60 * 60 * 24)) + 1
+        : null),
+      status: r.status,
+      serviceType: r.serviceType,
       daysLogged: Array.isArray(r.validationSegments) ? r.validationSegments.length : 0,
       segments: (Array.isArray(r.validationSegments) ? r.validationSegments : []).map(s => ({
         day: s.day,
@@ -8678,6 +8693,7 @@ app.get('/api/client-portal/validation-progress', authenticateToken, async (req,
         observations: s.observations,
         status: s.status
       })),
+      createdAt: r.createdAt,
       updatedAt: r.updatedAt
     }));
 
@@ -8702,8 +8718,12 @@ app.get('/api/projects/:projectId/active-validations', authenticateToken, async 
     const companyId = project.hubspotRecordId || project.hubspotCompanyId || '';
 
     const validations = serviceReports.filter(r => {
-      if (r.serviceType !== 'Validations') return false;
-      if (r.status !== 'validation_in_progress') return false;
+      // Include Validations-type reports that are active (not just validation_in_progress)
+      const isValidationType = r.serviceType === 'Validations';
+      const hasValidationStatus = r.status === 'validation_in_progress';
+      const hasValidationDates = r.validationStartDate || r.validationEndDate;
+      const isActiveStatus = ['assigned', 'in_progress', 'validation_in_progress'].includes(r.status);
+      if (!((hasValidationStatus) || (isValidationType && hasValidationDates && isActiveStatus))) return false;
       if (companyId && r.hubspotCompanyId && String(r.hubspotCompanyId) === String(companyId)) return true;
       // Bidirectional name matching (handles partial name matches like project "Indiana Kidney Specialists" vs report "Indiana Kidney Specialists NANI")
       const reportClient = (r.clientFacilityName || '').toLowerCase().trim();
