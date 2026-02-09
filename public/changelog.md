@@ -4,6 +4,15 @@
 
 ---
 
+### Version 2.15.0 - February 9, 2026
+
+#### New Features
+- Broaden active validation filters and add missing response fields
+
+#### Changes
+- Populate clientSlug on all service reports for reliable client matching
+
+
 ### Version 2.14.1 - February 9, 2026
 
 #### Bug Fixes
