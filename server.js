@@ -975,9 +975,9 @@ const generateClientUserSlug = async (practiceName) => {
 
 // Resolve a clientFacilityName to its matching client slug
 // Uses bidirectional matching to handle name variations
-const resolveClientSlug = async (clientFacilityName, hubspotCompanyId) => {
+const resolveClientSlug = async (clientFacilityName, hubspotCompanyId, existingUsers) => {
   if (!clientFacilityName && !hubspotCompanyId) return '';
-  const users = await getUsers();
+  const users = existingUsers || await getUsers();
   const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT && u.slug);
   const facilityLower = (clientFacilityName || '').toLowerCase().trim();
 
@@ -4327,7 +4327,11 @@ app.get('/api/client/service-reports', authenticateToken, async (req, res) => {
     // 2. Or bidirectional name matching (practiceName or user name vs clientFacilityName)
     // 3. Or cross-referenced via client_documents linked to this client's slug
     const clientReports = serviceReports.filter(report => {
-      // Match by hubspotCompanyId first
+      // Primary: match by clientSlug (most reliable)
+      if (clientSlug && report.clientSlug && report.clientSlug === clientSlug) {
+        return true;
+      }
+      // Match by hubspotCompanyId
       if (hubspotCompanyId && report.hubspotCompanyId === hubspotCompanyId) {
         return true;
       }
@@ -4453,7 +4457,10 @@ app.put('/api/client/service-reports/:id/sign', authenticateToken, async (req, r
 
     // Verify this report belongs to the client
     let isClientReport = false;
-    if (hubspotCompanyId && report.hubspotCompanyId === hubspotCompanyId) {
+    if (clientSlug && report.clientSlug && report.clientSlug === clientSlug) {
+      isClientReport = true;
+    }
+    if (!isClientReport && hubspotCompanyId && report.hubspotCompanyId === hubspotCompanyId) {
       isClientReport = true;
     }
     if (!isClientReport) {
@@ -7647,29 +7654,24 @@ app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Assigned technician and client facility name are required' });
     }
 
-    console.log('=== ASSIGN REPORT DEBUG ===');
-    console.log('assignedToId from request:', assignedToId, 'Type:', typeof assignedToId);
+    // Parallelize DB reads for performance
+    const [users, serviceReports] = await Promise.all([
+      db.get('users').then(u => u || []),
+      db.get('service_reports').then(r => r || [])
+    ]);
 
     // Verify the assigned user exists and has service access
-    const users = (await db.get('users')) || [];
-    console.log('Total users in DB:', users.length);
-
-    // Use string comparison for finding user
     const assignedUser = users.find(u => String(u.id) === String(assignedToId));
-    console.log('Found assigned user:', assignedUser ? assignedUser.name : 'NOT FOUND');
 
     if (!assignedUser) {
-      console.log('Available user IDs:', users.map(u => `${u.id} (${typeof u.id})`));
       return res.status(400).json({ error: 'Assigned user not found' });
     }
     if (assignedUser.role !== config.ROLES.VENDOR && assignedUser.role !== config.ROLES.ADMIN && !assignedUser.hasServicePortalAccess) {
       return res.status(400).json({ error: 'Assigned user does not have service portal access' });
     }
 
-    const serviceReports = (await db.get('service_reports')) || [];
-
-    // Resolve clientSlug for reliable client matching
-    const assignClientSlug = await resolveClientSlug(clientFacilityName, hubspotCompanyId);
+    // Resolve clientSlug (pass existing users to avoid redundant DB read)
+    const assignClientSlug = await resolveClientSlug(clientFacilityName, hubspotCompanyId, users);
     const newReport = {
       id: uuidv4(),
       // Assignment info
@@ -7724,27 +7726,18 @@ app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
     serviceReports.push(newReport);
     await db.set('service_reports', serviceReports);
 
-    console.log('Created report:', {
-      id: newReport.id.substring(0, 8),
-      assignedToId: newReport.assignedToId,
-      assignedToIdType: typeof newReport.assignedToId,
-      assignedToName: newReport.assignedToName,
-      status: newReport.status,
-      client: newReport.clientFacilityName
-    });
-    console.log('=== END ASSIGN DEBUG ===');
+    // Send response immediately, log activity in background
+    res.json(newReport);
 
-    // Log activity
-    await logActivity(
+    // Non-blocking activity log
+    logActivity(
       req.user.id,
       req.user.name,
       'service_report_assigned',
       'service_report',
       newReport.id,
       { clientName: clientFacilityName, assignedTo: assignedUser.name }
-    );
-
-    res.json(newReport);
+    ).catch(err => console.error('Activity log error:', err));
   } catch (error) {
     console.error('Assign service report error:', error);
     res.status(500).json({ error: 'Server error' });
@@ -8541,9 +8534,12 @@ app.put('/api/service-reports/:id/complete-validation', authenticateToken, requi
     const validationStartDate = sortedDates[0];
     const validationEndDate = sortedDates[sortedDates.length - 1];
 
-    // Check customer signature
-    const hasCustomerSignature = customerSignature && typeof customerSignature === 'string'
+    // Check customer signature (new OR existing)
+    const hasNewCustomerSignature = customerSignature && typeof customerSignature === 'string'
       && customerSignature.startsWith('data:image') && customerSignature.length > 7000;
+    const hasExistingCustomerSignature = report.customerSignature && typeof report.customerSignature === 'string'
+      && report.customerSignature.startsWith('data:image') && report.customerSignature.length > 7000;
+    const hasCustomerSignature = hasNewCustomerSignature || hasExistingCustomerSignature;
     const completionStatus = hasCustomerSignature ? 'submitted' : 'signature_needed';
 
     serviceReports[reportIndex] = {
@@ -8558,10 +8554,10 @@ app.put('/api/service-reports/:id/complete-validation', authenticateToken, requi
       technicianSignatureDate: technicianSignatureDate || new Date().toISOString().split('T')[0],
       technicianFirstName: technicianFirstName || req.user.name.split(' ')[0],
       technicianLastName: technicianLastName || req.user.name.split(' ').slice(1).join(' '),
-      customerSignature: customerSignature || '',
-      customerSignatureDate: customerSignatureDate || '',
-      customerFirstName: customerFirstName || '',
-      customerLastName: customerLastName || '',
+      customerSignature: customerSignature || report.customerSignature || '',
+      customerSignatureDate: customerSignatureDate || report.customerSignatureDate || '',
+      customerFirstName: customerFirstName || report.customerFirstName || '',
+      customerLastName: customerLastName || report.customerLastName || '',
       serviceCompletionDate: validationEndDate,
       completedAt: new Date().toISOString(),
       submittedAt: hasCustomerSignature ? new Date().toISOString() : null,
@@ -8771,16 +8767,22 @@ app.get('/api/projects/:projectId/active-validations', authenticateToken, async 
     const companyId = project.hubspotRecordId || project.hubspotCompanyId || '';
     const projectSlug = project.clientLinkSlug || '';
 
+    const projectDealId = project.hubspotDealId || '';
+
     const validations = serviceReports.filter(r => {
       // Include Validations-type reports that are active (not just validation_in_progress)
       const isValidationType = r.serviceType === 'Validations';
       const hasValidationStatus = r.status === 'validation_in_progress';
       const hasValidationDates = r.validationStartDate || r.validationEndDate;
       const isActiveStatus = ['assigned', 'in_progress', 'validation_in_progress'].includes(r.status);
-      if (!((hasValidationStatus) || (isValidationType && hasValidationDates && isActiveStatus))) return false;
+      // Also include signature_needed and submitted Validations for visibility
+      const isValidationReport = isValidationType && ['assigned', 'in_progress', 'validation_in_progress', 'signature_needed', 'submitted'].includes(r.status);
+      if (!((hasValidationStatus) || (isValidationType && hasValidationDates && isActiveStatus) || isValidationReport)) return false;
       // Primary: match by clientSlug (most reliable)
       if (r.clientSlug && projectSlug && r.clientSlug === projectSlug) return true;
       if (companyId && r.hubspotCompanyId && String(r.hubspotCompanyId) === String(companyId)) return true;
+      // Match by deal ID
+      if (projectDealId && r.hubspotDealId && String(r.hubspotDealId) === String(projectDealId)) return true;
       // Fallback: bidirectional name matching
       const reportClient = (r.clientFacilityName || '').toLowerCase().trim();
       if (clientName && reportClient && (reportClient.includes(clientName) || clientName.includes(reportClient))) return true;
