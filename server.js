@@ -7260,8 +7260,8 @@ app.get('/api/service-reports/active-validations', authenticateToken, requireSer
     const serviceReports = (await db.get('service_reports')) || [];
     const activeValidations = serviceReports.filter(r => {
       if (r.status !== 'validation_in_progress') return false;
-      // Show to admin, or to the technician who owns it
-      if (req.user.role === config.ROLES.ADMIN) return true;
+      // Show to admin and managers, or to the technician who owns it
+      if (req.user.role === config.ROLES.ADMIN || req.user.isManager) return true;
       return String(r.technicianId) === String(req.user.id) ||
              String(r.assignedToId) === String(req.user.id);
     });
@@ -7367,7 +7367,9 @@ app.put('/api/service-reports/:id', authenticateToken, requireServiceAccess, asy
       'customerSignature', 'customerSignatureDate',
       'customerFirstName', 'customerLastName',
       'technicianFirstName', 'technicianLastName',
-      'technicianSignatureDate'
+      'technicianSignatureDate',
+      'validationStartDate', 'validationEndDate', 'expectedDays',
+      'validationResults', 'trainingProvided'
     ];
     const sanitizedReportUpdates = {};
     for (const key of serviceReportAllowedFields) {
