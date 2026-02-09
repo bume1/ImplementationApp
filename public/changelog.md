@@ -4,6 +4,18 @@
 
 ---
 
+### Version 2.13.0 - February 9, 2026
+
+#### New Features
+- Add sort and filter controls to all report views across system
+
+#### Bug Fixes
+- Fix PDF download 404 and allow preview before signing
+
+#### Changes
+- Changelog.m
+
+
 ### Version 2.12.1 - February 8, 2026
 
 #### Bug Fixes

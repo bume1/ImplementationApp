@@ -7260,8 +7260,8 @@ app.get('/api/service-reports/active-validations', authenticateToken, requireSer
     const serviceReports = (await db.get('service_reports')) || [];
     const activeValidations = serviceReports.filter(r => {
       if (r.status !== 'validation_in_progress') return false;
-      // Show to admin, or to the technician who owns it
-      if (req.user.role === config.ROLES.ADMIN) return true;
+      // Show to admin and managers, or to the technician who owns it
+      if (req.user.role === config.ROLES.ADMIN || req.user.isManager) return true;
       return String(r.technicianId) === String(req.user.id) ||
              String(r.assignedToId) === String(req.user.id);
     });
@@ -7367,7 +7367,9 @@ app.put('/api/service-reports/:id', authenticateToken, requireServiceAccess, asy
       'customerSignature', 'customerSignatureDate',
       'customerFirstName', 'customerLastName',
       'technicianFirstName', 'technicianLastName',
-      'technicianSignatureDate'
+      'technicianSignatureDate',
+      'validationStartDate', 'validationEndDate', 'expectedDays',
+      'validationResults', 'trainingProvided'
     ];
     const sanitizedReportUpdates = {};
     for (const key of serviceReportAllowedFields) {
@@ -8632,15 +8634,33 @@ app.get('/api/client-portal/validation-progress', authenticateToken, async (req,
     const serviceReports = (await db.get('service_reports')) || [];
     const users = (await db.get('users')) || [];
     const clientUser = users.find(u => u.id === req.user.id);
-    const clientFacility = (clientUser?.practiceName || clientUser?.name || '').toLowerCase();
+    const clientFacility = (clientUser?.practiceName || clientUser?.name || '').toLowerCase().trim();
     const clientCompanyId = clientUser?.hubspotCompanyId || '';
+
+    // Build list of names to match against (same pattern as client service reports endpoint)
+    const clientNames = [clientUser?.practiceName, clientUser?.name]
+      .map(n => (n || '').toLowerCase().trim())
+      .filter(Boolean);
+    const uniqueClientNames = [...new Set(clientNames)];
+
+    // Also check client_documents for slug-linked reports
+    const clientDocuments = (await db.get('client_documents')) || [];
+    const slugLinkedReportIds = new Set(
+      clientDocuments
+        .filter(d => d.active && d.serviceReportId && (d.slug === clientSlug || d.shareWithAll))
+        .map(d => d.serviceReportId)
+    );
 
     const validations = serviceReports.filter(r => {
       if (r.serviceType !== 'Validations') return false;
       if (r.status !== 'validation_in_progress') return false;
-      // Match by company ID or facility name
+      // Match by company ID
       if (clientCompanyId && r.hubspotCompanyId && String(r.hubspotCompanyId) === String(clientCompanyId)) return true;
-      if (clientFacility && r.clientFacilityName?.toLowerCase() === clientFacility) return true;
+      // Match by slug cross-reference via client_documents
+      if (slugLinkedReportIds.has(r.id)) return true;
+      // Bidirectional name matching (handles "Indiana Kidney Specialists" vs "Indiana Kidney Specialists NANI")
+      const reportClient = (r.clientFacilityName || '').toLowerCase().trim();
+      if (reportClient && uniqueClientNames.some(name => reportClient.includes(name) || name.includes(reportClient))) return true;
       return false;
     }).map(r => ({
       id: r.id,
@@ -8678,14 +8698,16 @@ app.get('/api/projects/:projectId/active-validations', authenticateToken, async 
     }
 
     const serviceReports = (await db.get('service_reports')) || [];
-    const clientName = (project.clientName || '').toLowerCase();
+    const clientName = (project.clientName || '').toLowerCase().trim();
     const companyId = project.hubspotRecordId || project.hubspotCompanyId || '';
 
     const validations = serviceReports.filter(r => {
       if (r.serviceType !== 'Validations') return false;
       if (r.status !== 'validation_in_progress') return false;
       if (companyId && r.hubspotCompanyId && String(r.hubspotCompanyId) === String(companyId)) return true;
-      if (clientName && r.clientFacilityName?.toLowerCase() === clientName) return true;
+      // Bidirectional name matching (handles partial name matches like project "Indiana Kidney Specialists" vs report "Indiana Kidney Specialists NANI")
+      const reportClient = (r.clientFacilityName || '').toLowerCase().trim();
+      if (clientName && reportClient && (reportClient.includes(clientName) || clientName.includes(reportClient))) return true;
       return false;
     }).map(r => ({
       id: r.id,
