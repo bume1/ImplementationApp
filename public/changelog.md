@@ -4,6 +4,12 @@
 
 ---
 
+### Version 2.16.2 - February 10, 2026
+
+#### Improvements
+- Improve client portal sign out process to ensure full logout
+
+
 ### Version 2.16.1 - February 9, 2026
 
 #### Bug Fixes
