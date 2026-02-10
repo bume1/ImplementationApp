@@ -3971,8 +3971,19 @@ app.get('/api/client/service-reports/:id/pdf', authenticateToken, async (req, re
       return res.status(403).json({ error: 'Access denied' });
     }
 
+    // Search in service_reports first, then validation_reports as fallback
     const serviceReports = (await db.get('service_reports')) || [];
-    const report = serviceReports.find(r => r.id === req.params.id);
+    let report = serviceReports.find(r => r.id === req.params.id);
+    let isValidationReport = false;
+
+    if (!report) {
+      // Try validation_reports collection
+      const validationReports = (await db.get('validation_reports')) || [];
+      report = validationReports.find(r => r.id === req.params.id);
+      if (report) {
+        isValidationReport = true;
+      }
+    }
 
     if (!report) {
       return res.status(404).json({ error: 'Report not found' });
@@ -4003,11 +4014,19 @@ app.get('/api/client/service-reports/:id/pdf', authenticateToken, async (req, re
       return res.redirect(report.driveWebContentLink);
     }
 
-    // Generate PDF on-the-fly
-    const pdfBuffer = await pdfGenerator.generateServiceReportPDF(report, report.technicianName || report.serviceProviderName || 'N/A');
+    // Generate PDF on-the-fly using appropriate generator
+    let pdfBuffer;
+    const techName = report.technicianName || report.serviceProviderName || 'N/A';
 
-    const reportDate = new Date(report.serviceCompletionDate || report.createdAt || Date.now()).toLocaleDateString().replace(/\//g, '-');
-    const fileName = `Service_Report_${(report.clientFacilityName || 'Report').replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate}.pdf`;
+    if (isValidationReport && typeof pdfGenerator.generateValidationReportPDF === 'function') {
+      pdfBuffer = await pdfGenerator.generateValidationReportPDF(report, techName);
+    } else {
+      pdfBuffer = await pdfGenerator.generateServiceReportPDF(report, techName);
+    }
+
+    const reportDate = new Date(report.serviceCompletionDate || report.startDate || report.createdAt || Date.now()).toLocaleDateString().replace(/\//g, '-');
+    const reportTypeName = isValidationReport ? 'Validation_Report' : 'Service_Report';
+    const fileName = `${reportTypeName}_${(report.clientFacilityName || 'Report').replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate}.pdf`;
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
@@ -6544,6 +6563,165 @@ app.get('/api/service-reports/assigned', authenticateToken, requireServiceAccess
   }
 });
 
+// ============== VALIDATION DAY-OVER-DAY ENTRIES ==============
+
+// Get day entries for a service report (validation type)
+app.get('/api/service-reports/:id/day-entries', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    const report = serviceReports.find(r => r.id === req.params.id);
+
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    // Verify access: assigned tech or admin
+    const isAssigned = String(report.assignedToId) === String(req.user.id);
+    const isTech = String(report.technicianId) === String(req.user.id);
+    if (!isAssigned && !isTech && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Not authorized to view this report' });
+    }
+
+    res.json(report.dayEntries || []);
+  } catch (error) {
+    console.error('Get day entries error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Add a day entry to a service report (validation type)
+app.post('/api/service-reports/:id/day-entries', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = serviceReports[reportIndex];
+
+    // Verify access: assigned tech or admin
+    const isAssigned = String(report.assignedToId) === String(req.user.id);
+    if (!isAssigned && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Not authorized to modify this report' });
+    }
+
+    const { date, dayNumber, readings, notes, testsPerformed, results, issues } = req.body;
+
+    if (!date) {
+      return res.status(400).json({ error: 'Date is required for a day entry' });
+    }
+
+    const dayEntry = {
+      id: uuidv4(),
+      date,
+      dayNumber: dayNumber || ((report.dayEntries || []).length + 1),
+      readings: readings || '',
+      notes: notes || '',
+      testsPerformed: testsPerformed || '',
+      results: results || '',
+      issues: issues || '',
+      technicianId: req.user.id,
+      technicianName: req.user.name,
+      createdAt: new Date().toISOString()
+    };
+
+    if (!serviceReports[reportIndex].dayEntries) {
+      serviceReports[reportIndex].dayEntries = [];
+    }
+    serviceReports[reportIndex].dayEntries.push(dayEntry);
+    serviceReports[reportIndex].updatedAt = new Date().toISOString();
+    await db.set('service_reports', serviceReports);
+
+    await logActivity(
+      req.user.id,
+      req.user.name,
+      'validation_day_entry_added',
+      'service_report',
+      report.id,
+      { dayNumber: dayEntry.dayNumber, date: dayEntry.date, clientName: report.clientFacilityName }
+    );
+
+    res.json(dayEntry);
+  } catch (error) {
+    console.error('Add day entry error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update a day entry
+app.put('/api/service-reports/:id/day-entries/:entryId', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = serviceReports[reportIndex];
+    const isAssigned = String(report.assignedToId) === String(req.user.id);
+    if (!isAssigned && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Not authorized to modify this report' });
+    }
+
+    const entries = report.dayEntries || [];
+    const entryIndex = entries.findIndex(e => e.id === req.params.entryId);
+
+    if (entryIndex === -1) {
+      return res.status(404).json({ error: 'Day entry not found' });
+    }
+
+    const { date, dayNumber, readings, notes, testsPerformed, results, issues } = req.body;
+    if (date !== undefined) entries[entryIndex].date = date;
+    if (dayNumber !== undefined) entries[entryIndex].dayNumber = dayNumber;
+    if (readings !== undefined) entries[entryIndex].readings = readings;
+    if (notes !== undefined) entries[entryIndex].notes = notes;
+    if (testsPerformed !== undefined) entries[entryIndex].testsPerformed = testsPerformed;
+    if (results !== undefined) entries[entryIndex].results = results;
+    if (issues !== undefined) entries[entryIndex].issues = issues;
+    entries[entryIndex].updatedAt = new Date().toISOString();
+
+    serviceReports[reportIndex].dayEntries = entries;
+    serviceReports[reportIndex].updatedAt = new Date().toISOString();
+    await db.set('service_reports', serviceReports);
+
+    res.json(entries[entryIndex]);
+  } catch (error) {
+    console.error('Update day entry error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete a day entry
+app.delete('/api/service-reports/:id/day-entries/:entryId', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+
+    if (reportIndex === -1) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = serviceReports[reportIndex];
+    const isAssigned = String(report.assignedToId) === String(req.user.id);
+    if (!isAssigned && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Not authorized to modify this report' });
+    }
+
+    const entries = report.dayEntries || [];
+    serviceReports[reportIndex].dayEntries = entries.filter(e => e.id !== req.params.entryId);
+    serviceReports[reportIndex].updatedAt = new Date().toISOString();
+    await db.set('service_reports', serviceReports);
+
+    res.json({ message: 'Day entry deleted' });
+  } catch (error) {
+    console.error('Delete day entry error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Download service report PDF (service portal users)
 app.get('/api/service-reports/:id/pdf', authenticateToken, requireServiceAccess, async (req, res) => {
   try {
@@ -7029,7 +7207,8 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
       technicianFirstName,
       technicianLastName,
       serviceCompletionDate,
-      analyzerSerialNumber
+      analyzerSerialNumber,
+      dayEntries
     } = req.body;
 
     // Update the report with technician-provided info
@@ -7061,6 +7240,8 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
       serviceCompletionDate: serviceCompletionDate || existingReport.serviceCompletionDate || new Date().toISOString().split('T')[0],
       analyzerSerialNumber: analyzerSerialNumber || existingReport.analyzerSerialNumber,
       serviceProviderName: req.user.name,
+      // Merge day entries from form submission with any previously saved entries
+      dayEntries: dayEntries || existingReport.dayEntries || [],
       completedAt: new Date().toISOString(),
       submittedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -7171,7 +7352,8 @@ app.put('/api/service-reports/:id/complete', authenticateToken, requireServiceAc
             driveWebContentLink: serviceReports[reportIndex].driveWebContentLink || null,
             createdAt: new Date().toISOString(),
             uploadedBy: 'system',
-            uploadedByName: 'Thrive 365 Labs'
+            uploadedByName: 'Thrive 365 Labs',
+            active: true
           });
           await db.set('client_documents', clientDocuments);
           console.log(`✅ Completed assigned report auto-added to client files for ${client.slug}`);
