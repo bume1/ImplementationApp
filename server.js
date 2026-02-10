@@ -7225,6 +7225,7 @@ app.post('/api/service-reports/:id/photos', authenticateToken, upload.array('pho
         photos.push({
           id: fileId,
           name: file.originalname,
+          mimeType: file.mimetype || 'image/jpeg',
           url: driveResult.webContentLink,
           webViewLink: driveResult.webViewLink,
           thumbnailLink: driveResult.thumbnailLink,
@@ -7238,6 +7239,7 @@ app.post('/api/service-reports/:id/photos', authenticateToken, upload.array('pho
         photos.push({
           id: fileId,
           name: file.originalname,
+          mimeType: file.mimetype || 'image/jpeg',
           url: null,
           uploadError: driveErr.message,
           uploadedAt: new Date().toISOString(),
@@ -7294,6 +7296,7 @@ app.post('/api/service-reports/:id/files', authenticateToken, upload.array('file
         clientFiles.push({
           id: fileId,
           name: file.originalname,
+          mimeType: file.mimetype || 'application/octet-stream',
           url: driveResult.webContentLink,
           webViewLink: driveResult.webViewLink,
           driveFileId: driveResult.fileId,
@@ -7305,6 +7308,7 @@ app.post('/api/service-reports/:id/files', authenticateToken, upload.array('file
         clientFiles.push({
           id: fileId,
           name: file.originalname,
+          mimeType: file.mimetype || 'application/octet-stream',
           url: null,
           uploadError: driveErr.message,
           uploadedAt: new Date().toISOString(),
