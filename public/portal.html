@@ -164,8 +164,8 @@
             <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full opacity-10" style={{background: 'radial-gradient(circle, #00205A 0%, transparent 70%)'}}></div>
           </div>
 
-          <div className="glass-card p-8 rounded-2xl shadow-xl w-full max-w-md animate-fade-in relative border border-white/50">
-            <div className="text-center mb-8">
+          <div className="glass-card p-5 sm:p-8 rounded-2xl shadow-xl w-full max-w-md animate-fade-in relative border border-white/50">
+            <div className="text-center mb-6 sm:mb-8">
               <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-12 mx-auto mb-4" />
               <h1 className="text-xl font-semibold text-gray-900">Client Portal</h1>
               <p className="text-gray-500 mt-1 text-sm">Sign in to access your portal</p>
@@ -590,19 +590,19 @@
             )}
           </div>
 
-          <div className="grid md:grid-cols-3 gap-4">
-            <button onClick={() => onNavigate('inventory')} className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center cursor-pointer w-full">
-              <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.package, { className: 'w-10 h-10' })}</div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <button onClick={() => onNavigate('inventory')} className="bg-white p-4 sm:p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center cursor-pointer w-full">
+              <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.package, { className: 'w-8 h-8 sm:w-10 sm:h-10' })}</div>
               <h3 className="font-semibold text-gray-800">Inventory Management</h3>
               <p className="text-sm text-gray-500 mt-1">Submit inventory requests</p>
             </button>
-            <button onClick={() => onNavigate('support')} className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center cursor-pointer w-full">
-              <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.chat, { className: 'w-10 h-10' })}</div>
+            <button onClick={() => onNavigate('support')} className="bg-white p-4 sm:p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center cursor-pointer w-full">
+              <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.chat, { className: 'w-8 h-8 sm:w-10 sm:h-10' })}</div>
               <h3 className="font-semibold text-gray-800">Customer Support</h3>
               <p className="text-sm text-gray-500 mt-1">Get help from our team</p>
             </button>
-            <button onClick={() => onNavigate('files')} className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center cursor-pointer w-full">
-              <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.folder, { className: 'w-10 h-10' })}</div>
+            <button onClick={() => onNavigate('files')} className="bg-white p-4 sm:p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center cursor-pointer w-full">
+              <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.folder, { className: 'w-8 h-8 sm:w-10 sm:h-10' })}</div>
               <h3 className="font-semibold text-gray-800">Files</h3>
               <p className="text-sm text-gray-500 mt-1">Upload and view documents</p>
             </button>
@@ -849,8 +849,8 @@
       );
 
       const TimelineView = () => (
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <h2 className="text-2xl font-bold mb-6 text-accent">Project Timeline</h2>
+        <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6">
+          <h2 className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6 text-accent">Project Timeline</h2>
           <div className="space-y-8">
             {PHASE_ORDER.map((phase, phaseIndex) => {
               const phaseData = groupedByPhase[phase] || {};
@@ -958,27 +958,27 @@
           return tasks.filter(t => t.dueDate === dateStr || t.dateCompleted === dateStr);
         };
         return (
-          <div className="bg-white rounded-lg shadow-sm p-6">
+          <div className="bg-white rounded-lg shadow-sm p-3 sm:p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-bold text-accent">{monthNames[month]} {year}</h2>
+              <h2 className="text-lg sm:text-2xl font-bold text-accent">{monthNames[month]} {year}</h2>
               <div className="flex gap-1">
                 <button onClick={() => setSelectedDate(new Date(year, month - 1, 1))} className="p-2 hover:bg-gray-100 rounded-lg">←</button>
                 <button onClick={() => setSelectedDate(new Date())} className="px-3 py-1 text-sm text-primary hover:underline">Today</button>
                 <button onClick={() => setSelectedDate(new Date(year, month + 1, 1))} className="p-2 hover:bg-gray-100 rounded-lg">→</button>
               </div>
             </div>
-            <div className="grid grid-cols-7 gap-2 mb-2">
-              {dayNames.map(day => (<div key={day} className="text-center text-sm font-semibold text-gray-600 py-2">{day}</div>))}
+            <div className="grid grid-cols-7 gap-1 sm:gap-2 mb-2">
+              {dayNames.map(day => (<div key={day} className="text-center text-xs sm:text-sm font-semibold text-gray-600 py-1 sm:py-2">{day}</div>))}
             </div>
-            <div className="grid grid-cols-7 gap-2">
+            <div className="grid grid-cols-7 gap-1 sm:gap-2">
               {[...Array(startingDayOfWeek)].map((_, idx) => (<div key={`empty-${idx}`} className="aspect-square"></div>))}
               {[...Array(daysInMonth)].map((_, idx) => {
                 const day = idx + 1;
                 const dayTasks = getTasksForDay(day);
                 const isToday = new Date().getDate() === day && new Date().getMonth() === month && new Date().getFullYear() === year;
                 return (
-                  <div key={day} className={`min-h-[80px] border rounded-lg p-2 ${isToday ? 'border-primary bg-blue-50' : 'border-gray-200'}`}>
-                    <div className={`text-sm font-semibold mb-1 ${isToday ? 'text-primary' : 'text-gray-700'}`}>{day}</div>
+                  <div key={day} className={`min-h-[50px] sm:min-h-[80px] border rounded-lg p-1 sm:p-2 ${isToday ? 'border-primary bg-blue-50' : 'border-gray-200'}`}>
+                    <div className={`text-xs sm:text-sm font-semibold mb-1 ${isToday ? 'text-primary' : 'text-gray-700'}`}>{day}</div>
                     <div className="space-y-1">
                       {dayTasks.slice(0, 2).map(task => (
                         <div key={task.id} className={`text-xs px-1 py-0.5 rounded truncate ${task.completed ? 'bg-green-200 text-green-800' : 'bg-blue-100 text-primary'}`} title={task.clientName || task.taskTitle}>
@@ -2460,10 +2460,10 @@
 
               {/* Submit Ticket Tab */}
               {activeTab === 'submit' && (
-                <div className="grid md:grid-cols-2 gap-8 items-stretch min-h-[500px]">
+                <div className="grid md:grid-cols-2 gap-6 sm:gap-8 items-stretch min-h-0 sm:min-h-[500px]">
                   {/* Left Side - Header */}
-                  <div className="bg-white rounded-xl flex flex-col justify-center items-center text-center p-8">
-                    <h2 className="text-4xl font-bold text-gray-800 mb-6">Submit a Ticket</h2>
+                  <div className="bg-white rounded-xl flex flex-col justify-center items-center text-center p-5 sm:p-8">
+                    <h2 className="text-2xl sm:text-4xl font-bold text-gray-800 mb-4 sm:mb-6">Submit a Ticket</h2>
                     <p className="text-gray-500 text-lg">
                       <span className="italic">or</span> email us at{' '}
                       <a href="mailto:support@thrive365labs.com" className="text-primary hover:text-accent font-semibold">
@@ -2812,16 +2812,16 @@
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-500 text-sm">Client Users</p>
-                  <p className="text-3xl font-bold text-accent">{stats.clients}</p>
+                  <p className="text-2xl sm:text-3xl font-bold text-accent">{stats.clients}</p>
                 </div>
-                <div className="text-primary opacity-50">{React.cloneElement(AdminIcons.users, { className: 'w-12 h-12' })}</div>
+                <div className="text-primary opacity-50">{React.cloneElement(AdminIcons.users, { className: 'w-10 h-10 sm:w-12 sm:h-12' })}</div>
               </div>
             </div>
-            <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-green-500">
+            <div className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border-l-4 border-green-500">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-500 text-sm">Announcements</p>
-                  <p className="text-3xl font-bold text-accent">{stats.announcements}</p>
+                  <p className="text-2xl sm:text-3xl font-bold text-accent">{stats.announcements}</p>
                 </div>
                 <div className="text-green-500 opacity-50">{React.cloneElement(Icons.megaphone, { className: 'w-12 h-12' })}</div>
               </div>

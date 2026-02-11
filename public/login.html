@@ -130,7 +130,7 @@
               <div className="absolute -top-40 -right-40 w-80 h-80 rounded-full opacity-20" style={{background: 'radial-gradient(circle, #045E9F 0%, transparent 70%)'}}></div>
               <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full opacity-10" style={{background: 'radial-gradient(circle, #00205A 0%, transparent 70%)'}}></div>
             </div>
-            <div className="glass-card p-8 rounded-2xl shadow-xl w-full max-w-md animate-fade-in relative border border-white/50">
+            <div className="glass-card p-5 sm:p-8 rounded-2xl shadow-xl w-full max-w-md animate-fade-in relative border border-white/50">
               <div className="text-center mb-8">
                 <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-12 mx-auto mb-4" />
                 <h1 className="text-xl font-semibold text-gray-900">Reset Password</h1>
@@ -167,7 +167,7 @@
             <div className="absolute -top-40 -right-40 w-80 h-80 rounded-full opacity-20" style={{background: 'radial-gradient(circle, #045E9F 0%, transparent 70%)'}}></div>
             <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full opacity-10" style={{background: 'radial-gradient(circle, #00205A 0%, transparent 70%)'}}></div>
           </div>
-          <div className="glass-card p-8 rounded-2xl shadow-xl w-full max-w-md animate-fade-in relative border border-white/50">
+          <div className="glass-card p-5 sm:p-8 rounded-2xl shadow-xl w-full max-w-md animate-fade-in relative border border-white/50">
             <div className="text-center mb-8">
               <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-12 mx-auto mb-4" />
               <h1 className="text-xl font-semibold text-gray-900">Welcome Back</h1>
@@ -444,21 +444,21 @@
             <div className="relative rounded-2xl overflow-hidden shadow-lg mb-10" style={{minHeight: '160px'}}>
               <div className="absolute inset-0 bg-cover bg-center" style={{backgroundImage: 'url(/banners/banner-admin.jpg)'}}></div>
               <div className="absolute inset-0 bg-gradient-to-r from-primary-700/90 via-primary-600/70 to-transparent"></div>
-              <div className="relative p-8 flex items-center min-h-[160px]">
+              <div className="relative p-5 sm:p-8 flex items-center min-h-[130px] sm:min-h-[160px]">
                 <div className="text-white">
-                  <h2 className="text-3xl font-bold drop-shadow-sm">Your Portals</h2>
+                  <h2 className="text-2xl sm:text-3xl font-bold drop-shadow-sm">Your Portals</h2>
                   <p className="mt-2 text-white/80 text-sm">Select a portal to access Thrive 365 Labs services</p>
                 </div>
               </div>
             </div>
 
             {availablePortals.length > 0 ? (
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                 {availablePortals.map((portal, idx) => (
                   <button
                     key={portal.id}
                     onClick={() => openPortal(portal.path)}
-                    className="portal-card bg-white rounded-2xl shadow-lg p-6 text-left hover:shadow-xl animate-fade-in"
+                    className="portal-card bg-white rounded-2xl shadow-lg p-4 sm:p-6 text-left hover:shadow-xl animate-fade-in"
                     style={{ animationDelay: `${idx * 0.1}s` }}
                   >
                     <div className={`w-16 h-16 rounded-xl bg-gradient-to-br ${portal.color} flex items-center justify-center text-white mb-4`}>

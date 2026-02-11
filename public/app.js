@@ -6256,10 +6256,10 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
         )}
       </AppHeader>
 
-      <div className="p-6">
+      <div className="p-3 sm:p-6">
       <div className="max-w-6xl mx-auto">
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">
+        <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-6">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
             {selectedTemplate ? (
               editingName ? (
                 <div className="flex items-center gap-2">
@@ -6949,10 +6949,10 @@ const Reporting = ({ token, user, onBack, onLogout }) => {
         </button>
       </AppHeader>
 
-      <div className="p-6">
+      <div className="p-3 sm:p-6">
       <div className="max-w-6xl mx-auto">
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Launch Reports</h1>
+        <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-6">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Launch Reports</h1>
           <p className="text-gray-600 mb-4">Portal - Thrive 365 Labs</p>
 
           {/* Summary Stats */}
