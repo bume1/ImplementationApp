@@ -409,19 +409,105 @@
 
 ---
 
+## Feature 6: Claude API Integration
+
+**Goal:** Integrate the Anthropic Claude API into the platform to power AI-assisted features across the app — intelligent project summaries, communication drafting, task recommendations, and feedback analysis.
+
+> **Note:** Full implementation is being developed on a separate branch. This entry documents the feature scope and its touchpoints with Features 1-5 for coordination purposes.
+
+### Backend Changes (`server.js`)
+
+1. **Create Claude API utility module** (`claude.js`):
+   - Configure via env var `ANTHROPIC_API_KEY`
+   - Core `callClaude(systemPrompt, userMessage, options?)` helper using the Anthropic SDK (`@anthropic-ai/sdk`)
+   - Request wrapper with retry logic, rate limiting, and token budget controls
+   - Model selection: default to `claude-sonnet-4-5-20250929` for speed-sensitive calls, `claude-opus-4-6` for complex analysis
+2. **AI-powered endpoints:**
+   - `POST /api/ai/project-summary/:projectId` (admin) — Generate a natural-language project status summary from task data (completion %, blockers, upcoming milestones, risk areas)
+   - `POST /api/ai/draft-email` (admin) — Draft client communication given context (project status, milestone, tone). Feeds into Feature 1's email composer as a "Draft with AI" option
+   - `POST /api/ai/task-recommendations/:projectId` (admin) — Analyze current task state and suggest next priorities, flag at-risk tasks, recommend owner reassignments
+   - `POST /api/ai/analyze-feedback` (admin) — Summarize and extract themes from Feature 5 survey responses across projects. Identify trends, common complaints, and highlights
+   - `POST /api/ai/client-message-suggest/:projectId/:taskId` (admin) — Suggest a reply to a client message from Feature 3, given conversation history and task context
+3. **Usage tracking** — DB key `ai_usage_log` (array, max 1000):
+   ```javascript
+   {
+     id: "uuid",
+     endpoint: "string",           // Which AI feature was used
+     userId: "string",
+     projectId: "string" | null,
+     model: "string",              // Which Claude model was called
+     inputTokens: number,
+     outputTokens: number,
+     durationMs: number,
+     createdAt: "ISO8601"
+   }
+   ```
+4. **Admin controls:**
+   - `GET /api/admin/ai-settings` — Get AI feature config
+   - `PUT /api/admin/ai-settings` — Update config (enable/disable individual features, set token budget)
+   - `GET /api/admin/ai-usage` — View usage log and token consumption stats
+5. **AI settings** — DB key `ai_settings` (object):
+   ```javascript
+   {
+     enabled: true,
+     features: {
+       projectSummary: true,
+       emailDrafting: true,
+       taskRecommendations: true,
+       feedbackAnalysis: true,
+       messageSuggestions: true
+     },
+     monthlyTokenBudget: 1000000,    // Max tokens per month (input + output)
+     defaultModel: "claude-sonnet-4-5-20250929"
+   }
+   ```
+
+### Frontend Changes (`public/app.js`)
+
+6. **"Draft with AI" button** in the Feature 1 email composer — generates a draft email based on project context and selected template type; user can edit before sending
+7. **"AI Summary" button** in project header — generates a one-click project status narrative viewable in a modal
+8. **"AI Insights" panel** in project task list — shows AI-generated task recommendations (priority suggestions, risk flags, owner rebalancing)
+9. **"Suggest Reply" button** in Feature 3 admin message thread — drafts a contextual reply to the client's message
+10. **"Analyze Responses" button** in Feature 5 survey analytics — generates thematic summary of survey open-ended responses
+
+### Frontend Changes (`public/admin-hub.html`)
+
+11. **AI usage dashboard card** — token consumption this month vs. budget, most-used features, recent calls
+
+### Integration Points with Other Features
+
+| Feature | Claude API Touchpoint |
+|---------|----------------------|
+| Feature 1 (Email) | "Draft with AI" in email composer |
+| Feature 2 (Reminders) | Could generate personalized reminder text (future enhancement) |
+| Feature 3 (Client messages) | "Suggest Reply" for admin responses |
+| Feature 5 (Surveys) | Thematic analysis of open-ended survey responses |
+
+### Config Changes (`config.js`)
+
+12. Add AI-related constants:
+    - `AI_DEFAULT_MODEL` (default `claude-sonnet-4-5-20250929`)
+    - `AI_MONTHLY_TOKEN_BUDGET` (default 1000000)
+    - `AI_USAGE_LOG_MAX_ENTRIES` (default 1000)
+    - `AI_REQUEST_TIMEOUT_MS` (default 30000)
+
+---
+
 ## Implementation Order
 
 Recommended sequencing (dependencies flow top-down):
 
 1. **Feature 1 (Email infrastructure)** - Foundation for Features 2 and 5
    - Install nodemailer, create email.js module, config, basic send endpoint
-2. **Feature 3 (Client messages)** - Independent, high user value
+2. **Feature 6 (Claude API)** - Foundation for AI features across 1, 3, 5; developed on separate branch
+   - Install Anthropic SDK, create claude.js module, usage tracking, admin settings
+3. **Feature 3 (Client messages)** - Independent, high user value
    - Backend endpoints, portal UI, admin UI
-3. **Feature 2 (Automated reminders)** - Depends on Feature 1's email infra
+4. **Feature 2 (Automated reminders)** - Depends on Feature 1's email infra
    - Phone field, SMS module, scheduler, reminder templates, admin settings
-4. **Feature 5 (Feedback surveys)** - Depends on Feature 1's email infra
+5. **Feature 5 (Feedback surveys)** - Depends on Feature 1's email infra
    - Survey model, scheduler, public survey page, analytics, admin config
-5. **Feature 4 (Portal gating)** - Independent, moderate complexity
+6. **Feature 4 (Portal gating)** - Independent, moderate complexity
    - Backend gating logic, portal lock screen, admin config
 
 ---
@@ -439,6 +525,7 @@ Recommended sequencing (dependencies flow top-down):
 | `TWILIO_AUTH_TOKEN` | For SMS | None | 2 |
 | `TWILIO_PHONE_NUMBER` | For SMS | None | 2 |
 | `REMINDER_CHECK_INTERVAL_HOURS` | No | 24 | 2 |
+| `ANTHROPIC_API_KEY` | For AI | None | 6 |
 
 ## New Dependencies
 
@@ -446,6 +533,7 @@ Recommended sequencing (dependencies flow top-down):
 |---------|---------|---------|
 | `nodemailer` | ^6.x | Email sending |
 | `twilio` | ^4.x | SMS sending |
+| `@anthropic-ai/sdk` | ^0.x | Claude API client |
 
 ## New Database Keys
 
@@ -457,17 +545,20 @@ Recommended sequencing (dependencies flow top-down):
 | `reminder_log` | Array (max 1000) | 2 |
 | `feedback_surveys` | Array | 5 |
 | `survey_settings` | Object | 5 |
+| `ai_usage_log` | Array (max 1000) | 6 |
+| `ai_settings` | Object | 6 |
 
 ## Files Modified
 
 | File | Features | Changes |
 |------|----------|---------|
-| `server.js` | 1, 2, 3, 4, 5 | New endpoints, schedulers, gating middleware, survey logic |
-| `public/app.js` | 1, 2, 3, 4, 5 | Email composer, reminder settings, client message UI, gating config, survey dashboard/admin |
+| `server.js` | 1, 2, 3, 4, 5, 6 | New endpoints, schedulers, gating middleware, survey logic, AI endpoints |
+| `public/app.js` | 1, 2, 3, 4, 5, 6 | Email composer, reminder settings, client message UI, gating config, survey dashboard/admin, AI draft/summary/insights buttons |
 | `public/portal.html` | 3, 4, 5 | Client messaging UI, portal lock screen, survey prompt banner |
-| `public/admin-hub.html` | 2, 5 | Reminder dashboard card, survey status overview |
+| `public/admin-hub.html` | 2, 5, 6 | Reminder dashboard card, survey status overview, AI usage card |
 | `public/survey.html` (new) | 5 | Standalone survey response page (public, token-gated) |
-| `config.js` | 1, 2, 4, 5 | New config constants |
-| `package.json` | 1, 2 | New dependencies |
+| `config.js` | 1, 2, 4, 5, 6 | New config constants |
+| `package.json` | 1, 2, 6 | New dependencies |
 | `email.js` (new) | 1, 2, 5 | Email utility module (shared by email, reminders, surveys) |
 | `sms.js` (new) | 2 | SMS utility module |
+| `claude.js` (new) | 6 | Claude API utility module (developed on separate branch) |
