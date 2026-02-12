@@ -13,6 +13,8 @@ const googledrive = require('./googledrive');
 const pdfGenerator = require('./pdf-generator');
 const changelogGenerator = require('./changelog-generator');
 const config = require('./config');
+const notifications = require('./notifications');
+const analytics = require('./analytics');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -40,6 +42,8 @@ const PORT = config.PORT;
 
 // HubSpot ticket polling timer reference
 let hubspotPollingTimer = null;
+// Notification reminder polling timer reference
+let notificationPollingTimer = null;
 const JWT_SECRET = config.JWT_SECRET;
 const HUBSPOT_STAGE_CACHE_TTL = config.HUBSPOT_STAGE_CACHE_TTL;
 const HUBSPOT_POLL_MIN_SECONDS = config.HUBSPOT_POLL_MIN_SECONDS;
@@ -9616,6 +9620,515 @@ app.get('/api/admin-hub/dashboard', authenticateToken, requireAdminHubAccess, as
   }
 });
 
+// ============================================================
+// AUTOMATED MESSAGING & NOTIFICATIONS
+// ============================================================
+
+// Get notification settings
+app.get('/api/admin/notification-settings', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const settings = (await db.get('notification_settings')) || {
+      enabled: false,
+      reminderDaysBefore: config.NOTIFICATION_REMINDER_DAYS_BEFORE,
+      includeOverdue: true,
+      includeUpcoming: true,
+      channels: { sms: true, voice: false },
+      pollIntervalSeconds: config.NOTIFICATION_POLL_INTERVAL_SECONDS,
+      twilioConfigured: notifications.isConfigured()
+    };
+    settings.twilioConfigured = notifications.isConfigured();
+    res.json(settings);
+  } catch (error) {
+    console.error('Error fetching notification settings:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update notification settings
+app.put('/api/admin/notification-settings', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const current = (await db.get('notification_settings')) || {};
+    const allowed = ['enabled', 'reminderDaysBefore', 'includeOverdue', 'includeUpcoming', 'channels', 'pollIntervalSeconds'];
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) current[key] = req.body[key];
+    }
+    current.updatedAt = new Date().toISOString();
+    current.updatedBy = req.user.id;
+    await db.set('notification_settings', current);
+
+    // Restart polling if interval changed
+    if (req.body.pollIntervalSeconds || req.body.enabled !== undefined) {
+      initializeNotificationPolling();
+    }
+
+    await logActivity(req.user.id, req.user.name, 'updated', 'notification_settings', 'global', { changes: Object.keys(req.body) });
+    res.json({ message: 'Notification settings updated', settings: current });
+  } catch (error) {
+    console.error('Error updating notification settings:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Send ad-hoc notification (SMS or voice call)
+app.post('/api/notifications/send', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { recipientPhone, recipientName, message, channel, templateKey, templateParams } = req.body;
+    if (!recipientPhone) return res.status(400).json({ error: 'recipientPhone is required' });
+
+    let body = message;
+    if (templateKey && notifications.TEMPLATES[templateKey]) {
+      body = notifications.TEMPLATES[templateKey](...(templateParams || []));
+    }
+    if (!body) return res.status(400).json({ error: 'message or valid templateKey is required' });
+
+    let result;
+    if (channel === 'voice') {
+      result = await notifications.makeReminderCall(recipientPhone, body);
+    } else {
+      result = await notifications.sendSMS(recipientPhone, body);
+    }
+
+    // Log to notification history
+    const log = (await db.get('notification_log')) || [];
+    log.unshift({
+      id: uuidv4(),
+      type: 'ad_hoc',
+      channel: channel || 'sms',
+      recipientPhone,
+      recipientName: recipientName || null,
+      message: body,
+      templateKey: templateKey || null,
+      sent: result.success,
+      dryRun: result.dryRun || false,
+      sentBy: req.user.name,
+      sentAt: new Date().toISOString(),
+      details: result
+    });
+    if (log.length > config.NOTIFICATION_LOG_MAX_ENTRIES) log.length = config.NOTIFICATION_LOG_MAX_ENTRIES;
+    await db.set('notification_log', log);
+
+    await logActivity(req.user.id, req.user.name, 'sent', 'notification', recipientPhone, { channel: channel || 'sms', templateKey });
+    res.json({ message: 'Notification sent', result });
+  } catch (error) {
+    console.error('Error sending notification:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get notification history/log
+app.get('/api/notifications/log', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const log = (await db.get('notification_log')) || [];
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const offset = parseInt(req.query.offset) || 0;
+    res.json({
+      total: log.length,
+      items: log.slice(offset, offset + limit)
+    });
+  } catch (error) {
+    console.error('Error fetching notification log:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Preview pending reminders (dry run - shows what would be sent)
+app.get('/api/notifications/preview-reminders', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const reminders = await notifications.generateTaskReminders(db, getProjects, getTasks, getUsers);
+    const users = await getUsers();
+    const withRecipients = notifications.resolveRecipients(reminders, users);
+    res.json({
+      totalReminders: withRecipients.length,
+      overdue: withRecipients.filter(r => r.type === 'overdue').length,
+      upcoming: withRecipients.filter(r => r.type === 'upcoming').length,
+      reminders: withRecipients
+    });
+  } catch (error) {
+    console.error('Error previewing reminders:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Trigger reminder batch send (manual trigger)
+app.post('/api/notifications/send-reminders', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const reminders = await notifications.generateTaskReminders(db, getProjects, getTasks, getUsers);
+    const users = await getUsers();
+    const withRecipients = notifications.resolveRecipients(reminders, users);
+    const results = await notifications.sendBatchReminders(withRecipients, db);
+
+    const sent = results.filter(r => r.sent).length;
+    const skipped = results.filter(r => !r.sent).length;
+
+    await logActivity(req.user.id, req.user.name, 'triggered', 'batch_reminders', 'manual', { sent, skipped, total: results.length });
+    res.json({ message: `Reminders processed: ${sent} sent, ${skipped} skipped`, sent, skipped, total: results.length });
+  } catch (error) {
+    console.error('Error sending reminders:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update user notification preferences (phone number, opt-in/out)
+app.put('/api/users/:id/notification-preferences', authenticateToken, async (req, res) => {
+  try {
+    // Users can update their own preferences, admins can update anyone
+    if (req.user.id !== req.params.id && req.user.role !== config.ROLES.ADMIN) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const users = await getUsers();
+    const idx = users.findIndex(u => u.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'User not found' });
+
+    const { phone, notificationPreferences } = req.body;
+    if (phone !== undefined) users[idx].phone = phone;
+    if (notificationPreferences) {
+      users[idx].notificationPreferences = {
+        ...(users[idx].notificationPreferences || {}),
+        ...notificationPreferences
+      };
+    }
+
+    await db.set('users', users);
+    res.json({ message: 'Notification preferences updated', user: { id: users[idx].id, phone: users[idx].phone, notificationPreferences: users[idx].notificationPreferences } });
+  } catch (error) {
+    console.error('Error updating notification preferences:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============================================================
+// WELCOME CALL SCHEDULING
+// ============================================================
+
+// Schedule a welcome call
+app.post('/api/welcome-calls', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { projectId, clientSlug, scheduledDateTime, calendarLink, notes } = req.body;
+    if (!projectId || !scheduledDateTime) {
+      return res.status(400).json({ error: 'projectId and scheduledDateTime are required' });
+    }
+
+    // Verify project exists
+    const projects = await getProjects();
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const slug = clientSlug || project.clientLinkSlug;
+    const call = await notifications.scheduleWelcomeCall(db, projectId, slug, scheduledDateTime, calendarLink, notes);
+
+    // Optionally create HubSpot meeting
+    if (req.body.createHubSpotMeeting && project.hubspotRecordId) {
+      const users = await getUsers();
+      const clientUser = users.find(u => u.role === config.ROLES.CLIENT && u.slug === slug);
+      const contactId = clientUser?.hubspotContactId || null;
+
+      if (contactId) {
+        const endTime = new Date(new Date(scheduledDateTime).getTime() + 30 * 60000).toISOString();
+        const meetingResult = await notifications.createHubSpotMeeting(hubspot, contactId, {
+          title: `Welcome Call - ${project.clientName || project.name}`,
+          description: notes || 'Welcome call to discuss implementation timeline and next steps.',
+          startTime: scheduledDateTime,
+          endTime
+        });
+        if (meetingResult.success) {
+          await notifications.updateWelcomeCall(db, call.id, { hubspotMeetingId: meetingResult.meetingId });
+          call.hubspotMeetingId = meetingResult.meetingId;
+        }
+      }
+    }
+
+    // Send SMS notification to client if phone available
+    if (req.body.notifyClient) {
+      const users = await getUsers();
+      const clientUser = users.find(u => u.role === config.ROLES.CLIENT && u.slug === slug);
+      if (clientUser?.phone) {
+        const msg = notifications.TEMPLATES.welcomeCallScheduled(
+          clientUser.practiceName || clientUser.name,
+          notifications.formatDate(scheduledDateTime),
+          calendarLink
+        );
+        await notifications.sendSMS(clientUser.phone, msg);
+      }
+    }
+
+    await logActivity(req.user.id, req.user.name, 'scheduled', 'welcome_call', call.id, { projectId, scheduledDateTime });
+    res.json({ message: 'Welcome call scheduled', call });
+  } catch (error) {
+    console.error('Error scheduling welcome call:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// List welcome calls (with filters)
+app.get('/api/welcome-calls', authenticateToken, async (req, res) => {
+  try {
+    const filters = {};
+    if (req.query.projectId) filters.projectId = req.query.projectId;
+    if (req.query.clientSlug) filters.clientSlug = req.query.clientSlug;
+    if (req.query.status) filters.status = req.query.status;
+
+    const calls = await notifications.getWelcomeCalls(db, filters);
+
+    // Non-admins can only see calls for their assigned projects
+    if (req.user.role !== config.ROLES.ADMIN) {
+      const userProjects = req.user.assignedProjects || [];
+      const filtered = calls.filter(c => userProjects.includes(c.projectId));
+      return res.json(filtered);
+    }
+
+    res.json(calls);
+  } catch (error) {
+    console.error('Error fetching welcome calls:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update welcome call (reschedule, cancel, mark completed)
+app.put('/api/welcome-calls/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const updated = await notifications.updateWelcomeCall(db, req.params.id, req.body);
+    if (!updated) return res.status(404).json({ error: 'Welcome call not found' });
+
+    // If rescheduled, notify client
+    if (req.body.scheduledDateTime && req.body.notifyClient) {
+      const users = await getUsers();
+      const clientUser = users.find(u => u.role === config.ROLES.CLIENT && u.slug === updated.clientSlug);
+      if (clientUser?.phone) {
+        const msg = notifications.TEMPLATES.welcomeCallScheduled(
+          clientUser.practiceName || clientUser.name,
+          notifications.formatDate(req.body.scheduledDateTime),
+          updated.calendarLink
+        );
+        await notifications.sendSMS(clientUser.phone, msg);
+      }
+    }
+
+    await logActivity(req.user.id, req.user.name, 'updated', 'welcome_call', req.params.id, { status: updated.status });
+    res.json({ message: 'Welcome call updated', call: updated });
+  } catch (error) {
+    console.error('Error updating welcome call:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============================================================
+// AI-POWERED TIME-TO-VALUE ANALYTICS
+// ============================================================
+
+// Get time-to-value metrics for all projects (or filtered)
+app.get('/api/analytics/time-to-value', authenticateToken, async (req, res) => {
+  try {
+    const projects = await getProjects();
+    const projectMetrics = [];
+
+    // Filter by status if requested
+    let filteredProjects = projects;
+    if (req.query.status) {
+      filteredProjects = projects.filter(p => p.status === req.query.status);
+    }
+
+    // Non-admins see only their assigned projects
+    if (req.user.role !== config.ROLES.ADMIN) {
+      const userProjects = req.user.assignedProjects || [];
+      filteredProjects = filteredProjects.filter(p => userProjects.includes(p.id));
+    }
+
+    for (const project of filteredProjects) {
+      const tasks = await getTasks(project.id);
+      const metrics = analytics.calculateProjectTimeToValue(project, tasks);
+      projectMetrics.push(metrics);
+    }
+
+    res.json(projectMetrics);
+  } catch (error) {
+    console.error('Error calculating time-to-value metrics:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get cross-project benchmarks
+app.get('/api/analytics/benchmarks', authenticateToken, async (req, res) => {
+  try {
+    const projects = await getProjects();
+    const projectMetrics = [];
+
+    for (const project of projects) {
+      const tasks = await getTasks(project.id);
+      const metrics = analytics.calculateProjectTimeToValue(project, tasks);
+      projectMetrics.push(metrics);
+    }
+
+    const benchmarks = analytics.calculateBenchmarks(projectMetrics);
+    res.json(benchmarks);
+  } catch (error) {
+    console.error('Error calculating benchmarks:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get AI-generated insights
+app.get('/api/analytics/insights', authenticateToken, async (req, res) => {
+  try {
+    const projects = await getProjects();
+    const projectMetrics = [];
+
+    for (const project of projects) {
+      const tasks = await getTasks(project.id);
+      const metrics = analytics.calculateProjectTimeToValue(project, tasks);
+      projectMetrics.push(metrics);
+    }
+
+    const benchmarks = analytics.calculateBenchmarks(projectMetrics);
+    const insights = analytics.generateInsights(projectMetrics, benchmarks);
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      totalInsights: insights.length,
+      highPriority: insights.filter(i => i.priority === 'high').length,
+      mediumPriority: insights.filter(i => i.priority === 'medium').length,
+      lowPriority: insights.filter(i => i.priority === 'low').length,
+      insights
+    });
+  } catch (error) {
+    console.error('Error generating insights:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get time-to-value trend analysis
+app.get('/api/analytics/trend', authenticateToken, async (req, res) => {
+  try {
+    const projects = await getProjects();
+    const projectMetrics = [];
+
+    for (const project of projects) {
+      const tasks = await getTasks(project.id);
+      const metrics = analytics.calculateProjectTimeToValue(project, tasks);
+      projectMetrics.push(metrics);
+    }
+
+    const trend = analytics.calculateTrend(projectMetrics);
+    res.json(trend);
+  } catch (error) {
+    console.error('Error calculating trend:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get analytics dashboard summary (combines all analytics data)
+app.get('/api/analytics/dashboard', authenticateToken, async (req, res) => {
+  try {
+    const projects = await getProjects();
+    const projectMetrics = [];
+
+    for (const project of projects) {
+      const tasks = await getTasks(project.id);
+      const metrics = analytics.calculateProjectTimeToValue(project, tasks);
+      projectMetrics.push(metrics);
+    }
+
+    const benchmarks = analytics.calculateBenchmarks(projectMetrics);
+    const insights = analytics.generateInsights(projectMetrics, benchmarks);
+    const trend = analytics.calculateTrend(projectMetrics);
+
+    // Welcome call stats
+    const welcomeCalls = (await db.get('welcome_calls')) || [];
+    const welcomeCallStats = {
+      total: welcomeCalls.length,
+      scheduled: welcomeCalls.filter(c => c.status === 'scheduled').length,
+      completed: welcomeCalls.filter(c => c.status === 'completed').length,
+      cancelled: welcomeCalls.filter(c => c.status === 'cancelled').length,
+      noShow: welcomeCalls.filter(c => c.status === 'no_show').length
+    };
+
+    // Notification stats
+    const notifLog = (await db.get('notification_log')) || [];
+    const last7Days = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const recentNotifs = notifLog.filter(n => new Date(n.sentAt) > last7Days);
+    const notificationStats = {
+      totalSent: notifLog.length,
+      last7Days: recentNotifs.length,
+      smsSent: recentNotifs.filter(n => n.channel === 'sms' && n.sent).length,
+      voiceSent: recentNotifs.filter(n => n.channel === 'voice' && n.sent).length
+    };
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      benchmarks,
+      trend,
+      insights: insights.slice(0, 10), // Top 10 insights
+      welcomeCallStats,
+      notificationStats,
+      projects: projectMetrics
+    });
+  } catch (error) {
+    console.error('Error generating analytics dashboard:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============================================================
+// NOTIFICATION POLLING ENGINE
+// ============================================================
+
+async function runNotificationPoll() {
+  try {
+    const settings = (await db.get('notification_settings')) || {};
+    if (!settings.enabled) return;
+
+    console.log('[Notification Poll] Running automated reminder check...');
+
+    // Task reminders
+    const reminders = await notifications.generateTaskReminders(db, getProjects, getTasks, getUsers);
+    const users = await getUsers();
+    const withRecipients = notifications.resolveRecipients(reminders, users);
+    const results = await notifications.sendBatchReminders(withRecipients, db);
+    const sent = results.filter(r => r.sent).length;
+    if (sent > 0) {
+      console.log(`[Notification Poll] Sent ${sent} task reminders`);
+    }
+
+    // Welcome call reminders
+    const callReminders = await notifications.generateWelcomeCallReminders(db, getUsers);
+    for (const cr of callReminders) {
+      if (cr.phone) {
+        const msg = notifications.TEMPLATES.welcomeCallReminder(cr.practiceName, notifications.formatDate(cr.scheduledDateTime));
+        await notifications.sendSMS(cr.phone, msg);
+
+        // Mark reminder as sent
+        const calls = (await db.get('welcome_calls')) || [];
+        const callIdx = calls.findIndex(c => c.id === cr.callId);
+        if (callIdx !== -1) {
+          calls[callIdx].remindersSent = calls[callIdx].remindersSent || [];
+          calls[callIdx].remindersSent.push(cr.window);
+          await db.set('welcome_calls', calls);
+        }
+      }
+    }
+    if (callReminders.length > 0) {
+      console.log(`[Notification Poll] Processed ${callReminders.length} welcome call reminders`);
+    }
+  } catch (error) {
+    console.error('[Notification Poll] Error:', error.message);
+  }
+}
+
+function initializeNotificationPolling() {
+  // Clear existing timer
+  if (notificationPollingTimer) {
+    clearInterval(notificationPollingTimer);
+    notificationPollingTimer = null;
+  }
+
+  const intervalMs = (config.NOTIFICATION_POLL_INTERVAL_SECONDS || 3600) * 1000;
+  notificationPollingTimer = setInterval(runNotificationPoll, intervalMs);
+  console.log(`Notification polling initialized (interval: ${config.NOTIFICATION_POLL_INTERVAL_SECONDS}s)`);
+
+  // Run initial check after 30s startup delay
+  setTimeout(runNotificationPoll, 30000);
+}
+
 // ============== UNIFIED LOGIN ==============
 // Unified login portal for all user types
 app.get('/login', (req, res) => {
@@ -9741,6 +10254,10 @@ app.listen(PORT, () => {
 
   // Start HubSpot ticket polling (webhook workaround)
   initializeTicketPolling();
+
+  // Initialize Twilio and start notification polling
+  notifications.initTwilio();
+  initializeNotificationPolling();
 
   // One-time migrations for service reports
   (async () => {

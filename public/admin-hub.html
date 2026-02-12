@@ -277,6 +277,78 @@
           method: 'PUT',
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
           body: JSON.stringify(data)
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      // Analytics & Messaging APIs
+      getAnalyticsDashboard: (token) =>
+        fetch(`${API_URL}/api/analytics/dashboard`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      getTimeToValue: (token, status) =>
+        fetch(`${API_URL}/api/analytics/time-to-value${status ? '?status=' + status : ''}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      getInsights: (token) =>
+        fetch(`${API_URL}/api/analytics/insights`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      getNotificationSettings: (token) =>
+        fetch(`${API_URL}/api/admin/notification-settings`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      updateNotificationSettings: (token, settings) =>
+        fetch(`${API_URL}/api/admin/notification-settings`, {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(settings)
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      getNotificationLog: (token, limit = 50) =>
+        fetch(`${API_URL}/api/notifications/log?limit=${limit}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      previewReminders: (token) =>
+        fetch(`${API_URL}/api/notifications/preview-reminders`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      sendReminders: (token) =>
+        fetch(`${API_URL}/api/notifications/send-reminders`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      sendNotification: (token, data) =>
+        fetch(`${API_URL}/api/notifications/send`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      getWelcomeCalls: (token, filters = {}) => {
+        const params = new URLSearchParams(filters).toString();
+        return fetch(`${API_URL}/api/welcome-calls${params ? '?' + params : ''}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message }));
+      },
+
+      scheduleWelcomeCall: (token, data) =>
+        fetch(`${API_URL}/api/welcome-calls`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      updateWelcomeCall: (token, id, data) =>
+        fetch(`${API_URL}/api/welcome-calls/${id}`, {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
         }).then(handleResponse).catch(err => ({ error: err.message }))
     };
 
@@ -308,7 +380,16 @@
       inbox: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 13.5h3.86a2.25 2.25 0 012.012 1.244l.256.512a2.25 2.25 0 002.013 1.244h3.218a2.25 2.25 0 002.013-1.244l.256-.512a2.25 2.25 0 012.013-1.244h3.859m-17.5 0a2.25 2.25 0 00-1.883 1.013A11.945 11.945 0 003 19.5h18c.844 0 1.654-.178 2.383-.5a2.25 2.25 0 00-1.883-1.013M2.25 13.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0115.686 0c1.1.128 1.907 1.077 1.907 2.185V13.5"/></svg>,
       bug: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 12.75c1.148 0 2.278.08 3.383.237 1.037.146 1.866.966 1.866 2.013 0 3.728-2.35 6.75-5.25 6.75S6.75 18.728 6.75 15c0-1.046.83-1.867 1.866-2.013A24.204 24.204 0 0112 12.75zm0 0c2.883 0 5.647.508 8.207 1.44a23.91 23.91 0 01-1.152 6.06M12 12.75c-2.883 0-5.647.508-8.208 1.44.125 2.104.52 4.136 1.153 6.06M12 12.75V8.25m0 0c1.086 0 2.152-.14 3.181-.406a1.128 1.128 0 01-.664-.814 2.999 2.999 0 00-5.034 0 1.128 1.128 0 01-.664.814A10.988 10.988 0 0012 8.25zM12 21c-.17.001-.34 0-.508-.004A23.91 23.91 0 015.793 14.69M12 21c.17.001.34 0 .508-.004a23.91 23.91 0 005.699-6.306M9 9.75h6m-3-6.75a2.25 2.25 0 012.25 2.25v.407a2.25 2.25 0 01-.664 1.591L15 9.75"/></svg>,
       download: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>,
-      document: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/></svg>
+      document: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/></svg>,
+      chartBar: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>,
+      bell: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0"/></svg>,
+      phone: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z"/></svg>,
+      lightBulb: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 10-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg>,
+      clock: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>,
+      arrowTrending: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941"/></svg>,
+      exclamation: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>,
+      checkCircle: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>,
+      calendar: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/></svg>
     };
 
     // Login Page - Modern sleek design
@@ -426,6 +507,8 @@
         { id: 'users', label: 'User Management', icon: Icons.users, color: 'text-primary-500', superAdminOnly: true },
         { id: 'service_portal', label: 'Service Portal', icon: Icons.clipboard, color: 'text-success-500', superAdminOnly: false },
         { id: 'knowledge_hub', label: 'Knowledge Hub', icon: Icons.document, color: 'text-teal-500', superAdminOnly: true },
+        { id: 'analytics', label: 'Analytics & AI', icon: Icons.chartBar, color: 'text-indigo-500', superAdminOnly: false },
+        { id: 'messaging', label: 'Messaging', icon: Icons.bell, color: 'text-rose-500', superAdminOnly: true },
       ];
 
       // Filter menu items: Super Admin sees all, Manager only sees non-superAdminOnly items
@@ -3208,6 +3291,737 @@
       );
     };
 
+    // ============================================================
+    // ANALYTICS & AI PAGE
+    // ============================================================
+    const AnalyticsPage = ({ token, user }) => {
+      const [dashboard, setDashboard] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [activeTab, setActiveTab] = useState('overview');
+      const [insights, setInsights] = useState(null);
+
+      useEffect(() => {
+        loadDashboard();
+      }, [token]);
+
+      const loadDashboard = async () => {
+        setLoading(true);
+        const data = await api.getAnalyticsDashboard(token);
+        if (!data.error) {
+          setDashboard(data);
+        }
+
+        const insightData = await api.getInsights(token);
+        if (!insightData.error) {
+          setInsights(insightData);
+        }
+        setLoading(false);
+      };
+
+      const formatDate = (d) => {
+        if (!d) return 'N/A';
+        try { return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
+        catch { return d; }
+      };
+
+      if (loading) return (
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
+        </div>
+      );
+
+      const tabs = [
+        { id: 'overview', label: 'Overview' },
+        { id: 'projects', label: 'Project Metrics' },
+        { id: 'insights', label: 'AI Insights' },
+        { id: 'trend', label: 'Trends' }
+      ];
+
+      return (
+        <div>
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Analytics & AI</h1>
+              <p className="text-gray-500 mt-1">Time-to-value tracking, benchmarks, and AI-powered insights</p>
+            </div>
+            <button onClick={loadDashboard} className="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 text-sm font-medium">Refresh</button>
+          </div>
+
+          {/* Tabs */}
+          <div className="flex gap-1 mb-6 bg-gray-100 p-1 rounded-xl w-fit">
+            {tabs.map(tab => (
+              <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === tab.id ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}>
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Overview Tab */}
+          {activeTab === 'overview' && dashboard && (
+            <div className="space-y-6">
+              {/* Benchmark Cards */}
+              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                <div className="bg-gradient-to-br from-indigo-500 to-indigo-700 text-white p-6 rounded-2xl shadow-lg">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">{Icons.clock}</div>
+                  </div>
+                  <p className="text-3xl font-bold mb-1">{dashboard.benchmarks?.avgTimeToValueWeeks || '--'}</p>
+                  <p className="text-sm text-white/80">Avg Weeks to Value</p>
+                </div>
+                <div className="bg-gradient-to-br from-emerald-500 to-emerald-700 text-white p-6 rounded-2xl shadow-lg">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">{Icons.checkCircle}</div>
+                  </div>
+                  <p className="text-3xl font-bold mb-1">{dashboard.benchmarks?.completedProjects || 0}</p>
+                  <p className="text-sm text-white/80">Completed Implementations</p>
+                </div>
+                <div className="bg-gradient-to-br from-amber-500 to-amber-700 text-white p-6 rounded-2xl shadow-lg">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">{Icons.exclamation}</div>
+                  </div>
+                  <p className="text-3xl font-bold mb-1">{dashboard.benchmarks?.projectsAtRisk || 0}</p>
+                  <p className="text-sm text-white/80">Projects at Risk</p>
+                </div>
+                <div className="bg-gradient-to-br from-sky-500 to-sky-700 text-white p-6 rounded-2xl shadow-lg">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">{Icons.arrowTrending}</div>
+                  </div>
+                  <p className="text-3xl font-bold mb-1">{dashboard.benchmarks?.avgProgressPercent || 0}%</p>
+                  <p className="text-sm text-white/80">Avg Active Progress</p>
+                </div>
+              </div>
+
+              {/* Trend & Quick Stats */}
+              <div className="grid lg:grid-cols-2 gap-6">
+                <div className="bg-white rounded-2xl shadow-sm border p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Time-to-Value Trend</h3>
+                  {dashboard.trend?.trend === 'insufficient_data' ? (
+                    <p className="text-gray-500 text-sm">Need at least 2 completed projects to show trends.</p>
+                  ) : (
+                    <div>
+                      <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium mb-3 ${
+                        dashboard.trend?.trend === 'improving' ? 'bg-green-100 text-green-700' :
+                        dashboard.trend?.trend === 'declining' ? 'bg-red-100 text-red-700' :
+                        'bg-gray-100 text-gray-700'
+                      }`}>
+                        {dashboard.trend?.trend === 'improving' ? 'Improving' : dashboard.trend?.trend === 'declining' ? 'Slowing' : 'Stable'}
+                        {dashboard.trend?.changePercent ? ` (${dashboard.trend.changePercent}%)` : ''}
+                      </div>
+                      <div className="space-y-2 text-sm text-gray-600">
+                        <p>Earlier avg: <span className="font-medium text-gray-900">{dashboard.trend?.firstHalfAvgDays} days</span></p>
+                        <p>Recent avg: <span className="font-medium text-gray-900">{dashboard.trend?.secondHalfAvgDays} days</span></p>
+                        <p>Data points: <span className="font-medium text-gray-900">{dashboard.trend?.dataPoints}</span></p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-white rounded-2xl shadow-sm border p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Stats</h3>
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Total Overdue Tasks</span>
+                      <span className={`text-sm font-medium ${(dashboard.benchmarks?.totalOverdueTasks || 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        {dashboard.benchmarks?.totalOverdueTasks || 0}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Blocked Tasks</span>
+                      <span className="text-sm font-medium text-gray-900">{dashboard.benchmarks?.totalBlockedTasks || 0}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Avg Task Completion</span>
+                      <span className="text-sm font-medium text-gray-900">{dashboard.benchmarks?.avgTaskCompletionDays || '--'} days</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Welcome Calls Scheduled</span>
+                      <span className="text-sm font-medium text-gray-900">{dashboard.welcomeCallStats?.scheduled || 0}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Notifications (7d)</span>
+                      <span className="text-sm font-medium text-gray-900">{dashboard.notificationStats?.last7Days || 0}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Top Insights Preview */}
+              {insights && insights.insights && insights.insights.length > 0 && (
+                <div className="bg-white rounded-2xl shadow-sm border p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-gray-900">Top AI Insights</h3>
+                    <button onClick={() => setActiveTab('insights')} className="text-sm text-primary-600 hover:text-primary-700 font-medium">View All</button>
+                  </div>
+                  <div className="space-y-3">
+                    {insights.insights.slice(0, 3).map((insight, idx) => (
+                      <div key={idx} className={`p-4 rounded-xl border-l-4 ${
+                        insight.type === 'warning' ? 'bg-amber-50 border-amber-400' :
+                        insight.type === 'success' ? 'bg-green-50 border-green-400' :
+                        'bg-blue-50 border-blue-400'
+                      }`}>
+                        <div className="flex items-start gap-3">
+                          <div className="mt-0.5">
+                            {insight.type === 'warning' ? Icons.exclamation : insight.type === 'success' ? Icons.checkCircle : Icons.lightBulb}
+                          </div>
+                          <div>
+                            <p className="font-medium text-gray-900 text-sm">{insight.title}</p>
+                            <p className="text-sm text-gray-600 mt-1">{insight.message}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Projects Tab */}
+          {activeTab === 'projects' && dashboard?.projects && (
+            <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">Project</th>
+                      <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">Status</th>
+                      <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">Progress</th>
+                      <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">Time to Value</th>
+                      <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">Overdue</th>
+                      <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">Est. Completion</th>
+                      <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">On Track</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {dashboard.projects.map((pm, idx) => (
+                      <tr key={idx} className="hover:bg-gray-50">
+                        <td className="py-3 px-4">
+                          <p className="font-medium text-gray-900 text-sm">{pm.projectName}</p>
+                          <p className="text-xs text-gray-500">{pm.clientName}</p>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
+                            pm.status === 'completed' ? 'bg-green-100 text-green-700' :
+                            pm.status === 'active' ? 'bg-blue-100 text-blue-700' :
+                            'bg-gray-100 text-gray-700'
+                          }`}>{pm.status}</span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-20 h-2 bg-gray-200 rounded-full overflow-hidden">
+                              <div className="h-full bg-primary-500 rounded-full" style={{width: `${pm.progressPercent}%`}}></div>
+                            </div>
+                            <span className="text-xs text-gray-600">{pm.progressPercent}%</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 text-sm text-gray-600">
+                          {pm.timeToValueWeeks ? `${pm.timeToValueWeeks} weeks` : '--'}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className={`text-sm font-medium ${pm.overdueTaskCount > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                            {pm.overdueTaskCount}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-sm text-gray-600">{pm.estimatedCompletionDate ? formatDate(pm.estimatedCompletionDate) : '--'}</td>
+                        <td className="py-3 px-4">
+                          {pm.isOnTrack === null ? <span className="text-gray-400 text-sm">--</span> :
+                           pm.isOnTrack ? <span className="text-green-600 text-sm font-medium">Yes</span> :
+                           <span className="text-red-600 text-sm font-medium">At Risk</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Insights Tab */}
+          {activeTab === 'insights' && insights && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-4 text-sm text-gray-500 mb-4">
+                <span>Total: {insights.totalInsights}</span>
+                <span className="text-red-600">High: {insights.highPriority}</span>
+                <span className="text-amber-600">Medium: {insights.mediumPriority}</span>
+                <span className="text-gray-600">Low: {insights.lowPriority}</span>
+              </div>
+              {insights.insights.map((insight, idx) => (
+                <div key={idx} className={`bg-white rounded-2xl shadow-sm border p-5 border-l-4 ${
+                  insight.priority === 'high' ? 'border-l-red-400' :
+                  insight.priority === 'medium' ? 'border-l-amber-400' :
+                  'border-l-gray-300'
+                }`}>
+                  <div className="flex items-start gap-3">
+                    <div className={`mt-0.5 ${
+                      insight.type === 'warning' ? 'text-amber-500' :
+                      insight.type === 'success' ? 'text-green-500' :
+                      'text-blue-500'
+                    }`}>
+                      {insight.type === 'warning' ? Icons.exclamation : insight.type === 'success' ? Icons.checkCircle : Icons.lightBulb}
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="font-medium text-gray-900">{insight.title}</p>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${
+                          insight.priority === 'high' ? 'bg-red-100 text-red-700' :
+                          insight.priority === 'medium' ? 'bg-amber-100 text-amber-700' :
+                          'bg-gray-100 text-gray-600'
+                        }`}>{insight.priority}</span>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">{insight.category}</span>
+                      </div>
+                      <p className="text-sm text-gray-600">{insight.message}</p>
+                      {insight.projectName && <p className="text-xs text-gray-400 mt-2">Project: {insight.projectName}</p>}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {(!insights.insights || insights.insights.length === 0) && (
+                <div className="text-center py-12 text-gray-500">
+                  <div className="mb-3">{Icons.lightBulb}</div>
+                  <p>No insights available yet. Add more projects to generate analysis.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Trend Tab */}
+          {activeTab === 'trend' && dashboard?.trend && (
+            <div className="space-y-6">
+              {dashboard.trend.trend === 'insufficient_data' ? (
+                <div className="bg-white rounded-2xl shadow-sm border p-8 text-center text-gray-500">
+                  <p>Need at least 2 completed projects to generate trend data.</p>
+                </div>
+              ) : (
+                <div>
+                  <div className="bg-white rounded-2xl shadow-sm border p-6 mb-6">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Completion Timeline</h3>
+                    <div className="space-y-3">
+                      {dashboard.trend.series && dashboard.trend.series.map((dp, idx) => (
+                        <div key={idx} className="flex items-center gap-4 py-2 border-b border-gray-50 last:border-0">
+                          <div className="w-32 text-sm text-gray-500">{formatDate(dp.completedDate)}</div>
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-gray-900">{dp.projectName}</p>
+                            <p className="text-xs text-gray-500">{dp.clientName}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-bold text-primary-600">{dp.timeToValueDays} days</p>
+                            <p className="text-xs text-gray-500">{Math.round(dp.timeToValueDays / 7)} weeks</p>
+                          </div>
+                          <div className="w-24">
+                            <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                              <div className="h-full bg-primary-500 rounded-full" style={{width: `${Math.min(100, (dp.timeToValueDays / (dashboard.benchmarks?.maxTimeToValueDays || 200)) * 100)}%`}}></div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Phase Benchmarks */}
+                  {dashboard.benchmarks?.avgPhaseDurations && Object.keys(dashboard.benchmarks.avgPhaseDurations).length > 0 && (
+                    <div className="bg-white rounded-2xl shadow-sm border p-6">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Average Phase Duration</h3>
+                      <div className="space-y-3">
+                        {Object.entries(dashboard.benchmarks.avgPhaseDurations).map(([key, phase]) => (
+                          <div key={key} className="flex items-center gap-4">
+                            <div className="w-56 text-sm text-gray-700 truncate">{phase.name}</div>
+                            <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
+                              <div className="h-full bg-gradient-to-r from-primary-400 to-primary-600 rounded-full"
+                                style={{width: `${Math.min(100, (phase.avgDays / Math.max(...Object.values(dashboard.benchmarks.avgPhaseDurations).map(p => p.avgDays))) * 100)}%`}}></div>
+                            </div>
+                            <div className="w-20 text-right text-sm font-medium text-gray-700">{phase.avgDays}d avg</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    // ============================================================
+    // MESSAGING PAGE
+    // ============================================================
+    const MessagingPage = ({ token, user }) => {
+      const [activeTab, setActiveTab] = useState('reminders');
+      const [settings, setSettings] = useState(null);
+      const [notifLog, setNotifLog] = useState(null);
+      const [reminders, setReminders] = useState(null);
+      const [welcomeCalls, setWelcomeCalls] = useState(null);
+      const [projects, setProjects] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [sending, setSending] = useState(false);
+      const [sendForm, setSendForm] = useState({ recipientPhone: '', message: '', channel: 'sms' });
+
+      useEffect(() => { loadData(); }, [token]);
+
+      const loadData = async () => {
+        setLoading(true);
+        const [settingsData, logData, reminderData, callsData, projData] = await Promise.all([
+          api.getNotificationSettings(token),
+          api.getNotificationLog(token, 50),
+          api.previewReminders(token),
+          api.getWelcomeCalls(token),
+          api.getProjects(token)
+        ]);
+        if (!settingsData.error) setSettings(settingsData);
+        if (!logData.error) setNotifLog(logData);
+        if (!reminderData.error) setReminders(reminderData);
+        if (!callsData.error) setWelcomeCalls(callsData);
+        if (!projData.error) setProjects(Array.isArray(projData) ? projData : []);
+        setLoading(false);
+      };
+
+      const handleSettingsChange = async (key, value) => {
+        const updated = { ...settings, [key]: value };
+        setSettings(updated);
+        const result = await api.updateNotificationSettings(token, { [key]: value });
+        if (result.error) alert(result.error);
+      };
+
+      const handleSendReminders = async () => {
+        if (!confirm('Send automated reminders for all pending overdue and upcoming tasks?')) return;
+        setSending(true);
+        const result = await api.sendReminders(token);
+        if (result.error) { alert(result.error); }
+        else { alert(`Reminders: ${result.sent} sent, ${result.skipped} skipped`); }
+        setSending(false);
+        loadData();
+      };
+
+      const handleSendAdHoc = async () => {
+        if (!sendForm.recipientPhone || !sendForm.message) { alert('Phone and message required'); return; }
+        setSending(true);
+        const result = await api.sendNotification(token, sendForm);
+        if (result.error) { alert(result.error); }
+        else { alert('Notification sent'); setSendForm({ recipientPhone: '', message: '', channel: 'sms' }); }
+        setSending(false);
+        loadData();
+      };
+
+      const formatDate = (d) => {
+        if (!d) return 'N/A';
+        try { return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }); }
+        catch { return d; }
+      };
+
+      if (loading) return (
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
+        </div>
+      );
+
+      const tabs = [
+        { id: 'reminders', label: 'Task Reminders' },
+        { id: 'welcome', label: 'Welcome Calls' },
+        { id: 'send', label: 'Send Message' },
+        { id: 'settings', label: 'Settings' },
+        { id: 'log', label: 'History' }
+      ];
+
+      return (
+        <div>
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Messaging & Notifications</h1>
+              <p className="text-gray-500 mt-1">Automated SMS, call reminders, and welcome call scheduling</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${settings?.twilioConfigured ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                <span className={`w-2 h-2 rounded-full ${settings?.twilioConfigured ? 'bg-green-500' : 'bg-amber-500'}`}></span>
+                {settings?.twilioConfigured ? 'Twilio Connected' : 'Twilio Not Configured (Dry Run Mode)'}
+              </span>
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <div className="flex gap-1 mb-6 bg-gray-100 p-1 rounded-xl overflow-x-auto">
+            {tabs.map(tab => (
+              <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}>
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Task Reminders Tab */}
+          {activeTab === 'reminders' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-semibold text-gray-900">Pending Reminders Preview</h3>
+                  <p className="text-sm text-gray-500">
+                    {reminders?.totalReminders || 0} reminders pending ({reminders?.overdue || 0} overdue, {reminders?.upcoming || 0} upcoming)
+                  </p>
+                </div>
+                <button onClick={handleSendReminders} disabled={sending || !reminders?.totalReminders}
+                  className="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 text-sm font-medium disabled:opacity-50">
+                  {sending ? 'Sending...' : 'Send All Reminders'}
+                </button>
+              </div>
+
+              {reminders?.reminders && reminders.reminders.length > 0 ? (
+                <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">Type</th>
+                          <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">Task</th>
+                          <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">Project</th>
+                          <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">Due Date</th>
+                          <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">Owner</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {reminders.reminders.slice(0, 20).map((r, idx) => (
+                          <tr key={idx} className="hover:bg-gray-50">
+                            <td className="py-3 px-4">
+                              <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${r.type === 'overdue' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                                {r.type}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-sm text-gray-900 max-w-xs truncate">{r.taskTitle}</td>
+                            <td className="py-3 px-4 text-sm text-gray-600">{r.projectName}</td>
+                            <td className="py-3 px-4 text-sm text-gray-600">{r.dueDate}</td>
+                            <td className="py-3 px-4 text-sm text-gray-600">{r.recipientName || r.owner}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-white rounded-2xl shadow-sm border p-8 text-center text-gray-500">
+                  No pending reminders at this time.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Welcome Calls Tab */}
+          {activeTab === 'welcome' && (
+            <div className="space-y-6">
+              <div className="bg-white rounded-2xl shadow-sm border p-6">
+                <h3 className="font-semibold text-gray-900 mb-4">Schedule Welcome Call</h3>
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Project</label>
+                    <select id="wc-project" className="w-full border rounded-lg px-3 py-2 text-sm">
+                      <option value="">Select project...</option>
+                      {projects.filter(p => p.status === 'active').map(p => (
+                        <option key={p.id} value={p.id}>{p.name} - {p.clientName}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Date & Time</label>
+                    <input type="datetime-local" id="wc-datetime" className="w-full border rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Calendar/Meeting Link</label>
+                    <input type="url" id="wc-link" placeholder="https://..." className="w-full border rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                    <input type="text" id="wc-notes" placeholder="Optional notes..." className="w-full border rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-4 mt-4">
+                  <label className="flex items-center gap-2 text-sm text-gray-600">
+                    <input type="checkbox" id="wc-notify" defaultChecked className="rounded" />
+                    Notify client via SMS
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-gray-600">
+                    <input type="checkbox" id="wc-hubspot" className="rounded" />
+                    Create HubSpot meeting
+                  </label>
+                  <button onClick={async () => {
+                    const projectId = document.getElementById('wc-project').value;
+                    const dt = document.getElementById('wc-datetime').value;
+                    if (!projectId || !dt) { alert('Project and date/time required'); return; }
+                    const result = await api.scheduleWelcomeCall(token, {
+                      projectId,
+                      scheduledDateTime: new Date(dt).toISOString(),
+                      calendarLink: document.getElementById('wc-link').value || null,
+                      notes: document.getElementById('wc-notes').value || null,
+                      notifyClient: document.getElementById('wc-notify').checked,
+                      createHubSpotMeeting: document.getElementById('wc-hubspot').checked
+                    });
+                    if (result.error) alert(result.error);
+                    else { alert('Welcome call scheduled'); loadData(); }
+                  }} className="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 text-sm font-medium">
+                    Schedule Call
+                  </button>
+                </div>
+              </div>
+
+              {/* Existing calls */}
+              {welcomeCalls && welcomeCalls.length > 0 ? (
+                <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+                  <div className="p-4 border-b">
+                    <h3 className="font-semibold text-gray-900">Scheduled Welcome Calls</h3>
+                  </div>
+                  <div className="divide-y">
+                    {welcomeCalls.map((call, idx) => (
+                      <div key={idx} className="p-4 flex items-center justify-between hover:bg-gray-50">
+                        <div>
+                          <p className="font-medium text-gray-900 text-sm">
+                            {projects.find(p => p.id === call.projectId)?.name || call.projectId}
+                          </p>
+                          <p className="text-xs text-gray-500">{formatDate(call.scheduledDateTime)}</p>
+                          {call.notes && <p className="text-xs text-gray-400 mt-1">{call.notes}</p>}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
+                            call.status === 'completed' ? 'bg-green-100 text-green-700' :
+                            call.status === 'cancelled' ? 'bg-gray-100 text-gray-500' :
+                            call.status === 'no_show' ? 'bg-red-100 text-red-600' :
+                            'bg-blue-100 text-blue-700'
+                          }`}>{call.status}</span>
+                          {call.status === 'scheduled' && (
+                            <div className="flex gap-1">
+                              <button onClick={async () => {
+                                const result = await api.updateWelcomeCall(token, call.id, { status: 'completed' });
+                                if (!result.error) loadData();
+                              }} className="text-xs text-green-600 hover:text-green-700 font-medium">Complete</button>
+                              <button onClick={async () => {
+                                const result = await api.updateWelcomeCall(token, call.id, { status: 'cancelled' });
+                                if (!result.error) loadData();
+                              }} className="text-xs text-gray-500 hover:text-gray-700 font-medium">Cancel</button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-white rounded-2xl shadow-sm border p-8 text-center text-gray-500">
+                  No welcome calls scheduled yet.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Send Message Tab */}
+          {activeTab === 'send' && (
+            <div className="bg-white rounded-2xl shadow-sm border p-6 max-w-lg">
+              <h3 className="font-semibold text-gray-900 mb-4">Send Ad-Hoc Notification</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                  <input type="tel" value={sendForm.recipientPhone}
+                    onChange={e => setSendForm({...sendForm, recipientPhone: e.target.value})}
+                    placeholder="+1234567890" className="w-full border rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Channel</label>
+                  <select value={sendForm.channel} onChange={e => setSendForm({...sendForm, channel: e.target.value})}
+                    className="w-full border rounded-lg px-3 py-2 text-sm">
+                    <option value="sms">SMS</option>
+                    <option value="voice">Voice Call</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Message</label>
+                  <textarea value={sendForm.message}
+                    onChange={e => setSendForm({...sendForm, message: e.target.value})}
+                    rows="3" placeholder="Enter message..." className="w-full border rounded-lg px-3 py-2 text-sm"></textarea>
+                </div>
+                <button onClick={handleSendAdHoc} disabled={sending}
+                  className="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 text-sm font-medium disabled:opacity-50">
+                  {sending ? 'Sending...' : 'Send'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Settings Tab */}
+          {activeTab === 'settings' && settings && (
+            <div className="bg-white rounded-2xl shadow-sm border p-6 max-w-lg">
+              <h3 className="font-semibold text-gray-900 mb-4">Notification Settings</h3>
+              <div className="space-y-4">
+                <label className="flex items-center justify-between">
+                  <span className="text-sm text-gray-700">Enable Automated Reminders</span>
+                  <button onClick={() => handleSettingsChange('enabled', !settings.enabled)}
+                    className={`relative inline-flex h-6 w-11 rounded-full transition-colors ${settings.enabled ? 'bg-primary-500' : 'bg-gray-300'}`}>
+                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform mt-0.5 ${settings.enabled ? 'translate-x-5 ml-0.5' : 'translate-x-0.5'}`}></span>
+                  </button>
+                </label>
+                <div>
+                  <label className="block text-sm text-gray-700 mb-1">Remind days before due</label>
+                  <input type="number" value={settings.reminderDaysBefore || 3} min="1" max="14"
+                    onChange={e => handleSettingsChange('reminderDaysBefore', parseInt(e.target.value))}
+                    className="w-full border rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <label className="flex items-center justify-between">
+                  <span className="text-sm text-gray-700">Include Overdue Tasks</span>
+                  <button onClick={() => handleSettingsChange('includeOverdue', !settings.includeOverdue)}
+                    className={`relative inline-flex h-6 w-11 rounded-full transition-colors ${settings.includeOverdue !== false ? 'bg-primary-500' : 'bg-gray-300'}`}>
+                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform mt-0.5 ${settings.includeOverdue !== false ? 'translate-x-5 ml-0.5' : 'translate-x-0.5'}`}></span>
+                  </button>
+                </label>
+                <label className="flex items-center justify-between">
+                  <span className="text-sm text-gray-700">Include Upcoming Tasks</span>
+                  <button onClick={() => handleSettingsChange('includeUpcoming', !settings.includeUpcoming)}
+                    className={`relative inline-flex h-6 w-11 rounded-full transition-colors ${settings.includeUpcoming !== false ? 'bg-primary-500' : 'bg-gray-300'}`}>
+                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform mt-0.5 ${settings.includeUpcoming !== false ? 'translate-x-5 ml-0.5' : 'translate-x-0.5'}`}></span>
+                  </button>
+                </label>
+                <div className="pt-4 border-t">
+                  <p className="text-xs text-gray-500">
+                    {settings.twilioConfigured
+                      ? 'Twilio is configured. SMS and voice calls will be sent to recipients with phone numbers on file.'
+                      : 'Twilio is not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER environment variables to enable SMS/voice. Currently running in dry-run mode (messages logged but not sent).'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* History Tab */}
+          {activeTab === 'log' && (
+            <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+              <div className="p-4 border-b flex items-center justify-between">
+                <h3 className="font-semibold text-gray-900">Notification History</h3>
+                <span className="text-sm text-gray-500">{notifLog?.total || 0} total</span>
+              </div>
+              {notifLog?.items && notifLog.items.length > 0 ? (
+                <div className="divide-y">
+                  {notifLog.items.map((entry, idx) => (
+                    <div key={idx} className="p-4 hover:bg-gray-50">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${entry.channel === 'sms' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                            {entry.channel}
+                          </span>
+                          <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${entry.sent ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                            {entry.dryRun ? 'dry run' : entry.sent ? 'sent' : 'failed'}
+                          </span>
+                          <span className="text-xs text-gray-500">{entry.type}</span>
+                        </div>
+                        <span className="text-xs text-gray-400">{formatDate(entry.sentAt)}</span>
+                      </div>
+                      <p className="text-sm text-gray-700 truncate">{entry.message || entry.taskTitle || '--'}</p>
+                      <p className="text-xs text-gray-500 mt-1">To: {entry.recipientPhone || '--'} {entry.sentBy ? `| By: ${entry.sentBy}` : ''}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-8 text-center text-gray-500 text-sm">No notification history yet.</div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    };
+
     // Main App
     const App = () => {
       // Check multiple token sources - admin_token or unified_token from Portal Hub
@@ -3280,6 +4094,8 @@
           case 'users': return <UsersPage token={token} />;
           case 'service_portal': return <ServicePortalPage token={token} user={user} />;
           case 'knowledge_hub': return <KnowledgeHubPage token={token} />;
+          case 'analytics': return <AnalyticsPage token={token} user={user} />;
+          case 'messaging': return <MessagingPage token={token} user={user} />;
           default: return <DashboardPage token={token} onNavigate={handleNavigation} user={user} />;
         }
       };
