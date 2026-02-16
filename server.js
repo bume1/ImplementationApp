@@ -9498,6 +9498,23 @@ app.post('/api/admin/reset-user-password/:userId', authenticateToken, requireAdm
   }
 });
 
+// Test email endpoint (admin only) - remove after validating Resend setup
+app.post('/api/admin/test-email', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { sendEmail } = require('./email');
+    const { to, subject, body } = req.body;
+    const result = await sendEmail(
+      to || req.user.email,
+      subject || 'Test notification from Thrive 365 Labs',
+      body || 'This is a test email from your notification system. If you received this, Resend is working.'
+    );
+    res.json(result);
+  } catch (error) {
+    console.error('Test email error:', error);
+    res.status(500).json({ error: 'Failed to send test email' });
+  }
+});
+
 // Change password (authenticated user)
 app.post('/api/auth/change-password', authenticateToken, async (req, res) => {
   try {
