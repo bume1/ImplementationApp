@@ -4,6 +4,18 @@
 
 ---
 
+### Version 2.17.0 - February 10, 2026
+
+#### New Features
+- Add Daily Validation Log section to report preview
+
+#### Bug Fixes
+- Fix multiple service portal issues: duplicate banner, signatures, filtering, performance
+
+#### Changes
+- Restore Assigned Service Visits dashboard card (only remove top banner)
+
+
 ### Version 2.16.2 - February 10, 2026
 
 #### Improvements
