@@ -11,111 +11,288 @@
 
 ---
 
-## Feature 1: Embedded Email Communication & Motivation
+## Feature 1: Email Infrastructure & Notification Queue
 
-**Goal:** Allow admins/team to send email communications (progress updates, motivational messages, status reports) to clients and team members directly from the app.
+**Goal:** Build the foundational email delivery system and centralized notification queue that powers Features 2, 5, and ad-hoc admin communications. Uses Resend as the transactional email service (10K emails/month free tier). Architecture designed for clean migration to Supabase Edge Functions later.
 
-### Backend Changes (`server.js`)
-
-1. **Install `nodemailer`** - add to package.json dependencies
-2. **Create email utility module** (`email.js`):
-   - Configure SMTP transport via environment variables (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`)
-   - `sendEmail(to, subject, htmlBody)` - core send function with error handling
-   - `sendBulkEmail(recipients[], subject, htmlBody)` - batch send with rate limiting
-   - HTML email templates for: progress update, milestone completion, motivational/welcome, custom message
-3. **New API endpoints:**
-   - `POST /api/email/send` (admin only) - Send ad-hoc email to selected users
-     - Body: `{ to: [emails], subject, message, templateType, projectId? }`
-   - `POST /api/email/send-progress-update/:projectId` (admin only) - Send project progress summary email to client
-     - Auto-generates progress stats from tasks, includes milestone highlights
-   - `POST /api/email/templates` (admin only) - CRUD for email templates stored in DB key `email_templates`
-   - `GET /api/email/history` (admin only) - View sent email log from DB key `email_log`
-4. **Email log storage** - DB key `email_log` (array, max 500 entries) tracking: `{ id, to, subject, templateType, sentBy, sentAt, projectId?, status }`
-
-### Frontend Changes (`public/app.js`)
-
-5. **Email composer panel** in the project view:
-   - Slide-out or modal panel triggered from project header
-   - Recipient selector (client user, team members, custom email)
-   - Template selector dropdown (progress update, milestone, custom)
-   - Rich-text message area (basic formatting)
-   - Preview before send
-   - Send button with confirmation
-6. **Email history tab** in project view showing sent communications
-
-### Config Changes (`config.js`)
-
-7. Add email-related config constants:
-   - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`
-   - `EMAIL_LOG_MAX_ENTRIES` (default 500)
-   - `EMAIL_RATE_LIMIT` (max emails per minute)
-
----
-
-## Feature 2: Automated Reminders via Email and Text
-
-**Goal:** Send automated reminders to assigned task owners when tasks are due soon or overdue, via email and SMS/text.
+> **Architecture decision:** Queue-based system that separates "when to notify" from "how to notify." All notifications flow through `pending_notifications` — the queue is processed by a scheduler, and delivery is handled by a pluggable email service layer. This lets us add SMS/in-app channels later without rebuilding.
 
 ### Backend Changes
 
-1. **Add `phone` field to user model** - update user creation (`POST /api/users`) and user update (`PUT /api/users/:id`) endpoints to accept optional `phone` field
+1. **Install `resend`** — add to package.json dependencies (replaces nodemailer)
+2. **Create email service module** (`email.js`):
+   - Configure via env var `RESEND_API_KEY`
+   - `sendEmail(to, subject, body, options?)` — core send via Resend API
+   - `sendBulkEmail(recipients[], subject, body)` — batch send with rate limiting
+   - `FROM_EMAIL` configurable via env var (default: `notifications@thrive365labs.com`)
+   - **Phase 1:** Plain text email bodies — simple content + CTA link, works everywhere
+   - **Phase 2:** Branded HTML templates for client-facing notifications (milestone updates, portal nudges)
+3. **Notification queue** — DB key `pending_notifications` (array):
+   ```javascript
+   {
+     id: "uuid",
+     type: "service_report_signature" | "service_report_review" | "task_deadline" |
+           "task_overdue" | "inventory_reminder" | "ticket_followup" |
+           "announcement_nudge" | "milestone_reached" | "milestone_reminder" |
+           "survey_invitation" | "survey_reminder" | "custom_email",
+     recipientUserId: "string",
+     recipientEmail: "string",
+     recipientName: "string",
+     channel: "email",                    // Future: "sms" | "in_app"
+     triggerDate: "ISO8601",              // When this should be sent
+     status: "pending" | "sent" | "failed" | "cancelled",
+     retryCount: 0,
+     maxRetries: 3,
+     relatedEntityId: "string" | null,    // projectId, serviceReportId, etc.
+     relatedEntityType: "string" | null,  // "project", "service_report", "task", etc.
+     templateData: {                      // Dynamic content for the notification
+       subject: "string",
+       body: "string",                    // Plain text (Phase 1)
+       htmlBody: "string" | null,         // HTML (Phase 2, optional)
+       ctaUrl: "string" | null,           // Call-to-action link
+       ctaLabel: "string" | null          // e.g. "View Task", "Sign Report"
+     },
+     sentAt: "ISO8601" | null,
+     failedAt: "ISO8601" | null,
+     failureReason: "string" | null,
+     createdAt: "ISO8601",
+     createdBy: "userId" | "system"       // "system" for automated, userId for manual
+   }
+   ```
+4. **Queue processor** — `processNotificationQueue()`:
+   - Runs on `setInterval` every 15 minutes (configurable via `NOTIFICATION_CHECK_INTERVAL_MINUTES`)
+   - Fetches all `pending` notifications where `triggerDate <= now`
+   - Sends via `email.js` sendEmail()
+   - Updates status to `sent` with `sentAt` timestamp
+   - On failure: increments `retryCount`, sets `failedAt` + `failureReason`
+   - Permanently fails after `maxRetries` reached
+   - Moves processed notifications to `notification_log` (sent/failed archive, max 2000 entries)
+5. **Queue management endpoints:**
+   - `GET /api/admin/notifications/queue` (admin) — View pending notifications with filtering
+   - `GET /api/admin/notifications/log` (admin) — View sent/failed notification history
+   - `POST /api/admin/notifications/cancel/:id` (admin) — Cancel a pending notification
+   - `POST /api/admin/notifications/retry/:id` (admin) — Retry a failed notification
+   - `GET /api/admin/notifications/stats` (admin) — Queue stats: pending count, sent today, failure rate
+6. **Ad-hoc email endpoints** (admin manual sends, using the queue):
+   - `POST /api/email/send` (admin) — Queue an ad-hoc email to selected users
+     - Body: `{ to: [emails], subject, message, templateType?, projectId? }`
+     - Creates notification records with `type: "custom_email"` and `triggerDate: now`
+   - `POST /api/email/send-progress-update/:projectId` (admin) — Queue a project progress summary email
+     - Auto-generates progress stats from tasks, queues for immediate delivery
+   - `GET /api/email/history` (admin) — View sent email log (filtered from `notification_log`)
+7. **Notification settings** — DB key `notification_settings` (object):
+   ```javascript
+   {
+     enabled: true,
+     checkIntervalMinutes: 15,
+     maxRetriesDefault: 3,
+     dailySendLimit: 500,             // Safety cap
+     enabledChannels: ["email"],      // Future: ["email", "sms", "in_app"]
+     fromEmail: "notifications@thrive365labs.com",
+     fromName: "Thrive 365 Labs"
+   }
+   ```
+
+### Frontend Changes (`public/app.js`)
+
+8. **Email composer panel** in the project view:
+   - Slide-out or modal panel triggered from project header
+   - Recipient selector (client user, team members, custom email)
+   - Template selector dropdown (progress update, milestone, custom)
+   - Plain text message area (Phase 1) — upgrade to rich-text in Phase 2
+   - Preview before send
+   - Send button with confirmation
+9. **Email history tab** in project view showing sent communications
+10. **Notification queue dashboard** in admin hub:
+    - Pending queue count, sent today, failure rate
+    - Recent failures with retry buttons
+    - Manual cancel capability for scheduled notifications
+
+### Config Changes (`config.js`)
+
+11. Add notification/email config constants:
+    - `NOTIFICATION_CHECK_INTERVAL_MINUTES` (default 15)
+    - `NOTIFICATION_LOG_MAX_ENTRIES` (default 2000)
+    - `NOTIFICATION_MAX_RETRIES` (default 3)
+    - `NOTIFICATION_DAILY_SEND_LIMIT` (default 500)
+    - `EMAIL_FROM_ADDRESS` (default `notifications@thrive365labs.com`)
+
+### Supabase Migration Path
+
+> When moving to Supabase: the `pending_notifications` DB key becomes a Postgres table with the same schema. The `setInterval` processor becomes a Supabase Edge Function triggered by `pg_cron`. The Resend integration stays the same — only the queue storage and scheduling mechanism change.
+
+---
+
+## Feature 2: Automated Reminders & Notification Triggers
+
+**Goal:** Automatically create notification queue entries for four key scenarios: service report follow-ups, task deadline alerts, client portal activity nudges, and implementation milestone reminders. Sends to both clients and internal team members based on context.
+
+> **Architecture:** This feature does NOT send emails directly. It creates entries in the `pending_notifications` queue (Feature 1) which are processed and delivered by the queue processor. This keeps "when to notify" logic cleanly separated from "how to notify" delivery.
+
+### Notification Scenarios
+
+#### Scenario A: Service Report Follow-Ups
+
+**Triggers:**
+- Service report created but missing client signature → notify client (`service_report_signature`)
+- Service report created but not reviewed by admin → notify assigned admin (`service_report_review`)
+- Service report pending for 3+ days → re-notify with escalation
+
+**Recipients:** Client user (for signatures), assigned technician/admin (for reviews)
+
+**Template data:**
+```javascript
+{
+  subject: "Action needed: Service report for {clientName} awaits your signature",
+  body: "A service report from {technicianName} on {reportDate} requires your signature. Please review and sign at your earliest convenience.",
+  ctaUrl: "/service-portal/reports/{reportId}",
+  ctaLabel: "Review & Sign"
+}
+```
+
+#### Scenario B: Task Deadline Notifications
+
+**Triggers:**
+- Task due in 7 days → notify assigned owner (`task_deadline`, severity: low)
+- Task due in 3 days → notify assigned owner (`task_deadline`, severity: medium)
+- Task due tomorrow → notify assigned owner (`task_deadline`, severity: high)
+- Task overdue → notify assigned owner + project manager (`task_overdue`)
+- Task overdue 7+ days → escalation to admin
+
+**Recipients:** Task owner (by email lookup), secondary owner, project manager
+
+**Template data:**
+```javascript
+{
+  subject: "Task due {timeframe}: {taskTitle} — {projectName}",
+  body: "{taskTitle} in {phase} is due {dueDate}. Current status: {status}.",
+  ctaUrl: "/launch/{projectSlug}",
+  ctaLabel: "View Task"
+}
+```
+
+#### Scenario C: Client Portal Activity Nudges
+
+**Triggers:**
+- Inventory not submitted in 7+ days → nudge client (`inventory_reminder`)
+- Client has open support ticket with no response for 3+ days → nudge client (`ticket_followup`)
+- New announcement posted targeting client → nudge client (`announcement_nudge`)
+
+**Recipients:** Client user(s) by slug
+
+**Template data:**
+```javascript
+{
+  subject: "Reminder: Your weekly inventory update is due — {practiceName}",
+  body: "Your last inventory submission was {daysSince} days ago. Please submit your weekly update to keep your lab supplies on track.",
+  ctaUrl: "/portal/{slug}",
+  ctaLabel: "Submit Inventory"
+}
+```
+
+#### Scenario D: Implementation Milestone Reminders
+
+**Triggers:**
+- Project reaches 25% / 50% / 75% / 100% task completion → notify client + PM (`milestone_reached`)
+- Go-live date approaching (30 / 14 / 7 days out) → notify client + team (`milestone_reminder`)
+- Phase transition (all tasks in a phase completed) → notify client + PM (`milestone_reached`)
+
+**Recipients:** Client user, project manager, assigned team members
+
+**Template data:**
+```javascript
+{
+  subject: "Milestone reached: {projectName} is {percentage}% complete!",
+  body: "Great progress! {projectName} has reached {percentage}% completion. {completedTasks} of {totalTasks} tasks are done. Next up: {nextPhase}.",
+  ctaUrl: "/portal/{slug}",
+  ctaLabel: "View Progress"
+}
+```
+
+### Backend Changes (`server.js`)
+
+1. **Add `phone` field to user model** — update `POST /api/users` and `PUT /api/users/:id` to accept optional `phone` field (for future SMS channel)
 2. **Add notification preferences to user model:**
    ```javascript
    notificationPreferences: {
-     emailReminders: true,      // default true
-     smsReminders: false,       // default false
-     reminderDaysBefore: [1, 3, 7], // days before due date
-     overdueReminders: true     // daily reminders for overdue
+     emailReminders: true,        // default true
+     smsReminders: false,         // default false (future)
+     reminderDaysBefore: [1, 3, 7],
+     overdueReminders: true,
+     inventoryReminders: true,
+     milestoneNotifications: true,
+     quietHoursStart: null,       // e.g. "22:00" (future)
+     quietHoursEnd: null          // e.g. "08:00" (future)
    }
    ```
-3. **Install SMS library** - add `twilio` to package.json (or use a simpler HTTP-based SMS API)
-4. **Create SMS utility** (`sms.js`):
-   - Configure via env vars: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`
-   - `sendSMS(to, message)` - core send function
-5. **Create reminder scheduler** (in `server.js`):
-   - New `setInterval` job running daily (configurable via `REMINDER_CHECK_INTERVAL_HOURS`, default 24)
-   - `checkAndSendReminders()` function:
-     a. Fetch all active projects
-     b. For each project, fetch tasks
-     c. Find tasks with `dueDate` approaching (within configured `reminderDaysBefore`)
-     d. Find overdue tasks (past `dueDate`, not completed)
-     e. Group reminders by owner (email)
-     f. Look up user by email to get notification preferences and phone
-     g. Send email digest (one email per user with all their upcoming/overdue tasks)
-     h. Send SMS for high-priority items (if user opted in)
-   - Log reminders sent to `reminder_log` DB key
-6. **New API endpoints:**
-   - `GET /api/admin/reminder-settings` - Get global reminder config
-   - `PUT /api/admin/reminder-settings` - Update global config (enable/disable, timing, etc.)
-   - `GET /api/admin/reminder-log` - View reminder history
-   - `POST /api/admin/reminders/trigger` - Manually trigger reminder check (admin)
-   - `PUT /api/users/:id/notification-preferences` - Update user's notification prefs
-7. **Reminder templates:**
-   - "Task due tomorrow" email/SMS
-   - "Task due in X days" email
-   - "Task overdue by X days" email/SMS
-   - "Weekly digest" email (all upcoming tasks for the week)
-8. **DB keys:**
-   - `reminder_settings` - Global config object
-   - `reminder_log` - Array of sent reminders (max 1000, with timestamp, userId, taskId, channel, status)
+3. **Notification trigger scanner** — `scanAndQueueNotifications()`:
+   - Runs on `setInterval` every 30 minutes (separate from queue processor)
+   - **Service reports scan:** Query `service_reports` for unsigned/unreviewed reports, check if notification already queued (dedup by `relatedEntityId` + `type`), queue new notifications
+   - **Task deadline scan:** For each active project, scan tasks for approaching/overdue due dates, dedup against existing queue entries, queue with appropriate severity
+   - **Client activity scan:** Check last `inventory_submissions_{slug}` date per client, check open tickets, queue nudges for inactive clients
+   - **Milestone scan:** Calculate per-project completion %, compare against last notified milestone (stored on project as `lastMilestoneNotified`), queue milestone notifications
+   - All scans dedup against `pending_notifications` to prevent repeat sends
+4. **Deduplication logic:**
+   ```javascript
+   // Before queuing, check if notification already exists
+   const isDuplicate = queue.some(n =>
+     n.type === type &&
+     n.relatedEntityId === entityId &&
+     n.recipientUserId === userId &&
+     n.status === 'pending'
+   );
+   ```
+5. **New API endpoints:**
+   - `GET /api/admin/reminder-settings` — Get global reminder/trigger config
+   - `PUT /api/admin/reminder-settings` — Update config (enable/disable per scenario, timing)
+   - `POST /api/admin/reminders/trigger` — Manually run `scanAndQueueNotifications()` (admin)
+   - `PUT /api/users/:id/notification-preferences` — Update user's notification prefs
+6. **Reminder settings** — DB key `reminder_settings` (object):
+   ```javascript
+   {
+     enabled: true,
+     scanIntervalMinutes: 30,
+     scenarios: {
+       serviceReportFollowups: { enabled: true, reminderAfterDays: 3 },
+       taskDeadlines: { enabled: true, daysBefore: [1, 3, 7], overdueEscalationDays: 7 },
+       clientActivityNudges: { enabled: true, inventoryReminderDays: 7, ticketFollowupDays: 3 },
+       milestoneReminders: { enabled: true, milestoneThresholds: [25, 50, 75, 100], goLiveDaysBefore: [7, 14, 30] }
+     }
+   }
+   ```
+7. **Add `lastMilestoneNotified` field to project model** — tracks the last completion percentage that triggered a notification, prevents re-sending
 
 ### Frontend Changes
 
-9. **User profile** - add phone number field and notification preference toggles
-10. **Admin settings panel** - reminder configuration section:
-    - Enable/disable automated reminders
-    - Set reminder intervals (days before due date)
-    - Set check frequency
-    - View reminder log/history
-11. **Admin Hub** - reminder status dashboard card showing last run, next run, pending reminders count
+8. **User profile** — add phone number field and notification preference toggles (per-scenario opt-in/out)
+9. **Admin settings panel** — notification trigger configuration:
+    - Per-scenario enable/disable toggles
+    - Timing configuration per scenario (days before, reminder intervals)
+    - View pending queue filtered by scenario type
+10. **Admin Hub** — notification status dashboard card:
+    - Last scan timestamp, next scan
+    - Pending notifications by scenario type
+    - Sent/failed counts for last 24h
 
-### Config Changes
+### Config Changes (`config.js`)
 
-12. Add to `config.js`:
-    - `REMINDER_CHECK_INTERVAL_HOURS` (default 24)
-    - `REMINDER_DAYS_BEFORE` (default [1, 3, 7])
-    - `REMINDER_LOG_MAX_ENTRIES` (default 1000)
-    - SMS/Twilio config vars
+11. Add to `config.js`:
+    - `NOTIFICATION_SCAN_INTERVAL_MINUTES` (default 30)
+    - `TASK_DEADLINE_DAYS_BEFORE` (default `[1, 3, 7]`)
+    - `TASK_OVERDUE_ESCALATION_DAYS` (default 7)
+    - `INVENTORY_REMINDER_DAYS` (default 7)
+    - `SERVICE_REPORT_FOLLOWUP_DAYS` (default 3)
+    - `MILESTONE_THRESHOLDS` (default `[25, 50, 75, 100]`)
+    - `GOLIVE_REMINDER_DAYS_BEFORE` (default `[7, 14, 30]`)
+
+### Template Phasing
+
+- **Phase 1 (launch):** All notifications as plain text — subject + body + CTA link. Simple, reliable, fast to build.
+- **Phase 2 (post-validation):** Upgrade high-value client-facing notifications to branded HTML templates:
+  - Milestone reached (celebratory design with progress bar)
+  - Go-live countdown (branded urgency)
+  - Inventory reminder (clean, professional)
+  - Keep internal notifications (task deadlines, service report reviews) as plain text
 
 ---
 
@@ -497,18 +674,20 @@
 
 Recommended sequencing (dependencies flow top-down):
 
-1. **Feature 1 (Email infrastructure)** - Foundation for Features 2 and 5
-   - Install nodemailer, create email.js module, config, basic send endpoint
-2. **Feature 6 (Claude API)** - Foundation for AI features across 1, 3, 5; developed on separate branch
+1. **Feature 1 (Email + notification queue)** — Foundation for everything; Resend + queue processor + admin endpoints
+   - Install resend, create email.js, notification queue schema, queue processor, admin UI
+2. **Feature 2 (Automated notification triggers)** — Depends on Feature 1's queue; four scenario scanners
+   - Service report follow-ups, task deadlines, client nudges, milestone reminders (all plain text Phase 1)
+3. **Feature 6 (Claude API)** — Foundation for AI features across 1, 3, 5; developed on separate branch
    - Install Anthropic SDK, create claude.js module, usage tracking, admin settings
-3. **Feature 3 (Client messages)** - Independent, high user value
+4. **Feature 3 (Client messages)** — Independent, high user value
    - Backend endpoints, portal UI, admin UI
-4. **Feature 2 (Automated reminders)** - Depends on Feature 1's email infra
-   - Phone field, SMS module, scheduler, reminder templates, admin settings
-5. **Feature 5 (Feedback surveys)** - Depends on Feature 1's email infra
+5. **Feature 5 (Feedback surveys)** — Depends on Feature 1's queue for email delivery
    - Survey model, scheduler, public survey page, analytics, admin config
-6. **Feature 4 (Portal gating)** - Independent, moderate complexity
+6. **Feature 4 (Portal gating)** — Independent, moderate complexity
    - Backend gating logic, portal lock screen, admin config
+7. **Phase 2 HTML templates** — After all features validated with plain text
+   - Upgrade milestone, go-live, inventory, and survey emails to branded HTML
 
 ---
 
@@ -516,33 +695,31 @@ Recommended sequencing (dependencies flow top-down):
 
 | Variable | Required | Default | Feature |
 |----------|----------|---------|---------|
-| `SMTP_HOST` | For email | None | 1, 2 |
-| `SMTP_PORT` | For email | 587 | 1, 2 |
-| `SMTP_USER` | For email | None | 1, 2 |
-| `SMTP_PASS` | For email | None | 1, 2 |
-| `SMTP_FROM` | For email | None | 1, 2 |
-| `TWILIO_ACCOUNT_SID` | For SMS | None | 2 |
-| `TWILIO_AUTH_TOKEN` | For SMS | None | 2 |
-| `TWILIO_PHONE_NUMBER` | For SMS | None | 2 |
-| `REMINDER_CHECK_INTERVAL_HOURS` | No | 24 | 2 |
+| `RESEND_API_KEY` | For email | None | 1, 2, 5 |
+| `EMAIL_FROM_ADDRESS` | No | `notifications@thrive365labs.com` | 1, 2, 5 |
+| `NOTIFICATION_CHECK_INTERVAL_MINUTES` | No | 15 | 1 |
+| `NOTIFICATION_SCAN_INTERVAL_MINUTES` | No | 30 | 2 |
 | `ANTHROPIC_API_KEY` | For AI | None | 6 |
+
+> **Future (SMS channel):** `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` — not needed for Phase 1
 
 ## New Dependencies
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| `nodemailer` | ^6.x | Email sending |
-| `twilio` | ^4.x | SMS sending |
+| `resend` | ^3.x | Transactional email via Resend API (10K/month free) |
 | `@anthropic-ai/sdk` | ^0.x | Claude API client |
+
+> **Future:** `twilio` for SMS channel (Phase 2+)
 
 ## New Database Keys
 
 | Key | Type | Feature |
 |-----|------|---------|
-| `email_templates` | Array | 1 |
-| `email_log` | Array (max 500) | 1 |
+| `pending_notifications` | Array | 1 |
+| `notification_log` | Array (max 2000) | 1 |
+| `notification_settings` | Object | 1 |
 | `reminder_settings` | Object | 2 |
-| `reminder_log` | Array (max 1000) | 2 |
 | `feedback_surveys` | Array | 5 |
 | `survey_settings` | Object | 5 |
 | `ai_usage_log` | Array (max 1000) | 6 |
@@ -552,13 +729,34 @@ Recommended sequencing (dependencies flow top-down):
 
 | File | Features | Changes |
 |------|----------|---------|
-| `server.js` | 1, 2, 3, 4, 5, 6 | New endpoints, schedulers, gating middleware, survey logic, AI endpoints |
-| `public/app.js` | 1, 2, 3, 4, 5, 6 | Email composer, reminder settings, client message UI, gating config, survey dashboard/admin, AI draft/summary/insights buttons |
+| `server.js` | 1, 2, 3, 4, 5, 6 | Notification queue processor, trigger scanners, new endpoints, gating middleware, survey logic, AI endpoints |
+| `public/app.js` | 1, 2, 3, 4, 5, 6 | Email composer, notification queue dashboard, reminder settings, client message UI, gating config, survey dashboard/admin, AI buttons |
 | `public/portal.html` | 3, 4, 5 | Client messaging UI, portal lock screen, survey prompt banner |
-| `public/admin-hub.html` | 2, 5, 6 | Reminder dashboard card, survey status overview, AI usage card |
+| `public/admin-hub.html` | 1, 2, 5, 6 | Notification queue stats, reminder status card, survey status overview, AI usage card |
 | `public/survey.html` (new) | 5 | Standalone survey response page (public, token-gated) |
 | `config.js` | 1, 2, 4, 5, 6 | New config constants |
-| `package.json` | 1, 2, 6 | New dependencies |
-| `email.js` (new) | 1, 2, 5 | Email utility module (shared by email, reminders, surveys) |
-| `sms.js` (new) | 2 | SMS utility module |
+| `package.json` | 1, 6 | New dependencies (resend, @anthropic-ai/sdk) |
+| `email.js` (new) | 1, 2, 5 | Resend email service module (shared by queue, reminders, surveys) |
 | `claude.js` (new) | 6 | Claude API utility module (developed on separate branch) |
+
+---
+
+## Supabase Migration Notes
+
+> The architecture is designed for a clean migration to Supabase when the time comes. Here's what changes:
+
+| Current (Replit) | Future (Supabase) | What stays the same |
+|------------------|-------------------|---------------------|
+| Replit DB key-value store | Postgres tables | Data models / schemas |
+| `setInterval` queue processor (15 min) | `pg_cron` + Edge Function | Processing logic |
+| `setInterval` trigger scanner (30 min) | `pg_cron` + Edge Function | Scanning logic |
+| Resend SDK in Node.js | Resend SDK in Edge Function | Resend API key + templates |
+| In-memory dedup checks | SQL `WHERE NOT EXISTS` | Dedup logic (cleaner in SQL) |
+| Manual `notification_log` truncation | Postgres partitioning / TTL | Log retention policy |
+
+**Migration steps:**
+1. Create Postgres tables matching current DB key schemas
+2. Move `processNotificationQueue()` to a Supabase Edge Function triggered by `pg_cron`
+3. Move `scanAndQueueNotifications()` to a separate Edge Function on its own cron schedule
+4. Keep `email.js` (Resend) as-is — works identically in Edge Functions
+5. Update API endpoints to query Postgres instead of Replit DB
