@@ -4,6 +4,17 @@
 
 ---
 
+### Version 2.18.0 - February 16, 2026
+
+#### New Features
+- Add Feature 6: Claude API integration to plan
+- Add Feature 5: Automated feedback surveys at 30/60/90 day marks
+- Add missing mimeType field to service report photo and file entries
+
+#### Changes
+- Redesign Features 1 & 2 with queue-based notification architecture
+
+
 ### Version 2.17.0 - February 10, 2026
 
 #### New Features
