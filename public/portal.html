@@ -566,6 +566,9 @@
                       if (act.action === 'task_completed') return { icon: Icons.target, color: 'text-green-500' };
                       if (act.action === 'document_added') return { icon: Icons.folder, color: 'text-primary' };
                       if (act.action === 'service_report_client_signed') return { icon: Icons.check, color: 'text-green-600' };
+                      if (act.action === 'service_report_created') return { icon: Icons.clipboard, color: 'text-blue-600' };
+                      if (act.action === 'service_report_completed') return { icon: Icons.check, color: 'text-green-600' };
+                      if (act.action === 'service_report_pending_signature') return { icon: Icons.warning, color: 'text-orange-500' };
                       if (act.action === 'inventory_submissions_deleted') return { icon: Icons.clipboard, color: 'text-red-500' };
                       return { icon: Icons.activity, color: 'text-gray-500' };
                     };
@@ -579,6 +582,9 @@
                       if (act.action === 'task_completed') return act.details?.taskTitle || 'Task completed';
                       if (act.action === 'document_added') return `New document: ${act.details?.documentTitle || 'File shared'}`;
                       if (act.action === 'service_report_client_signed') return `Service report signed: ${act.details?.serviceType || 'Report'}`;
+                      if (act.action === 'service_report_created') return `New service report: ${act.details?.serviceType || 'Service'} - ${act.details?.clientName || ''}`;
+                      if (act.action === 'service_report_completed') return `Service report completed: ${act.details?.serviceType || 'Report'}`;
+                      if (act.action === 'service_report_pending_signature') return `Service report requires your signature`;
                       if (act.action === 'inventory_submissions_deleted') return `Inventory submissions removed`;
                       return typeof act.details === 'string' ? act.details : 'Activity recorded';
                     };
@@ -2451,7 +2457,7 @@
     };
 
     // Service Report Detail View for Client Portal (read-only view + signing)
-    const ServiceReportDetail = ({ report, token, onBack, onSigned }) => {
+    const ServiceReportDetail = ({ report, token, onBack, onSigned, backLabel }) => {
       const [signing, setSigning] = useState(false);
       const [customerSignature, setCustomerSignature] = useState('');
       const [submitting, setSubmitting] = useState(false);
@@ -2463,7 +2469,7 @@
         return new Date(dateStr).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
       };
 
-      const needsSignature = report.rawStatus === 'signature_needed';
+      const needsSignature = report.status === 'signature_needed';
 
       const handleSign = async () => {
         if (!customerSignature || !customerSignature.startsWith('data:image')) {
@@ -2506,7 +2512,7 @@
           {/* Back button */}
           <button onClick={onBack} className="flex items-center gap-2 text-primary hover:text-accent font-medium text-sm">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
-            Back to Service History
+            {backLabel || 'Back'}
           </button>
 
           {/* Report Header */}
@@ -2732,7 +2738,7 @@
                   <h4 className="font-semibold text-green-800 text-lg">Signature Submitted Successfully</h4>
                   <p className="text-sm text-green-700 mt-1">This service report is now complete. Thank you!</p>
                   <button onClick={onBack} className="mt-4 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 text-sm">
-                    Return to Service History
+                    {backLabel ? `Return to ${backLabel.replace('Back to ', '')}` : 'Return'}
                   </button>
                 </div>
               )}
@@ -3082,10 +3088,8 @@
       const [note, setNote] = useState('');
       const [uploading, setUploading] = useState(false);
       const [uploadMessage, setUploadMessage] = useState(null);
-      const [signingReportId, setSigningReportId] = useState(null);
-      const [customerSignature, setCustomerSignature] = useState('');
-      const [signSubmitting, setSignSubmitting] = useState(false);
-      const [signError, setSignError] = useState(null);
+      const [viewingReport, setViewingReport] = useState(null);
+      const [fetchingReport, setFetchingReport] = useState(false);
       const [reportSort, setReportSort] = useState('date_desc');
       const [reportStatusFilter, setReportStatusFilter] = useState('');
       const highlightRef = useRef(null);
@@ -3094,15 +3098,6 @@
 
       // Check if user has any HubSpot IDs configured for uploads
       const hasHubSpotConfig = userData?.hubspotCompanyId || userData?.hubspotDealId || userData?.hubspotContactId;
-
-      // Scroll to highlighted report when navigating from Service History
-      useEffect(() => {
-        if (highlightServiceReportId && highlightRef.current) {
-          setTimeout(() => {
-            highlightRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }, 300);
-        }
-      }, [highlightServiceReportId, documents]);
 
       const refreshDocuments = async () => {
         if (!slug) return;
@@ -3117,50 +3112,67 @@
         }
       };
 
-      // Handle signing a service report from the Files area
-      const handleSignReport = async () => {
-        if (!signingReportId) return;
-        if (!customerSignature || !customerSignature.startsWith('data:image')) {
-          setSignError('Please provide your signature before submitting.');
-          return;
-        }
-        setSignSubmitting(true);
-        setSignError(null);
+      // Open full service report view (for review + sign or just viewing)
+      const openReportView = async (serviceReportId) => {
+        setFetchingReport(true);
         try {
-          const response = await fetch(`${API_URL}/api/client/service-reports/${signingReportId}/sign`, {
-            method: 'PUT',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              customerSignature,
-              customerSignatureDate: new Date().toISOString().split('T')[0]
-            })
+          const response = await fetch(`${API_URL}/api/client/service-reports/${serviceReportId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
           });
-          const result = await response.json();
           if (!response.ok) {
-            setSignError(result.error || 'Failed to submit signature');
+            const err = await response.json();
+            alert(err.error || 'Failed to load report');
             return;
           }
-          // Update status locally, close modal, refresh docs
-          setDocuments(prev => prev.map(d => d.serviceReportId === signingReportId ? { ...d, reportStatus: 'submitted' } : d));
-          const signedId = signingReportId;
-          setSigningReportId(null);
-          setCustomerSignature('');
-          refreshDocuments();
-          // Open the now-signed report PDF in a new tab
-          try {
-            window.open(`${API_URL}/api/client/service-reports/${signedId}/pdf?token=${encodeURIComponent(token)}`, '_blank');
-          } catch (dlErr) {
-            console.error('Auto-download after signing failed:', dlErr);
-          }
+          const report = await response.json();
+          setViewingReport(report);
         } catch (err) {
-          setSignError('Network error. Please try again.');
+          console.error('Error fetching report:', err);
+          alert('Failed to load service report. Please try again.');
         } finally {
-          setSignSubmitting(false);
+          setFetchingReport(false);
         }
       };
+
+      // Called after client signs the report within ServiceReportDetail
+      const handleReportSigned = async (reportId) => {
+        setDocuments(prev => prev.map(d => d.serviceReportId === reportId ? { ...d, reportStatus: 'submitted' } : d));
+        refreshDocuments();
+        // Auto-download the now-signed report PDF
+        try {
+          const pdfResp = await fetch(`${API_URL}/api/client/service-reports/${reportId}/pdf`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (pdfResp.ok) {
+            const blob = await pdfResp.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'Service_Report.pdf';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            a.remove();
+          }
+        } catch (dlErr) {
+          console.error('Auto-download after signing failed:', dlErr);
+        }
+      };
+
+      // When navigating from Service History, auto-open the report view
+      useEffect(() => {
+        if (highlightServiceReportId) {
+          if (highlightRef.current) {
+            setTimeout(() => {
+              highlightRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 300);
+          }
+          const doc = (documents || []).find(d => d.serviceReportId === highlightServiceReportId);
+          if (doc) {
+            openReportView(doc.serviceReportId);
+          }
+        }
+      }, [highlightServiceReportId]);
 
       const adminDocs = (documents || []).filter(doc => doc.uploadedBy !== 'client');
       const clientUploads = (documents || []).filter(doc => doc.uploadedBy === 'client');
@@ -3238,13 +3250,9 @@
                         const isSigned = reportStatus === 'submitted';
                         const isHighlighted = highlightServiceReportId && doc.serviceReportId === highlightServiceReportId;
 
-                        const handleDocAction = (e) => {
+                        const handleDocDownload = (e) => {
                           e.preventDefault();
                           if (doc.serviceReportId) {
-                            if (needsSignature) {
-                              setSigningReportId(doc.serviceReportId);
-                              return;
-                            }
                             window.open(`${API_URL}/api/client/service-reports/${doc.serviceReportId}/pdf?token=${encodeURIComponent(token)}`, '_blank');
                           }
                         };
@@ -3288,37 +3296,41 @@
                               <p className="font-medium text-gray-800">{doc.title}</p>
                               {doc.description && <p className="text-sm text-gray-500">{doc.description}</p>}
                               {needsSignature && (
-                                <p className="text-xs text-orange-600 font-medium mt-1">Signature required before download</p>
+                                <p className="text-xs text-orange-600 font-medium mt-1">Review and signature required before download</p>
                               )}
                             </div>
                             {needsSignature ? (
-                              <div className="flex items-center gap-2 flex-shrink-0">
+                              <button
+                                onClick={(e) => { e.preventDefault(); openReportView(doc.serviceReportId); }}
+                                disabled={fetchingReport}
+                                className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 transition whitespace-nowrap disabled:opacity-50"
+                              >
+                                {fetchingReport ? (
+                                  <><div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div> Loading...</>
+                                ) : (
+                                  <><svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                  Review & Sign</>
+                                )}
+                              </button>
+                            ) : (
+                              <div className="flex-shrink-0 flex items-center gap-2">
+                                {isSigned && <span className="text-green-600 text-xs font-semibold">✓ Signed</span>}
                                 <button
-                                  onClick={() => window.open(`${API_URL}/api/client/service-reports/${doc.serviceReportId}/pdf?token=${encodeURIComponent(token)}`, '_blank')}
-                                  className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 hover:bg-gray-50 transition whitespace-nowrap text-gray-700"
+                                  onClick={(e) => { e.preventDefault(); openReportView(doc.serviceReportId); }}
+                                  disabled={fetchingReport}
+                                  className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-gray-600 rounded-lg hover:bg-gray-100 transition whitespace-nowrap"
                                 >
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                  Preview
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                                  View
                                 </button>
                                 <button
-                                  onClick={handleDocAction}
-                                  className="flex items-center gap-1.5 px-3 py-2 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 transition whitespace-nowrap"
+                                  onClick={handleDocDownload}
+                                  className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-primary rounded-lg hover:bg-gray-100 transition whitespace-nowrap"
                                 >
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                                  Sign & Download
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                  Download
                                 </button>
                               </div>
-                            ) : (
-                              <button
-                                onClick={handleDocAction}
-                                className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg hover:bg-gray-100 transition whitespace-nowrap"
-                              >
-                                {isSigned && <span className="text-green-600 text-xs font-semibold">✓ Signed</span>}
-                                <span className="text-primary flex items-center gap-1">
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                                  Download PDF
-                                </span>
-                              </button>
                             )}
                           </div>
                         );
@@ -3444,58 +3456,20 @@
             </div>
           )}
 
-          {/* Signature Modal for unsigned service reports */}
-          {signingReportId && (
-            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => { setSigningReportId(null); setCustomerSignature(''); setSignError(null); }}>
-              <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-bold text-gray-900">Sign Service Report</h3>
-                  <button onClick={() => { setSigningReportId(null); setCustomerSignature(''); setSignError(null); }} className="text-gray-400 hover:text-gray-600">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-                  </button>
-                </div>
-
-                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
-                  <p className="text-sm text-orange-800">
-                    Your signature is required to acknowledge this service report. Once signed, the report PDF will download automatically.
-                  </p>
-                </div>
-
-                <SignaturePad
-                  label="Your Signature"
-                  onSave={(sig) => setCustomerSignature(sig)}
+          {/* Full Report View overlay for reviewing + signing service reports */}
+          {viewingReport && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
+                <ServiceReportDetail
+                  report={viewingReport}
+                  token={token}
+                  backLabel="Back to Files"
+                  onBack={() => setViewingReport(null)}
+                  onSigned={(reportId) => {
+                    handleReportSigned(reportId);
+                    setTimeout(() => setViewingReport(null), 2000);
+                  }}
                 />
-
-                {signError && (
-                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">{signError}</div>
-                )}
-
-                <div className="flex gap-3 pt-2">
-                  <button
-                    onClick={() => { setSigningReportId(null); setCustomerSignature(''); setSignError(null); }}
-                    className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition"
-                    disabled={signSubmitting}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleSignReport}
-                    disabled={signSubmitting || !customerSignature}
-                    className="flex-1 px-4 py-2.5 bg-primary text-white rounded-lg font-medium hover:bg-accent transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  >
-                    {signSubmitting ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                        Submitting...
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                        Sign & Download
-                      </>
-                    )}
-                  </button>
-                </div>
               </div>
             </div>
           )}
@@ -4957,7 +4931,7 @@
                     <p className="font-semibold text-red-800">
                       {unsignedCount} service report{unsignedCount > 1 ? 's' : ''} requires your signature
                     </p>
-                    <p className="text-sm text-red-600">Please sign to download your service report{unsignedCount > 1 ? 's' : ''}.</p>
+                    <p className="text-sm text-red-600">Please review and sign your service report{unsignedCount > 1 ? 's' : ''} to download.</p>
                   </div>
                   <button
                     onClick={() => navigateToFile(null)}
