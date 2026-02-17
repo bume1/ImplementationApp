@@ -3311,7 +3311,7 @@
       const loadData = async () => {
         setLoading(true);
         try {
-          const [s, q, l, ns, rs, et] = await Promise.all([
+          const results = await Promise.allSettled([
             apiFetch('/api/admin/notifications/stats'),
             apiFetch('/api/admin/notifications/queue'),
             apiFetch('/api/admin/notifications/log?limit=50'),
@@ -3319,12 +3319,14 @@
             apiFetch('/api/admin/reminder-settings'),
             apiFetch('/api/admin/email-templates'),
           ]);
-          setStats(s);
-          setQueue(Array.isArray(q) ? q : []);
-          setLog(Array.isArray(l) ? l : []);
-          setNotifSettings(ns);
-          setReminderSettings(rs);
-          setEmailTemplates(Array.isArray(et) ? et : []);
+          const val = (i) => results[i].status === 'fulfilled' ? results[i].value : null;
+          const s = val(0), q = val(1), l = val(2), ns = val(3), rs = val(4), et = val(5);
+          if (s && !s.error) setStats(s);
+          if (Array.isArray(q)) setQueue(q);
+          if (Array.isArray(l)) setLog(l);
+          if (ns && !ns.error) setNotifSettings(ns);
+          if (rs && !rs.error) setReminderSettings(rs);
+          if (Array.isArray(et)) setEmailTemplates(et);
         } catch (e) { console.error('Load notifications error:', e); }
         setLoading(false);
       };
