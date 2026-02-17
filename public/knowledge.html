@@ -37,6 +37,9 @@
     .search-dropdown { max-height: 400px; overflow-y: auto; }
     .search-item { transition: background 0.15s ease; }
     .search-item:hover { background: #f0f7ff; }
+    mark.active-match { background: #f97316; color: white; box-shadow: 0 0 0 2px #f97316, 0 0 8px rgba(249,115,22,0.4); border-radius: 2px; }
+    @keyframes match-pulse { 0%,100% { box-shadow: 0 0 0 2px #f97316, 0 0 8px rgba(249,115,22,0.4); } 50% { box-shadow: 0 0 0 4px #f97316, 0 0 16px rgba(249,115,22,0.6); } }
+    mark.active-match { animation: match-pulse 1s ease-in-out; }
   </style>
 </head>
 <body>
@@ -3011,6 +3014,124 @@ This renders as color-coded sections with distinct visual styling.`
       return parts;
     };
 
+    // ============== CONTENT BLOCK RENDERER (shared helper) ==============
+    // Groups consecutive list items into proper <ol>/<ul> wrappers so numbering resets per section
+    const renderContentBlock = (content, searchTerm, options = {}) => {
+      if (!content) return null;
+      const { compact } = options;
+      const mlClass = compact ? 'ml-4' : 'ml-6';
+      const lines = content.split('\n');
+      const elements = [];
+      let i = 0;
+      let key = 0;
+
+      while (i < lines.length) {
+        const trimmed = lines[i].trim();
+
+        // Empty line spacer
+        if (trimmed === '') {
+          elements.push(<div key={key++} className={compact ? 'h-1' : 'h-2'} />);
+          i++;
+          continue;
+        }
+
+        // Section header (**BOLD UPPERCASE:** or **BOLD UPPERCASE**)
+        if (!compact && trimmed.match(/^\*\*[A-Z][^*]+:?\*\*$/)) {
+          const text = trimmed.replace(/\*\*/g, '');
+          elements.push(<h4 key={key++} className="font-bold text-gray-900 mt-6 mb-3 text-base"><HighlightText text={text} searchTerm={searchTerm} /></h4>);
+          i++;
+          continue;
+        }
+
+        // Step header (**STEP N: ...**)
+        if (!compact && trimmed.match(/^\*\*STEP \d+:/i)) {
+          const text = trimmed.replace(/\*\*/g, '');
+          elements.push(<h5 key={key++} className="font-bold text-gray-800 mt-4 mb-2"><HighlightText text={text} searchTerm={searchTerm} /></h5>);
+          i++;
+          continue;
+        }
+
+        // Checkboxes (must check before bullets since - [ ] starts with -)
+        if (trimmed.startsWith('- [ ]') || trimmed.startsWith('- [x]')) {
+          const checked = trimmed.includes('[x]');
+          const text = trimmed.substring(trimmed.indexOf(']') + 2);
+          elements.push(
+            <div key={key++} className="flex items-center gap-2 mb-1 ml-4">
+              <input type="checkbox" checked={checked} readOnly className="rounded" />
+              <span>{renderTextWithBold(text, searchTerm)}</span>
+            </div>
+          );
+          i++;
+          continue;
+        }
+
+        // Checkmark lines (✓) - group consecutive into a styled list
+        if (trimmed.startsWith('\u2713 ') || trimmed.startsWith('\u2714 ')) {
+          const items = [];
+          while (i < lines.length) {
+            const t = lines[i].trim();
+            if (t.startsWith('\u2713 ') || t.startsWith('\u2714 ')) {
+              items.push(t.substring(2));
+              i++;
+            } else break;
+          }
+          elements.push(
+            <div key={key++} className={`space-y-1 mb-2 ${mlClass}`}>
+              {items.map((item, j) => (
+                <div key={j} className="flex items-start gap-2">
+                  <svg className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                  <span>{renderTextWithBold(item, searchTerm)}</span>
+                </div>
+              ))}
+            </div>
+          );
+          continue;
+        }
+
+        // Consecutive bullet items → wrap in <ul>
+        if (trimmed.startsWith('• ') || (trimmed.startsWith('- ') && !trimmed.startsWith('- ['))) {
+          const items = [];
+          while (i < lines.length) {
+            const t = lines[i].trim();
+            if ((t.startsWith('• ') || (t.startsWith('- ') && !t.startsWith('- ['))) && t.length > 2) {
+              items.push(t.substring(2));
+              i++;
+            } else break;
+          }
+          elements.push(
+            <ul key={key++} className={`${mlClass} mb-2 list-disc space-y-1`}>
+              {items.map((item, j) => <li key={j}>{renderTextWithBold(item, searchTerm)}</li>)}
+            </ul>
+          );
+          continue;
+        }
+
+        // Consecutive numbered items → wrap in <ol> (resets numbering per group)
+        if (trimmed.match(/^\d+\.\s/)) {
+          const items = [];
+          while (i < lines.length) {
+            const t = lines[i].trim();
+            if (t.match(/^\d+\.\s/)) {
+              items.push(t.substring(t.indexOf('.') + 2));
+              i++;
+            } else break;
+          }
+          elements.push(
+            <ol key={key++} className={`${mlClass} mb-2 list-decimal space-y-1`}>
+              {items.map((item, j) => <li key={j}>{renderTextWithBold(item, searchTerm)}</li>)}
+            </ol>
+          );
+          continue;
+        }
+
+        // Default paragraph
+        elements.push(<p key={key++} className={`${compact ? 'mb-1' : 'mb-2'} leading-relaxed`}>{renderTextWithBold(compact ? trimmed : lines[i], searchTerm)}</p>);
+        i++;
+      }
+
+      return elements;
+    };
+
     // ============== STRUCTURED ARTICLE RENDERER ==============
     const StructuredArticleContent = ({ article, searchTerm }) => {
       if (!article.format) return null;
@@ -3031,13 +3152,7 @@ This renders as color-coded sections with distinct visual styling.`
               <div key={section.key} className={`border-l-4 ${section.borderColor} pl-4 py-2`}>
                 <h5 className={`font-semibold ${section.textColor} text-sm uppercase tracking-wide mb-1`}>{section.label}</h5>
                 <div className="text-gray-600 text-sm">
-                  {value.split('\n').map((line, i) => {
-                    const trimmed = line.trim();
-                    if (!trimmed) return <div key={i} className="h-1" />;
-                    if (trimmed.startsWith('- ') || trimmed.startsWith('• ')) return <li key={i} className="ml-4 mb-1 list-disc">{renderTextWithBold(trimmed.substring(2), searchTerm)}</li>;
-                    if (trimmed.match(/^\d+\.\s/)) return <li key={i} className="ml-4 mb-1 list-decimal">{renderTextWithBold(trimmed.substring(trimmed.indexOf('.') + 2), searchTerm)}</li>;
-                    return <p key={i} className="mb-1 leading-relaxed">{renderTextWithBold(trimmed, searchTerm)}</p>;
-                  })}
+                  {renderContentBlock(value, searchTerm, { compact: true })}
                 </div>
               </div>
             );
@@ -3051,37 +3166,7 @@ This renders as color-coded sections with distinct visual styling.`
       if (!content) return null;
       return (
         <div className="prose prose-sm max-w-none mt-4 text-gray-600">
-          {content.split('\n').map((line, pIdx) => {
-            const trimmed = line.trim();
-            if (trimmed === '') return <div key={pIdx} className="h-2" />;
-            if (trimmed.match(/^\*\*[A-Z][^*]+:?\*\*$/)) {
-              const text = trimmed.replace(/\*\*/g, '');
-              return <h4 key={pIdx} className="font-bold text-gray-900 mt-6 mb-3 text-base"><HighlightText text={text} searchTerm={searchTerm} /></h4>;
-            }
-            if (trimmed.match(/^\*\*STEP \d+:/)) {
-              const text = trimmed.replace(/\*\*/g, '');
-              return <h5 key={pIdx} className="font-bold text-gray-800 mt-4 mb-2"><HighlightText text={text} searchTerm={searchTerm} /></h5>;
-            }
-            if (trimmed.startsWith('• ') || trimmed.startsWith('- ')) {
-              const text = trimmed.substring(2);
-              return <li key={pIdx} className="ml-6 mb-1 list-disc">{renderTextWithBold(text, searchTerm)}</li>;
-            }
-            if (trimmed.match(/^\d+\.\s/)) {
-              const text = trimmed.substring(trimmed.indexOf('.') + 2);
-              return <li key={pIdx} className="ml-6 mb-1 list-decimal">{renderTextWithBold(text, searchTerm)}</li>;
-            }
-            if (trimmed.startsWith('- [ ]') || trimmed.startsWith('- [x]')) {
-              const checked = trimmed.includes('[x]');
-              const text = trimmed.substring(trimmed.indexOf(']') + 2);
-              return (
-                <div key={pIdx} className="flex items-center gap-2 mb-1 ml-4">
-                  <input type="checkbox" checked={checked} readOnly className="rounded" />
-                  <span>{renderTextWithBold(text, searchTerm)}</span>
-                </div>
-              );
-            }
-            return <p key={pIdx} className="mb-2 leading-relaxed">{renderTextWithBold(line, searchTerm)}</p>;
-          })}
+          {renderContentBlock(content, searchTerm)}
         </div>
       );
     };
@@ -3172,7 +3257,7 @@ This renders as color-coded sections with distinct visual styling.`
     };
 
     // ============== SEARCH BAR COMPONENT ==============
-    const SearchBar = ({ searchTerm, onSearchChange, resultCount }) => {
+    const SearchBar = ({ searchTerm, onSearchChange, resultCount, currentMatchIndex, totalMatches, onPrevMatch, onNextMatch }) => {
       const inputRef = useRef(null);
       return (
         <div className="mb-6">
@@ -3182,15 +3267,40 @@ This renders as color-coded sections with distinct visual styling.`
               type="text"
               value={searchTerm}
               onChange={(e) => onSearchChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (!searchTerm || totalMatches === 0) return;
+                if (e.key === 'Enter') { e.shiftKey ? onPrevMatch() : onNextMatch(); e.preventDefault(); }
+              }}
               placeholder="Search guides, articles, and documentation..."
               className="w-full px-4 py-3 pl-12 bg-white border border-gray-200 rounded-xl shadow-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-gray-800 placeholder-gray-400 transition"
             />
             <svg className="absolute left-4 top-3.5 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
             {searchTerm && (
-              <div className="flex items-center gap-3 absolute right-3 top-2.5">
-                <span className="text-sm text-gray-500">{resultCount} result{resultCount !== 1 ? 's' : ''}</span>
-                <button onClick={() => onSearchChange('')} className="p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+              <div className="flex items-center gap-2 absolute right-3 top-2">
+                {totalMatches > 0 && (
+                  <>
+                    <span className="text-xs text-gray-500 tabular-nums min-w-[4rem] text-center">{currentMatchIndex + 1} of {totalMatches}</span>
+                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
+                      <button
+                        onClick={onPrevMatch}
+                        title="Previous match (Shift+Enter)"
+                        className="p-1.5 text-gray-500 hover:text-primary-600 hover:bg-primary-50 transition border-r border-gray-200"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7"/></svg>
+                      </button>
+                      <button
+                        onClick={onNextMatch}
+                        title="Next match (Enter)"
+                        className="p-1.5 text-gray-500 hover:text-primary-600 hover:bg-primary-50 transition"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                      </button>
+                    </div>
+                  </>
+                )}
+                {totalMatches === 0 && <span className="text-xs text-gray-400">0 results</span>}
+                <button onClick={() => onSearchChange('')} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition ml-1">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
                 </button>
               </div>
             )}
@@ -3387,11 +3497,11 @@ This renders as color-coded sections with distinct visual styling.`
     const App = () => {
       // Authentication
       const [token, setToken] = useState(() => {
-        return localStorage.getItem('unified_token') || localStorage.getItem('admin_token') || localStorage.getItem('token');
+        return localStorage.getItem('unified_token') || localStorage.getItem('admin_token') || localStorage.getItem('token') || localStorage.getItem('portal_token') || localStorage.getItem('service_token');
       });
       const [user, setUser] = useState(() => {
         try {
-          const userData = localStorage.getItem('unified_user') || localStorage.getItem('admin_user') || localStorage.getItem('user');
+          const userData = localStorage.getItem('unified_user') || localStorage.getItem('admin_user') || localStorage.getItem('user') || localStorage.getItem('portal_user') || localStorage.getItem('service_user');
           return userData ? JSON.parse(userData) : null;
         } catch {
           return null;
@@ -3404,6 +3514,8 @@ This renders as color-coded sections with distinct visual styling.`
       const [searchTerm, setSearchTerm] = useState('');
       const [activeSection, setActiveSection] = useState('walkthroughs');
       const [isMobileOpen, setIsMobileOpen] = useState(false);
+      const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+      const [totalMatches, setTotalMatches] = useState(0);
       const searchInputRef = useRef(null);
 
       // Compute user tier
@@ -3492,6 +3604,41 @@ This renders as color-coded sections with distinct visual styling.`
         filteredGuides.reduce((count, [, guide]) => count + (guide.articles || []).length, 0),
       [filteredGuides]);
 
+      // Count and track <mark> highlight elements for navigation
+      useEffect(() => {
+        if (!searchTerm) { setTotalMatches(0); setCurrentMatchIndex(0); return; }
+        // Short delay to let React render the <mark> elements first
+        const timer = setTimeout(() => {
+          const marks = document.querySelectorAll('main mark:not(.active-match)');
+          setTotalMatches(marks.length);
+          setCurrentMatchIndex(prev => prev >= marks.length ? 0 : prev);
+        }, 150);
+        return () => clearTimeout(timer);
+      }, [searchTerm, filteredGuides]);
+
+      // Navigate to a specific <mark> match by index
+      const navigateToMatch = useCallback((index) => {
+        const marks = document.querySelectorAll('main mark');
+        if (marks.length === 0) return;
+        // Wrap around
+        const targetIndex = ((index % marks.length) + marks.length) % marks.length;
+        // Remove active class from all marks
+        marks.forEach(m => m.classList.remove('active-match'));
+        // Activate target
+        const target = marks[targetIndex];
+        target.classList.add('active-match');
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setCurrentMatchIndex(targetIndex);
+      }, []);
+
+      const handleNextMatch = useCallback(() => {
+        navigateToMatch(currentMatchIndex + 1);
+      }, [currentMatchIndex, navigateToMatch]);
+
+      const handlePrevMatch = useCallback(() => {
+        navigateToMatch(currentMatchIndex - 1);
+      }, [currentMatchIndex, navigateToMatch]);
+
       // Separate known issues from regular guides
       const regularGuides = filteredGuides.filter(([key, guide]) => !guide.isKnownIssue);
       const knownIssuesGuide = filteredGuides.find(([key, guide]) => guide.isKnownIssue);
@@ -3569,8 +3716,12 @@ This renders as color-coded sections with distinct visual styling.`
             {/* Search Bar */}
             <SearchBar
               searchTerm={searchTerm}
-              onSearchChange={setSearchTerm}
+              onSearchChange={(val) => { setSearchTerm(val); setCurrentMatchIndex(0); }}
               resultCount={searchResultCount}
+              currentMatchIndex={currentMatchIndex}
+              totalMatches={totalMatches}
+              onPrevMatch={handlePrevMatch}
+              onNextMatch={handleNextMatch}
             />
 
             {/* Workflow Walkthrough (hidden when searching) */}

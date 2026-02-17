@@ -10351,6 +10351,26 @@ app.post('/api/admin/notifications/cancel/:id', authenticateToken, requireAdmin,
   }
 });
 
+// Bulk cancel/delete notifications from queue (admin only)
+app.post('/api/admin/notifications/bulk-delete', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+    const queue = (await db.get('pending_notifications')) || [];
+    const idSet = new Set(ids);
+    const remaining = queue.filter(n => !idSet.has(n.id));
+    const removedCount = queue.length - remaining.length;
+    await db.set('pending_notifications', remaining);
+    await logActivity(req.user.id, req.user.name, 'bulk_deleted', 'notifications', null, { count: removedCount });
+    res.json({ message: `${removedCount} notification(s) removed`, removedCount });
+  } catch (error) {
+    console.error('Bulk delete notifications error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Retry a failed notification (move from log back to queue)
 app.post('/api/admin/notifications/retry/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {

@@ -4,30 +4,42 @@
 
 ---
 
-### Version 2.20.0 - February 17, 2026
+### Version 3.0.0 - February 17, 2026
 
-#### New Features
-- Implement Knowledge Hub v2 with sidebar, search, 5-tier permissions, and workflow walkthroughs
-- Add Knowledge Hub v2 backend API endpoints
-- Add active/inactive account status to control notification delivery
-- Implement Features 1 & 2: Notification queue system and automated reminder triggers
-- Add email notifications for announcements and prep for thrive365labs.com domain
-- Add full report view for signing, expand activity tracking (rebased on main)
+#### Major Release - Platform Evolution
 
-#### Bug Fixes
-- Fix security vulnerabilities and edge cases in portal and server
-- Clean up HubSpot integrations and fix client portal bugs
+**Knowledge Hub v2**
+- Complete Knowledge Hub rebuild with 5-tier permission system (Super Admin, Manager, Team Member, Vendor, Client)
+- Sticky sidebar navigation organized by portal section
+- Full-text search with keyword highlighting and result-to-result navigation arrows
+- Role-specific workflow walkthroughs for all 5 user roles
+- 50+ documentation articles covering all 5 portal sections
+- Internal-only Known Issues section for admin/manager visibility
+- Developer Guide with API reference and content management docs
+- V2 backend API with full CRUD, search, and one-time seed endpoints
 
-#### Improvements
-- Upgrade Knowledge Hub with 5-tier permissions, sidebar navigation, and full v1 API enhancements
-- Update email domain to thrive365labs.live and enhance Knowledge Hub with v2 API
+**Notification System**
+- Queue-based notification architecture (Features 1 & 2)
+- Automated reminder triggers for overdue tasks and milestones
+- Manager access to Notifications tab
 
-#### Changes
-- Remove debug console.log statements from assigned reports endpoint
-- Grant managers access to Notifications tab and lock inactive accounts out of all portals
-- Track announcement email delivery stats and log to activity feed
-- Optimize mobile visibility across all portal files
-- Optimize mobile visibility for app.js task views and layout
+**Email Integration**
+- Resend email module for system notifications
+- Announcement email delivery with read/delivery stats tracking
+
+**Account & Security**
+- Active/inactive account status to control portal access and notification delivery
+- Locked inactive accounts blocked from all portals
+- Security vulnerability fixes and HubSpot integration cleanup
+
+**Service Portal**
+- Full report view for customer signing workflow
+- Simplified service report submission flow
+- Enhanced activity tracking
+
+**Mobile & UI**
+- Cross-portal mobile visibility optimizations
+- Responsive improvements across all portal files
 
 
 ### Version 2.18.0 - February 16, 2026

@@ -385,17 +385,15 @@
         });
       }
 
-      // Knowledge Hub - visible to internal users only (not clients or vendors)
-      if (!isClient && !isVendor) {
-        availablePortals.push({
-          id: 'knowledge',
-          name: 'Knowledge Hub',
-          description: 'Guides, tutorials, and documentation for using the Thrive 365 Labs Portal Hub',
-          icon: Icons.knowledge,
-          color: 'from-indigo-500 to-indigo-700',
-          path: '/knowledge'
-        });
-      }
+      // Knowledge Hub - visible to all users (content filtered by permissions)
+      availablePortals.push({
+        id: 'knowledge',
+        name: 'Knowledge Hub',
+        description: isClient ? 'Guides and documentation for your client portal' : isVendor ? 'Service documentation and guides' : 'Guides, tutorials, and documentation for using the Thrive 365 Labs Portal Hub',
+        icon: Icons.knowledge,
+        color: 'from-indigo-500 to-indigo-700',
+        path: '/knowledge'
+      });
 
       const openPortal = (path) => {
         localStorage.setItem('portal_token', token);
