@@ -3440,12 +3440,17 @@ app.get('/api/client/:linkId', async (req, res) => {
     const overallProgressPercent = totalAllTasks > 0 ? Math.round((completedAllTasks / totalAllTasks) * 100) : 0;
 
     const users = await getUsers();
-    const tasksWithOwnerNames = clientTasks.map(task => ({
-      ...task,
-      ownerDisplayName: task.owner
-        ? (users.find(u => u.email === task.owner)?.name || task.owner)
-        : null
-    }));
+    const tasksWithOwnerNames = clientTasks.map(task => {
+      // Only show task owner to clients if the assigned user has an active account
+      let ownerDisplayName = null;
+      if (task.owner) {
+        const ownerUser = users.find(u => u.email === task.owner);
+        if (ownerUser && ownerUser.accountStatus !== 'inactive') {
+          ownerDisplayName = ownerUser.name || task.owner;
+        }
+      }
+      return { ...task, ownerDisplayName };
+    });
 
     res.json({
       project: {
@@ -3667,12 +3672,17 @@ app.get('/api/client-portal/data', authenticateToken, async (req, res) => {
     // Get tasks for each project (only client-visible ones)
     const projectsWithTasks = await Promise.all(clientProjects.map(async (project) => {
       const allTasks = await getTasks(project.id);
-      const clientTasks = allTasks.filter(t => t.showToClient).map(task => ({
-        ...task,
-        ownerDisplayName: task.owner
-          ? (users.find(u => u.email === task.owner)?.name || task.owner)
-          : null
-      }));
+      const clientTasks = allTasks.filter(t => t.showToClient).map(task => {
+        // Only show task owner to clients if the assigned user has an active account
+        let ownerDisplayName = null;
+        if (task.owner) {
+          const ownerUser = users.find(u => u.email === task.owner);
+          if (ownerUser && ownerUser.accountStatus !== 'inactive') {
+            ownerDisplayName = ownerUser.name || task.owner;
+          }
+        }
+        return { ...task, ownerDisplayName };
+      });
 
       // Calculate overall progress from ALL tasks (matches admin dashboard)
       const totalAllTasks = allTasks.length;
