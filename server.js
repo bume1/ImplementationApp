@@ -382,7 +382,7 @@ const scanAndQueueNotifications = async () => {
 
         // Missing client signature
         if (report.status === 'signature_needed' || (!report.customerSignature && report.status !== 'submitted')) {
-          const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT && u.slug === report.clientSlug && u.email);
+          const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT && u.slug === report.clientSlug && u.email && u.accountStatus !== 'inactive');
           for (const client of clientUsers) {
             await queueNotification(
               'service_report_signature',
@@ -399,7 +399,7 @@ const scanAndQueueNotifications = async () => {
 
         // Not reviewed by admin
         if (report.status && report.status !== 'submitted' && !report.adminReviewedAt) {
-          const admins = users.filter(u => u.role === config.ROLES.ADMIN && u.email);
+          const admins = users.filter(u => u.role === config.ROLES.ADMIN && u.email && u.accountStatus !== 'inactive');
           for (const admin of admins) {
             await queueNotification(
               'service_report_review',
@@ -465,7 +465,7 @@ const scanAndQueueNotifications = async () => {
 
             // Escalate to admin after threshold
             if (daysOverdue >= escalationDays) {
-              const admins = users.filter(u => u.role === config.ROLES.ADMIN && u.email);
+              const admins = users.filter(u => u.role === config.ROLES.ADMIN && u.email && u.accountStatus !== 'inactive');
               for (const admin of admins) {
                 await queueNotification(
                   'task_overdue',
@@ -487,7 +487,7 @@ const scanAndQueueNotifications = async () => {
     // --- Scenario C: Client Portal Activity Nudges ---
     if (!scenarios.clientActivityNudges || scenarios.clientActivityNudges.enabled !== false) {
       const inventoryDays = (scenarios.clientActivityNudges && scenarios.clientActivityNudges.inventoryReminderDays) || config.INVENTORY_REMINDER_DAYS;
-      const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT && u.slug && u.email);
+      const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT && u.slug && u.email && u.accountStatus !== 'inactive');
       const slugsSeen = new Set();
 
       for (const client of clientUsers) {
@@ -540,7 +540,7 @@ const scanAndQueueNotifications = async () => {
           if (pct >= threshold && lastNotified < threshold) {
             // Notify client users tied to this project
             const projectClients = users.filter(u =>
-              u.role === config.ROLES.CLIENT && u.email &&
+              u.role === config.ROLES.CLIENT && u.email && u.accountStatus !== 'inactive' &&
               (u.assignedProjects || []).includes(project.id)
             );
             for (const client of projectClients) {
@@ -573,11 +573,11 @@ const scanAndQueueNotifications = async () => {
           const daysUntilGoLive = Math.floor((goLive - now) / (1000 * 60 * 60 * 24));
           if (daysUntilGoLive >= 0 && goLiveDaysBefore.includes(daysUntilGoLive)) {
             const projectClients = users.filter(u =>
-              u.role === config.ROLES.CLIENT && u.email &&
+              u.role === config.ROLES.CLIENT && u.email && u.accountStatus !== 'inactive' &&
               (u.assignedProjects || []).includes(project.id)
             );
             const teamMembers = users.filter(u =>
-              (u.role === config.ROLES.USER || u.role === config.ROLES.ADMIN) && u.email &&
+              (u.role === config.ROLES.USER || u.role === config.ROLES.ADMIN) && u.email && u.accountStatus !== 'inactive' &&
               (u.assignedProjects || []).includes(project.id)
             );
             for (const user of [...projectClients, ...teamMembers]) {
@@ -1506,6 +1506,8 @@ app.post('/api/users', authenticateToken, async (req, res) => {
       hasImplementationsAccess: hasImplementationsAccess || false,
       hasClientPortalAdminAccess: hasClientPortalAdminAccess || false,
       createdAt: new Date().toISOString(),
+      // Account status — active accounts receive notifications, inactive do not
+      accountStatus: 'active',
       // Contact
       phone: phone || '',
       // Notification preferences
@@ -1966,13 +1968,14 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
       name, email, role, password, assignedProjects, projectAccessLevels,
       practiceName, isNewClient, logo, hubspotCompanyId, hubspotDealId, hubspotContactId,
       hasServicePortalAccess, hasAdminHubAccess, hasImplementationsAccess, hasClientPortalAdminAccess,
-      isManager, assignedClients, phone
+      isManager, assignedClients, phone, accountStatus
     } = req.body;
     const users = await getUsers();
     const idx = users.findIndex(u => u.id === userId);
     if (idx === -1) return res.status(404).json({ error: 'User not found' });
 
     if (phone !== undefined) users[idx].phone = phone;
+    if (accountStatus !== undefined) users[idx].accountStatus = accountStatus;
 
     // Capture old values before update for cascade propagation
     const oldName = users[idx].name;
@@ -2098,7 +2101,7 @@ app.delete('/api/users/:userId', authenticateToken, requireAdmin, async (req, re
 app.put('/api/client-portal/clients/:clientId', authenticateToken, requireClientPortalAdmin, async (req, res) => {
   try {
     const { clientId } = req.params;
-    const { practiceName, logo, hubspotCompanyId, hubspotDealId, hubspotContactId } = req.body;
+    const { practiceName, logo, hubspotCompanyId, hubspotDealId, hubspotContactId, accountStatus } = req.body;
 
     const users = await getUsers();
     const idx = users.findIndex(u => u.id === clientId);
@@ -2137,6 +2140,7 @@ app.put('/api/client-portal/clients/:clientId', authenticateToken, requireClient
     if (hubspotCompanyId !== undefined) users[idx].hubspotCompanyId = hubspotCompanyId;
     if (hubspotDealId !== undefined) users[idx].hubspotDealId = hubspotDealId;
     if (hubspotContactId !== undefined) users[idx].hubspotContactId = hubspotContactId;
+    if (accountStatus !== undefined) users[idx].accountStatus = accountStatus;
 
     // Track modification
     users[idx].updatedAt = new Date().toISOString();
@@ -3484,7 +3488,7 @@ app.post('/api/announcements', authenticateToken, requireClientPortalAdmin, asyn
     // Send email notifications to targeted client users (async, non-blocking)
     try {
       const users = await getUsers();
-      const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT && u.email);
+      const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT && u.email && u.accountStatus !== 'inactive');
       let recipients;
       if (newAnnouncement.targetAll) {
         recipients = clientUsers;
@@ -10141,7 +10145,7 @@ app.post('/api/email/send-progress-update/:projectId', authenticateToken, requir
     // Find client users for this project
     const users = await getUsers();
     const recipients = req.body.to || users
-      .filter(u => u.role === config.ROLES.CLIENT && (u.assignedProjects || []).includes(project.id) && u.email)
+      .filter(u => u.role === config.ROLES.CLIENT && (u.assignedProjects || []).includes(project.id) && u.email && u.accountStatus !== 'inactive')
       .map(u => u.email);
 
     const queued = [];
