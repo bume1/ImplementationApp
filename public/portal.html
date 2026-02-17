@@ -640,13 +640,29 @@
       );
     };
     
-    const MilestonesPage = ({ data, onNavigate, token }) => {
+    const MilestonesPage = ({ data, onNavigate, token, currentUser }) => {
       const project = data?.projects?.[0];
       const allTasks = project?.tasks || [];
       const tasks = allTasks.filter(t => t.showToClient !== false);
       const [viewType, setViewType] = useState('list');
       const [validationProgress, setValidationProgress] = useState([]);
       const [showValidationDetails, setShowValidationDetails] = useState(false);
+      const [collapsedPhases, setCollapsedPhases] = useState([]);
+
+      // Get current client user's email for ownership comparison
+      const clientUserEmail = currentUser?.email || '';
+
+      // Check if a task is owned by the current client user
+      const isClientOwnedTask = (task) => {
+        if (!clientUserEmail || !task.owner) return false;
+        return task.owner.toLowerCase() === clientUserEmail.toLowerCase();
+      };
+
+      const togglePhaseCollapse = (phase) => {
+        setCollapsedPhases(prev =>
+          prev.includes(phase) ? prev.filter(p => p !== phase) : [...prev, phase]
+        );
+      };
 
       // Fetch active validation progress
       useEffect(() => {
@@ -876,25 +892,34 @@
         <div className="space-y-8">
           <ValidationProgressCard />
           {PHASE_ORDER.map((phase, phaseIndex) => {
+            const isCollapsed = collapsedPhases.includes(phase);
             const phaseTasks = Object.values(groupedByPhase[phase] || {}).flat();
             const phaseCompleted = phaseTasks.filter(t => t.completed).length;
             const phaseTotal = phaseTasks.length;
             const phasePercent = phaseTotal > 0 ? Math.round((phaseCompleted / phaseTotal) * 100) : 0;
             return (
             <div key={phase} className="space-y-4">
-              <div className={`${getPhaseGradient(phase, phaseIndex)} p-4 rounded-lg text-white shadow-md`}>
+              <div
+                className={`${getPhaseGradient(phase, phaseIndex)} p-4 rounded-lg text-white shadow-md cursor-pointer hover:opacity-90 transition-opacity`}
+                onClick={() => togglePhaseCollapse(phase)}
+              >
                 <div className="flex items-center justify-between">
-                  <div>
+                  <div className="flex-1">
                     <h2 className="text-lg font-bold">{dynamicPhases[phase]?.name || phase.replace(/^Phase\s*\d+\s*:\s*/i, '')}</h2>
                     <p className="text-sm opacity-90 mt-1">
                       {phaseTotal > 0 ? `${phaseCompleted} of ${phaseTotal} complete` : 'No tasks assigned yet'}
                     </p>
                   </div>
-                  {phaseTotal > 0 && (
-                    <div className="text-right">
-                      <div className="text-2xl font-bold">{phasePercent}%</div>
+                  <div className="flex items-center gap-3">
+                    {phaseTotal > 0 && (
+                      <div className="text-right">
+                        <div className="text-2xl font-bold">{phasePercent}%</div>
+                      </div>
+                    )}
+                    <div className="text-2xl">
+                      {isCollapsed ? '▶' : '▼'}
                     </div>
-                  )}
+                  </div>
                 </div>
                 {phaseTotal > 0 && (
                   <div className="mt-3 w-full bg-white/20 rounded-full h-2 overflow-hidden">
@@ -902,7 +927,7 @@
                   </div>
                 )}
               </div>
-              {Object.entries(groupedByPhase[phase] || {}).map(([stageName, stageTasks]) => {
+              {!isCollapsed && Object.entries(groupedByPhase[phase] || {}).map(([stageName, stageTasks]) => {
                 const dueDates = stageTasks.filter(t => t.dueDate).map(t => t.dueDate).sort();
                 const targetDate = dueDates.length > 0 ? dueDates[dueDates.length - 1] : null;
                 return (
@@ -926,34 +951,49 @@
                     <div className="divide-y divide-gray-200">
                       {stageTasks.length === 0 ? (
                         <div className="p-4 text-gray-400 text-sm italic">No tasks in this stage</div>
-                      ) : stageTasks.map(task => (
+                      ) : stageTasks.map(task => {
+                        const clientOwns = isClientOwnedTask(task);
+                        const clientVisibleSubtasks = (task.subtasks || []).filter(st => st.showToClient !== false);
+                        const completedSubtasks = clientVisibleSubtasks.filter(s => s.completed || s.notApplicable || s.status === 'Complete' || s.status === 'N/A').length;
+                        return (
                         <div key={task.id} className="p-4">
                           <div className="flex items-start gap-3">
                             <div className="mt-1">
                               {task.completed ? (
-                                <div className="w-5 h-5 bg-green-600 rounded-full flex items-center justify-center text-white text-xs">✓</div>
+                                <div className="w-6 h-6 bg-green-600 rounded-full flex items-center justify-center text-white text-xs">✓</div>
                               ) : (
-                                <div className="w-5 h-5 border-2 border-gray-300 rounded-full" />
+                                <div className="w-6 h-6 border-2 border-gray-300 rounded-full" />
                               )}
                             </div>
-                            <div className="flex-1">
-                              <h3 className={`font-medium ${task.completed ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
+                            <div className="flex-1 min-w-0">
+                              <h3 className={`font-medium break-words ${task.completed ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
                                 {task.clientName || task.taskTitle}
                                 {(task.files || []).length > 0 && (
                                   <span className="ml-2 text-gray-400" title={`${task.files.length} file${task.files.length > 1 ? 's' : ''} attached`}>📎</span>
                                 )}
                               </h3>
-                              {(task.dateCompleted || task.dueDate) && (
-                                <p className="text-sm text-gray-600 mt-1">
-                                  {task.dueDate && !task.completed && (
-                                    <span className={new Date(task.dueDate) < new Date() ? 'text-red-600' : 'text-blue-600'}>
-                                      Due: {new Date(task.dueDate + 'T12:00:00').toLocaleDateString()}
-                                    </span>
-                                  )}
-                                  {task.dueDate && !task.completed && task.dateCompleted && <span className="mx-2">•</span>}
-                                  {task.dateCompleted && <span className="text-green-600">Completed: {formatDateForDisplay(task.dateCompleted)}</span>}
+                              {clientOwns && task.ownerDisplayName && (
+                                <p className="mt-1 text-xs sm:text-sm text-gray-600">
+                                  <span className="font-medium">Assigned to:</span> {task.ownerDisplayName}
                                 </p>
                               )}
+                              <div className="mt-1 flex items-center gap-2 sm:gap-4 flex-wrap text-sm text-gray-600">
+                                {task.startDate && (
+                                  <span>
+                                    <span className="font-medium">Start:</span> {formatDateForDisplay(task.startDate)}
+                                  </span>
+                                )}
+                                {task.dueDate && !task.completed && (
+                                  <span className={new Date(task.dueDate) < new Date() ? 'text-red-600' : 'text-blue-600'}>
+                                    <span className="font-medium">Due:</span> {formatDateForDisplay(task.dueDate)}
+                                  </span>
+                                )}
+                                {task.completed && task.dateCompleted && (
+                                  <span className="text-green-600">
+                                    Completed: {formatDateForDisplay(task.dateCompleted)}
+                                  </span>
+                                )}
+                              </div>
                               {task.description && (
                                 <div className="mt-2 p-2 bg-gray-50 rounded-md border-l-2 border-primary">
                                   <p className="text-sm text-gray-700">{task.description}</p>
@@ -972,9 +1012,9 @@
                                         className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-primary text-xs rounded hover:bg-blue-100 border border-blue-200"
                                       >
                                         <span>
-                                          {file.mimeType?.includes('pdf') ? '📄' : 
-                                           file.mimeType?.includes('image') ? '🖼️' : 
-                                           file.mimeType?.includes('word') ? '📝' : 
+                                          {file.mimeType?.includes('pdf') ? '📄' :
+                                           file.mimeType?.includes('image') ? '🖼️' :
+                                           file.mimeType?.includes('word') ? '📝' :
                                            file.mimeType?.includes('excel') || file.mimeType?.includes('spreadsheet') ? '📊' : '📎'}
                                         </span>
                                         {file.name}
@@ -983,10 +1023,18 @@
                                   </div>
                                 </div>
                               )}
+                              {clientVisibleSubtasks.length > 0 && (
+                                <div className="mt-2">
+                                  <span className="text-xs sm:text-sm text-purple-600">
+                                    Subtasks ({completedSubtasks}/{clientVisibleSubtasks.length})
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 );
@@ -1030,9 +1078,13 @@
                             {targetDate && <span className="text-xs bg-blue-100 text-primary px-2 py-1 rounded">Target Due Date: {targetDate}</span>}
                           </div>
                           <div className="space-y-2">
-                            {stageTasks.map(task => (
+                            {stageTasks.map(task => {
+                              const clientOwns = isClientOwnedTask(task);
+                              const clientVisibleSubtasks = (task.subtasks || []).filter(st => st.showToClient !== false);
+                              const completedSubs = clientVisibleSubtasks.filter(s => s.completed || s.notApplicable || s.status === 'Complete' || s.status === 'N/A').length;
+                              return (
                               <div key={task.id} className={`flex items-start gap-3 p-3 rounded-lg ${task.completed ? 'bg-green-50' : 'bg-white'} border border-gray-200`}>
-                                <div className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${task.completed ? 'bg-green-500 text-white' : 'border-2 border-gray-300'}`}>
+                                <div className={`mt-0.5 w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${task.completed ? 'bg-green-500 text-white' : 'border-2 border-gray-300'}`}>
                                   {task.completed && <span className="text-xs">✓</span>}
                                 </div>
                                 <div className="flex-1 min-w-0">
@@ -1042,11 +1094,28 @@
                                       <span className="ml-2 text-gray-400" title={`${task.files.length} file${task.files.length > 1 ? 's' : ''} attached`}>📎</span>
                                     )}
                                   </h5>
-                                  {task.dateCompleted && (
+                                  {clientOwns && task.ownerDisplayName && (
                                     <p className="mt-1 text-xs text-gray-600">
-                                      <span className="text-green-600">Completed: {formatDateForDisplay(task.dateCompleted)}</span>
+                                      <span className="font-medium">Assigned to:</span> {task.ownerDisplayName}
                                     </p>
                                   )}
+                                  <div className="mt-1 flex items-center gap-2 sm:gap-4 flex-wrap text-xs text-gray-600">
+                                    {task.startDate && (
+                                      <span>
+                                        <span className="font-medium">Start:</span> {formatDateForDisplay(task.startDate)}
+                                      </span>
+                                    )}
+                                    {task.dueDate && !task.completed && (
+                                      <span className={new Date(task.dueDate) < new Date() ? 'text-red-600' : 'text-blue-600'}>
+                                        <span className="font-medium">Due:</span> {formatDateForDisplay(task.dueDate)}
+                                      </span>
+                                    )}
+                                    {task.completed && task.dateCompleted && (
+                                      <span className="text-green-600">
+                                        Completed: {formatDateForDisplay(task.dateCompleted)}
+                                      </span>
+                                    )}
+                                  </div>
                                   {task.description && (
                                     <div className="mt-2 p-2 bg-gray-50 rounded-md border-l-2 border-primary">
                                       <p className="text-sm text-gray-700">{task.description}</p>
@@ -1065,9 +1134,9 @@
                                             className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-primary text-xs rounded hover:bg-blue-100 border border-blue-200"
                                           >
                                             <span>
-                                              {file.mimeType?.includes('pdf') ? '📄' : 
-                                               file.mimeType?.includes('image') ? '🖼️' : 
-                                               file.mimeType?.includes('word') ? '📝' : 
+                                              {file.mimeType?.includes('pdf') ? '📄' :
+                                               file.mimeType?.includes('image') ? '🖼️' :
+                                               file.mimeType?.includes('word') ? '📝' :
                                                file.mimeType?.includes('excel') || file.mimeType?.includes('spreadsheet') ? '📊' : '📎'}
                                             </span>
                                             {file.name}
@@ -1076,9 +1145,17 @@
                                       </div>
                                     </div>
                                   )}
+                                  {clientVisibleSubtasks.length > 0 && (
+                                    <div className="mt-2">
+                                      <span className="text-xs text-purple-600">
+                                        Subtasks ({completedSubs}/{clientVisibleSubtasks.length})
+                                      </span>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       );
@@ -4973,7 +5050,7 @@
 
         // Client pages
         if (activePage === 'home') return <HomePage data={data} announcements={announcements} onNavigate={navigateTo} />;
-        if (activePage === 'milestones') return <MilestonesPage data={data} onNavigate={navigateTo} token={token} />;
+        if (activePage === 'milestones') return <MilestonesPage data={data} onNavigate={navigateTo} token={token} currentUser={user} />;
         if (activePage === 'inventory') return <InventoryPage token={token} slug={slug} />;
         if (activePage === 'reports') return <ReportsPage token={token} slug={slug} onNavigate={navigateTo} />;
         if (activePage === 'submission_history') return <SubmissionHistoryPage token={token} slug={slug} isAdmin={false} onNavigate={navigateTo} currentUser={user} />;
