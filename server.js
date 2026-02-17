@@ -2540,15 +2540,15 @@ app.get('/api/projects/:id', authenticateToken, async (req, res) => {
 
 app.put('/api/projects/:id', authenticateToken, async (req, res) => {
   try {
-    // Check project access
-    if (!canAccessProject(req.user, req.params.id)) {
-      return res.status(403).json({ error: 'Access denied to this project' });
+    // Check project write access
+    if (!canWriteProject(req.user, req.params.id)) {
+      return res.status(403).json({ error: 'Write access required for this project' });
     }
-    
+
     const projects = await getProjects();
     const idx = projects.findIndex(p => p.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'Project not found' });
-    
+
     // Validate project status against allowed values
     if (req.body.status !== undefined) {
       if (!config.PROJECT_STATUSES.includes(req.body.status)) {
@@ -2912,10 +2912,10 @@ app.put('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req,
 app.delete('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req, res) => {
   try {
     const { projectId, taskId } = req.params;
-    
-    // Check project access
-    if (!canAccessProject(req.user, projectId)) {
-      return res.status(403).json({ error: 'Access denied to this project' });
+
+    // Check project write access (delete is a write operation)
+    if (!canWriteProject(req.user, projectId)) {
+      return res.status(403).json({ error: 'Write access required for this project' });
     }
     
     // Use raw tasks for mutation to prevent normalization drift
@@ -4265,9 +4265,9 @@ app.get('/api/client/service-reports', authenticateToken, async (req, res) => {
       if (slugLinkedReportIds.has(report.id)) {
         return true;
       }
-      // Fallback: bidirectional match by any of the client's names
+      // Fallback: exact case-insensitive match by any of the client's names
       const reportClient = (report.clientFacilityName || '').toLowerCase().trim();
-      if (reportClient && uniqueClientNames.some(name => reportClient.includes(name) || name.includes(reportClient))) {
+      if (reportClient && uniqueClientNames.some(name => reportClient === name)) {
         return true;
       }
       return false;
@@ -4397,7 +4397,7 @@ app.put('/api/client/service-reports/:id/sign', authenticateToken, async (req, r
     }
     if (!isClientReport) {
       const reportClient = (report.clientFacilityName || '').toLowerCase().trim();
-      if (reportClient && uniqueClientNames.some(name => reportClient.includes(name) || name.includes(reportClient))) {
+      if (reportClient && uniqueClientNames.some(name => reportClient === name)) {
         isClientReport = true;
       }
     }
@@ -4573,7 +4573,8 @@ app.get('/api/client/service-reports/:id/pdf', authenticateToken, async (req, re
 
       const isMatch = (hubspotCompanyId && report.hubspotCompanyId === hubspotCompanyId) ||
                       slugLinked ||
-                      (reportClient && uniqueClientNames.some(name => reportClient.includes(name) || name.includes(reportClient)));
+                      (clientSlug && report.clientSlug && report.clientSlug === clientSlug) ||
+                      (reportClient && uniqueClientNames.some(name => reportClient === name));
 
       if (!isMatch) {
         return res.status(403).json({ error: 'Not authorized to access this report' });
