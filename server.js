@@ -361,6 +361,220 @@ const processNotificationQueue = async () => {
 };
 
 // ============================================================
+// EMAIL TEMPLATE SYSTEM — Dynamic, admin-editable templates
+// ============================================================
+
+// Base HTML email wrapper used when a template has no custom htmlBody
+const BASE_HTML_EMAIL_WRAPPER = `
+<div style="font-family: Inter, -apple-system, sans-serif; max-width: 600px; margin: 0 auto; background: #f8fafc;">
+  <div style="background: linear-gradient(135deg, #045E9F 0%, #00205A 100%); padding: 28px 24px; border-radius: 8px 8px 0 0;">
+    <h1 style="color: #ffffff; margin: 0; font-size: 20px; font-weight: 600;">Thrive 365 Labs</h1>
+  </div>
+  <div style="background: #ffffff; padding: 28px 24px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+    <div style="color: #374151; line-height: 1.7; font-size: 15px; white-space: pre-wrap;">{{content}}</div>
+    {{ctaBlock}}
+    <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 28px 0 16px;" />
+    <p style="color: #9ca3af; font-size: 12px; margin: 0;">You are receiving this because you have an account with Thrive 365 Labs.</p>
+  </div>
+</div>`;
+
+// Render a template string by replacing {{variable}} placeholders with values
+function renderTemplate(templateStr, variables) {
+  if (!templateStr) return '';
+  return templateStr.replace(/\{\{(\w+)\}\}/g, (match, key) =>
+    variables[key] !== undefined ? String(variables[key]) : match
+  );
+}
+
+// Build HTML email body: use custom htmlBody if provided, otherwise wrap plain body in base layout
+function buildHtmlEmail(body, htmlBody, ctaUrl, ctaLabel) {
+  if (htmlBody) return htmlBody;
+  const ctaBlock = (ctaUrl && ctaLabel)
+    ? `<p style="margin-top: 20px;"><a href="${ctaUrl}" style="display: inline-block; background: #045E9F; color: #ffffff; padding: 10px 24px; border-radius: 6px; text-decoration: none; font-weight: 500; font-size: 14px;">${ctaLabel}</a></p>`
+    : '';
+  return renderTemplate(BASE_HTML_EMAIL_WRAPPER, { content: body, ctaBlock });
+}
+
+// Default email templates — seeded on first access, admin can edit via UI
+const DEFAULT_EMAIL_TEMPLATES = [
+  {
+    id: 'service_report_signature',
+    name: 'Service Report — Signature Request',
+    category: 'automated',
+    subject: 'Action needed: Service report for {{facilityName}} awaits your signature',
+    body: 'A service report from {{technicianName}} on {{reportDate}} requires your signature. Please review and sign at your earliest convenience.',
+    htmlBody: null,
+    variables: [
+      { key: 'facilityName', label: 'Facility Name', example: 'Valley Medical' },
+      { key: 'technicianName', label: 'Technician Name', example: 'John Smith' },
+      { key: 'reportDate', label: 'Report Date', example: '02/17/2026' }
+    ],
+    isDefault: true, updatedAt: null, updatedBy: null
+  },
+  {
+    id: 'service_report_review',
+    name: 'Service Report — Admin Review',
+    category: 'automated',
+    subject: 'Service report pending review: {{facilityName}}',
+    body: 'A service report from {{technicianName}} for {{facilityName}} has been pending review for {{reportAge}} days.',
+    htmlBody: null,
+    variables: [
+      { key: 'facilityName', label: 'Facility Name', example: 'Valley Medical' },
+      { key: 'technicianName', label: 'Technician Name', example: 'John Smith' },
+      { key: 'reportAge', label: 'Days Pending', example: '5' }
+    ],
+    isDefault: true, updatedAt: null, updatedBy: null
+  },
+  {
+    id: 'task_deadline',
+    name: 'Task Deadline Warning',
+    category: 'automated',
+    subject: 'Task due {{timeframe}}: {{taskTitle}} — {{projectName}}',
+    body: '"{{taskTitle}}" in {{phase}} is due {{dueDate}}. Project: {{projectName}}.',
+    htmlBody: null,
+    variables: [
+      { key: 'taskTitle', label: 'Task Title', example: 'Install AU480 Analyzer' },
+      { key: 'projectName', label: 'Project Name', example: 'Valley Medical Launch' },
+      { key: 'phase', label: 'Phase', example: 'Phase 2' },
+      { key: 'dueDate', label: 'Due Date', example: '03/15/2026' },
+      { key: 'timeframe', label: 'Timeframe', example: 'in 3 days' }
+    ],
+    isDefault: true, updatedAt: null, updatedBy: null
+  },
+  {
+    id: 'task_overdue',
+    name: 'Task Overdue — Owner',
+    category: 'automated',
+    subject: 'OVERDUE ({{daysOverdue}}d): {{taskTitle}} — {{projectName}}',
+    body: '"{{taskTitle}}" in {{phase}} was due {{dueDate}} and is now {{daysOverdue}} day(s) overdue. Project: {{projectName}}.',
+    htmlBody: null,
+    variables: [
+      { key: 'taskTitle', label: 'Task Title', example: 'Install AU480 Analyzer' },
+      { key: 'projectName', label: 'Project Name', example: 'Valley Medical Launch' },
+      { key: 'phase', label: 'Phase', example: 'Phase 2' },
+      { key: 'dueDate', label: 'Due Date', example: '03/01/2026' },
+      { key: 'daysOverdue', label: 'Days Overdue', example: '5' }
+    ],
+    isDefault: true, updatedAt: null, updatedBy: null
+  },
+  {
+    id: 'task_overdue_escalation',
+    name: 'Task Overdue — Admin Escalation',
+    category: 'automated',
+    subject: 'ESCALATION: Task {{daysOverdue}}d overdue — {{taskTitle}} ({{projectName}})',
+    body: '"{{taskTitle}}" assigned to {{ownerName}} in project "{{projectName}}" is {{daysOverdue}} days overdue. Due date: {{dueDate}}.',
+    htmlBody: null,
+    variables: [
+      { key: 'taskTitle', label: 'Task Title', example: 'Install AU480 Analyzer' },
+      { key: 'projectName', label: 'Project Name', example: 'Valley Medical Launch' },
+      { key: 'ownerName', label: 'Owner Name', example: 'Jane Doe' },
+      { key: 'dueDate', label: 'Due Date', example: '03/01/2026' },
+      { key: 'daysOverdue', label: 'Days Overdue', example: '10' }
+    ],
+    isDefault: true, updatedAt: null, updatedBy: null
+  },
+  {
+    id: 'inventory_reminder',
+    name: 'Inventory Reminder',
+    category: 'automated',
+    subject: 'Reminder: Your weekly inventory update is due — {{practiceName}}',
+    body: 'Your last inventory submission was {{daysSince}} days ago. Please submit your weekly update to keep your lab supplies on track.',
+    htmlBody: null,
+    variables: [
+      { key: 'practiceName', label: 'Practice Name', example: 'Valley Medical' },
+      { key: 'daysSince', label: 'Days Since Last Submission', example: '10' }
+    ],
+    isDefault: true, updatedAt: null, updatedBy: null
+  },
+  {
+    id: 'milestone_reached',
+    name: 'Milestone Reached',
+    category: 'automated',
+    subject: 'Milestone reached: {{projectName}} is {{percentage}}% complete!',
+    body: 'Great progress! {{projectName}} has reached {{percentage}}% completion. {{completedTasks}} of {{totalTasks}} tasks are done.',
+    htmlBody: null,
+    variables: [
+      { key: 'projectName', label: 'Project Name', example: 'Valley Medical Launch' },
+      { key: 'percentage', label: 'Completion %', example: '75' },
+      { key: 'completedTasks', label: 'Completed Tasks', example: '76' },
+      { key: 'totalTasks', label: 'Total Tasks', example: '102' }
+    ],
+    isDefault: true, updatedAt: null, updatedBy: null
+  },
+  {
+    id: 'golive_reminder',
+    name: 'Go-Live Reminder',
+    category: 'automated',
+    subject: 'Go-live in {{daysUntil}} days: {{projectName}}',
+    body: '{{projectName}} is scheduled to go live on {{goLiveDate}}. That\'s {{daysUntil}} days from now. Current progress: {{percentage}}% complete.',
+    htmlBody: null,
+    variables: [
+      { key: 'projectName', label: 'Project Name', example: 'Valley Medical Launch' },
+      { key: 'goLiveDate', label: 'Go-Live Date', example: '04/01/2026' },
+      { key: 'daysUntil', label: 'Days Until Go-Live', example: '7' },
+      { key: 'percentage', label: 'Completion %', example: '92' }
+    ],
+    isDefault: true, updatedAt: null, updatedBy: null
+  },
+  {
+    id: 'announcement',
+    name: 'New Announcement',
+    category: 'announcement',
+    subject: '{{priorityTag}}New Announcement: {{title}}',
+    body: '{{priorityTag}}{{title}}\n\n{{content}}{{attachmentLine}}',
+    htmlBody: `<div style="font-family: Inter, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
+  <div style="background: linear-gradient(135deg, #045E9F 0%, #00205A 100%); padding: 28px 24px; border-radius: 8px 8px 0 0;">
+    <h1 style="color: #ffffff; margin: 0; font-size: 20px; font-weight: 600;">Thrive 365 Labs</h1>
+  </div>
+  <div style="background: #ffffff; padding: 28px 24px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+    {{priorityBanner}}
+    <h2 style="color: #00205A; margin-top: 0;">{{title}}</h2>
+    <div style="color: #374151; line-height: 1.6; white-space: pre-wrap;">{{content}}</div>
+    {{attachmentBlock}}
+    <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
+    <p style="color: #9ca3af; font-size: 12px; margin: 0;">You are receiving this because you have a client portal account with Thrive 365 Labs.</p>
+  </div>
+</div>`,
+    variables: [
+      { key: 'title', label: 'Announcement Title', example: 'System Maintenance Scheduled' },
+      { key: 'content', label: 'Announcement Content', example: 'We will be performing system maintenance this weekend.' },
+      { key: 'priorityTag', label: 'Priority Tag', example: '[PRIORITY] ' },
+      { key: 'priorityBanner', label: 'Priority Banner HTML', example: '' },
+      { key: 'attachmentUrl', label: 'Attachment URL', example: '' },
+      { key: 'attachmentName', label: 'Attachment Name', example: '' },
+      { key: 'attachmentLine', label: 'Attachment Text Line', example: '' },
+      { key: 'attachmentBlock', label: 'Attachment HTML Block', example: '' }
+    ],
+    isDefault: true, updatedAt: null, updatedBy: null
+  }
+];
+
+// Get email templates from DB; seed defaults on first access
+async function getEmailTemplates() {
+  let templates = await db.get('email_templates');
+  if (!templates || !Array.isArray(templates) || templates.length === 0) {
+    templates = DEFAULT_EMAIL_TEMPLATES.map(t => ({ ...t }));
+    await db.set('email_templates', templates);
+  }
+  // Ensure any new default templates are added (forward-compatible)
+  const existingIds = new Set(templates.map(t => t.id));
+  let added = false;
+  for (const def of DEFAULT_EMAIL_TEMPLATES) {
+    if (!existingIds.has(def.id)) {
+      templates.push({ ...def });
+      added = true;
+    }
+  }
+  if (added) await db.set('email_templates', templates);
+  return templates;
+}
+
+// Get a single template by ID with fallback to default
+function getTemplateById(templates, id) {
+  return templates.find(t => t.id === id) || DEFAULT_EMAIL_TEMPLATES.find(t => t.id === id);
+}
+
+// ============================================================
 // NOTIFICATION TRIGGER SCANNER (Feature 2)
 // ============================================================
 
@@ -372,6 +586,10 @@ const scanAndQueueNotifications = async () => {
     const users = await getUsers();
     const now = new Date();
 
+    // Load editable email templates
+    const emailTemplates = await getEmailTemplates();
+    const tpl = (id) => getTemplateById(emailTemplates, id);
+
     // --- Scenario A: Service Report Follow-Ups ---
     if (!scenarios.serviceReportFollowups || scenarios.serviceReportFollowups.enabled !== false) {
       const followupDays = (scenarios.serviceReportFollowups && scenarios.serviceReportFollowups.reminderAfterDays) || config.SERVICE_REPORT_FOLLOWUP_DAYS;
@@ -382,14 +600,21 @@ const scanAndQueueNotifications = async () => {
 
         // Missing client signature
         if (report.status === 'signature_needed' || (!report.customerSignature && report.status !== 'submitted')) {
+          const sigTpl = tpl('service_report_signature');
+          const sigVars = {
+            facilityName: report.clientFacilityName || 'your facility',
+            technicianName: report.technicianName || 'your technician',
+            reportDate: new Date(report.createdAt).toLocaleDateString()
+          };
           const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT && u.slug === report.clientSlug && u.email && u.accountStatus !== 'inactive');
           for (const client of clientUsers) {
             await queueNotification(
               'service_report_signature',
               client.id, client.email, client.name,
               {
-                subject: `Action needed: Service report for ${report.clientFacilityName || 'your facility'} awaits your signature`,
-                body: `A service report from ${report.technicianName || 'your technician'} on ${new Date(report.createdAt).toLocaleDateString()} requires your signature. Please review and sign at your earliest convenience.`,
+                subject: renderTemplate(sigTpl.subject, sigVars),
+                body: renderTemplate(sigTpl.body, sigVars),
+                htmlBody: buildHtmlEmail(renderTemplate(sigTpl.body, sigVars), sigTpl.htmlBody ? renderTemplate(sigTpl.htmlBody, sigVars) : null),
                 ctaLabel: 'Review & Sign'
               },
               { relatedEntityId: report.id, relatedEntityType: 'service_report' }
@@ -399,14 +624,21 @@ const scanAndQueueNotifications = async () => {
 
         // Not reviewed by admin
         if (report.status && report.status !== 'submitted' && !report.adminReviewedAt) {
+          const revTpl = tpl('service_report_review');
+          const revVars = {
+            facilityName: report.clientFacilityName || 'Unknown facility',
+            technicianName: report.technicianName || 'a technician',
+            reportAge: String(reportAge)
+          };
           const admins = users.filter(u => u.role === config.ROLES.ADMIN && u.email && u.accountStatus !== 'inactive');
           for (const admin of admins) {
             await queueNotification(
               'service_report_review',
               admin.id, admin.email, admin.name,
               {
-                subject: `Service report pending review: ${report.clientFacilityName || 'Unknown facility'}`,
-                body: `A service report from ${report.technicianName || 'a technician'} for ${report.clientFacilityName || 'a client'} has been pending review for ${reportAge} days.`,
+                subject: renderTemplate(revTpl.subject, revVars),
+                body: renderTemplate(revTpl.body, revVars),
+                htmlBody: buildHtmlEmail(renderTemplate(revTpl.body, revVars), revTpl.htmlBody ? renderTemplate(revTpl.htmlBody, revVars) : null),
                 ctaLabel: 'Review Report'
               },
               { relatedEntityId: report.id, relatedEntityType: 'service_report' }
@@ -437,12 +669,21 @@ const scanAndQueueNotifications = async () => {
           // Approaching deadline
           if (daysUntilDue >= 0 && daysBefore.includes(daysUntilDue)) {
             const severity = daysUntilDue <= 1 ? 'high' : daysUntilDue <= 3 ? 'medium' : 'low';
+            const dlTpl = tpl('task_deadline');
+            const dlVars = {
+              taskTitle: task.taskTitle,
+              projectName: project.name,
+              phase: task.phase,
+              dueDate: dueDate.toLocaleDateString(),
+              timeframe: daysUntilDue === 0 ? 'today' : daysUntilDue === 1 ? 'tomorrow' : `in ${daysUntilDue} days`
+            };
             await queueNotification(
               'task_deadline',
               owner.id, owner.email, owner.name,
               {
-                subject: `Task due ${daysUntilDue === 0 ? 'today' : daysUntilDue === 1 ? 'tomorrow' : `in ${daysUntilDue} days`}: ${task.taskTitle} — ${project.name}`,
-                body: `"${task.taskTitle}" in ${task.phase} is due ${dueDate.toLocaleDateString()}. Project: ${project.name}.`,
+                subject: renderTemplate(dlTpl.subject, dlVars),
+                body: renderTemplate(dlTpl.body, dlVars),
+                htmlBody: buildHtmlEmail(renderTemplate(dlTpl.body, dlVars), dlTpl.htmlBody ? renderTemplate(dlTpl.htmlBody, dlVars) : null),
                 ctaLabel: 'View Task'
               },
               { relatedEntityId: task.id?.toString(), relatedEntityType: 'task', createdBy: 'system' }
@@ -452,12 +693,21 @@ const scanAndQueueNotifications = async () => {
           // Overdue
           if (daysUntilDue < 0) {
             const daysOverdue = Math.abs(daysUntilDue);
+            const ovTpl = tpl('task_overdue');
+            const ovVars = {
+              taskTitle: task.taskTitle,
+              projectName: project.name,
+              phase: task.phase,
+              dueDate: dueDate.toLocaleDateString(),
+              daysOverdue: String(daysOverdue)
+            };
             await queueNotification(
               'task_overdue',
               owner.id, owner.email, owner.name,
               {
-                subject: `OVERDUE (${daysOverdue}d): ${task.taskTitle} — ${project.name}`,
-                body: `"${task.taskTitle}" in ${task.phase} was due ${dueDate.toLocaleDateString()} and is now ${daysOverdue} day(s) overdue. Project: ${project.name}.`,
+                subject: renderTemplate(ovTpl.subject, ovVars),
+                body: renderTemplate(ovTpl.body, ovVars),
+                htmlBody: buildHtmlEmail(renderTemplate(ovTpl.body, ovVars), ovTpl.htmlBody ? renderTemplate(ovTpl.htmlBody, ovVars) : null),
                 ctaLabel: 'View Task'
               },
               { relatedEntityId: task.id?.toString(), relatedEntityType: 'task', createdBy: 'system' }
@@ -465,14 +715,23 @@ const scanAndQueueNotifications = async () => {
 
             // Escalate to admin after threshold
             if (daysOverdue >= escalationDays) {
+              const escTpl = tpl('task_overdue_escalation');
+              const escVars = {
+                taskTitle: task.taskTitle,
+                projectName: project.name,
+                ownerName: owner.name,
+                dueDate: dueDate.toLocaleDateString(),
+                daysOverdue: String(daysOverdue)
+              };
               const admins = users.filter(u => u.role === config.ROLES.ADMIN && u.email && u.accountStatus !== 'inactive');
               for (const admin of admins) {
                 await queueNotification(
                   'task_overdue',
                   admin.id, admin.email, admin.name,
                   {
-                    subject: `ESCALATION: Task ${daysOverdue}d overdue — ${task.taskTitle} (${project.name})`,
-                    body: `"${task.taskTitle}" assigned to ${owner.name} in project "${project.name}" is ${daysOverdue} days overdue. Due date: ${dueDate.toLocaleDateString()}.`,
+                    subject: renderTemplate(escTpl.subject, escVars),
+                    body: renderTemplate(escTpl.body, escVars),
+                    htmlBody: buildHtmlEmail(renderTemplate(escTpl.body, escVars), escTpl.htmlBody ? renderTemplate(escTpl.htmlBody, escVars) : null),
                     ctaLabel: 'View Project'
                   },
                   { relatedEntityId: task.id?.toString(), relatedEntityType: 'task', createdBy: 'system' }
@@ -504,14 +763,17 @@ const scanAndQueueNotifications = async () => {
         const daysSince = Math.floor((now - lastDate) / (1000 * 60 * 60 * 24));
 
         if (daysSince >= inventoryDays) {
+          const invTpl = tpl('inventory_reminder');
           const portalClients = clientUsers.filter(u => u.slug === client.slug);
           for (const pc of portalClients) {
+            const invVars = { practiceName: pc.practiceName || 'Your Practice', daysSince: String(daysSince) };
             await queueNotification(
               'inventory_reminder',
               pc.id, pc.email, pc.name,
               {
-                subject: `Reminder: Your weekly inventory update is due — ${pc.practiceName || 'Your Practice'}`,
-                body: `Your last inventory submission was ${daysSince} days ago. Please submit your weekly update to keep your lab supplies on track.`,
+                subject: renderTemplate(invTpl.subject, invVars),
+                body: renderTemplate(invTpl.body, invVars),
+                htmlBody: buildHtmlEmail(renderTemplate(invTpl.body, invVars), invTpl.htmlBody ? renderTemplate(invTpl.htmlBody, invVars) : null),
                 ctaLabel: 'Submit Inventory'
               },
               { relatedEntityId: pc.slug, relatedEntityType: 'inventory', createdBy: 'system' }
@@ -543,13 +805,16 @@ const scanAndQueueNotifications = async () => {
               u.role === config.ROLES.CLIENT && u.email && u.accountStatus !== 'inactive' &&
               (u.assignedProjects || []).includes(project.id)
             );
+            const msTpl = tpl('milestone_reached');
+            const msVars = { projectName: project.name, percentage: String(pct), completedTasks: String(completedCount), totalTasks: String(tasks.length) };
             for (const client of projectClients) {
               await queueNotification(
                 'milestone_reached',
                 client.id, client.email, client.name,
                 {
-                  subject: `Milestone reached: ${project.name} is ${pct}% complete!`,
-                  body: `Great progress! ${project.name} has reached ${pct}% completion. ${completedCount} of ${tasks.length} tasks are done.`,
+                  subject: renderTemplate(msTpl.subject, msVars),
+                  body: renderTemplate(msTpl.body, msVars),
+                  htmlBody: buildHtmlEmail(renderTemplate(msTpl.body, msVars), msTpl.htmlBody ? renderTemplate(msTpl.htmlBody, msVars) : null),
                   ctaLabel: 'View Progress'
                 },
                 { relatedEntityId: project.id, relatedEntityType: 'project', createdBy: 'system' }
@@ -580,13 +845,16 @@ const scanAndQueueNotifications = async () => {
               (u.role === config.ROLES.USER || u.role === config.ROLES.ADMIN) && u.email && u.accountStatus !== 'inactive' &&
               (u.assignedProjects || []).includes(project.id)
             );
+            const glTpl = tpl('golive_reminder');
+            const glVars = { projectName: project.name, goLiveDate: goLive.toLocaleDateString(), daysUntil: String(daysUntilGoLive), percentage: String(pct) };
             for (const user of [...projectClients, ...teamMembers]) {
               await queueNotification(
                 'milestone_reminder',
                 user.id, user.email, user.name,
                 {
-                  subject: `Go-live in ${daysUntilGoLive} days: ${project.name}`,
-                  body: `${project.name} is scheduled to go live on ${goLive.toLocaleDateString()}. That's ${daysUntilGoLive} days from now. Current progress: ${pct}% complete.`,
+                  subject: renderTemplate(glTpl.subject, glVars),
+                  body: renderTemplate(glTpl.body, glVars),
+                  htmlBody: buildHtmlEmail(renderTemplate(glTpl.body, glVars), glTpl.htmlBody ? renderTemplate(glTpl.htmlBody, glVars) : null),
                   ctaLabel: 'View Project'
                 },
                 { relatedEntityId: project.id, relatedEntityType: 'project', createdBy: 'system' }
@@ -3521,23 +3789,31 @@ app.post('/api/announcements', authenticateToken, requireClientPortalAdmin, asyn
         recipients = clientUsers.filter(u => u.slug && targetSlugs.has(u.slug));
       }
       if (recipients.length > 0) {
-        const priorityTag = newAnnouncement.priority ? '[PRIORITY] ' : '';
-        const subject = `${priorityTag}New Announcement: ${newAnnouncement.title}`;
-        const htmlBody = `
-          <div style="font-family: Inter, sans-serif; max-width: 600px; margin: 0 auto;">
-            <div style="background: #045E9F; padding: 24px; border-radius: 8px 8px 0 0;">
-              <h1 style="color: #ffffff; margin: 0; font-size: 20px;">Thrive 365 Labs</h1>
-            </div>
-            <div style="background: #ffffff; padding: 24px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
-              ${newAnnouncement.priority ? '<p style="color: #dc2626; font-weight: 600; margin-bottom: 8px;">⚠️ This is a priority announcement</p>' : ''}
-              <h2 style="color: #00205A; margin-top: 0;">${newAnnouncement.title}</h2>
-              <div style="color: #374151; line-height: 1.6; white-space: pre-wrap;">${newAnnouncement.content}</div>
-              ${newAnnouncement.attachmentUrl ? `<p style="margin-top: 16px;"><a href="${newAnnouncement.attachmentUrl}" style="color: #045E9F; font-weight: 500;">📎 ${newAnnouncement.attachmentName || 'View Attachment'}</a></p>` : ''}
-              <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
-              <p style="color: #9ca3af; font-size: 12px; margin: 0;">You are receiving this because you have a client portal account with Thrive 365 Labs.</p>
-            </div>
-          </div>`;
-        const textBody = `${priorityTag}${newAnnouncement.title}\n\n${newAnnouncement.content}${newAnnouncement.attachmentUrl ? '\n\nAttachment: ' + newAnnouncement.attachmentUrl : ''}`;
+        // Load editable announcement template
+        const annTemplates = await getEmailTemplates();
+        const annTpl = getTemplateById(annTemplates, 'announcement');
+        const annVars = {
+          title: newAnnouncement.title,
+          content: newAnnouncement.content,
+          priorityTag: newAnnouncement.priority ? '[PRIORITY] ' : '',
+          priorityBanner: newAnnouncement.priority ? '<p style="color: #dc2626; font-weight: 600; margin-bottom: 8px;">⚠️ This is a priority announcement</p>' : '',
+          attachmentUrl: newAnnouncement.attachmentUrl || '',
+          attachmentName: newAnnouncement.attachmentName || 'View Attachment',
+          attachmentLine: newAnnouncement.attachmentUrl ? '\n\nAttachment: ' + newAnnouncement.attachmentUrl : '',
+          attachmentBlock: newAnnouncement.attachmentUrl ? `<p style="margin-top: 16px;"><a href="${newAnnouncement.attachmentUrl}" style="color: #045E9F; font-weight: 500;">📎 ${newAnnouncement.attachmentName || 'View Attachment'}</a></p>` : ''
+        };
+        const subject = renderTemplate(annTpl.subject, annVars);
+        // Safeguard: always include full announcement content even if admin edited {{content}} out of template
+        let annBody = annTpl.body || '';
+        let annHtml = annTpl.htmlBody || '';
+        if (!annBody.includes('{{content}}')) {
+          annBody += '\n\n{{content}}';
+        }
+        if (annHtml && !annHtml.includes('{{content}}')) {
+          annHtml = annHtml.replace(/<hr/, '<div style="color: #374151; line-height: 1.6; white-space: pre-wrap;">{{content}}</div><hr');
+        }
+        const htmlBody = annHtml ? renderTemplate(annHtml, annVars) : buildHtmlEmail(renderTemplate(annBody, annVars), null);
+        const textBody = renderTemplate(annBody, annVars);
         const emailPromises = recipients.map(user =>
           sendEmail(user.email, subject, textBody, { htmlBody }).then(result => ({
             email: user.email, ...result
@@ -10545,6 +10821,139 @@ app.put('/api/admin/notification-settings', authenticateToken, requireAdmin, asy
     await db.set('notification_settings', updated);
     res.json(updated);
   } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============================================================
+// EMAIL TEMPLATE MANAGEMENT ENDPOINTS
+// ============================================================
+
+// List all email templates
+app.get('/api/admin/email-templates', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const templates = await getEmailTemplates();
+    res.json(templates);
+  } catch (error) {
+    console.error('Get email templates error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get a single email template by ID
+app.get('/api/admin/email-templates/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const templates = await getEmailTemplates();
+    const template = templates.find(t => t.id === req.params.id);
+    if (!template) return res.status(404).json({ error: 'Template not found' });
+    res.json(template);
+  } catch (error) {
+    console.error('Get email template error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update an email template (subject, body, htmlBody)
+app.put('/api/admin/email-templates/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const templates = await getEmailTemplates();
+    const idx = templates.findIndex(t => t.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Template not found' });
+
+    const { subject, body, htmlBody } = req.body;
+    if (subject !== undefined) templates[idx].subject = subject;
+    if (body !== undefined) templates[idx].body = body;
+    if (htmlBody !== undefined) templates[idx].htmlBody = htmlBody;
+    templates[idx].isDefault = false;
+    templates[idx].updatedAt = new Date().toISOString();
+    templates[idx].updatedBy = req.user.name;
+
+    await db.set('email_templates', templates);
+    await logActivity(req.user.id, req.user.name, 'updated', 'email_template', req.params.id, { templateName: templates[idx].name });
+    res.json(templates[idx]);
+  } catch (error) {
+    console.error('Update email template error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Reset an email template to its shipped default
+app.post('/api/admin/email-templates/:id/reset', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const templates = await getEmailTemplates();
+    const idx = templates.findIndex(t => t.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Template not found' });
+
+    const defaultTpl = DEFAULT_EMAIL_TEMPLATES.find(t => t.id === req.params.id);
+    if (!defaultTpl) return res.status(404).json({ error: 'No default found for this template' });
+
+    templates[idx] = { ...defaultTpl, updatedAt: new Date().toISOString(), updatedBy: req.user.name };
+    await db.set('email_templates', templates);
+    await logActivity(req.user.id, req.user.name, 'reset', 'email_template', req.params.id, { templateName: templates[idx].name });
+    res.json(templates[idx]);
+  } catch (error) {
+    console.error('Reset email template error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Preview an email template rendered with example data
+app.post('/api/admin/email-templates/:id/preview', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const templates = await getEmailTemplates();
+    const template = templates.find(t => t.id === req.params.id);
+    if (!template) return res.status(404).json({ error: 'Template not found' });
+
+    // Build example variables from the template's variable definitions
+    const exampleVars = {};
+    (template.variables || []).forEach(v => { exampleVars[v.key] = v.example || `[${v.label}]`; });
+    // Allow caller to override with custom preview data
+    const vars = { ...exampleVars, ...(req.body.variables || {}) };
+
+    const renderedSubject = renderTemplate(template.subject, vars);
+    const renderedBody = renderTemplate(template.body, vars);
+    const renderedHtml = template.htmlBody
+      ? renderTemplate(template.htmlBody, vars)
+      : buildHtmlEmail(renderedBody, null);
+
+    res.json({ subject: renderedSubject, body: renderedBody, html: renderedHtml });
+  } catch (error) {
+    console.error('Preview email template error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Send a test email using a template (to the admin's own email)
+app.post('/api/admin/email-templates/:id/test-send', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const templates = await getEmailTemplates();
+    const template = templates.find(t => t.id === req.params.id);
+    if (!template) return res.status(404).json({ error: 'Template not found' });
+
+    const exampleVars = {};
+    (template.variables || []).forEach(v => { exampleVars[v.key] = v.example || `[${v.label}]`; });
+    const vars = { ...exampleVars, ...(req.body.variables || {}) };
+
+    const renderedSubject = renderTemplate(template.subject, vars);
+    const renderedBody = renderTemplate(template.body, vars);
+    const renderedHtml = template.htmlBody
+      ? renderTemplate(template.htmlBody, vars)
+      : buildHtmlEmail(renderedBody, null);
+
+    const result = await sendEmail(
+      req.user.email,
+      `[TEST] ${renderedSubject}`,
+      renderedBody,
+      { htmlBody: renderedHtml }
+    );
+
+    if (result.success) {
+      res.json({ message: `Test email sent to ${req.user.email}`, id: result.id });
+    } else {
+      res.status(500).json({ error: `Failed to send test email: ${result.error}` });
+    }
+  } catch (error) {
+    console.error('Test send email template error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
