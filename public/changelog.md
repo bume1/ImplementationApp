@@ -39,6 +39,12 @@
 - Fix PDF download 404 and allow preview before signing
 
 
+### Version 2.16.0 - February 9, 2026
+
+#### New Features
+- Fix 403 error when managers add validation day segments
+
+
 ### Version 2.15.0 - February 9, 2026
 
 #### New Features
