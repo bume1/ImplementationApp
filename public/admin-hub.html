@@ -983,13 +983,20 @@
       };
 
       const toggleServiceAccess = async (user) => {
-        await api.updateUser(token, user.id, { hasServicePortalAccess: !user.hasServicePortalAccess });
+        const result = await api.updateUser(token, user.id, { hasServicePortalAccess: !user.hasServicePortalAccess });
+        if (result.error) { setMessage(`Error: ${result.error}`); return; }
         loadData();
       };
 
       const toggleAccountStatus = async (user) => {
-        const newStatus = (user.accountStatus === 'inactive') ? 'active' : 'inactive';
-        await api.updateUser(token, user.id, { accountStatus: newStatus });
+        if (user.role === 'admin') return;
+        const currentlyActive = user.accountStatus !== 'inactive';
+        const action = currentlyActive ? 'deactivate' : 'reactivate';
+        if (!confirm(`Are you sure you want to ${action} ${user.name}'s account?${currentlyActive ? '\n\nThey will be unable to log in until reactivated.' : ''}`)) return;
+        const newStatus = currentlyActive ? 'inactive' : 'active';
+        const result = await api.updateUser(token, user.id, { accountStatus: newStatus });
+        if (result.error) { setMessage(`Error: ${result.error}`); return; }
+        setMessage(`Account ${currentlyActive ? 'deactivated' : 'reactivated'} successfully.`);
         loadData();
       };
 
@@ -1627,7 +1634,7 @@
                     </thead>
                     <tbody className="divide-y divide-gray-200">
                       {filteredUsers.map(user => (
-                        <tr key={user.id} className="hover:bg-gray-50">
+                        <tr key={user.id} className={`hover:bg-gray-50 ${user.accountStatus === 'inactive' ? 'opacity-60' : ''}`}>
                           <td className="px-4 py-4">
                             <div className="flex items-center gap-3">
                               {user.logo && <img src={user.logo} alt="" className="h-8 w-8 rounded object-contain bg-gray-100" />}
@@ -1667,8 +1674,9 @@
                           </td>
                           <td className="px-4 py-4 text-center">
                             <button onClick={() => toggleAccountStatus(user)}
-                              className={`px-2.5 py-1 text-xs rounded-full font-medium ${user.accountStatus === 'inactive' ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}
-                              title="Click to toggle active/inactive">{user.accountStatus === 'inactive' ? 'Inactive' : 'Active'}</button>
+                              disabled={user.role === 'admin'}
+                              className={`px-2.5 py-1 text-xs rounded-full font-medium transition ${user.accountStatus === 'inactive' ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-green-100 text-green-700 hover:bg-green-200'} ${user.role === 'admin' ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}
+                              title={user.role === 'admin' ? 'Admin accounts cannot be deactivated' : `Click to ${user.accountStatus === 'inactive' ? 'reactivate' : 'deactivate'}`}>{user.accountStatus === 'inactive' ? 'Inactive' : 'Active'}</button>
                           </td>
                           <td className="px-4 py-4 text-sm text-gray-500">{new Date(user.createdAt).toLocaleDateString()}</td>
                           <td className="px-4 py-4">

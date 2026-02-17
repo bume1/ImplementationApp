@@ -1190,6 +1190,8 @@ const authenticateToken = async (req, res, next) => {
       const users = await getUsers();
       const freshUser = users.find(u => u.id === tokenUser.id);
       if (!freshUser) return res.status(403).json({ error: 'User not found' });
+      // Block inactive accounts
+      if (freshUser.accountStatus === 'inactive') return res.status(403).json({ error: 'Account is inactive. Please contact an administrator.' });
       // Use fresh data for all user properties to ensure permission changes take effect immediately
       // Determine if user is a manager (has limited admin access)
       const isManager = freshUser.isManager || false;
@@ -1944,6 +1946,7 @@ app.get('/api/users', authenticateToken, async (req, res) => {
       email: u.email,
       name: u.name,
       role: u.role,
+      accountStatus: u.accountStatus || 'active',
       createdAt: u.createdAt,
       // Manager flag
       isManager: u.isManager || false,
@@ -2013,6 +2016,8 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
     if (hasImplementationsAccess !== undefined) users[idx].hasImplementationsAccess = hasImplementationsAccess;
     if (hasClientPortalAdminAccess !== undefined) users[idx].hasClientPortalAdminAccess = hasClientPortalAdminAccess;
 
+    // Account active status (no separate isActive - handled by accountStatus above)
+
     // Vendor-specific: assigned clients
     if (assignedClients !== undefined) users[idx].assignedClients = assignedClients;
 
@@ -2069,6 +2074,7 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
       email: users[idx].email,
       name: users[idx].name,
       role: users[idx].role,
+      accountStatus: users[idx].accountStatus || 'active',
       isManager: users[idx].isManager || false,
       hasServicePortalAccess: users[idx].hasServicePortalAccess || false,
       hasAdminHubAccess: users[idx].hasAdminHubAccess || false,
@@ -7268,7 +7274,6 @@ app.post('/api/auth/service-login', async (req, res) => {
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
-
     // Block inactive accounts from logging in
     if (user.accountStatus === 'inactive') {
       return res.status(403).json({ error: 'Account is inactive. Please contact an administrator.' });
@@ -10687,7 +10692,6 @@ app.post('/api/auth/admin-login', async (req, res) => {
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
-
     // Block inactive accounts from logging in
     if (user.accountStatus === 'inactive') {
       return res.status(403).json({ error: 'Account is inactive. Please contact an administrator.' });
