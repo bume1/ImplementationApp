@@ -7179,39 +7179,84 @@ const escapeCSV = (value) => {
   return str;
 };
 
+const PHASE_NAMES = {
+  'Phase 1': 'Phase 1: Contract & Initial Setup',
+  'Phase 2': 'Phase 2: Billing, CLIA & Hiring',
+  'Phase 3': 'Phase 3: Tech Infrastructure & LIS Integration',
+  'Phase 4': 'Phase 4: Inventory Forecasting & Procurement',
+  'Phase 5': 'Phase 5: Supply Orders & Logistics',
+  'Phase 6': 'Phase 6: Onboarding & Welcome Calls',
+  'Phase 7': 'Phase 7: Virtual Soft Pilot & Prep',
+  'Phase 8': 'Phase 8: Training & Full Validation',
+  'Phase 9': 'Phase 9: Go-Live',
+  'Phase 10': 'Phase 10: Post-Launch Support & Optimization'
+};
+
 app.get('/api/projects/:id/export', authenticateToken, async (req, res) => {
   try {
     // Check project access
     if (!canAccessProject(req.user, req.params.id)) {
       return res.status(403).json({ error: 'Access denied to this project' });
     }
-    
+
     const projects = await getProjects();
     const project = projects.find(p => p.id === req.params.id);
     if (!project) return res.status(404).json({ error: 'Project not found' });
     const tasks = await getTasks(req.params.id);
-    
-    const headers = ['id', 'phase', 'stage', 'taskTitle', 'owner', 'startDate', 'dueDate', 'showToClient', 'clientName', 'completed', 'dateCompleted', 'tags', 'dependencies', 'notes'];
-    
-    const rows = tasks.map(t => [
-      t.id,
-      t.phase || '',
-      t.stage || '',
-      t.taskTitle || '',
-      t.owner || '',
-      t.startDate || '',
-      t.dueDate || '',
-      t.showToClient ? 'true' : 'false',
-      t.clientName || '',
-      t.completed ? 'true' : 'false',
-      t.dateCompleted || '',
-      Array.isArray(t.tags) ? t.tags.join(';') : '',
-      Array.isArray(t.dependencies) ? t.dependencies.join(';') : '',
-      Array.isArray(t.notes) ? t.notes.map(n => n.content || n.text || '').join(' | ') : ''
-    ].map(escapeCSV));
-    
+
+    const headers = ['id', 'phase', 'stage', 'taskTitle', 'isSubtask', 'parentTaskId', 'subtaskStatus', 'owner', 'startDate', 'dueDate', 'showToClient', 'clientName', 'completed', 'dateCompleted', 'tags', 'dependencies', 'notes'];
+
+    const rows = [];
+    tasks.forEach(t => {
+      const fullPhase = PHASE_NAMES[t.phase] || t.phase || '';
+      // Parent task row
+      rows.push([
+        t.id,
+        fullPhase,
+        t.stage || '',
+        t.taskTitle || '',
+        'false',
+        '',
+        '',
+        t.owner || '',
+        t.startDate || '',
+        t.dueDate || '',
+        t.showToClient ? 'true' : 'false',
+        t.clientName || '',
+        t.completed ? 'true' : 'false',
+        t.dateCompleted || '',
+        Array.isArray(t.tags) ? t.tags.join(';') : '',
+        Array.isArray(t.dependencies) ? t.dependencies.join(';') : '',
+        Array.isArray(t.notes) ? t.notes.map(n => n.content || n.text || '').join(' | ') : ''
+      ].map(escapeCSV));
+      // Subtask rows
+      if (Array.isArray(t.subtasks)) {
+        t.subtasks.forEach(st => {
+          rows.push([
+            st.id,
+            fullPhase,
+            t.stage || '',
+            st.title || '',
+            'true',
+            t.id,
+            st.status || (st.completed ? 'Completed' : (st.notApplicable ? 'N/A' : 'Pending')),
+            st.owner || '',
+            '',
+            st.dueDate || '',
+            st.showToClient ? 'true' : 'false',
+            '',
+            st.completed ? 'true' : 'false',
+            '',
+            '',
+            '',
+            ''
+          ].map(escapeCSV));
+        });
+      }
+    });
+
     const csv = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
-    
+
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${project.name.replace(/[^a-zA-Z0-9]/g, '_')}.csv"`);
     res.send(csv);
