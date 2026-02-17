@@ -3803,8 +3803,17 @@ app.post('/api/announcements', authenticateToken, requireClientPortalAdmin, asyn
           attachmentBlock: newAnnouncement.attachmentUrl ? `<p style="margin-top: 16px;"><a href="${newAnnouncement.attachmentUrl}" style="color: #045E9F; font-weight: 500;">📎 ${newAnnouncement.attachmentName || 'View Attachment'}</a></p>` : ''
         };
         const subject = renderTemplate(annTpl.subject, annVars);
-        const htmlBody = annTpl.htmlBody ? renderTemplate(annTpl.htmlBody, annVars) : buildHtmlEmail(renderTemplate(annTpl.body, annVars), null);
-        const textBody = renderTemplate(annTpl.body, annVars);
+        // Safeguard: always include full announcement content even if admin edited {{content}} out of template
+        let annBody = annTpl.body || '';
+        let annHtml = annTpl.htmlBody || '';
+        if (!annBody.includes('{{content}}')) {
+          annBody += '\n\n{{content}}';
+        }
+        if (annHtml && !annHtml.includes('{{content}}')) {
+          annHtml = annHtml.replace(/<hr/, '<div style="color: #374151; line-height: 1.6; white-space: pre-wrap;">{{content}}</div><hr');
+        }
+        const htmlBody = annHtml ? renderTemplate(annHtml, annVars) : buildHtmlEmail(renderTemplate(annBody, annVars), null);
+        const textBody = renderTemplate(annBody, annVars);
         const emailPromises = recipients.map(user =>
           sendEmail(user.email, subject, textBody, { htmlBody }).then(result => ({
             email: user.email, ...result

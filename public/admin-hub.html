@@ -3597,6 +3597,14 @@
                         <label className="block text-sm font-medium text-gray-700 mb-1">Body (Plain Text)</label>
                         <textarea value={editForm.body} onChange={e => setEditForm(prev => ({ ...prev, body: e.target.value }))}
                           rows={8} className="w-full input-modern px-3 py-2 text-sm font-mono resize-y" placeholder="Email body text..." />
+                        {editingTemplate.id === 'announcement' && !editForm.body.includes('{{content}}') && (
+                          <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+                            <span className="text-amber-600 mt-0.5">&#9888;</span>
+                            <p className="text-xs text-amber-800">
+                              <strong>Missing {'{{content}}'} variable.</strong> The full announcement text will still be appended automatically, but including {'{{content}}'} gives you control over where it appears.
+                            </p>
+                          </div>
+                        )}
                       </div>
 
                       {editingTemplate.category === 'announcement' && (
