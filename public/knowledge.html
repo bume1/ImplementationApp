@@ -23,25 +23,26 @@
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
-    body { font-family: system-ui, -apple-system, sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%); }
+    * { font-family: 'Inter', system-ui, sans-serif; }
+    body { background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #f1f5f9 100%); min-height: 100vh; }
     .card-hover { transition: all 0.3s ease; }
     .card-hover:hover { transform: translateY(-4px); box-shadow: 0 12px 24px rgba(0,0,0,0.1); }
     .guide-content { max-height: 0; overflow: hidden; transition: max-height 0.3s ease-out; }
-    .guide-content.open { max-height: 2000px; transition: max-height 0.5s ease-in; }
+    .guide-content.open { max-height: 5000px; transition: max-height 0.5s ease-in; }
+    .sidebar-link { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); border-radius: 0.75rem; }
+    .sidebar-link:hover { background: linear-gradient(135deg, rgba(4, 94, 159, 0.08) 0%, rgba(4, 94, 159, 0.12) 100%); }
+    .sidebar-link.active { background: linear-gradient(135deg, #045E9F 0%, #0353a4 100%); color: white; box-shadow: 0 4px 14px -3px rgba(4, 94, 159, 0.4); }
+    .gradient-header { background: linear-gradient(135deg, #045E9F 0%, #00205A 100%); }
     .search-input:focus { box-shadow: 0 0 0 3px rgba(4,94,159,0.15); outline: none; }
     .search-dropdown { max-height: 400px; overflow-y: auto; }
     .search-item { transition: background 0.15s ease; }
     .search-item:hover { background: #f0f7ff; }
-    .section-tile { transition: all 0.2s ease; }
-    .section-tile:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
-    .breadcrumb-btn { transition: color 0.15s ease; }
-    .breadcrumb-btn:hover { color: #045E9F; }
   </style>
 </head>
 <body>
   <div id="root"></div>
   <script type="text/babel">
-    const { useState, useEffect } = React;
+    const { useState, useEffect, useMemo, useRef, useCallback } = React;
 
     // Icons
     const Icons = {
@@ -65,6 +66,123 @@
       lock: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
     };
 
+    // ============== 5-TIER PERMISSION SYSTEM ==============
+    const USER_TIERS = {
+      SUPER_ADMIN: 'super_admin',
+      MANAGER: 'manager',
+      TEAM_MEMBER: 'team_member',
+      VENDOR: 'vendor',
+      CLIENT: 'client'
+    };
+
+    const TIER_LABELS = {
+      super_admin: 'Super Admin',
+      manager: 'Manager',
+      team_member: 'Team Member',
+      vendor: 'Vendor Technician',
+      client: 'Client'
+    };
+
+    const PORTAL_SECTIONS = {
+      GENERAL: 'general',
+      ADMIN_HUB: 'admin_hub',
+      LAUNCH_PORTAL: 'launch_portal',
+      SERVICE_PORTAL: 'service_portal',
+      CLIENT_PORTAL: 'client_portal',
+      CLIENT_PORTAL_ADMIN: 'client_portal_admin'
+    };
+
+    const PORTAL_SECTION_LABELS = {
+      general: 'General',
+      admin_hub: 'Admin Hub',
+      launch_portal: 'Implementations',
+      service_portal: 'Service Portal',
+      client_portal: 'Client Portal',
+      client_portal_admin: 'Client Portal Admin'
+    };
+
+    function getUserTier(user) {
+      if (!user) return null;
+      if (user.role === 'admin') return USER_TIERS.SUPER_ADMIN;
+      if (user.isManager) return USER_TIERS.MANAGER;
+      if (user.role === 'vendor') return USER_TIERS.VENDOR;
+      if (user.role === 'client') return USER_TIERS.CLIENT;
+      return USER_TIERS.TEAM_MEMBER;
+    }
+
+    function canUserSeeGuide(userTier, user, guide) {
+      const visibleTo = guide.visibleTo || [];
+      if (visibleTo.length === 0) return true;
+      if (!visibleTo.includes(userTier)) return false;
+      if (userTier === 'team_member' && guide.portalSection) {
+        switch (guide.portalSection) {
+          case 'admin_hub': return !!user.hasAdminHubAccess;
+          case 'launch_portal': return !!user.hasImplementationsAccess || (user.assignedProjects && user.assignedProjects.length > 0);
+          case 'service_portal': return !!user.hasServicePortalAccess;
+          case 'client_portal_admin': return !!user.hasClientPortalAdminAccess;
+          case 'client_portal': return false;
+          default: return true;
+        }
+      }
+      return true;
+    }
+
+    // ============== WORKFLOW WALKTHROUGHS ==============
+    const WORKFLOW_WALKTHROUGHS = {
+      super_admin: {
+        title: 'Super Admin Daily Workflow',
+        subtitle: 'Your end-to-end daily routine as system administrator',
+        steps: [
+          { step: 1, title: 'Check Admin Hub Inbox', description: 'Process password resets (urgent - users are blocked), review bug reports, triage feature requests.', link: 'admin-hub' },
+          { step: 2, title: 'Review Dashboard Stats', description: 'Check active launch count, open tickets, and look for any anomalies in the numbers.', link: 'admin-hub' },
+          { step: 3, title: 'Monitor Implementations', description: 'Review project progress across all active launches, check for overdue tasks, follow up with project managers.', link: 'launch-app' },
+          { step: 4, title: 'Oversee Service Operations', description: 'Check pending service assignments, review completed reports for quality, monitor active validations.', link: 'service-portal' },
+          { step: 5, title: 'Client Portal Oversight', description: 'Review inventory compliance, update announcements, ensure client documents are current.', link: 'client-portal-admin' }
+        ]
+      },
+      manager: {
+        title: 'Manager Daily Workflow',
+        subtitle: 'Your workflow for overseeing teams and service operations',
+        steps: [
+          { step: 1, title: 'Review Service Assignments', description: 'Check pending service visits in the Service Portal. Assign new work to available technicians.', link: 'service-portal' },
+          { step: 2, title: 'Monitor Completed Reports', description: 'Review submitted service and validation reports for completeness and quality.', link: 'service-portal' },
+          { step: 3, title: 'Check Client Portal', description: 'Review inventory submissions, update client-facing announcements, ensure documents are current.', link: 'client-portal-admin' },
+          { step: 4, title: 'Dashboard Overview', description: 'Check Admin Hub dashboard for team performance metrics and any pending items.', link: 'admin-hub' }
+        ]
+      },
+      team_member: {
+        title: 'Team Member Daily Workflow',
+        subtitle: 'Your daily routine for implementations and project tasks',
+        steps: [
+          { step: 1, title: 'Check Your Assigned Projects', description: 'Open the Launch App to see your current projects, pending tasks, and upcoming milestones.', link: 'launch-app' },
+          { step: 2, title: 'Update Task Progress', description: 'Mark completed tasks, add notes for updates, upload any required documentation.', link: 'launch-app' },
+          { step: 3, title: 'Submit Service Reports', description: 'If you completed service work today, file reports within 24 hours in the Service Portal.', link: 'service-portal' },
+          { step: 4, title: 'Review Client Documents', description: 'Ensure client-facing documents are current and accurate in the Client Portal Admin.', link: 'client-portal-admin' }
+        ]
+      },
+      vendor: {
+        title: 'Vendor Technician Workflow',
+        subtitle: 'Your workflow for assigned service visits and report submission',
+        steps: [
+          { step: 1, title: 'Check Dashboard for Assignments', description: 'Look for the red notification box on the Service Portal dashboard with pending service assignments.', link: 'service-portal' },
+          { step: 2, title: 'Review Assignment Details', description: 'Read manager notes, check attached photos and files, understand the scope of work before visiting.', link: 'service-portal' },
+          { step: 3, title: 'Complete Service Visit', description: 'Perform the work on-site, gather customer signatures, note materials used and any outstanding issues.', link: 'service-portal' },
+          { step: 4, title: 'Submit Report', description: 'Fill in findings, attach photos, get customer signature, and submit within 24 hours of completing the visit.', link: 'service-portal' }
+        ]
+      },
+      client: {
+        title: 'Client Portal Walkthrough',
+        subtitle: 'How to get the most out of your client portal',
+        steps: [
+          { step: 1, title: 'Check Announcements', description: 'View the home dashboard for important updates, pinned announcements, and recent activity.', link: 'client-portal' },
+          { step: 2, title: 'Submit Weekly Inventory', description: 'Navigate to Inventory Management and enter your current stock levels for all required items.', link: 'inventory' },
+          { step: 3, title: 'Review Documents', description: 'Check the Files & Documents section for new certificates, contracts, or package inserts.', link: 'files-documents' },
+          { step: 4, title: 'Get Support', description: 'Use the Customer Support Center to create tickets for any issues or questions.', link: 'customer-support' }
+        ]
+      }
+    };
+
+    // ============== GUIDE DATA ==============
     // Comprehensive Guide Data - Expert Level How-Tos for Internal Users
     const guides = {
       'portal-hub': {
@@ -72,6 +190,8 @@
         description: 'Your central navigation point for all Thrive 365 Labs services',
         icon: Icons.hub,
         color: 'bg-primary-500',
+        visibleTo: [],
+        portalSection: 'general',
         articles: [
           {
             title: 'Getting Started with Portal Hub',
@@ -208,6 +328,8 @@ If you have the "Is Manager" designation, you get limited Admin Hub access witho
         description: 'User management, permissions, and administration',
         icon: Icons.admin,
         color: 'bg-blue-600',
+        visibleTo: ['super_admin', 'manager', 'team_member'],
+        portalSection: 'admin_hub',
         articles: [
           {
             title: 'Admin Dashboard Overview',
@@ -531,6 +653,8 @@ The technician will then:
         description: 'Project tracking, client onboarding, and implementations',
         icon: Icons.launch,
         color: 'bg-purple-600',
+        visibleTo: ['super_admin', 'manager', 'team_member'],
+        portalSection: 'launch_portal',
         articles: [
           {
             title: 'Understanding the Project Board',
@@ -833,6 +957,8 @@ When a project is marked "Complete":
         description: 'Service reports, field operations, and vendor management',
         icon: Icons.service,
         color: 'bg-emerald-600',
+        visibleTo: ['super_admin', 'manager', 'team_member', 'vendor'],
+        portalSection: 'service_portal',
         articles: [
           {
             title: 'Service Portal Overview',
@@ -1355,6 +1481,8 @@ Click "Create Assignment" - the technician will see it in their dashboard.
         description: 'Managing client portals, content, and communications',
         icon: Icons.client,
         color: 'bg-amber-500',
+        visibleTo: ['super_admin', 'manager'],
+        portalSection: 'client_portal_admin',
         articles: [
           {
             title: 'Understanding Client Portals',
@@ -1682,6 +1810,8 @@ Regularly review tickets to ensure:
         description: 'Weekly inventory updates, reports, and alerts',
         icon: Icons.inventory,
         color: 'bg-teal-600',
+        visibleTo: ['super_admin', 'manager', 'client'],
+        portalSection: 'client_portal',
         articles: [
           {
             title: 'Inventory System Overview (For Internal Staff)',
@@ -1918,6 +2048,8 @@ For technical issues beyond these solutions:
         description: 'Tickets, live chat, and support resources',
         icon: Icons.support,
         color: 'bg-sky-600',
+        visibleTo: ['super_admin', 'manager', 'client'],
+        portalSection: 'client_portal',
         articles: [
           {
             title: 'Support Center Overview',
@@ -1975,7 +2107,7 @@ Service reports submitted by technicians appear as downloadable attachments on r
 Expect a response within 24-48 hours for standard requests.
 
 **Alternative Contact:**
-You can also email support directly at support@thrive365labs.live`
+You can also email support directly at support@thrive365labs.com`
           },
           {
             title: 'Using Live Chat',
@@ -2001,6 +2133,8 @@ Support agents are available during business hours. The green indicator shows wh
         description: 'Document management and file uploads',
         icon: Icons.files,
         color: 'bg-violet-600',
+        visibleTo: ['super_admin', 'manager', 'client'],
+        portalSection: 'client_portal',
         articles: [
           {
             title: 'Accessing Documents',
@@ -2046,6 +2180,8 @@ If configured, uploaded files are automatically attached to your HubSpot company
         icon: Icons.code,
         color: 'bg-slate-700',
         ownerOnly: true,
+        visibleTo: ['super_admin'],
+        portalSection: 'general',
         articles: [
           {
             title: 'System Overview',
@@ -2387,6 +2523,8 @@ The application supports custom domains for main application access and client p
         icon: Icons.admin,
         color: 'bg-rose-600',
         adminOnly: true,
+        visibleTo: ['super_admin', 'manager'],
+        portalSection: 'general',
         articles: [
           {
             title: 'Admin Hub Best Practices',
@@ -2569,6 +2707,171 @@ If you suspect unauthorized access:
 5. Notify affected clients if their data was accessed`
           }
         ]
+      },
+      'known-issues': {
+        title: 'Known Issues',
+        description: 'Current known issues, workarounds, and status updates',
+        icon: Icons.lock,
+        color: 'bg-red-600',
+        isKnownIssue: true,
+        visibleTo: ['super_admin', 'manager'],
+        portalSection: 'general',
+        articles: [
+          {
+            title: 'Task ID Type Coercion',
+            content: `**Status:** Active (by design)
+**Severity:** Low
+**Affected:** Launch App task operations
+
+Tasks can have numeric OR string IDs depending on whether they were created from templates or via the UI. When comparing task IDs, always normalize to strings. If you notice a task update "not saving," this is likely the cause.
+
+**Workaround:** The system normalizes IDs in most operations, but edge cases exist in CSV import and dependency linking. Report any instances where task operations silently fail.`
+          },
+          {
+            title: 'Slug Changes Break Client Portal URLs',
+            content: `**Status:** Active
+**Severity:** Medium
+**Affected:** Client Portal access
+
+When a client's practice name is changed in Admin Hub, their portal URL slug is regenerated. The old URL stops working immediately with no redirect.
+
+**Workaround:** Before changing a practice name, notify the client that their portal URL will change. After the change, send them the new URL. Old bookmarks will not work.`
+          },
+          {
+            title: 'Activity Log Truncates at 500 Entries',
+            content: `**Status:** Active (by design)
+**Severity:** Low
+**Affected:** Admin Hub activity tracking
+
+The activity log permanently deletes entries beyond 500. There is no archive mechanism.
+
+**Workaround:** If you need long-term audit trails, periodically export activity data before it reaches 500 entries.`
+          },
+          {
+            title: 'HubSpot Token Lost on Server Restart',
+            content: `**Status:** Active (by design)
+**Severity:** Low
+**Affected:** HubSpot integration
+
+HubSpot OAuth tokens are cached in-memory only. When the server restarts, a new token handshake is required automatically, but the first request after restart may be slow.
+
+**Workaround:** No action needed. The system re-authenticates automatically. If HubSpot operations fail after a restart, wait 30 seconds and retry.`
+          },
+          {
+            title: 'Bulk Operations Not Atomic',
+            content: `**Status:** Active (by design)
+**Severity:** Medium
+**Affected:** Launch App bulk task operations
+
+Bulk task updates and deletes have no transaction support. If a bulk operation fails midway, some tasks may be updated while others are not. Additionally, bulk delete checks permissions on ALL tasks before deleting ANY - if one task fails the permission check, the entire batch is rejected.
+
+**Workaround:** For large bulk operations, consider doing them in smaller batches of 10-20 tasks.`
+          }
+        ]
+      },
+      'developer-docs': {
+        title: 'Developer Guide: Knowledge Hub',
+        description: 'How to add, edit, and manage Knowledge Hub content',
+        icon: Icons.code,
+        color: 'bg-slate-700',
+        visibleTo: ['super_admin'],
+        portalSection: 'general',
+        articles: [
+          {
+            title: 'Adding a New Guide Section',
+            content: `**How to add a new section to the Knowledge Hub via Admin Hub:**
+
+**STEP 1: Navigate to Knowledge Hub Management**
+1. Go to Admin Hub
+2. Click "Knowledge Hub" in the sidebar
+3. Click "New Guide" button
+
+**STEP 2: Fill in Guide Details**
+- **Key**: URL-safe identifier (e.g., "new-feature-docs"). Cannot be changed later.
+- **Title**: Display name shown in sidebar and header
+- **Description**: Brief summary shown below the title
+- **Portal Section**: Which portal this guide relates to (determines sidebar grouping)
+- **Visible To**: Select which user tiers can see this guide
+- **Color**: Badge color for the guide icon
+- **Is Known Issue**: Toggle if this is an internal-only known issues entry
+
+**STEP 3: Save and Add Articles**
+1. Save the guide first
+2. Then click into the guide to add articles
+3. Each article needs a title and content
+
+**Content Formatting Syntax:**
+- **Bold text**: Wrap in double asterisks: \`**bold text**\`
+- **Section headers**: Start a line with \`**HEADER TEXT:**\` (all caps with colon)
+- **Numbered lists**: Start lines with \`1.\`, \`2.\`, etc.
+- **Bullet points**: Start lines with \`-\` or a bullet character
+- **Checkboxes**: Start lines with \`- [ ]\` (unchecked) or \`- [x]\` (checked)
+
+**Structured Format (Optional):**
+Articles can use a structured format with 6 fields:
+- What It Is, Who Uses It, When to Use, How to Use, What Happens Next, Common Mistakes
+This renders as color-coded sections with distinct visual styling.`
+          },
+          {
+            title: 'Permission Tiers Reference',
+            content: `**The 5 user tiers and their Knowledge Hub access:**
+
+**1. Super Admin** (role = admin)
+- Sees everything including Known Issues, Technical Docs, and Developer Guide
+- Can manage all Knowledge Hub content via Admin Hub
+
+**2. Manager** (isManager = true)
+- Sees most internal content + Known Issues section
+- Sees Admin Hub, Service Portal, Client Portal Admin guides
+- Cannot see Technical Docs or Developer Guide
+
+**3. Team Member** (role = user, not manager)
+- Sees guides only for portals they have access to
+- Access is filtered by their permission flags:
+  - hasAdminHubAccess -> Admin Hub guides
+  - hasImplementationsAccess -> Launch App guides
+  - hasServicePortalAccess -> Service Portal guides
+  - hasClientPortalAdminAccess -> Client Portal Admin guides
+- Does NOT see client-facing Client Portal guides
+
+**4. Vendor Technician** (role = vendor)
+- Sees only Service Portal documentation
+- Plus the general Portal Hub guide
+
+**5. Client** (role = client)
+- Sees only Client Portal documentation
+- Inventory, Customer Support, Files & Documents
+- Plus the general Portal Hub guide`
+          },
+          {
+            title: 'API Endpoints for Knowledge Hub',
+            content: `**Backend API endpoints for programmatic access:**
+
+**Read Operations:**
+- \`GET /api/knowledge/guides\` - Fetch all visible guides (filtered by user permissions)
+- \`GET /api/knowledge/guides/:guideId\` - Fetch a single guide with articles
+
+**Write Operations (Admin only):**
+- \`POST /api/knowledge/guides\` - Create a new guide
+- \`PUT /api/knowledge/guides/:guideId\` - Update guide metadata
+- \`DELETE /api/knowledge/guides/:guideId\` - Delete a guide
+- \`POST /api/knowledge/guides/:guideId/articles\` - Add an article
+- \`PUT /api/knowledge/guides/:guideId/articles/:articleId\` - Update an article
+- \`DELETE /api/knowledge/guides/:guideId/articles/:articleId\` - Delete an article
+- \`PUT /api/knowledge/guides/:guideId/reorder\` - Reorder articles
+
+**Seeding:**
+- \`GET /api/knowledge/needs-seed\` - Check if database needs initial content
+- \`POST /api/knowledge/seed\` - Seed database from hardcoded content (one-time)
+
+**Guide Object Fields:**
+- key, title, description, icon, color
+- visibleTo: array of tier strings (empty = all users)
+- portalSection: which portal section this belongs to
+- isKnownIssue: boolean for Known Issues section
+- articles: array of { title, content, format }`
+          }
+        ]
       }
     };
 
@@ -2659,12 +2962,23 @@ If you suspect unauthorized access:
       } catch (e) { return []; }
     }
 
-    // ═══════════════════════════════════════════════════════
-    // CONTENT RENDERING
-    // ═══════════════════════════════════════════════════════
+    // ============== UTILITY COMPONENTS ==============
 
-    // Helper function to render text with inline bold formatting
-    const renderTextWithBold = (text) => {
+    // Highlight search terms in text
+    const HighlightText = ({ text, searchTerm }) => {
+      if (!searchTerm || !searchTerm.trim() || typeof text !== 'string') return text;
+      const escapedTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`(${escapedTerm})`, 'gi');
+      const parts = text.split(regex);
+      return parts.map((part, i) =>
+        regex.test(part)
+          ? <mark key={i} className="bg-yellow-200 text-yellow-900 rounded px-0.5">{part}</mark>
+          : part
+      );
+    };
+
+    // Helper function to render text with inline bold formatting (with search highlighting)
+    const renderTextWithBold = (text, searchTerm) => {
       const parts = [];
       let remaining = text;
       let key = 0;
@@ -2673,148 +2987,179 @@ If you suspect unauthorized access:
         const boldStart = remaining.indexOf('**');
 
         if (boldStart === -1) {
-          // No more bold text, add the rest
-          parts.push(<span key={key++}>{remaining}</span>);
+          parts.push(<span key={key++}><HighlightText text={remaining} searchTerm={searchTerm} /></span>);
           break;
         }
 
-        // Add text before bold
         if (boldStart > 0) {
-          parts.push(<span key={key++}>{remaining.substring(0, boldStart)}</span>);
+          parts.push(<span key={key++}><HighlightText text={remaining.substring(0, boldStart)} searchTerm={searchTerm} /></span>);
         }
 
-        // Find the closing **
         const boldEnd = remaining.indexOf('**', boldStart + 2);
 
         if (boldEnd === -1) {
-          // No closing **, treat ** as regular text
-          parts.push(<span key={key++}>{remaining}</span>);
+          parts.push(<span key={key++}><HighlightText text={remaining} searchTerm={searchTerm} /></span>);
           break;
         }
 
-        // Add bold text
         const boldText = remaining.substring(boldStart + 2, boldEnd);
-        parts.push(<strong key={key++} className="font-semibold text-gray-900">{boldText}</strong>);
+        parts.push(<strong key={key++} className="font-semibold text-gray-900"><HighlightText text={boldText} searchTerm={searchTerm} /></strong>);
 
-        // Continue with remaining text
         remaining = remaining.substring(boldEnd + 2);
       }
 
       return parts;
     };
 
-    // Expandable Guide Section Component
-    const GuideSection = ({ guide, isAdmin, sectionKey }) => {
+    // ============== STRUCTURED ARTICLE RENDERER ==============
+    const StructuredArticleContent = ({ article, searchTerm }) => {
+      if (!article.format) return null;
+      const sections = [
+        { key: 'whatItIs', label: 'What It Is', borderColor: 'border-blue-500', textColor: 'text-blue-700' },
+        { key: 'whoUsesIt', label: 'Who Uses It', borderColor: 'border-purple-500', textColor: 'text-purple-700' },
+        { key: 'whenToUse', label: 'When to Use', borderColor: 'border-green-500', textColor: 'text-green-700' },
+        { key: 'howToUse', label: 'How to Use', borderColor: 'border-indigo-500', textColor: 'text-indigo-700' },
+        { key: 'whatHappensNext', label: 'What Happens Next', borderColor: 'border-teal-500', textColor: 'text-teal-700' },
+        { key: 'commonMistakes', label: 'Common Mistakes', borderColor: 'border-red-500', textColor: 'text-red-700' }
+      ];
+      return (
+        <div className="space-y-4 mt-4">
+          {sections.map(section => {
+            const value = article.format[section.key];
+            if (!value) return null;
+            return (
+              <div key={section.key} className={`border-l-4 ${section.borderColor} pl-4 py-2`}>
+                <h5 className={`font-semibold ${section.textColor} text-sm uppercase tracking-wide mb-1`}>{section.label}</h5>
+                <div className="text-gray-600 text-sm">
+                  {value.split('\n').map((line, i) => {
+                    const trimmed = line.trim();
+                    if (!trimmed) return <div key={i} className="h-1" />;
+                    if (trimmed.startsWith('- ') || trimmed.startsWith('• ')) return <li key={i} className="ml-4 mb-1 list-disc">{renderTextWithBold(trimmed.substring(2), searchTerm)}</li>;
+                    if (trimmed.match(/^\d+\.\s/)) return <li key={i} className="ml-4 mb-1 list-decimal">{renderTextWithBold(trimmed.substring(trimmed.indexOf('.') + 2), searchTerm)}</li>;
+                    return <p key={i} className="mb-1 leading-relaxed">{renderTextWithBold(trimmed, searchTerm)}</p>;
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    };
+
+    // Freeform article content renderer
+    const FreeformArticleContent = ({ content, searchTerm }) => {
+      if (!content) return null;
+      return (
+        <div className="prose prose-sm max-w-none mt-4 text-gray-600">
+          {content.split('\n').map((line, pIdx) => {
+            const trimmed = line.trim();
+            if (trimmed === '') return <div key={pIdx} className="h-2" />;
+            if (trimmed.match(/^\*\*[A-Z][^*]+:?\*\*$/)) {
+              const text = trimmed.replace(/\*\*/g, '');
+              return <h4 key={pIdx} className="font-bold text-gray-900 mt-6 mb-3 text-base"><HighlightText text={text} searchTerm={searchTerm} /></h4>;
+            }
+            if (trimmed.match(/^\*\*STEP \d+:/)) {
+              const text = trimmed.replace(/\*\*/g, '');
+              return <h5 key={pIdx} className="font-bold text-gray-800 mt-4 mb-2"><HighlightText text={text} searchTerm={searchTerm} /></h5>;
+            }
+            if (trimmed.startsWith('• ') || trimmed.startsWith('- ')) {
+              const text = trimmed.substring(2);
+              return <li key={pIdx} className="ml-6 mb-1 list-disc">{renderTextWithBold(text, searchTerm)}</li>;
+            }
+            if (trimmed.match(/^\d+\.\s/)) {
+              const text = trimmed.substring(trimmed.indexOf('.') + 2);
+              return <li key={pIdx} className="ml-6 mb-1 list-decimal">{renderTextWithBold(text, searchTerm)}</li>;
+            }
+            if (trimmed.startsWith('- [ ]') || trimmed.startsWith('- [x]')) {
+              const checked = trimmed.includes('[x]');
+              const text = trimmed.substring(trimmed.indexOf(']') + 2);
+              return (
+                <div key={pIdx} className="flex items-center gap-2 mb-1 ml-4">
+                  <input type="checkbox" checked={checked} readOnly className="rounded" />
+                  <span>{renderTextWithBold(text, searchTerm)}</span>
+                </div>
+              );
+            }
+            return <p key={pIdx} className="mb-2 leading-relaxed">{renderTextWithBold(line, searchTerm)}</p>;
+          })}
+        </div>
+      );
+    };
+
+    // ============== GUIDE SECTION COMPONENT ==============
+    const GuideSection = ({ guide, userTier, forceOpen, searchTerm }) => {
       const [isOpen, setIsOpen] = useState(false);
       const [openArticle, setOpenArticle] = useState(null);
+      const effectiveOpen = forceOpen || isOpen;
 
-      // Determine border styling based on access level
       const getBorderClass = () => {
+        if (guide.isKnownIssue) return 'border-red-200 ring-1 ring-red-100';
         if (guide.ownerOnly) return 'border-amber-200 ring-1 ring-amber-100';
         if (guide.adminOnly) return 'border-rose-200 ring-1 ring-rose-100';
+        const vt = guide.visibleTo || [];
+        if (vt.length > 0 && vt.length <= 2) return 'border-amber-200 ring-1 ring-amber-100';
         return 'border-gray-100';
       };
 
+      const getAccessBadge = () => {
+        if (guide.isKnownIssue) return <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 text-xs font-medium rounded-full">{Icons.lock} Internal Only</span>;
+        if (guide.ownerOnly) return <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-medium rounded-full">{Icons.lock} Super Admin</span>;
+        if (guide.adminOnly) return <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-100 text-rose-700 text-xs font-medium rounded-full">{Icons.lock} Super Admin</span>;
+        const vt = guide.visibleTo || [];
+        if (vt.length === 1 && vt[0] === 'super_admin') return <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-medium rounded-full">{Icons.lock} Super Admin</span>;
+        if (vt.length > 0 && vt.length <= 2 && !vt.includes('team_member') && !vt.includes('vendor') && !vt.includes('client')) return <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-100 text-rose-700 text-xs font-medium rounded-full">{Icons.lock} Admin/Manager</span>;
+        return null;
+      };
+
       return (
-        <div data-section-key={sectionKey} className={`bg-white rounded-xl shadow-sm border overflow-hidden mb-4 ${getBorderClass()}`}>
+        <div id={`section-${guide.key || ''}`} className={`bg-white rounded-xl shadow-sm border overflow-hidden mb-4 ${getBorderClass()}`}>
           <button
             onClick={() => setIsOpen(!isOpen)}
             className="w-full p-5 flex items-center justify-between hover:bg-gray-50 transition"
           >
             <div className="flex items-center gap-4">
-              <div className={`inline-flex items-center justify-center w-12 h-12 ${guide.color} text-white rounded-xl`}>
-                {guide.icon}
+              <div className={`inline-flex items-center justify-center w-12 h-12 ${guide.color || 'bg-gray-500'} text-white rounded-xl`}>
+                {guide.icon || Icons.book}
               </div>
               <div className="text-left">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-lg font-semibold text-accent">{guide.title}</h3>
-                  {guide.ownerOnly && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-medium rounded-full">
-                      {Icons.lock}
-                      Admin Only
-                    </span>
-                  )}
-                  {guide.adminOnly && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-100 text-rose-700 text-xs font-medium rounded-full">
-                      {Icons.lock}
-                      Super Admin
-                    </span>
-                  )}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-lg font-semibold text-accent">
+                    <HighlightText text={guide.title} searchTerm={searchTerm} />
+                  </h3>
+                  {getAccessBadge()}
                 </div>
-                <p className="text-gray-500 text-sm">{guide.description}</p>
+                <p className="text-gray-500 text-sm"><HighlightText text={guide.description} searchTerm={searchTerm} /></p>
               </div>
             </div>
-            <div className={`text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}>
+            <div className={`text-gray-400 transition-transform ${effectiveOpen ? 'rotate-180' : ''}`}>
               {Icons.chevronDown}
             </div>
           </button>
 
-          <div className={`guide-content ${isOpen ? 'open' : ''}`}>
+          <div className={`guide-content ${effectiveOpen ? 'open' : ''}`}>
             <div className="border-t border-gray-100 p-4 bg-gray-50">
-              <p className="text-sm text-gray-500 mb-3">{guide.articles.length} article{guide.articles.length !== 1 ? 's' : ''}</p>
+              <p className="text-sm text-gray-500 mb-3">{(guide.articles || []).length} article{(guide.articles || []).length !== 1 ? 's' : ''}</p>
               <div className="space-y-2">
-                {guide.articles.map((article, idx) => (
-                  <div key={idx} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                {(guide.articles || []).map((article, idx) => (
+                  <div key={article.id || idx} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
                     <button
                       onClick={() => setOpenArticle(openArticle === idx ? null : idx)}
                       className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition text-left"
                     >
-                      <span className="font-medium text-gray-800">{article.title}</span>
+                      <span className="font-medium text-gray-800">
+                        <HighlightText text={article.title} searchTerm={searchTerm} />
+                      </span>
                       <span className={`text-gray-400 transition-transform ${openArticle === idx ? 'rotate-90' : ''}`}>
                         {Icons.chevronRight}
                       </span>
                     </button>
-                    {openArticle === idx && (
+                    {(openArticle === idx || forceOpen) && (
                       <div className="px-4 pb-4 border-t border-gray-100 bg-gray-50">
-                        <div className="prose prose-sm max-w-none mt-4 text-gray-600">
-                          {article.content.split('\n').map((line, pIdx) => {
-                            const trimmed = line.trim();
-
-                            // Skip empty lines
-                            if (trimmed === '') {
-                              return <div key={pIdx} className="h-2" />;
-                            }
-
-                            // Handle section headers (lines starting and ending with **)
-                            if (trimmed.match(/^\*\*[A-Z][^*]+:?\*\*$/)) {
-                              const text = trimmed.replace(/\*\*/g, '');
-                              return <h4 key={pIdx} className="font-bold text-gray-900 mt-6 mb-3 text-base">{text}</h4>;
-                            }
-
-                            // Handle step headers like "**STEP 1:**"
-                            if (trimmed.match(/^\*\*STEP \d+:/)) {
-                              const text = trimmed.replace(/\*\*/g, '');
-                              return <h5 key={pIdx} className="font-bold text-gray-800 mt-4 mb-2">{text}</h5>;
-                            }
-
-                            // Handle bulleted lists
-                            if (trimmed.startsWith('• ') || trimmed.startsWith('- ')) {
-                              const text = trimmed.substring(2);
-                              return <li key={pIdx} className="ml-6 mb-1 list-disc">{renderTextWithBold(text)}</li>;
-                            }
-
-                            // Handle numbered lists
-                            if (trimmed.match(/^\d+\.\s/)) {
-                              const text = trimmed.substring(trimmed.indexOf('.') + 2);
-                              return <li key={pIdx} className="ml-6 mb-1 list-decimal">{renderTextWithBold(text)}</li>;
-                            }
-
-                            // Handle checkboxes
-                            if (trimmed.startsWith('- [ ]') || trimmed.startsWith('- [x]')) {
-                              const checked = trimmed.includes('[x]');
-                              const text = trimmed.substring(trimmed.indexOf(']') + 2);
-                              return (
-                                <div key={pIdx} className="flex items-center gap-2 mb-1 ml-4">
-                                  <input type="checkbox" checked={checked} readOnly className="rounded" />
-                                  <span>{renderTextWithBold(text)}</span>
-                                </div>
-                              );
-                            }
-
-                            // Regular paragraphs with inline bold support
-                            return <p key={pIdx} className="mb-2 leading-relaxed">{renderTextWithBold(line)}</p>;
-                          })}
-                        </div>
+                        {article.format ? (
+                          <StructuredArticleContent article={article} searchTerm={searchTerm} />
+                        ) : (
+                          <FreeformArticleContent content={article.content} searchTerm={searchTerm} />
+                        )}
                       </div>
                     )}
                   </div>
@@ -2826,8 +3171,221 @@ If you suspect unauthorized access:
       );
     };
 
+    // ============== SEARCH BAR COMPONENT ==============
+    const SearchBar = ({ searchTerm, onSearchChange, resultCount }) => {
+      const inputRef = useRef(null);
+      return (
+        <div className="mb-6">
+          <div className="relative">
+            <input
+              ref={inputRef}
+              type="text"
+              value={searchTerm}
+              onChange={(e) => onSearchChange(e.target.value)}
+              placeholder="Search guides, articles, and documentation..."
+              className="w-full px-4 py-3 pl-12 bg-white border border-gray-200 rounded-xl shadow-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-gray-800 placeholder-gray-400 transition"
+            />
+            <svg className="absolute left-4 top-3.5 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            {searchTerm && (
+              <div className="flex items-center gap-3 absolute right-3 top-2.5">
+                <span className="text-sm text-gray-500">{resultCount} result{resultCount !== 1 ? 's' : ''}</span>
+                <button onClick={() => onSearchChange('')} className="p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    };
+
+    // ============== WORKFLOW WALKTHROUGH COMPONENT ==============
+    const WorkflowWalkthrough = ({ userTier, onNavigate }) => {
+      const walkthrough = WORKFLOW_WALKTHROUGHS[userTier];
+      if (!walkthrough) return null;
+      const [isExpanded, setIsExpanded] = useState(true);
+
+      return (
+        <div id="section-walkthroughs" className="mb-8">
+          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl overflow-hidden shadow-lg">
+            <button onClick={() => setIsExpanded(!isExpanded)} className="w-full p-6 text-left text-white">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.59 14.37a6 6 0 01-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 006.16-12.12A14.98 14.98 0 009.631 8.41m5.96 5.96a14.926 14.926 0 01-5.841 2.58m-.119-8.54a6 6 0 00-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 00-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 01-2.448-2.448 14.9 14.9 0 01.06-.312m-2.24 2.39a4.493 4.493 0 00-1.757 4.306 4.493 4.493 0 004.306-1.758M16.5 9a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z"/></svg>
+                    <span className="text-xs font-medium text-white/70 uppercase tracking-wider">Getting Started</span>
+                  </div>
+                  <h2 className="text-2xl font-bold">{walkthrough.title}</h2>
+                  <p className="text-white/80 mt-1">{walkthrough.subtitle}</p>
+                </div>
+                <span className={`text-white/60 transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                </span>
+              </div>
+            </button>
+            {isExpanded && (
+              <div className="px-6 pb-6">
+                <div className="grid gap-3">
+                  {walkthrough.steps.map((step) => (
+                    <div key={step.step}
+                      className="flex items-start gap-4 bg-white/10 rounded-xl p-4 hover:bg-white/15 transition cursor-pointer"
+                      onClick={() => onNavigate(step.link)}
+                    >
+                      <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                        {step.step}
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-white">{step.title}</h3>
+                        <p className="text-white/70 text-sm mt-0.5">{step.description}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    };
+
+    // ============== SIDEBAR COMPONENT ==============
+    const KnowledgeSidebar = ({ sections, activeSection, onNavigate, user, userTier, isMobileOpen, onClose, onSearchFocus }) => {
+      const groupedSections = useMemo(() => {
+        const groups = {};
+        (sections || []).forEach(([key, guide]) => {
+          const ps = guide.portalSection || 'general';
+          const label = PORTAL_SECTION_LABELS[ps] || 'General';
+          if (!groups[label]) groups[label] = [];
+          groups[label].push({ key, title: guide.title, isKnownIssue: guide.isKnownIssue });
+        });
+        return groups;
+      }, [sections]);
+
+      return (
+        <>
+          {isMobileOpen && (
+            <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40 lg:hidden" onClick={onClose}></div>
+          )}
+          <aside className={`w-72 bg-white/95 backdrop-blur-sm border-r border-gray-100 min-h-screen fixed left-0 top-0 z-50 transform transition-all duration-300 ease-out ${isMobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'} lg:translate-x-0 lg:shadow-none`}>
+            {/* Header */}
+            <div className="p-5 border-b border-gray-100 flex justify-between items-center">
+              <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-9" />
+              <button onClick={onClose} className="lg:hidden p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+              </button>
+            </div>
+
+            {/* Profile Card */}
+            <div className="mx-4 mt-4 p-4 rounded-xl bg-gradient-to-br from-primary-500/10 to-primary-700/5 border border-primary-100">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-xl gradient-header flex items-center justify-center text-white text-sm font-bold shadow-md">
+                  {(user?.name || 'U').charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-gray-900 truncate">{user?.name || 'User'}</p>
+                  <p className="text-xs text-primary-600 font-medium">{TIER_LABELS[userTier] || 'User'}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Search Shortcut */}
+            <div className="mx-4 mt-3">
+              <button
+                onClick={onSearchFocus}
+                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-left text-sm text-gray-400 hover:bg-gray-100 hover:border-gray-300 transition flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                Search docs...
+              </button>
+            </div>
+
+            {/* Navigation */}
+            <nav className="p-3 mt-2 overflow-y-auto" style={{maxHeight: 'calc(100vh - 320px)'}}>
+              {/* Getting Started */}
+              <p className="px-3 mb-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">Getting Started</p>
+              <button
+                onClick={() => { onNavigate('walkthroughs'); onClose(); }}
+                className={`w-full text-left px-4 py-2.5 mb-1 sidebar-link flex items-center gap-3 ${activeSection === 'walkthroughs' ? 'active' : 'text-gray-600 hover:text-gray-900'}`}
+              >
+                <span className={activeSection === 'walkthroughs' ? 'text-white' : 'text-primary-500'}>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.59 14.37a6 6 0 01-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 006.16-12.12A14.98 14.98 0 009.631 8.41m5.96 5.96a14.926 14.926 0 01-5.841 2.58m-.119-8.54a6 6 0 00-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 00-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 01-2.448-2.448 14.9 14.9 0 01.06-.312m-2.24 2.39a4.493 4.493 0 00-1.757 4.306 4.493 4.493 0 004.306-1.758M16.5 9a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z"/></svg>
+                </span>
+                <span className="font-medium text-sm">Your Workflow</span>
+              </button>
+
+              {/* Portal Section Groups */}
+              {Object.entries(groupedSections).map(([groupLabel, groupGuides]) => {
+                const nonIssueGuides = groupGuides.filter(g => !g.isKnownIssue);
+                if (nonIssueGuides.length === 0) return null;
+                return (
+                  <div key={groupLabel}>
+                    <p className="px-3 mt-4 mb-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">{groupLabel}</p>
+                    {nonIssueGuides.map(guide => (
+                      <button
+                        key={guide.key}
+                        onClick={() => { onNavigate(guide.key); onClose(); }}
+                        className={`w-full text-left px-4 py-2.5 mb-1 sidebar-link flex items-center gap-3 ${activeSection === guide.key ? 'active' : 'text-gray-600 hover:text-gray-900'}`}
+                      >
+                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${activeSection === guide.key ? 'bg-white' : 'bg-primary-300'}`}></span>
+                        <span className="font-medium text-sm truncate">{guide.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })}
+
+              {/* Known Issues (internal only) */}
+              {(userTier === 'super_admin' || userTier === 'manager') && groupedSections['General']?.some(g => g.isKnownIssue) && (
+                <div>
+                  <p className="px-3 mt-4 mb-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">Internal</p>
+                  <button
+                    onClick={() => { onNavigate('known-issues'); onClose(); }}
+                    className={`w-full text-left px-4 py-2.5 mb-1 sidebar-link flex items-center gap-3 ${activeSection === 'known-issues' ? 'active' : 'text-red-600 hover:text-red-700'}`}
+                  >
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${activeSection === 'known-issues' ? 'bg-white' : 'bg-red-400'}`}></span>
+                    <span className="font-medium text-sm">Known Issues</span>
+                  </button>
+                </div>
+              )}
+            </nav>
+
+            {/* Footer */}
+            <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-100 bg-white/80 space-y-2">
+              <button
+                onClick={() => { window.location.href = '/login'; }}
+                className="w-full text-left px-4 py-2.5 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-xl flex items-center gap-3 transition font-medium text-sm"
+              >
+                {Icons.hub}
+                <span>Portal Hub</span>
+              </button>
+              <button
+                onClick={() => {
+                  localStorage.removeItem('unified_token');
+                  localStorage.removeItem('unified_user');
+                  localStorage.removeItem('admin_token');
+                  localStorage.removeItem('admin_user');
+                  localStorage.removeItem('token');
+                  localStorage.removeItem('user');
+                  localStorage.removeItem('portal_token');
+                  localStorage.removeItem('portal_user');
+                  localStorage.removeItem('service_token');
+                  localStorage.removeItem('service_user');
+                  window.location.href = '/login';
+                }}
+                className="w-full text-left px-4 py-2.5 text-red-600 hover:bg-red-50 rounded-xl flex items-center gap-3 transition font-medium text-sm"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9"/></svg>
+                <span>Sign Out</span>
+              </button>
+            </div>
+          </aside>
+        </>
+      );
+    };
+
+    // ============== MAIN APP ==============
     const App = () => {
-      // Check multiple token sources for authentication
+      // Authentication
       const [token, setToken] = useState(() => {
         return localStorage.getItem('unified_token') || localStorage.getItem('admin_token') || localStorage.getItem('token');
       });
@@ -2840,71 +3398,60 @@ If you suspect unauthorized access:
         }
       });
 
-      // State for dynamic guides from API
+      // State
       const [apiGuides, setApiGuides] = useState([]);
       const [loading, setLoading] = useState(true);
+      const [searchTerm, setSearchTerm] = useState('');
+      const [activeSection, setActiveSection] = useState('walkthroughs');
+      const [isMobileOpen, setIsMobileOpen] = useState(false);
+      const searchInputRef = useRef(null);
 
-      // Search state
-      const [searchQuery, setSearchQuery] = useState('');
-      const [searchResults, setSearchResults] = useState([]);
-      const [showSearchResults, setShowSearchResults] = useState(false);
-      const searchTimer = React.useRef(null);
-
-      // Check if user is admin
-      const isAdmin = user?.role === 'admin' || user?.isAdmin === true;
-
-      // Check if user is the system owner (hidden failsafe)
-      const isOwner = user?.email?.toLowerCase() === 'bianca@thrive365labs.live';
+      // Compute user tier
+      const userTier = getUserTier(user);
+      const isAdmin = user?.role === 'admin';
 
       // Seed v2 data and fetch sections on mount
       useEffect(() => {
         const init = async () => {
           try {
-            // Seed v2 data if needed (also seeds v1 for backwards compat)
+            // Seed v2 data if needed
             await seedV2IfNeeded(token, isAdmin);
 
-            // Also seed v1 if needed (existing behavior)
-            if (token) {
-              const seedCheck = await fetch('/api/knowledge/needs-seed', {
-                headers: { 'Authorization': 'Bearer ' + token }
-              }).then(r => r.json()).catch(() => ({ needsSeed: false }));
-              if (seedCheck.needsSeed && isAdmin) {
-                const guidesArray = Object.entries(guides).map(([key, guide]) => ({
-                  key, title: guide.title, description: guide.description,
-                  icon: guide.icon ? 'custom' : 'book', color: guide.color,
-                  ownerOnly: guide.ownerOnly || false, adminOnly: guide.adminOnly || false,
-                  articles: guide.articles
-                }));
-                await fetch('/api/knowledge/seed', {
-                  method: 'POST',
-                  headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ guides: guidesArray })
-                }).catch(() => {});
-              }
+            // Seed v1 data if needed
+            const seedCheck = await fetch('/api/knowledge/needs-seed', {
+              headers: { 'Authorization': `Bearer ${token}` }
+            }).then(r => r.json());
+
+            if (seedCheck.needsSeed && isAdmin) {
+              const guidesArray = Object.entries(guides).map(([key, guide]) => ({
+                key,
+                title: guide.title,
+                description: guide.description,
+                icon: guide.icon ? 'custom' : 'book',
+                color: guide.color,
+                ownerOnly: guide.ownerOnly || false,
+                adminOnly: guide.adminOnly || false,
+                visibleTo: guide.visibleTo || [],
+                portalSection: guide.portalSection || 'general',
+                isKnownIssue: guide.isKnownIssue || false,
+                articles: guide.articles
+              }));
+              await fetch('/api/knowledge/seed', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ guides: guidesArray })
+              });
             }
 
-            // Fetch from v2 API first, fall back to v1
-            let v2Sections = await fetchV2Sections(token);
-            if (v2Sections.length > 0) {
-              // Map v2 sections to display format
-              const mapped = v2Sections.map(s => [s.key, {
-                ...s,
-                icon: Icons[s.icon || ICON_KEY_MAP[s.key]] || Icons.book,
-                articles: (s.features || []).map(f => ({
-                  title: f.title,
-                  content: f.content?.howToUseIt || f.content?.whatItIs || ''
-                }))
-              }]);
-              setApiGuides(mapped);
-            } else if (token) {
-              // Fall back to v1 API
-              const response = await fetch('/api/knowledge/guides', {
-                headers: { 'Authorization': 'Bearer ' + token }
-              });
-              const data = await response.json();
-              if (Array.isArray(data)) {
-                setApiGuides(data.map(g => [g.key, { ...g, icon: Icons[g.icon] || Icons.book }]));
-              }
+            const response = await fetch('/api/knowledge/guides', {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await response.json();
+            if (Array.isArray(data)) {
+              setApiGuides(data);
             }
           } catch (error) {
             console.error('Error loading knowledge hub:', error);
@@ -2915,30 +3462,69 @@ If you suspect unauthorized access:
         init();
       }, [token, isAdmin]);
 
-      // Search handler with debounce
-      const handleSearch = (query) => {
-        setSearchQuery(query);
-        if (searchTimer.current) clearTimeout(searchTimer.current);
-        if (!query || query.trim().length < 2) {
-          setSearchResults([]);
-          setShowSearchResults(false);
-          return;
+      // Compute visible guides with 5-tier filtering
+      const visibleGuides = useMemo(() => {
+        if (apiGuides.length > 0) {
+          return apiGuides.map(guide => [guide.key, { ...guide, icon: Icons[guide.icon] || Icons.book }]);
         }
-        searchTimer.current = setTimeout(async () => {
-          const results = await searchV2(token, query);
-          setSearchResults(results);
-          setShowSearchResults(results.length > 0);
-        }, 300);
-      };
+        return Object.entries(guides).filter(([key, guide]) => canUserSeeGuide(userTier, user, guide));
+      }, [apiGuides, userTier, user]);
 
-      // Use API guides if available, otherwise fall back to hardcoded
-      const visibleGuides = apiGuides.length > 0
-        ? apiGuides
-        : Object.entries(guides).filter(([key, guide]) => {
-            if (guide.ownerOnly) return isOwner;
-            if (guide.adminOnly) return isAdmin;
-            return true;
+      // Search filtering
+      const filteredGuides = useMemo(() => {
+        if (!searchTerm.trim()) return visibleGuides;
+        const term = searchTerm.toLowerCase().trim();
+        return visibleGuides
+          .map(([key, guide]) => {
+            const guideTitleMatch = guide.title.toLowerCase().includes(term) || (guide.description || '').toLowerCase().includes(term);
+            const matchingArticles = (guide.articles || []).filter(article =>
+              article.title.toLowerCase().includes(term) || (article.content || '').toLowerCase().includes(term)
+            );
+            if (guideTitleMatch || matchingArticles.length > 0) {
+              return [key, { ...guide, articles: guideTitleMatch ? guide.articles : matchingArticles }];
+            }
+            return null;
+          })
+          .filter(Boolean);
+      }, [visibleGuides, searchTerm]);
+
+      const searchResultCount = useMemo(() =>
+        filteredGuides.reduce((count, [, guide]) => count + (guide.articles || []).length, 0),
+      [filteredGuides]);
+
+      // Separate known issues from regular guides
+      const regularGuides = filteredGuides.filter(([key, guide]) => !guide.isKnownIssue);
+      const knownIssuesGuide = filteredGuides.find(([key, guide]) => guide.isKnownIssue);
+
+      // Scroll to section
+      const scrollToSection = useCallback((sectionKey) => {
+        const el = document.getElementById(`section-${sectionKey}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          setActiveSection(sectionKey);
+        }
+        setIsMobileOpen(false);
+      }, []);
+
+      // IntersectionObserver for active section tracking
+      useEffect(() => {
+        const observer = new IntersectionObserver((entries) => {
+          entries.forEach(entry => {
+            if (entry.isIntersecting) {
+              const sectionKey = entry.target.id.replace('section-', '');
+              setActiveSection(sectionKey);
+            }
           });
+        }, { rootMargin: '-20% 0px -70% 0px' });
+
+        const allKeys = ['walkthroughs', ...visibleGuides.map(([key]) => key)];
+        allKeys.forEach(key => {
+          const el = document.getElementById(`section-${key}`);
+          if (el) observer.observe(el);
+        });
+
+        return () => observer.disconnect();
+      }, [visibleGuides]);
 
       // Redirect to login if not authenticated
       if (!token || !user) {
@@ -2947,237 +3533,143 @@ If you suspect unauthorized access:
       }
 
       return (
-        <div className="min-h-screen">
-          {/* Header */}
-          <header className="bg-white/80 backdrop-blur-sm border-b border-gray-100 sticky top-0 z-20">
-            <div className="max-w-6xl mx-auto px-6 py-4">
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-4">
-                  <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-10" />
-                  <div>
-                    <h1 className="text-xl font-bold text-accent">Knowledge Hub</h1>
-                    <p className="text-sm text-gray-500 hidden sm:block">Guides and documentation</p>
-                  </div>
+        <div className="min-h-screen bg-gray-50">
+          {/* Sidebar */}
+          <KnowledgeSidebar
+            sections={visibleGuides}
+            activeSection={activeSection}
+            onNavigate={scrollToSection}
+            user={user}
+            userTier={userTier}
+            isMobileOpen={isMobileOpen}
+            onClose={() => setIsMobileOpen(false)}
+            onSearchFocus={() => {
+              setIsMobileOpen(false);
+              setTimeout(() => {
+                const input = document.querySelector('input[placeholder*="Search"]');
+                if (input) input.focus();
+              }, 100);
+            }}
+          />
+
+          {/* Mobile Header */}
+          <div className="lg:hidden bg-white/95 backdrop-blur-sm border-b border-gray-100 p-4 flex items-center justify-between sticky top-0 z-30">
+            <button onClick={() => setIsMobileOpen(true)} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"/></svg>
+            </button>
+            <div className="flex items-center gap-2">
+              <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-8" />
+              <span className="font-semibold text-accent text-sm">Knowledge Hub</span>
+            </div>
+            <div className="w-10"></div>
+          </div>
+
+          {/* Main Content */}
+          <main className="lg:ml-72 p-4 lg:p-8">
+            {/* Search Bar */}
+            <SearchBar
+              searchTerm={searchTerm}
+              onSearchChange={setSearchTerm}
+              resultCount={searchResultCount}
+            />
+
+            {/* Workflow Walkthrough (hidden when searching) */}
+            {!searchTerm && (
+              <WorkflowWalkthrough userTier={userTier} onNavigate={scrollToSection} />
+            )}
+
+            {/* No Results */}
+            {searchTerm && filteredGuides.length === 0 && (
+              <div className="text-center py-16">
+                <svg className="mx-auto w-16 h-16 text-gray-300 mb-4" fill="none" stroke="currentColor" strokeWidth="1" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                <h3 className="text-lg font-semibold text-gray-600 mb-2">No results found</h3>
+                <p className="text-gray-500">No guides or articles match "<strong>{searchTerm}</strong>"</p>
+                <button onClick={() => setSearchTerm('')} className="mt-4 text-primary-600 hover:underline font-medium">
+                  Clear search
+                </button>
+              </div>
+            )}
+
+            {/* Guide Sections */}
+            {regularGuides.map(([key, guide]) => (
+              <GuideSection
+                key={key}
+                guide={{ ...guide, key }}
+                userTier={userTier}
+                forceOpen={!!searchTerm}
+                searchTerm={searchTerm}
+              />
+            ))}
+
+            {/* Known Issues Section (at bottom, before tips) */}
+            {knownIssuesGuide && (
+              <GuideSection
+                key={knownIssuesGuide[0]}
+                guide={{ ...knownIssuesGuide[1], key: knownIssuesGuide[0] }}
+                userTier={userTier}
+                forceOpen={!!searchTerm}
+                searchTerm={searchTerm}
+              />
+            )}
+
+            {/* Quick Tips Section (hidden when searching) */}
+            {!searchTerm && (
+              <div className="mt-10">
+                <h3 className="text-xl font-bold text-accent mb-6">Quick Tips</h3>
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                  <ul className="space-y-3 text-gray-600">
+                    <li className="flex items-start gap-3">
+                      <span className="inline-flex items-center justify-center w-6 h-6 bg-primary-100 text-primary-600 rounded-full text-sm font-bold flex-shrink-0">1</span>
+                      <span>Use the <strong>Portal Hub</strong> as your central navigation point - bookmark it for quick access each morning.</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="inline-flex items-center justify-center w-6 h-6 bg-primary-100 text-primary-600 rounded-full text-sm font-bold flex-shrink-0">2</span>
+                      <span><strong>Service reports</strong> should be submitted within 24 hours of completing a service visit - use the draft feature to save progress.</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="inline-flex items-center justify-center w-6 h-6 bg-primary-100 text-primary-600 rounded-full text-sm font-bold flex-shrink-0">3</span>
+                      <span>Update <strong>project task status</strong> daily to keep implementation teams and clients in sync with progress.</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="inline-flex items-center justify-center w-6 h-6 bg-primary-100 text-primary-600 rounded-full text-sm font-bold flex-shrink-0">4</span>
+                      <span>Keep multiple <strong>browser tabs</strong> open for different portals - the system supports simultaneous access across services.</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="inline-flex items-center justify-center w-6 h-6 bg-primary-100 text-primary-600 rounded-full text-sm font-bold flex-shrink-0">5</span>
+                      <span>Data syncs with <strong>HubSpot automatically</strong> - changes to projects, tasks, and reports update CRM records in real-time.</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="inline-flex items-center justify-center w-6 h-6 bg-primary-100 text-primary-600 rounded-full text-sm font-bold flex-shrink-0">6</span>
+                      <span>Report <strong>bugs or issues</strong> immediately using Admin Hub > Bug Reports so technical issues can be addressed promptly.</span>
+                    </li>
+                  </ul>
                 </div>
-                <div className="flex items-center gap-3">
-                  {/* Search Bar */}
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => handleSearch(e.target.value)}
-                      onFocus={() => searchResults.length > 0 && setShowSearchResults(true)}
-                      onBlur={() => setTimeout(() => setShowSearchResults(false), 200)}
-                      placeholder="Search guides..."
-                      className="search-input w-48 sm:w-64 px-4 py-2 pl-10 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:bg-white focus:border-primary-500 transition"
-                    />
-                    <svg className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/>
-                    </svg>
-                    {/* Search Dropdown */}
-                    {showSearchResults && searchResults.length > 0 && (
-                      <div className="absolute top-full mt-1 right-0 w-80 sm:w-96 bg-white rounded-xl shadow-xl border border-gray-200 search-dropdown z-50">
-                        <div className="p-3 border-b border-gray-100">
-                          <p className="text-xs text-gray-500 font-medium">{searchResults.length} result{searchResults.length !== 1 ? 's' : ''} for "{searchQuery}"</p>
-                        </div>
-                        <div className="p-2">
-                          {searchResults.slice(0, 8).map((result, idx) => (
-                            <button
-                              key={idx}
-                              className="search-item w-full text-left p-3 rounded-lg"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                setSearchQuery('');
-                                setShowSearchResults(false);
-                                setSearchResults([]);
-                                // Find and expand the matching section/article
-                                const sectionEl = document.querySelector(`[data-section-key="${result.sectionKey}"]`);
-                                if (sectionEl) {
-                                  sectionEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                  sectionEl.click();
-                                }
-                              }}
-                            >
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className={`inline-block w-2 h-2 rounded-full ${result.sectionColor || 'bg-gray-400'}`}></span>
-                                <span className="text-xs text-gray-500 font-medium">{result.sectionTitle}</span>
-                              </div>
-                              <p className="text-sm font-medium text-gray-800">{result.featureTitle}</p>
-                              {result.snippet && (
-                                <p className="text-xs text-gray-500 mt-1 line-clamp-2">{result.snippet.substring(0, 120)}...</p>
-                              )}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  <a href="/login" className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition">
-                    {Icons.back}
-                    <span className="hidden sm:inline">Back to Hub</span>
+              </div>
+            )}
+
+            {/* Need Help Section (hidden when searching) */}
+            {!searchTerm && (
+              <div className="mt-10 bg-gradient-to-r from-primary-500 to-primary-700 rounded-2xl p-8 text-white">
+                <h3 className="text-2xl font-bold mb-3">Need Additional Help?</h3>
+                <p className="text-white/80 mb-6">Can't find what you're looking for? Our support team is here to help.</p>
+                <div className="flex flex-wrap gap-4">
+                  <a href="mailto:support@thrive365labs.com" className="bg-white text-primary-600 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition">
+                    Email Support
+                  </a>
+                  <a href="/login" className="bg-white/20 text-white px-6 py-3 rounded-lg font-semibold hover:bg-white/30 transition">
+                    Back to Portal Hub
                   </a>
                 </div>
               </div>
-            </div>
-          </header>
+            )}
 
-          {/* Main Content */}
-          <main className="max-w-6xl mx-auto px-4 py-8">
-            {/* Banner */}
-            <div className="relative rounded-2xl overflow-hidden shadow-lg mb-10" style={{minHeight: '160px', backgroundColor: '#4338ca'}}>
-              <div className="absolute inset-0 bg-gradient-to-r from-indigo-700/90 via-indigo-600/70 to-purple-600/50"></div>
-              <div className="relative p-8 flex items-center min-h-[160px]">
-                <div className="text-white flex items-center gap-4">
-                  <div className="p-3 bg-white/20 rounded-xl">
-                    {Icons.book}
-                  </div>
-                  <div>
-                    <h2 className="text-3xl font-bold drop-shadow-sm">Knowledge Hub</h2>
-                    <p className="text-white/70 mt-1 text-sm">Find guides, tutorials, and documentation for every portal</p>
-                  </div>
-                </div>
+            {/* Footer */}
+            <footer className="mt-12 py-6 border-t border-gray-200">
+              <div className="text-center text-sm text-gray-500">
+                &copy; 2026 Thrive 365 Labs. All rights reserved.
               </div>
-            </div>
-
-            {/* Quick Links Section */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-8">
-              <h3 className="text-lg font-bold text-accent mb-4 flex items-center gap-2">
-                {Icons.link}
-                Quick Links
-              </h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <a href="/directory" className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg hover:bg-primary-50 hover:border-primary-200 border border-gray-200 transition group">
-                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600 group-hover:bg-primary-100 group-hover:text-primary-600">
-                    {Icons.link}
-                  </div>
-                  <div>
-                    <p className="font-medium text-gray-800">Link Directory</p>
-                    <p className="text-xs text-gray-500">All portal URLs</p>
-                  </div>
-                  <span className="ml-auto text-gray-400">{Icons.external}</span>
-                </a>
-                <a href="/changelog" className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg hover:bg-primary-50 hover:border-primary-200 border border-gray-200 transition group">
-                  <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center text-green-600 group-hover:bg-primary-100 group-hover:text-primary-600">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
-                  </div>
-                  <div>
-                    <p className="font-medium text-gray-800">App Changelog</p>
-                    <p className="text-xs text-gray-500">Version history</p>
-                  </div>
-                  <span className="ml-auto text-gray-400">{Icons.external}</span>
-                </a>
-                <a href="/admin" className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg hover:bg-primary-50 hover:border-primary-200 border border-gray-200 transition group">
-                  <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center text-purple-600 group-hover:bg-primary-100 group-hover:text-primary-600">
-                    {Icons.admin}
-                  </div>
-                  <div>
-                    <p className="font-medium text-gray-800">Admin Hub</p>
-                    <p className="text-xs text-gray-500">User management</p>
-                  </div>
-                  <span className="ml-auto text-gray-400">{Icons.external}</span>
-                </a>
-                <a href="/service-portal" className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg hover:bg-primary-50 hover:border-primary-200 border border-gray-200 transition group">
-                  <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center text-emerald-600 group-hover:bg-primary-100 group-hover:text-primary-600">
-                    {Icons.service}
-                  </div>
-                  <div>
-                    <p className="font-medium text-gray-800">Service Portal</p>
-                    <p className="text-xs text-gray-500">Service reports</p>
-                  </div>
-                  <span className="ml-auto text-gray-400">{Icons.external}</span>
-                </a>
-              </div>
-            </div>
-
-            {/* Section Overview Grid */}
-            <div className="mb-10">
-              <h3 className="text-xl font-bold text-accent mb-4">Browse by Topic</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                {visibleGuides.map(([key, guide]) => (
-                  <button
-                    key={key}
-                    onClick={() => {
-                      const el = document.querySelector(`[data-section-key="${key}"]`);
-                      if (el) {
-                        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                        // Auto-expand the section
-                        const btn = el.querySelector('button');
-                        if (btn && !el.querySelector('.guide-content.open')) btn.click();
-                      }
-                    }}
-                    className="section-tile flex flex-col items-center gap-2 p-4 bg-white rounded-xl border border-gray-100 shadow-sm text-center"
-                  >
-                    <div className={`inline-flex items-center justify-center w-10 h-10 ${guide.color} text-white rounded-lg`}>
-                      {React.cloneElement(guide.icon, { className: 'w-5 h-5' })}
-                    </div>
-                    <span className="text-xs font-medium text-gray-700 leading-tight">{guide.title}</span>
-                    <span className="text-xs text-gray-400">{guide.articles?.length || 0} articles</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Guide Categories */}
-            <h3 className="text-xl font-bold text-accent mb-6">How-To Guides</h3>
-
-            {visibleGuides.map(([key, guide], idx) => (
-              <GuideSection key={key} guide={guide} isAdmin={isAdmin} sectionKey={key} />
-            ))}
-
-            {/* Quick Tips Section */}
-            <div className="mt-10">
-              <h3 className="text-xl font-bold text-accent mb-6">Quick Tips</h3>
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-                <ul className="space-y-3 text-gray-600">
-                  <li className="flex items-start gap-3">
-                    <span className="inline-flex items-center justify-center w-6 h-6 bg-primary-100 text-primary-600 rounded-full text-sm font-bold flex-shrink-0">1</span>
-                    <span>Use the <strong>Portal Hub</strong> as your central navigation point - bookmark it for quick access each morning.</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <span className="inline-flex items-center justify-center w-6 h-6 bg-primary-100 text-primary-600 rounded-full text-sm font-bold flex-shrink-0">2</span>
-                    <span><strong>Service reports</strong> should be submitted within 24 hours of completing a service visit - use the draft feature to save progress.</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <span className="inline-flex items-center justify-center w-6 h-6 bg-primary-100 text-primary-600 rounded-full text-sm font-bold flex-shrink-0">3</span>
-                    <span>Update <strong>project task status</strong> daily to keep implementation teams and clients in sync with progress.</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <span className="inline-flex items-center justify-center w-6 h-6 bg-primary-100 text-primary-600 rounded-full text-sm font-bold flex-shrink-0">4</span>
-                    <span>Keep multiple <strong>browser tabs</strong> open for different portals - the system supports simultaneous access across services.</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <span className="inline-flex items-center justify-center w-6 h-6 bg-primary-100 text-primary-600 rounded-full text-sm font-bold flex-shrink-0">5</span>
-                    <span>Data syncs with <strong>HubSpot automatically</strong> - changes to projects, tasks, and reports update CRM records in real-time.</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <span className="inline-flex items-center justify-center w-6 h-6 bg-primary-100 text-primary-600 rounded-full text-sm font-bold flex-shrink-0">6</span>
-                    <span>Report <strong>bugs or issues</strong> immediately using Admin Hub → Bug Reports so technical issues can be addressed promptly.</span>
-                  </li>
-                </ul>
-              </div>
-            </div>
-
-            {/* Need Help Section */}
-            <div className="mt-10 bg-gradient-to-r from-primary-500 to-primary-700 rounded-2xl p-8 text-white">
-              <h3 className="text-2xl font-bold mb-3">Need Additional Help?</h3>
-              <p className="text-white/80 mb-6">Can't find what you're looking for? Our support team is here to help.</p>
-              <div className="flex flex-wrap gap-4">
-                <a href="mailto:support@thrive365labs.live" className="bg-white text-primary-600 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition">
-                  Email Support
-                </a>
-                <a href="/login" className="bg-white/20 text-white px-6 py-3 rounded-lg font-semibold hover:bg-white/30 transition">
-                  Back to Portal Hub
-                </a>
-              </div>
-            </div>
+            </footer>
           </main>
-
-          {/* Footer */}
-          <footer className="mt-12 py-6 border-t border-gray-200 bg-white/50">
-            <div className="max-w-6xl mx-auto px-4 text-center text-sm text-gray-500">
-              &copy; 2026 Thrive 365 Labs. All rights reserved.
-            </div>
-          </footer>
         </div>
       );
     };
