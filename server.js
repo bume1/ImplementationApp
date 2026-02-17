@@ -3234,11 +3234,16 @@ app.get('/api/client-portal/data', authenticateToken, async (req, res) => {
             ['task_completed', 'stage_completed', 'phase_completed', 'phase8_auto_updated'].includes(a.action)) {
           return true;
         }
-        // Client-specific activities (by userId or slug match)
-        if (a.userId === req.user.id || (clientSlug && (a.details?.slug === clientSlug || a.details?.clientSlug === clientSlug))) {
+        // Client-specific activities (by userId, slug match, or clientName match for service reports)
+        const clientName = req.user.practiceName || req.user.name || '';
+        const matchesClient = a.userId === req.user.id ||
+          (clientSlug && (a.details?.slug === clientSlug || a.details?.clientSlug === clientSlug)) ||
+          (clientName && a.details?.clientName && a.details.clientName.toLowerCase() === clientName.toLowerCase());
+        if (matchesClient) {
           if (['inventory_submitted', 'hubspot_file_upload', 'support_ticket_submitted',
-               'document_added', 'service_report_client_signed', 'form_submitted',
-               'inventory_submissions_deleted'].includes(a.action)) {
+               'document_added', 'service_report_client_signed', 'service_report_created',
+               'service_report_completed', 'service_report_pending_signature',
+               'form_submitted', 'inventory_submissions_deleted'].includes(a.action)) {
             return true;
           }
         }
@@ -4337,6 +4342,40 @@ app.get('/api/client/service-reports', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error fetching client service reports:', error);
     res.status(500).json({ error: error.message || 'Failed to fetch service reports' });
+  }
+});
+
+// Get a single service report by ID (client access via slug-based document matching)
+app.get('/api/client/service-reports/:id', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'client') {
+      return res.status(403).json({ error: 'Client access required' });
+    }
+
+    const reportId = req.params.id;
+    const clientSlug = req.user.slug;
+    if (!clientSlug) {
+      return res.status(400).json({ error: 'Client slug not found' });
+    }
+
+    // Verify client owns this report via client_documents (slug-based, reliable)
+    const clientDocs = (await db.get('client_documents')) || [];
+    const matchingDoc = clientDocs.find(d => d.slug === clientSlug && d.serviceReportId === reportId);
+    if (!matchingDoc) {
+      return res.status(404).json({ error: 'Service report not found' });
+    }
+
+    // Fetch the actual service report
+    const serviceReports = (await db.get('service_reports')) || [];
+    const report = serviceReports.find(r => r.id === reportId);
+    if (!report) {
+      return res.status(404).json({ error: 'Service report not found' });
+    }
+
+    res.json(report);
+  } catch (error) {
+    console.error('Error fetching single service report:', error);
+    res.status(500).json({ error: 'Failed to fetch service report' });
   }
 });
 
