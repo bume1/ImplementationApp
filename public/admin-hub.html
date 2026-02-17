@@ -3430,11 +3430,19 @@
           subject: editForm.subject.replace(/\{\{(\w+)\}\}/g, (m, k) => vars[k] !== undefined ? vars[k] : m),
           body: editForm.body.replace(/\{\{(\w+)\}\}/g, (m, k) => vars[k] !== undefined ? vars[k] : m),
         };
-        // Fetch server-rendered HTML preview
-        const serverPreview = await apiFetch(`/api/admin/email-templates/${editingTemplate.id}/preview`, {
-          method: 'POST', body: JSON.stringify({ variables: {} })
-        });
-        preview.html = serverPreview.html || '';
+        // Fetch server-rendered HTML preview (save first so preview reflects current edits)
+        try {
+          await apiFetch(`/api/admin/email-templates/${editingTemplate.id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ subject: editForm.subject, body: editForm.body, htmlBody: editForm.htmlBody || null })
+          });
+          const serverPreview = await apiFetch(`/api/admin/email-templates/${editingTemplate.id}/preview`, {
+            method: 'POST', body: JSON.stringify({ variables: {} })
+          });
+          if (serverPreview && serverPreview.html) preview.html = serverPreview.html;
+        } catch (e) {
+          console.error('Failed to fetch HTML preview:', e);
+        }
         setTemplatePreview(preview);
       };
 
