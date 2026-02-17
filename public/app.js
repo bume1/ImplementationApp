@@ -721,7 +721,7 @@ const AppHeader = ({ user, onLogout, children }) => {
     <>
       {/* Top Bar - Dark Navy */}
       <div className="bg-[#00205A] text-white text-sm">
-        <div className="max-w-6xl mx-auto px-6 py-2 flex justify-between items-center">
+        <div className="max-w-6xl mx-auto px-3 sm:px-6 py-2 flex justify-between items-center">
           <div className="flex items-center gap-4">
             <a href="https://www.linkedin.com/company/thrive-365-labs" target="_blank" rel="noopener noreferrer" className="hover:text-blue-300">
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/></svg>
@@ -732,34 +732,34 @@ const AppHeader = ({ user, onLogout, children }) => {
           </div>
           <a href="tel:+17707629269" className="flex items-center gap-2 hover:text-blue-300">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
-            <span>(770) 762-9269</span>
+            <span className="hidden sm:inline">(770) 762-9269</span>
           </a>
         </div>
       </div>
-      
+
       {/* Main Header - White */}
       <div className="bg-white border-b shadow-sm">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-12" />
+        <div className="max-w-6xl mx-auto px-3 sm:px-6 py-3 sm:py-4 flex justify-between items-center">
+          <div className="flex items-center gap-2 sm:gap-4">
+            <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-8 sm:h-12" />
           </div>
-          <nav className="flex items-center gap-6">
-            {children}
-            <div className="h-6 w-px bg-gray-300"></div>
-            <div className="flex items-center gap-3">
-              <span className="text-gray-600 text-sm">
+          <nav className="flex items-center gap-2 sm:gap-6">
+            <div className="hidden sm:contents">{children}</div>
+            <div className="hidden sm:block h-6 w-px bg-gray-300"></div>
+            <div className="flex items-center gap-2 sm:gap-3">
+              <span className="text-gray-600 text-xs sm:text-sm hidden sm:inline">
                 {user.name}
                 {user.role === 'admin' && <span className="ml-1 text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded">ADMIN</span>}
               </span>
               <a
                 href="/"
-                className="text-gray-500 hover:text-primary text-sm"
+                className="text-gray-500 hover:text-primary text-xs sm:text-sm"
               >
                 Portal Hub
               </a>
               <button
                 onClick={onLogout}
-                className="text-gray-500 hover:text-red-600 text-sm"
+                className="text-gray-500 hover:text-red-600 text-xs sm:text-sm"
               >
                 Logout
               </button>
@@ -1340,15 +1340,15 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
         </button>
       </AppHeader>
 
-      <div className="p-6">
+      <div className="p-3 sm:p-6">
       <div className="max-w-6xl mx-auto">
 
         {showHelpGuide && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
             <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-              <div className="p-6 border-b bg-gradient-to-r from-primary to-accent text-white">
+              <div className="p-4 sm:p-6 border-b bg-gradient-to-r from-primary to-accent text-white">
                 <div className="flex justify-between items-center">
-                  <h2 className="text-2xl font-bold">Help Guide</h2>
+                  <h2 className="text-xl sm:text-2xl font-bold">Help Guide</h2>
                   <button onClick={() => setShowHelpGuide(false)} className="text-white hover:text-blue-200 text-2xl">&times;</button>
                 </div>
               </div>
@@ -1948,9 +1948,9 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
           const getCalendarEntries = (dateStr) => calendarEntriesMap[dateStr] || [];
           
           return (
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-2 sm:p-4">
             <div className="bg-white rounded-xl shadow-2xl w-full h-full max-w-7xl max-h-[95vh] overflow-auto">
-              <div className="bg-gradient-to-r from-primary to-accent text-white px-6 py-4 sticky top-0 z-10">
+              <div className="bg-gradient-to-r from-primary to-accent text-white px-3 sm:px-6 py-3 sm:py-4 sticky top-0 z-10">
                 <div className="flex items-center justify-between">
                   <button
                     onClick={() => {
@@ -3137,12 +3137,12 @@ const SoftPilotChecklist = ({ token, project, tasks, teamMembers, onClose, onSub
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="p-6 border-b bg-gradient-to-r from-primary to-accent text-white">
+        <div className="p-4 sm:p-6 border-b bg-gradient-to-r from-primary to-accent text-white">
           <div className="flex justify-between items-center">
             <div>
-              <h2 className="text-2xl font-bold">Soft-Pilot Checklist</h2>
+              <h2 className="text-xl sm:text-2xl font-bold">Soft-Pilot Checklist</h2>
               <p className="text-blue-100">{project.name} - {project.clientName}</p>
             </div>
             <button onClick={onClose} className="text-white hover:text-blue-200 text-2xl">&times;</button>
@@ -4357,8 +4357,8 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
         </button>
       </AppHeader>
 
-      <div className="p-6">
-      <div className="max-w-7xl mx-auto">
+      <div className="p-3 sm:p-6">
+      <div className="max-w-7xl mx-auto overflow-x-hidden">
         {!canEdit && (
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 flex items-center gap-2">
             <span className="text-amber-600">👁</span>
@@ -4366,10 +4366,10 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
             <span className="text-amber-700 text-sm">- You can view this project but cannot make changes</span>
           </div>
         )}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <div className="flex justify-between items-start mb-4">
+        <div className="bg-white rounded-lg shadow-sm p-3 sm:p-6 mb-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start mb-4 gap-3">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">{project.name}</h1>
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{project.name}</h1>
               <p className="text-gray-600">{project.clientName}</p>
             </div>
             <div className="flex gap-2 flex-wrap">
@@ -5057,8 +5057,8 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                       {stageTasks.length === 0 ? (
                         <div className="p-4 text-gray-400 text-sm italic">No tasks in this stage</div>
                       ) : stageTasks.map(task => (
-                    <div key={task.id} id={`task-${task.id}`} className={`p-4 ${viewMode === 'internal' && isOverdue(task) ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'} ${selectedTasks.includes(task.id) ? 'bg-blue-50' : ''}`}>
-                      <div className="flex items-start gap-4">
+                    <div key={task.id} id={`task-${task.id}`} className={`p-3 sm:p-4 overflow-hidden ${viewMode === 'internal' && isOverdue(task) ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'} ${selectedTasks.includes(task.id) ? 'bg-blue-50' : ''}`}>
+                      <div className="flex items-start gap-2 sm:gap-4">
                         {viewMode === 'internal' && bulkMode && (
                           <input
                             type="checkbox"
@@ -5109,7 +5109,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                             )}
                           </div>
                         )}
-                        <div className="flex-1">
+                        <div className="flex-1 min-w-0">
                           {editingTask?.id === task.id ? (
                             <div className="space-y-3">
                               <input
@@ -5120,7 +5120,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                 className="w-full px-3 py-2 border rounded-md"
                                 placeholder="Task Title"
                               />
-                              <div className="grid grid-cols-2 gap-3">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 {isAdmin && (
                                   <>
                                     <div>
@@ -5367,9 +5367,9 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                             </div>
                           ) : (
                             <div>
-                              <div className="flex items-start justify-between gap-4">
+                              <div className="flex items-start justify-between gap-2 sm:gap-4">
                                 <h3
-                                  className={`font-medium ${
+                                  className={`font-medium min-w-0 break-words ${
                                     task.completed
                                       ? 'text-gray-500 line-through'
                                       : 'text-gray-900'
@@ -5380,11 +5380,11 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                     <span className="ml-2 text-gray-400" title={`${task.files.length} file${task.files.length > 1 ? 's' : ''} attached`}>📎</span>
                                   )}
                                 </h3>
-                                <div className="flex gap-2 flex-shrink-0">
+                                <div className="flex gap-1 sm:gap-2 flex-shrink-0">
                                   {viewMode === 'internal' && canEdit && (isAdmin || task.createdBy === user.id || !task.createdBy) && (
                                     <button
                                       onClick={() => handleEditTask(task.id)}
-                                      className="text-gray-400 hover:text-primary"
+                                      className="text-gray-400 hover:text-primary text-sm"
                                     >
                                       {isAdmin ? 'Edit' : (task.createdBy === user.id ? 'Edit' : 'Update Status')}
                                     </button>
@@ -5392,7 +5392,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                   {viewMode === 'internal' && canEdit && (isAdmin || (task.createdBy && task.createdBy === user.id)) && (
                                     <button
                                       onClick={() => handleDeleteProjectTask(task.id)}
-                                      className="text-gray-400 hover:text-red-600"
+                                      className="text-gray-400 hover:text-red-600 text-sm"
                                     >
                                       Delete
                                     </button>
@@ -5400,14 +5400,14 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                 </div>
                               </div>
                               {viewMode === 'internal' && (
-                                <div className="mt-2 space-y-1 text-sm text-gray-600">
-                                  <p>
-                                    <span className="font-medium">Primary:</span> {getOwnerName(task.owner)}{task.secondaryOwner && <span className="ml-2"><span className="font-medium">Secondary:</span> {getOwnerName(task.secondaryOwner)}</span>}
+                                <div className="mt-2 space-y-1 text-xs sm:text-sm text-gray-600">
+                                  <p className="break-words">
+                                    <span className="font-medium">Primary:</span> {getOwnerName(task.owner)}{task.secondaryOwner && <span className="sm:ml-2 block sm:inline"><span className="font-medium">Secondary:</span> {getOwnerName(task.secondaryOwner)}</span>}
                                     {!isAdmin && task.owner && (
                                       <span className="text-xs text-gray-400 ml-2">(Admin only can edit)</span>
                                     )}
                                   </p>
-                                  <div className="flex items-center gap-4 flex-wrap">
+                                  <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
                                     {task.startDate && (
                                       <span>
                                         <span className="font-medium">Start:</span> {task.startDate}
@@ -5498,20 +5498,20 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                 </div>
                               )}
                               {viewMode === 'internal' && (
-                                <div className="mt-3 flex flex-wrap gap-4">
+                                <div className="mt-3 flex flex-wrap gap-2 sm:gap-4 items-center">
                                   <button
                                     onClick={() => setExpandedTaskId(expandedTaskId === task.id ? null : task.id)}
-                                    className={`text-sm px-3 py-1 rounded ${expandedTaskId === task.id ? 'bg-primary text-white' : 'bg-blue-100 text-primary hover:bg-blue-200'}`}
+                                    className={`text-xs sm:text-sm px-2 sm:px-3 py-1.5 rounded ${expandedTaskId === task.id ? 'bg-primary text-white' : 'bg-blue-100 text-primary hover:bg-blue-200'}`}
                                   >
                                     {expandedTaskId === task.id ? '▼ Hide Notes' : `+ Notes (${(task.notes || []).length})`}
                                   </button>
-                                  <span className="text-sm text-purple-600">
+                                  <span className="text-xs sm:text-sm text-purple-600">
                                     Subtasks ({(task.subtasks || []).filter(s => s.completed || s.notApplicable || s.status === 'Complete' || s.status === 'N/A').length}/{(task.subtasks || []).length})
                                   </span>
                                   {canEdit && (
                                     <button
                                       onClick={() => setNewSubtask({ taskId: task.id, title: '', owner: '', dueDate: '' })}
-                                      className="text-sm text-green-600 hover:underline"
+                                      className="text-xs sm:text-sm text-green-600 hover:underline"
                                     >
                                       + Add Subtask
                                     </button>
@@ -5674,17 +5674,17 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                     ) : (
                                       (task.subtasks || []).map(subtask => (
                                         editingSubtask?.taskId === task.id && editingSubtask?.subtaskId === subtask.id ? (
-                                          <div key={subtask.id} className="flex items-center gap-2 bg-blue-50 p-2 rounded border-2 border-blue-300 text-sm">
+                                          <div key={subtask.id} className="flex flex-wrap items-center gap-2 bg-blue-50 p-2 rounded border-2 border-blue-300 text-sm">
                                             <input
                                               value={editingSubtask.title}
                                               onChange={(e) => setEditingSubtask({...editingSubtask, title: e.target.value})}
-                                              className="flex-1 px-2 py-1 border rounded text-sm"
+                                              className="flex-1 min-w-0 w-full sm:w-auto px-2 py-1.5 border rounded text-sm"
                                               placeholder="Subtask title"
                                             />
                                             <select
                                               value={editingSubtask.owner}
                                               onChange={(e) => setEditingSubtask({...editingSubtask, owner: e.target.value})}
-                                              className="px-2 py-1 border rounded text-xs"
+                                              className="px-2 py-1.5 border rounded text-xs flex-1 sm:flex-none"
                                             >
                                               <option value="">No owner</option>
                                               {allOwners.map(owner => (
@@ -5695,28 +5695,30 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                               type="date"
                                               value={editingSubtask.dueDate || ''}
                                               onChange={(e) => setEditingSubtask({...editingSubtask, dueDate: e.target.value})}
-                                              className="text-xs px-2 py-1 border rounded"
+                                              className="text-xs px-2 py-1.5 border rounded"
                                             />
-                                            <button
-                                              onClick={handleSaveSubtaskEdit}
-                                              className="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700"
-                                            >
-                                              Save
-                                            </button>
-                                            <button
-                                              onClick={() => setEditingSubtask(null)}
-                                              className="px-2 py-1 bg-gray-300 rounded text-xs hover:bg-gray-400"
-                                            >
-                                              Cancel
-                                            </button>
+                                            <div className="flex gap-2">
+                                              <button
+                                                onClick={handleSaveSubtaskEdit}
+                                                className="px-3 py-1.5 bg-green-600 text-white rounded text-xs hover:bg-green-700"
+                                              >
+                                                Save
+                                              </button>
+                                              <button
+                                                onClick={() => setEditingSubtask(null)}
+                                                className="px-3 py-1.5 bg-gray-300 rounded text-xs hover:bg-gray-400"
+                                              >
+                                                Cancel
+                                              </button>
+                                            </div>
                                           </div>
                                         ) : (
-                                          <div key={subtask.id} className="flex items-center gap-2 bg-white p-2 rounded border text-sm">
+                                          <div key={subtask.id} className="flex flex-wrap items-center gap-1.5 sm:gap-2 bg-white p-2 rounded border text-sm">
                                             {canEdit ? (
                                               <select
                                                 value={getSubtaskStatus(subtask)}
                                                 onChange={(e) => handleSubtaskStatusChange(task.id, subtask.id, e.target.value)}
-                                                className={`px-2 py-1 border rounded text-xs ${
+                                                className={`px-1.5 sm:px-2 py-1 border rounded text-xs flex-shrink-0 ${
                                                   getSubtaskStatus(subtask) === 'completed' ? 'bg-green-100 text-green-700' :
                                                   getSubtaskStatus(subtask) === 'not_applicable' ? 'bg-gray-100 text-gray-600' :
                                                   'bg-yellow-50 text-yellow-700'
@@ -5727,53 +5729,55 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                                 <option value="not_applicable">N/A</option>
                                               </select>
                                             ) : (
-                                              <span className={`px-2 py-1 border rounded text-xs ${
+                                              <span className={`px-1.5 sm:px-2 py-1 border rounded text-xs flex-shrink-0 ${
                                                 getSubtaskStatus(subtask) === 'completed' ? 'bg-green-100 text-green-700' :
                                                 getSubtaskStatus(subtask) === 'not_applicable' ? 'bg-gray-100 text-gray-600' :
                                                 'bg-yellow-50 text-yellow-700'
                                               }`}>
-                                                {getSubtaskStatus(subtask) === 'completed' ? 'Complete' : 
+                                                {getSubtaskStatus(subtask) === 'completed' ? 'Complete' :
                                                  getSubtaskStatus(subtask) === 'not_applicable' ? 'N/A' : 'Pending'}
                                               </span>
                                             )}
-                                            <span className={getSubtaskStatus(subtask) !== 'pending' ? 'line-through text-gray-400 flex-1' : 'flex-1'}>
+                                            <span className={`min-w-0 break-words ${getSubtaskStatus(subtask) !== 'pending' ? 'line-through text-gray-400 flex-1' : 'flex-1'}`}>
                                               {subtask.title}
                                             </span>
-                                            {canEdit ? (
-                                              <input
-                                                type="date"
-                                                value={subtask.dueDate || ''}
-                                                onChange={(e) => handleSubtaskDueDateChange(task.id, subtask.id, e.target.value)}
-                                                className={`text-xs px-2 py-1 border rounded ${
-                                                  subtask.dueDate && new Date(subtask.dueDate) < new Date() && getSubtaskStatus(subtask) === 'pending'
-                                                    ? 'border-red-300 bg-red-50 text-red-700'
-                                                    : 'border-gray-200'
-                                                }`}
-                                                title="Due Date"
-                                              />
-                                            ) : subtask.dueDate && (
-                                              <span className="text-xs text-gray-500">{subtask.dueDate}</span>
-                                            )}
-                                            {subtask.owner && (
-                                              <span className="text-xs text-gray-500">{getOwnerName(subtask.owner)}</span>
-                                            )}
-                                            {canEdit && canEditSubtask(subtask) && (
-                                              <button
-                                                onClick={() => handleEditSubtask(task.id, subtask)}
-                                                className="text-blue-500 hover:text-blue-700 text-xs"
-                                                title="Edit subtask"
-                                              >
-                                                ✎
-                                              </button>
-                                            )}
-                                            {canEdit && isAdmin && (
-                                              <button
-                                                onClick={() => handleDeleteSubtask(task.id, subtask.id)}
-                                                className="text-red-400 hover:text-red-600 text-xs"
-                                              >
-                                                x
-                                              </button>
-                                            )}
+                                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                                              {canEdit ? (
+                                                <input
+                                                  type="date"
+                                                  value={subtask.dueDate || ''}
+                                                  onChange={(e) => handleSubtaskDueDateChange(task.id, subtask.id, e.target.value)}
+                                                  className={`text-xs px-1.5 sm:px-2 py-1 border rounded ${
+                                                    subtask.dueDate && new Date(subtask.dueDate) < new Date() && getSubtaskStatus(subtask) === 'pending'
+                                                      ? 'border-red-300 bg-red-50 text-red-700'
+                                                      : 'border-gray-200'
+                                                  }`}
+                                                  title="Due Date"
+                                                />
+                                              ) : subtask.dueDate && (
+                                                <span className="text-xs text-gray-500">{subtask.dueDate}</span>
+                                              )}
+                                              {subtask.owner && (
+                                                <span className="text-xs text-gray-500 hidden sm:inline">{getOwnerName(subtask.owner)}</span>
+                                              )}
+                                              {canEdit && canEditSubtask(subtask) && (
+                                                <button
+                                                  onClick={() => handleEditSubtask(task.id, subtask)}
+                                                  className="text-blue-500 hover:text-blue-700 text-xs p-1"
+                                                  title="Edit subtask"
+                                                >
+                                                  ✎
+                                                </button>
+                                              )}
+                                              {canEdit && isAdmin && (
+                                                <button
+                                                  onClick={() => handleDeleteSubtask(task.id, subtask.id)}
+                                                  className="text-red-400 hover:text-red-600 text-xs p-1"
+                                                >
+                                                  x
+                                                </button>
+                                              )}
+                                            </div>
                                           </div>
                                         )
                                       ))
@@ -5789,7 +5793,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                       value={newSubtask.title}
                                       onChange={(e) => setNewSubtask({...newSubtask, title: e.target.value})}
                                       placeholder="Subtask title..."
-                                      className="flex-1 min-w-48 px-3 py-2 border rounded-md text-sm"
+                                      className="flex-1 min-w-0 w-full sm:w-auto px-3 py-2 border rounded-md text-sm"
                                     />
                                     <select
                                       value={newSubtask.owner}
@@ -6524,10 +6528,10 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
         )}
       </AppHeader>
 
-      <div className="p-6">
+      <div className="p-3 sm:p-6">
       <div className="max-w-6xl mx-auto">
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">
+        <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-6">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
             {selectedTemplate ? (
               editingName ? (
                 <div className="flex items-center gap-2">
@@ -7217,10 +7221,10 @@ const Reporting = ({ token, user, onBack, onLogout }) => {
         </button>
       </AppHeader>
 
-      <div className="p-6">
+      <div className="p-3 sm:p-6">
       <div className="max-w-6xl mx-auto">
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Launch Reports</h1>
+        <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-6">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Launch Reports</h1>
           <p className="text-gray-600 mb-4">Portal - Thrive 365 Labs</p>
 
           {/* Summary Stats */}

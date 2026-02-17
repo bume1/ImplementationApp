@@ -344,9 +344,9 @@
 
           <div className="relative w-full max-w-md">
             {/* Main card */}
-            <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-soft p-8 border border-white/50">
+            <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-soft p-5 sm:p-8 border border-white/50">
               {/* Logo and header */}
-              <div className="text-center mb-8">
+              <div className="text-center mb-6 sm:mb-8">
                 <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-12 mx-auto mb-4" />
                 <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Admin Hub</h1>
                 <p className="text-gray-500 mt-1 text-sm">Precision Diagnostics Administration</p>
@@ -559,11 +559,11 @@
           <div className="relative rounded-2xl overflow-hidden shadow-lg" style={{minHeight: '200px'}}>
             <div className="absolute inset-0 bg-cover bg-center" style={{backgroundImage: 'url(/banners/banner-admin.jpg)'}}></div>
             <div className="absolute inset-0 bg-gradient-to-r from-primary-700/90 via-primary-600/70 to-transparent"></div>
-            <div className="relative p-8 flex items-center min-h-[200px]">
+            <div className="relative p-5 sm:p-8 flex items-center min-h-[160px] sm:min-h-[200px]">
               <div className="text-white">
                 <div className="flex items-center gap-3 mb-2">
-                  <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center shadow-lg">{Icons.chart}</div>
-                  <h1 className="text-3xl font-bold tracking-tight drop-shadow-sm">Admin Hub Dashboard</h1>
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center shadow-lg">{Icons.chart}</div>
+                  <h1 className="text-xl sm:text-3xl font-bold tracking-tight drop-shadow-sm">Admin Hub Dashboard</h1>
                 </div>
                 <p className="text-white/90 text-sm max-w-xl mt-2">Central management console for Thrive 365 Labs diagnostic platforms and services.</p>
               </div>
@@ -573,11 +573,11 @@
           {/* Stats Grid */}
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
             {statCards.map((stat, i) => (
-              <div key={i} className={`stat-card bg-gradient-to-br ${stat.color} text-white p-6 rounded-2xl shadow-lg`}>
-                <div className="flex items-start justify-between mb-4">
-                  <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">{stat.icon}</div>
+              <div key={i} className={`stat-card bg-gradient-to-br ${stat.color} text-white p-4 sm:p-6 rounded-2xl shadow-lg`}>
+                <div className="flex items-start justify-between mb-3 sm:mb-4">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 flex items-center justify-center">{stat.icon}</div>
                 </div>
-                <p className="text-3xl font-bold mb-1">{stat.value}</p>
+                <p className="text-2xl sm:text-3xl font-bold mb-1">{stat.value}</p>
                 <p className="text-sm text-white/80">{stat.label}</p>
               </div>
             ))}
