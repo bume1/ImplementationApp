@@ -1,4 +1,15 @@
 const { Client } = require('@hubspot/api-client');
+const axios = require('axios');
+const FormData = require('form-data');
+
+// HubSpot association type IDs (HUBSPOT_DEFINED category)
+const ASSOCIATION_TYPES = Object.freeze({
+  COMPANY_TO_NOTE: 190,
+  DEAL_TO_NOTE: 214,
+  DEAL_TO_TASK: 216,
+  NOTE_TO_TICKET: 18,
+  TICKET_TO_COMPANY: 26,
+});
 
 let connectionSettings = null;
 let tokenExpiresAt = null;
@@ -152,7 +163,7 @@ async function logRecordActivity(recordId, activityType, details) {
           types: [
             {
               associationCategory: 'HUBSPOT_DEFINED',
-              associationTypeId: 214
+              associationTypeId: ASSOCIATION_TYPES.DEAL_TO_NOTE
             }
           ]
         }
@@ -248,7 +259,6 @@ async function uploadFileAndAttachToRecord(recordId, fileContent, fileName, cust
   try {
     const privateAppClient = new Client({ accessToken: privateAppToken });
     
-    const FormData = require('form-data');
     const formData = new FormData();
     
     const isBase64 = options.isBase64 || (typeof fileContent === 'string' && /^[A-Za-z0-9+/=]+$/.test(fileContent.slice(0, 100)));
@@ -286,10 +296,6 @@ async function uploadFileAndAttachToRecord(recordId, fileContent, fileName, cust
     }));
     
     console.log(`📤 Uploading file to HubSpot: ${fileName} (${fileBuffer.length} bytes, ${contentType})`);
-    console.log(`📤 Token prefix: ${privateAppToken.substring(0, 15)}...`);
-    
-    const axios = require('axios');
-    
     const uploadResponse = await axios.post(
       'https://api.hubapi.com/files/v3/files',
       formData,
@@ -329,8 +335,7 @@ async function uploadFileAndAttachToRecord(recordId, fileContent, fileName, cust
     console.log(`✅ Note created: ${noteResponse.id}`);
     
     try {
-      const axios = require('axios');
-      const associationTypeId = recordType === 'companies' ? 190 : 214;
+      const associationTypeId = recordType === 'companies' ? ASSOCIATION_TYPES.COMPANY_TO_NOTE : ASSOCIATION_TYPES.DEAL_TO_NOTE;
       
       await axios.put(
         `https://api.hubapi.com/crm/v4/objects/notes/${noteResponse.id}/associations/${recordType}/${cleanRecordId}`,
@@ -427,7 +432,7 @@ ${noteContent}`;
           types: [
             {
               associationCategory: 'HUBSPOT_DEFINED',
-              associationTypeId: 214
+              associationTypeId: ASSOCIATION_TYPES.DEAL_TO_NOTE
             }
           ]
         }
@@ -488,7 +493,7 @@ async function createOrUpdateTask(dealId, taskSubject, taskBody, ownerId = null,
           types: [
             {
               associationCategory: 'HUBSPOT_DEFINED',
-              associationTypeId: 216
+              associationTypeId: ASSOCIATION_TYPES.DEAL_TO_TASK
             }
           ]
         }
@@ -505,10 +510,6 @@ async function createOrUpdateTask(dealId, taskSubject, taskBody, ownerId = null,
     }
     throw error;
   }
-}
-
-async function createTask(dealId, taskSubject, taskBody, ownerId = null) {
-  return createOrUpdateTask(dealId, taskSubject, taskBody, ownerId, null);
 }
 
 async function getTicketPipelines() {
@@ -542,7 +543,7 @@ async function getTicketsForCompany(companyId) {
   }
 
   try {
-    const axios = require('axios');
+
 
     // First get ticket IDs associated with the company
     const assocResponse = await axios.get(
@@ -686,7 +687,7 @@ async function getTicketsForContact(contactId) {
   }
 
   try {
-    const axios = require('axios');
+
 
     // Get ticket IDs associated with the contact
     const assocResponse = await axios.get(
@@ -827,7 +828,7 @@ async function getTicketsForDeal(dealId) {
   }
 
   try {
-    const axios = require('axios');
+
 
     // Get ticket IDs associated with the deal
     const assocResponse = await axios.get(
@@ -956,8 +957,8 @@ async function createTicketWithFile(ticketData, fileContent, fileName, companyId
   }
 
   try {
-    const axios = require('axios');
-    const FormData = require('form-data');
+
+
 
     // 1. Upload the file first
     const formData = new FormData();
@@ -1018,7 +1019,7 @@ async function createTicketWithFile(ticketData, fileContent, fileName, companyId
         to: { id: companyId },
         types: [{
           associationCategory: 'HUBSPOT_DEFINED',
-          associationTypeId: 26 // Ticket to Company
+          associationTypeId: ASSOCIATION_TYPES.TICKET_TO_COMPANY
         }]
       }];
     }
@@ -1060,7 +1061,7 @@ async function createTicketWithFile(ticketData, fileContent, fileName, companyId
     // Associate note with ticket
     await axios.put(
       `https://api.hubapi.com/crm/v4/objects/notes/${noteId}/associations/tickets/${ticketId}`,
-      [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 18 }], // Note to Ticket
+      [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: ASSOCIATION_TYPES.NOTE_TO_TICKET }],
       {
         headers: {
           'Authorization': `Bearer ${privateAppToken}`,
@@ -1099,7 +1100,7 @@ async function getTicketById(ticketId) {
   }
 
   try {
-    const axios = require('axios');
+
 
     // Fetch ticket with all required properties
     const ticketResponse = await axios.get(
@@ -1278,8 +1279,6 @@ async function searchTicketsByStage(stageIds, modifiedAfter = null, additionalPr
     return [];
   }
 
-  const axios = require('axios');
-
   // Build filters - ANDed within a single filter group
   const filters = [
     {
@@ -1348,7 +1347,6 @@ module.exports = {
   testConnection,
   getOwners,
   findOwnerByName,
-  createTask,
   createOrUpdateTask,
   uploadFileAndAttachToRecord,
   syncTaskNoteToRecord,
