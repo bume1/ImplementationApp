@@ -66,13 +66,13 @@
 
     const handleResponse = async (response) => {
       if (!response.ok) {
-        // Auto-redirect to login on auth failure (expired/invalid token)
+        // Auto-redirect to unified login on auth failure (expired/invalid token)
         if (response.status === 401 || response.status === 403) {
           try {
             const errData = await response.clone().json();
             if (errData.error === 'Invalid token' || errData.error === 'User not found' || response.status === 401) {
               localStorage.clear();
-              window.location.href = '/';
+              window.location.href = '/login';
               throw new Error('Session expired. Redirecting to login...');
             }
           } catch (redirectErr) {
@@ -311,106 +311,6 @@
       document: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/></svg>
     };
 
-    // Login Page - Modern sleek design
-    const LoginPage = ({ onLogin }) => {
-      const [email, setEmail] = useState('');
-      const [password, setPassword] = useState('');
-      const [error, setError] = useState('');
-      const [loading, setLoading] = useState(false);
-
-      const handleSubmit = async (e) => {
-        e.preventDefault();
-        setLoading(true);
-        setError('');
-        const result = await api.adminLogin(email, password);
-        if (result.error) {
-          setError(result.error);
-        } else {
-          localStorage.setItem('admin_token', result.token);
-          localStorage.setItem('admin_user', JSON.stringify(result.user));
-          onLogin(result.token, result.user);
-        }
-        setLoading(false);
-      };
-
-      return (
-        <div className="min-h-screen flex items-center justify-center p-4" style={{background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #f1f5f9 100%)'}}>
-          {/* Decorative elements */}
-          <div className="absolute inset-0 overflow-hidden pointer-events-none">
-            <div className="absolute -top-40 -right-40 w-80 h-80 rounded-full opacity-20" style={{background: 'radial-gradient(circle, #045E9F 0%, transparent 70%)'}}></div>
-            <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full opacity-10" style={{background: 'radial-gradient(circle, #00205A 0%, transparent 70%)'}}></div>
-          </div>
-
-          <div className="relative w-full max-w-md">
-            {/* Main card */}
-            <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-soft p-8 border border-white/50">
-              {/* Logo and header */}
-              <div className="text-center mb-8">
-                <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-12 mx-auto mb-4" />
-                <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Admin Hub</h1>
-                <p className="text-gray-500 mt-1 text-sm">Precision Diagnostics Administration</p>
-              </div>
-
-              {/* Form */}
-              <form onSubmit={handleSubmit} className="space-y-5">
-                {error && (
-                  <div className="flex items-center gap-3 bg-danger-50 text-danger-600 p-4 rounded-xl text-sm border border-red-100 animate-fade-in">
-                    <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                    <span>{error}</span>
-                  </div>
-                )}
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="input-modern w-full px-4 py-3 text-gray-900 placeholder-gray-400"
-                    placeholder="you@thrive365labs.com"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="input-modern w-full px-4 py-3 text-gray-900 placeholder-gray-400"
-                    placeholder="Enter your password"
-                    required
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="btn-primary w-full text-white py-3.5 rounded-xl font-semibold text-sm tracking-wide disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  {loading ? (
-                    <>
-                      <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-                      <span>Signing in...</span>
-                    </>
-                  ) : (
-                    <span>Sign In</span>
-                  )}
-                </button>
-              </form>
-
-              {/* Footer */}
-              <div className="mt-8 pt-6 border-t border-gray-100 text-center">
-                <p className="text-xs text-gray-400">&copy; 2026 Thrive 365 Labs. All rights reserved.</p>
-                <a href="/changelog" className="text-primary-500 hover:underline text-xs mt-1 inline-block">View Changelog</a>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    };
-
     // Sidebar with portal access - Modern design
     const Sidebar = ({ activePage, onNavigate, user, token, isMobileOpen, onClose }) => {
       // Check if user is a Super Admin (role === 'admin')
@@ -505,7 +405,7 @@
                 <span className="text-primary-500 group-hover:text-primary-600">{Icons.home}</span>
                 <span className="text-sm font-medium">Portal Hub</span>
               </button>
-              <button onClick={() => { localStorage.clear(); sessionStorage.clear(); window.location.href = '/launch/login'; }}
+              <button onClick={() => { localStorage.clear(); sessionStorage.clear(); window.location.href = '/login'; }}
                 className="w-full text-left px-4 py-2.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl flex items-center gap-3 transition group">
                 <span className="group-hover:text-red-500">{Icons.logout}</span>
                 <span className="text-sm font-medium">Sign Out</span>
@@ -3246,12 +3146,10 @@
         return () => window.removeEventListener('pageshow', handlePageShow);
       }, []);
 
-      const handleLogin = (newToken, newUser) => {
-        setToken(newToken);
-        setUser(newUser);
-      };
-
-      if (!token || !user) return <LoginPage onLogin={handleLogin} />;
+      if (!token || !user) {
+        window.location.href = '/login';
+        return null;
+      }
 
       // Check if user is a Super Admin (role === 'admin') - full access
       const isSuperAdmin = user?.role === 'admin';

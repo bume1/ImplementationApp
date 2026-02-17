@@ -12,6 +12,7 @@ const hubspot = require('./hubspot');
 const googledrive = require('./googledrive');
 const pdfGenerator = require('./pdf-generator');
 const changelogGenerator = require('./changelog-generator');
+const { OAuth2Client } = require('google-auth-library');
 const config = require('./config');
 
 const upload = multer({
@@ -45,6 +46,10 @@ const HUBSPOT_STAGE_CACHE_TTL = config.HUBSPOT_STAGE_CACHE_TTL;
 const HUBSPOT_POLL_MIN_SECONDS = config.HUBSPOT_POLL_MIN_SECONDS;
 const HUBSPOT_POLL_MAX_SECONDS = config.HUBSPOT_POLL_MAX_SECONDS;
 const INVENTORY_EXPIRY_WARNING_DAYS = config.INVENTORY_EXPIRY_WARNING_DAYS;
+
+// Google OAuth configuration
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+const googleOAuthClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
 
 // Startup security warnings
 if (!process.env.JWT_SECRET) {
@@ -254,6 +259,54 @@ const generateClientSlug = (clientName, existingSlugs = []) => {
   }
   return finalSlug;
 };
+
+// Build a standardized login response (JWT + user data) for any auth method
+// Used by both password login and Google Sign-In to ensure identical responses
+async function buildLoginResponse(user, users) {
+  const token = jwt.sign(
+    { id: user.id, email: user.email, name: user.name, role: user.role },
+    JWT_SECRET,
+    { expiresIn: config.JWT_EXPIRY }
+  );
+  const isManager = user.isManager || false;
+  const userResponse = {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    isManager: isManager,
+    hasServicePortalAccess: user.hasServicePortalAccess || false,
+    hasAdminHubAccess: user.hasAdminHubAccess || false,
+    hasImplementationsAccess: user.hasImplementationsAccess || false,
+    hasClientPortalAdminAccess: user.hasClientPortalAdminAccess || isManager || false,
+    assignedProjects: user.assignedProjects || [],
+    assignedClients: user.assignedClients || [],
+    requirePasswordChange: user.requirePasswordChange || false
+  };
+  // Include client-specific fields
+  if (user.role === config.ROLES.CLIENT) {
+    userResponse.practiceName = user.practiceName;
+    userResponse.isNewClient = user.isNewClient;
+    if (!user.slug) {
+      const existingSlugs = users.filter(u => u.slug).map(u => u.slug);
+      const generatedSlug = generateClientSlug(user.practiceName || user.name || user.email.split('@')[0], existingSlugs);
+      const userIndex = users.findIndex(u => u.id === user.id);
+      if (userIndex !== -1) {
+        users[userIndex].slug = generatedSlug;
+        await db.set('users', users);
+        invalidateUsersCache();
+      }
+      userResponse.slug = generatedSlug;
+    } else {
+      userResponse.slug = user.slug;
+    }
+  }
+  // Include project access levels for team members
+  if (user.role === config.ROLES.USER) {
+    userResponse.projectAccessLevels = user.projectAccessLevels || {};
+  }
+  return { token, user: userResponse };
+}
 
 // Load template from JSON file
 async function loadTemplate() {
@@ -1255,6 +1308,11 @@ app.get('/api/config', (req, res) => {
   res.json(config.getPublicConfig());
 });
 
+// Return Google OAuth client ID to frontend (public endpoint)
+app.get('/api/auth/google-client-id', (req, res) => {
+  res.json({ clientId: GOOGLE_CLIENT_ID || null });
+});
+
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -1272,58 +1330,48 @@ app.post('/api/auth/login', async (req, res) => {
       console.log('Login failed: Password mismatch for:', email);
       return res.status(400).json({ error: 'Invalid credentials' });
     }
-    const token = jwt.sign(
-      { id: user.id, email: user.email, name: user.name, role: user.role },
-      JWT_SECRET,
-      { expiresIn: config.JWT_EXPIRY }
-    );
-    const isManager = user.isManager || false;
-    const userResponse = {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      // Manager flag - provides limited admin access
-      isManager: isManager,
-      // Include permission flags for all users
-      hasServicePortalAccess: user.hasServicePortalAccess || false,
-      hasAdminHubAccess: user.hasAdminHubAccess || false,
-      hasImplementationsAccess: user.hasImplementationsAccess || false,
-      // Managers automatically get client portal admin access
-      hasClientPortalAdminAccess: user.hasClientPortalAdminAccess || isManager || false,
-      assignedProjects: user.assignedProjects || [],
-      assignedClients: user.assignedClients || [],
-      // Password reset flag
-      requirePasswordChange: user.requirePasswordChange || false
-    };
-    // Include client-specific fields
-    if (user.role === config.ROLES.CLIENT) {
-      userResponse.practiceName = user.practiceName;
-      userResponse.isNewClient = user.isNewClient;
-      // Auto-generate slug if client doesn't have one
-      if (!user.slug) {
-        const existingSlugs = users.filter(u => u.slug).map(u => u.slug);
-        const generatedSlug = generateClientSlug(user.practiceName || user.name || user.email.split('@')[0], existingSlugs);
-        // Update user in database with new slug
-        const userIndex = users.findIndex(u => u.id === user.id);
-        if (userIndex !== -1) {
-          users[userIndex].slug = generatedSlug;
-          await db.set('users', users);
-    invalidateUsersCache();
-        }
-        userResponse.slug = generatedSlug;
-      } else {
-        userResponse.slug = user.slug;
-      }
-    }
-    // Include project access levels for team members
-    if (user.role === config.ROLES.USER) {
-      userResponse.projectAccessLevels = user.projectAccessLevels || {};
-    }
-    res.json({ token, user: userResponse });
+    const response = await buildLoginResponse(user, users);
+    res.json(response);
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Google Sign-In endpoint - verifies Google ID token and issues app JWT
+app.post('/api/auth/google-login', async (req, res) => {
+  try {
+    if (!googleOAuthClient) {
+      return res.status(400).json({ error: 'Google Sign-In is not configured' });
+    }
+    const { credential } = req.body;
+    if (!credential) {
+      return res.status(400).json({ error: 'Missing Google credential' });
+    }
+    // Verify the Google ID token
+    const ticket = await googleOAuthClient.verifyIdToken({
+      idToken: credential,
+      audience: GOOGLE_CLIENT_ID
+    });
+    const payload = ticket.getPayload();
+    const googleEmail = payload.email;
+    if (!googleEmail) {
+      return res.status(400).json({ error: 'Google account has no email address' });
+    }
+    // Look up existing user by email
+    const users = await getUsers();
+    const user = users.find(u => u.email?.toLowerCase() === googleEmail.toLowerCase());
+    if (!user) {
+      return res.status(400).json({ error: 'No account found with this email address. Please sign in with your password.' });
+    }
+    const response = await buildLoginResponse(user, users);
+    res.json(response);
+  } catch (error) {
+    console.error('Google login error:', error);
+    if (error.message && error.message.includes('Token used too late')) {
+      return res.status(400).json({ error: 'Google sign-in expired. Please try again.' });
+    }
+    res.status(500).json({ error: 'Google sign-in failed. Please try again.' });
   }
 });
 
