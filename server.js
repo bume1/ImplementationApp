@@ -367,8 +367,8 @@ const processNotificationQueue = async () => {
 // Base HTML email wrapper used when a template has no custom htmlBody
 const BASE_HTML_EMAIL_WRAPPER = `
 <div style="font-family: Inter, -apple-system, sans-serif; max-width: 600px; margin: 0 auto; background: #f8fafc;">
-  <div style="background: linear-gradient(135deg, #045E9F 0%, #00205A 100%); padding: 28px 24px; border-radius: 8px 8px 0 0;">
-    <h1 style="color: #ffffff; margin: 0; font-size: 20px; font-weight: 600;">Thrive 365 Labs</h1>
+  <div style="background-color: #ffffff; padding: 24px 28px 20px; border-radius: 8px 8px 0 0; text-align: center; border-bottom: 3px solid #045E9F;">
+    <img src="https://app.thrive365labs.live/thrive365-logo.webp" alt="Thrive 365 Labs" style="height: 44px; max-width: 220px; display: block; margin: 0 auto;" />
   </div>
   <div style="background: #ffffff; padding: 28px 24px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
     <div style="color: #374151; line-height: 1.7; font-size: 15px; white-space: pre-wrap;">{{content}}</div>
@@ -743,8 +743,8 @@ const DEFAULT_EMAIL_TEMPLATES = [
     subject: '{{priorityTag}}New Announcement: {{title}}',
     body: '{{priorityTag}}{{title}}\n\n{{content}}{{attachmentLine}}',
     htmlBody: `<div style="font-family: Inter, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
-  <div style="background: linear-gradient(135deg, #045E9F 0%, #00205A 100%); padding: 28px 24px; border-radius: 8px 8px 0 0;">
-    <h1 style="color: #ffffff; margin: 0; font-size: 20px; font-weight: 600;">Thrive 365 Labs</h1>
+  <div style="background-color: #ffffff; padding: 24px 28px 20px; border-radius: 8px 8px 0 0; text-align: center; border-bottom: 3px solid #045E9F;">
+    <img src="https://app.thrive365labs.live/thrive365-logo.webp" alt="Thrive 365 Labs" style="height: 44px; max-width: 220px; display: block; margin: 0 auto;" />
   </div>
   <div style="background: #ffffff; padding: 28px 24px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
     {{priorityBanner}}
