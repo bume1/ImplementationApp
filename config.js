@@ -143,7 +143,7 @@ const NOTIFICATION_CHECK_INTERVAL_MINUTES = parseInt(process.env.NOTIFICATION_CH
 const NOTIFICATION_LOG_MAX_ENTRIES = parseInt(process.env.NOTIFICATION_LOG_MAX_ENTRIES || '2000', 10);
 const NOTIFICATION_MAX_RETRIES = parseInt(process.env.NOTIFICATION_MAX_RETRIES || '3', 10);
 const NOTIFICATION_DAILY_SEND_LIMIT = parseInt(process.env.NOTIFICATION_DAILY_SEND_LIMIT || '500', 10);
-const EMAIL_FROM_ADDRESS = process.env.EMAIL_FROM_ADDRESS || 'no-reply@thrive365labs.com';
+const EMAIL_FROM_ADDRESS = process.env.EMAIL_FROM_ADDRESS || 'no-reply@thrive365labs.live';
 
 // ---- Automated Reminders (Feature 2) ----
 const NOTIFICATION_SCAN_INTERVAL_MINUTES = parseInt(process.env.NOTIFICATION_SCAN_INTERVAL_MINUTES || '30', 10);
@@ -156,7 +156,7 @@ const GOLIVE_REMINDER_DAYS_BEFORE = (process.env.GOLIVE_REMINDER_DAYS_BEFORE || 
 
 // ---- Default Admin (initial setup only) ----
 const DEFAULT_ADMIN = Object.freeze({
-  EMAIL: process.env.DEFAULT_ADMIN_EMAIL || 'bianca@thrive365labs.com',
+  EMAIL: process.env.DEFAULT_ADMIN_EMAIL || 'bianca@thrive365labs.live',
   NAME: process.env.DEFAULT_ADMIN_NAME || 'Bianca Ume',
   PASSWORD: process.env.DEFAULT_ADMIN_PASSWORD || 'Thrive2025!'
 });

@@ -28,6 +28,14 @@
     .card-hover:hover { transform: translateY(-4px); box-shadow: 0 12px 24px rgba(0,0,0,0.1); }
     .guide-content { max-height: 0; overflow: hidden; transition: max-height 0.3s ease-out; }
     .guide-content.open { max-height: 2000px; transition: max-height 0.5s ease-in; }
+    .search-input:focus { box-shadow: 0 0 0 3px rgba(4,94,159,0.15); outline: none; }
+    .search-dropdown { max-height: 400px; overflow-y: auto; }
+    .search-item { transition: background 0.15s ease; }
+    .search-item:hover { background: #f0f7ff; }
+    .section-tile { transition: all 0.2s ease; }
+    .section-tile:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
+    .breadcrumb-btn { transition: color 0.15s ease; }
+    .breadcrumb-btn:hover { color: #045E9F; }
   </style>
 </head>
 <body>
@@ -1967,7 +1975,7 @@ Service reports submitted by technicians appear as downloadable attachments on r
 Expect a response within 24-48 hours for standard requests.
 
 **Alternative Contact:**
-You can also email support directly at support@thrive365labs.com`
+You can also email support directly at support@thrive365labs.live`
           },
           {
             title: 'Using Live Chat',
@@ -2564,6 +2572,97 @@ If you suspect unauthorized access:
       }
     };
 
+    // ═══════════════════════════════════════════════════════
+    // V2 API HELPERS & SEED TRANSFORM
+    // ═══════════════════════════════════════════════════════
+
+    const V2_VISIBILITY = {
+      'portal-hub': ['public', 'superAdmin', 'manager', 'teamMember', 'vendor', 'client'],
+      'admin-hub': ['superAdmin', 'manager', 'teamMember'],
+      'launch-app': ['superAdmin', 'manager', 'teamMember'],
+      'service-portal': ['superAdmin', 'manager', 'teamMember', 'vendor'],
+      'client-portal': ['superAdmin', 'manager', 'teamMember'],
+      'inventory': ['superAdmin', 'manager', 'teamMember', 'client'],
+      'customer-support': ['public', 'superAdmin', 'manager', 'teamMember', 'vendor', 'client'],
+      'files': ['public', 'superAdmin', 'manager', 'teamMember', 'vendor', 'client'],
+      'technical-docs': ['superAdmin'],
+      'admin-guide': ['superAdmin']
+    };
+
+    const ICON_KEY_MAP = {
+      'portal-hub': 'hub', 'admin-hub': 'admin', 'launch-app': 'launch',
+      'service-portal': 'service', 'client-portal': 'client', 'inventory': 'inventory',
+      'customer-support': 'support', 'files': 'files', 'technical-docs': 'code', 'admin-guide': 'admin'
+    };
+
+    function transformGuidesToV2Seed(guidesObj) {
+      return Object.entries(guidesObj).map(([key, guide], idx) => ({
+        key,
+        title: guide.title,
+        description: guide.description,
+        icon: ICON_KEY_MAP[key] || 'book',
+        color: guide.color,
+        sortOrder: idx,
+        visibleTo: V2_VISIBILITY[key] || ['superAdmin'],
+        features: guide.articles.map((article, aIdx) => ({
+          title: article.title,
+          slug: article.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/,''),
+          sortOrder: aIdx,
+          visibleTo: V2_VISIBILITY[key] || ['superAdmin'],
+          tags: [key],
+          content: {
+            whatItIs: (article.content.split('\n').find(l => l.trim().length > 10) || '').replace(/\*\*/g, '').trim(),
+            howToUseIt: article.content
+          },
+          knownIssues: ''
+        }))
+      }));
+    }
+
+    async function seedV2IfNeeded(token, isAdmin) {
+      try {
+        const check = await fetch('/api/knowledge/v2/needs-seed', {
+          headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+        }).then(r => r.json());
+        if (check.needsSeed && isAdmin) {
+          const sections = transformGuidesToV2Seed(guides);
+          await fetch('/api/knowledge/v2/seed', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sections })
+          });
+        }
+      } catch (e) { console.warn('V2 seed check failed:', e); }
+    }
+
+    async function fetchV2Sections(token) {
+      try {
+        const res = await fetch('/api/knowledge/v2/sections', {
+          headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+        });
+        const data = await res.json();
+        return data.sections || [];
+      } catch (e) {
+        console.warn('V2 fetch failed, using local data:', e);
+        return [];
+      }
+    }
+
+    async function searchV2(token, query) {
+      if (!query || query.trim().length < 2) return [];
+      try {
+        const res = await fetch('/api/knowledge/v2/search?q=' + encodeURIComponent(query), {
+          headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+        });
+        const data = await res.json();
+        return data.results || [];
+      } catch (e) { return []; }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // CONTENT RENDERING
+    // ═══════════════════════════════════════════════════════
+
     // Helper function to render text with inline bold formatting
     const renderTextWithBold = (text) => {
       const parts = [];
@@ -2605,7 +2704,7 @@ If you suspect unauthorized access:
     };
 
     // Expandable Guide Section Component
-    const GuideSection = ({ guide, isAdmin }) => {
+    const GuideSection = ({ guide, isAdmin, sectionKey }) => {
       const [isOpen, setIsOpen] = useState(false);
       const [openArticle, setOpenArticle] = useState(null);
 
@@ -2617,7 +2716,7 @@ If you suspect unauthorized access:
       };
 
       return (
-        <div className={`bg-white rounded-xl shadow-sm border overflow-hidden mb-4 ${getBorderClass()}`}>
+        <div data-section-key={sectionKey} className={`bg-white rounded-xl shadow-sm border overflow-hidden mb-4 ${getBorderClass()}`}>
           <button
             onClick={() => setIsOpen(!isOpen)}
             className="w-full p-5 flex items-center justify-between hover:bg-gray-50 transition"
@@ -2745,64 +2844,96 @@ If you suspect unauthorized access:
       const [apiGuides, setApiGuides] = useState([]);
       const [loading, setLoading] = useState(true);
 
+      // Search state
+      const [searchQuery, setSearchQuery] = useState('');
+      const [searchResults, setSearchResults] = useState([]);
+      const [showSearchResults, setShowSearchResults] = useState(false);
+      const searchTimer = React.useRef(null);
+
       // Check if user is admin
       const isAdmin = user?.role === 'admin' || user?.isAdmin === true;
 
       // Check if user is the system owner (hidden failsafe)
-      const isOwner = user?.email?.toLowerCase() === 'bianca@thrive365labs.com';
+      const isOwner = user?.email?.toLowerCase() === 'bianca@thrive365labs.live';
 
-      // Fetch guides from API on mount
+      // Seed v2 data and fetch sections on mount
       useEffect(() => {
-        const fetchGuides = async () => {
-          if (!token) return;
+        const init = async () => {
           try {
-            // Check if database needs seeding
-            const seedCheck = await fetch('/api/knowledge/needs-seed', {
-              headers: { 'Authorization': `Bearer ${token}` }
-            }).then(r => r.json());
+            // Seed v2 data if needed (also seeds v1 for backwards compat)
+            await seedV2IfNeeded(token, isAdmin);
 
-            if (seedCheck.needsSeed && isAdmin) {
-              // Seed the database with hardcoded guides
-              const guidesArray = Object.entries(guides).map(([key, guide]) => ({
-                key,
-                title: guide.title,
-                description: guide.description,
-                icon: guide.icon ? 'custom' : 'book',
-                color: guide.color,
-                ownerOnly: guide.ownerOnly || false,
-                adminOnly: guide.adminOnly || false,
-                articles: guide.articles
-              }));
-              await fetch('/api/knowledge/seed', {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${token}`,
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ guides: guidesArray })
-              });
+            // Also seed v1 if needed (existing behavior)
+            if (token) {
+              const seedCheck = await fetch('/api/knowledge/needs-seed', {
+                headers: { 'Authorization': 'Bearer ' + token }
+              }).then(r => r.json()).catch(() => ({ needsSeed: false }));
+              if (seedCheck.needsSeed && isAdmin) {
+                const guidesArray = Object.entries(guides).map(([key, guide]) => ({
+                  key, title: guide.title, description: guide.description,
+                  icon: guide.icon ? 'custom' : 'book', color: guide.color,
+                  ownerOnly: guide.ownerOnly || false, adminOnly: guide.adminOnly || false,
+                  articles: guide.articles
+                }));
+                await fetch('/api/knowledge/seed', {
+                  method: 'POST',
+                  headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ guides: guidesArray })
+                }).catch(() => {});
+              }
             }
 
-            // Fetch guides from API
-            const response = await fetch('/api/knowledge/guides', {
-              headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const data = await response.json();
-            if (Array.isArray(data)) {
-              setApiGuides(data);
+            // Fetch from v2 API first, fall back to v1
+            let v2Sections = await fetchV2Sections(token);
+            if (v2Sections.length > 0) {
+              // Map v2 sections to display format
+              const mapped = v2Sections.map(s => [s.key, {
+                ...s,
+                icon: Icons[s.icon || ICON_KEY_MAP[s.key]] || Icons.book,
+                articles: (s.features || []).map(f => ({
+                  title: f.title,
+                  content: f.content?.howToUseIt || f.content?.whatItIs || ''
+                }))
+              }]);
+              setApiGuides(mapped);
+            } else if (token) {
+              // Fall back to v1 API
+              const response = await fetch('/api/knowledge/guides', {
+                headers: { 'Authorization': 'Bearer ' + token }
+              });
+              const data = await response.json();
+              if (Array.isArray(data)) {
+                setApiGuides(data.map(g => [g.key, { ...g, icon: Icons[g.icon] || Icons.book }]));
+              }
             }
           } catch (error) {
-            console.error('Error fetching guides:', error);
+            console.error('Error loading knowledge hub:', error);
           } finally {
             setLoading(false);
           }
         };
-        fetchGuides();
+        init();
       }, [token, isAdmin]);
+
+      // Search handler with debounce
+      const handleSearch = (query) => {
+        setSearchQuery(query);
+        if (searchTimer.current) clearTimeout(searchTimer.current);
+        if (!query || query.trim().length < 2) {
+          setSearchResults([]);
+          setShowSearchResults(false);
+          return;
+        }
+        searchTimer.current = setTimeout(async () => {
+          const results = await searchV2(token, query);
+          setSearchResults(results);
+          setShowSearchResults(results.length > 0);
+        }, 300);
+      };
 
       // Use API guides if available, otherwise fall back to hardcoded
       const visibleGuides = apiGuides.length > 0
-        ? apiGuides.map(guide => [guide.key, { ...guide, icon: Icons[guide.icon] || Icons.book }])
+        ? apiGuides
         : Object.entries(guides).filter(([key, guide]) => {
             if (guide.ownerOnly) return isOwner;
             if (guide.adminOnly) return isAdmin;
@@ -2818,19 +2949,75 @@ If you suspect unauthorized access:
       return (
         <div className="min-h-screen">
           {/* Header */}
-          <header className="bg-white/80 backdrop-blur-sm border-b border-gray-100 sticky top-0 z-10">
-            <div className="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
-              <div className="flex items-center gap-4">
-                <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-10" />
-                <div>
-                  <h1 className="text-xl font-bold text-accent">Knowledge Hub</h1>
-                  <p className="text-sm text-gray-500">Comprehensive guides and documentation for using the Thrive 365 Labs Portal Hub</p>
+          <header className="bg-white/80 backdrop-blur-sm border-b border-gray-100 sticky top-0 z-20">
+            <div className="max-w-6xl mx-auto px-6 py-4">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-4">
+                  <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-10" />
+                  <div>
+                    <h1 className="text-xl font-bold text-accent">Knowledge Hub</h1>
+                    <p className="text-sm text-gray-500 hidden sm:block">Guides and documentation</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  {/* Search Bar */}
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => handleSearch(e.target.value)}
+                      onFocus={() => searchResults.length > 0 && setShowSearchResults(true)}
+                      onBlur={() => setTimeout(() => setShowSearchResults(false), 200)}
+                      placeholder="Search guides..."
+                      className="search-input w-48 sm:w-64 px-4 py-2 pl-10 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:bg-white focus:border-primary-500 transition"
+                    />
+                    <svg className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/>
+                    </svg>
+                    {/* Search Dropdown */}
+                    {showSearchResults && searchResults.length > 0 && (
+                      <div className="absolute top-full mt-1 right-0 w-80 sm:w-96 bg-white rounded-xl shadow-xl border border-gray-200 search-dropdown z-50">
+                        <div className="p-3 border-b border-gray-100">
+                          <p className="text-xs text-gray-500 font-medium">{searchResults.length} result{searchResults.length !== 1 ? 's' : ''} for "{searchQuery}"</p>
+                        </div>
+                        <div className="p-2">
+                          {searchResults.slice(0, 8).map((result, idx) => (
+                            <button
+                              key={idx}
+                              className="search-item w-full text-left p-3 rounded-lg"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                setSearchQuery('');
+                                setShowSearchResults(false);
+                                setSearchResults([]);
+                                // Find and expand the matching section/article
+                                const sectionEl = document.querySelector(`[data-section-key="${result.sectionKey}"]`);
+                                if (sectionEl) {
+                                  sectionEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                  sectionEl.click();
+                                }
+                              }}
+                            >
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className={`inline-block w-2 h-2 rounded-full ${result.sectionColor || 'bg-gray-400'}`}></span>
+                                <span className="text-xs text-gray-500 font-medium">{result.sectionTitle}</span>
+                              </div>
+                              <p className="text-sm font-medium text-gray-800">{result.featureTitle}</p>
+                              {result.snippet && (
+                                <p className="text-xs text-gray-500 mt-1 line-clamp-2">{result.snippet.substring(0, 120)}...</p>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <a href="/login" className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition">
+                    {Icons.back}
+                    <span className="hidden sm:inline">Back to Hub</span>
+                  </a>
                 </div>
               </div>
-              <a href="/login" className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition">
-                {Icons.back}
-                <span className="hidden sm:inline">Back to Hub</span>
-              </a>
             </div>
           </header>
 
@@ -2846,6 +3033,7 @@ If you suspect unauthorized access:
                   </div>
                   <div>
                     <h2 className="text-3xl font-bold drop-shadow-sm">Knowledge Hub</h2>
+                    <p className="text-white/70 mt-1 text-sm">Find guides, tutorials, and documentation for every portal</p>
                   </div>
                 </div>
               </div>
@@ -2901,11 +3089,39 @@ If you suspect unauthorized access:
               </div>
             </div>
 
+            {/* Section Overview Grid */}
+            <div className="mb-10">
+              <h3 className="text-xl font-bold text-accent mb-4">Browse by Topic</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                {visibleGuides.map(([key, guide]) => (
+                  <button
+                    key={key}
+                    onClick={() => {
+                      const el = document.querySelector(`[data-section-key="${key}"]`);
+                      if (el) {
+                        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        // Auto-expand the section
+                        const btn = el.querySelector('button');
+                        if (btn && !el.querySelector('.guide-content.open')) btn.click();
+                      }
+                    }}
+                    className="section-tile flex flex-col items-center gap-2 p-4 bg-white rounded-xl border border-gray-100 shadow-sm text-center"
+                  >
+                    <div className={`inline-flex items-center justify-center w-10 h-10 ${guide.color} text-white rounded-lg`}>
+                      {React.cloneElement(guide.icon, { className: 'w-5 h-5' })}
+                    </div>
+                    <span className="text-xs font-medium text-gray-700 leading-tight">{guide.title}</span>
+                    <span className="text-xs text-gray-400">{guide.articles?.length || 0} articles</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Guide Categories */}
             <h3 className="text-xl font-bold text-accent mb-6">How-To Guides</h3>
 
             {visibleGuides.map(([key, guide], idx) => (
-              <GuideSection key={key} guide={guide} isAdmin={isAdmin} />
+              <GuideSection key={key} guide={guide} isAdmin={isAdmin} sectionKey={key} />
             ))}
 
             {/* Quick Tips Section */}
@@ -2946,7 +3162,7 @@ If you suspect unauthorized access:
               <h3 className="text-2xl font-bold mb-3">Need Additional Help?</h3>
               <p className="text-white/80 mb-6">Can't find what you're looking for? Our support team is here to help.</p>
               <div className="flex flex-wrap gap-4">
-                <a href="mailto:support@thrive365labs.com" className="bg-white text-primary-600 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition">
+                <a href="mailto:support@thrive365labs.live" className="bg-white text-primary-600 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition">
                   Email Support
                 </a>
                 <a href="/login" className="bg-white/20 text-white px-6 py-3 rounded-lg font-semibold hover:bg-white/30 transition">

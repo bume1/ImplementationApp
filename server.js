@@ -123,7 +123,7 @@ app.get('/thrive365labslaunch', (req, res) => {
       });
       await db.set('users', users);
     invalidateUsersCache();
-      console.log('✅ Admin user created: bianca@thrive365labs.com / Thrive2025!');
+      console.log('✅ Admin user created: bianca@thrive365labs.live / Thrive2025!');
     }
   } catch (err) {
     console.error('Error creating admin user:', err);
@@ -9548,7 +9548,7 @@ app.get('/api/knowledge/guides', authenticateToken, async (req, res) => {
     const guides = (await db.get('knowledge_guides')) || [];
     // Filter based on user permissions
     const filteredGuides = guides.filter(guide => {
-      if (guide.ownerOnly && req.user.email !== 'bianca@thrive365labs.com') return false;
+      if (guide.ownerOnly && req.user.email !== 'bianca@thrive365labs.live') return false;
       if (guide.adminOnly && req.user.role !== config.ROLES.ADMIN) return false;
       return true;
     });
@@ -9568,7 +9568,7 @@ app.get('/api/knowledge/guides/:guideId', authenticateToken, async (req, res) =>
       return res.status(404).json({ error: 'Guide not found' });
     }
     // Check permissions
-    if (guide.ownerOnly && req.user.email !== 'bianca@thrive365labs.com') {
+    if (guide.ownerOnly && req.user.email !== 'bianca@thrive365labs.live') {
       return res.status(403).json({ error: 'Access denied' });
     }
     if (guide.adminOnly && req.user.role !== config.ROLES.ADMIN) {
@@ -10945,7 +10945,7 @@ process.on('unhandledRejection', (reason, promise) => {
 
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
-  console.log(`🔐 Admin login: bianca@thrive365labs.com / Thrive2025!`);
+  console.log(`🔐 Admin login: bianca@thrive365labs.live / Thrive2025!`);
 
   // Start HubSpot ticket polling (webhook workaround)
   initializeTicketPolling();
