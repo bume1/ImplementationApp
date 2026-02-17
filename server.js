@@ -9814,6 +9814,391 @@ app.post('/api/knowledge/seed', authenticateToken, requireAdmin, async (req, res
   }
 });
 
+// ============== KNOWLEDGE HUB V2 API ==============
+
+// Helper: Determine user type from req.user
+function getKnowledgeUserType(user) {
+  if (!user) return 'public';
+  if (user.role === config.ROLES.ADMIN) return 'superAdmin';
+  if (user.role === 'user' && user.isManager) return 'manager';
+  if (user.role === 'user') return 'teamMember';
+  if (user.role === config.ROLES.VENDOR) return 'vendor';
+  if (user.role === config.ROLES.CLIENT) return 'client';
+  return 'teamMember';
+}
+
+// Helper: Filter v2 content by user type
+function filterV2ContentForUser(sections, userType) {
+  const isInternal = ['superAdmin', 'manager', 'teamMember'].includes(userType);
+  return sections
+    .filter(s => (s.visibleTo || []).includes(userType))
+    .map(s => ({
+      ...s,
+      features: (s.features || [])
+        .filter(f => (f.visibleTo || []).includes(userType))
+        .map(f => {
+          if (!isInternal) {
+            const { knownIssues, ...rest } = f;
+            return rest;
+          }
+          return f;
+        })
+        .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+    }))
+    .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+}
+
+// Optional auth middleware - populates req.user if token exists, otherwise continues
+const optionalAuthenticateToken = async (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  let token = authHeader && authHeader.split(' ')[1];
+  if (!token && req.query.token) {
+    token = req.query.token;
+  }
+  if (!token) {
+    req.user = null;
+    return next();
+  }
+  jwt.verify(token, JWT_SECRET, async (err, tokenUser) => {
+    if (err) {
+      req.user = null;
+      return next();
+    }
+    try {
+      const users = await getUsers();
+      const freshUser = users.find(u => u.id === tokenUser.id);
+      if (!freshUser) {
+        req.user = null;
+        return next();
+      }
+      const isManager = freshUser.isManager || false;
+      req.user = {
+        id: freshUser.id,
+        email: freshUser.email,
+        name: freshUser.name,
+        role: freshUser.role,
+        assignedProjects: freshUser.assignedProjects || [],
+        projectAccessLevels: freshUser.projectAccessLevels || {},
+        isManager: isManager,
+        hasServicePortalAccess: freshUser.hasServicePortalAccess || false,
+        hasAdminHubAccess: freshUser.hasAdminHubAccess || false,
+        hasImplementationsAccess: freshUser.hasImplementationsAccess || false,
+        hasClientPortalAdminAccess: freshUser.hasClientPortalAdminAccess || isManager || false,
+        assignedClients: freshUser.assignedClients || [],
+        isNewClient: freshUser.isNewClient || false,
+        slug: freshUser.slug || null,
+        practiceName: freshUser.practiceName || null
+      };
+      next();
+    } catch (error) {
+      req.user = null;
+      next();
+    }
+  });
+};
+
+// Get all v2 sections filtered by user type
+app.get('/api/knowledge/v2/sections', optionalAuthenticateToken, async (req, res) => {
+  try {
+    const sections = (await db.get('knowledge_guides_v2')) || [];
+    const userType = getKnowledgeUserType(req.user);
+    const filtered = filterV2ContentForUser(sections, userType);
+    res.json({ sections: filtered, userType });
+  } catch (error) {
+    console.error('Get v2 sections error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get a specific v2 section by key
+app.get('/api/knowledge/v2/sections/:sectionKey', optionalAuthenticateToken, async (req, res) => {
+  try {
+    const sections = (await db.get('knowledge_guides_v2')) || [];
+    const userType = getKnowledgeUserType(req.user);
+    const filtered = filterV2ContentForUser(sections, userType);
+    const section = filtered.find(s => s.key === req.params.sectionKey);
+    if (!section) {
+      return res.status(404).json({ error: 'Section not found or access denied' });
+    }
+    res.json({ section, userType });
+  } catch (error) {
+    console.error('Get v2 section error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Search v2 content
+app.get('/api/knowledge/v2/search', optionalAuthenticateToken, async (req, res) => {
+  try {
+    const { q } = req.query;
+    if (!q || q.trim().length < 2) {
+      return res.json({ results: [] });
+    }
+    const sections = (await db.get('knowledge_guides_v2')) || [];
+    const userType = getKnowledgeUserType(req.user);
+    const filtered = filterV2ContentForUser(sections, userType);
+    const lower = q.toLowerCase().trim();
+    const results = [];
+    filtered.forEach(section => {
+      (section.features || []).forEach(feature => {
+        const searchable = [
+          feature.title || '',
+          feature.content?.whatItIs || '',
+          feature.content?.howToUseIt || '',
+          feature.content?.whenToUseIt || '',
+          feature.content?.whoUsesIt || '',
+          feature.content?.whatHappensNext || '',
+          feature.content?.commonMistakes || '',
+          ...(feature.tags || [])
+        ].join(' ').toLowerCase();
+        if (searchable.includes(lower)) {
+          results.push({
+            sectionKey: section.key,
+            sectionTitle: section.title,
+            sectionColor: section.color,
+            featureId: feature.id,
+            featureTitle: feature.title,
+            featureSlug: feature.slug,
+            snippet: getSearchSnippet(searchable, lower),
+            tags: feature.tags || []
+          });
+        }
+      });
+    });
+    res.json({ results, query: q });
+  } catch (error) {
+    console.error('Search v2 error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Helper: Extract a text snippet around search match
+function getSearchSnippet(text, query) {
+  const idx = text.indexOf(query);
+  if (idx === -1) return text.substring(0, 120) + '...';
+  const start = Math.max(0, idx - 50);
+  const end = Math.min(text.length, idx + query.length + 70);
+  let snippet = '';
+  if (start > 0) snippet += '...';
+  snippet += text.substring(start, end);
+  if (end < text.length) snippet += '...';
+  return snippet;
+}
+
+// Check if v2 data needs seeding
+app.get('/api/knowledge/v2/needs-seed', optionalAuthenticateToken, async (req, res) => {
+  try {
+    const sections = (await db.get('knowledge_guides_v2')) || [];
+    res.json({ needsSeed: sections.length === 0 });
+  } catch (error) {
+    console.error('Check v2 seed error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Seed v2 content (admin only, one-time)
+app.post('/api/knowledge/v2/seed', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const existing = (await db.get('knowledge_guides_v2')) || [];
+    if (existing.length > 0) {
+      return res.status(400).json({ error: 'V2 content already exists. Use update endpoints to modify.' });
+    }
+    const { sections } = req.body;
+    if (!Array.isArray(sections) || sections.length === 0) {
+      return res.status(400).json({ error: 'Sections array is required' });
+    }
+    const seeded = sections.map(section => ({
+      id: uuidv4(),
+      key: section.key,
+      title: section.title,
+      description: section.description || '',
+      icon: section.icon || 'book',
+      color: section.color || 'bg-gray-500',
+      sortOrder: section.sortOrder || 0,
+      visibleTo: section.visibleTo || [],
+      features: (section.features || []).map(f => ({
+        id: uuidv4(),
+        title: f.title,
+        slug: f.slug || f.title.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        sortOrder: f.sortOrder || 0,
+        visibleTo: f.visibleTo || section.visibleTo || [],
+        tags: f.tags || [],
+        content: f.content || {},
+        knownIssues: f.knownIssues || '',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }));
+    await db.set('knowledge_guides_v2', seeded);
+    res.json({ success: true, count: seeded.length });
+  } catch (error) {
+    console.error('Seed v2 error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Create a v2 section (admin only)
+app.post('/api/knowledge/v2/sections', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { key, title, description, icon, color, sortOrder, visibleTo } = req.body;
+    if (!key || !title) {
+      return res.status(400).json({ error: 'Key and title are required' });
+    }
+    const sections = (await db.get('knowledge_guides_v2')) || [];
+    if (sections.find(s => s.key === key)) {
+      return res.status(400).json({ error: 'A section with this key already exists' });
+    }
+    const newSection = {
+      id: uuidv4(),
+      key,
+      title,
+      description: description || '',
+      icon: icon || 'book',
+      color: color || 'bg-gray-500',
+      sortOrder: sortOrder || sections.length,
+      visibleTo: visibleTo || [],
+      features: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    sections.push(newSection);
+    await db.set('knowledge_guides_v2', sections);
+    res.json(newSection);
+  } catch (error) {
+    console.error('Create v2 section error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update a v2 section (admin only)
+app.put('/api/knowledge/v2/sections/:sectionId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { title, description, icon, color, sortOrder, visibleTo } = req.body;
+    const sections = (await db.get('knowledge_guides_v2')) || [];
+    const idx = sections.findIndex(s => s.id === req.params.sectionId);
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Section not found' });
+    }
+    if (title !== undefined) sections[idx].title = title;
+    if (description !== undefined) sections[idx].description = description;
+    if (icon !== undefined) sections[idx].icon = icon;
+    if (color !== undefined) sections[idx].color = color;
+    if (sortOrder !== undefined) sections[idx].sortOrder = sortOrder;
+    if (visibleTo !== undefined) sections[idx].visibleTo = visibleTo;
+    sections[idx].updatedAt = new Date().toISOString();
+    await db.set('knowledge_guides_v2', sections);
+    res.json(sections[idx]);
+  } catch (error) {
+    console.error('Update v2 section error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete a v2 section (admin only)
+app.delete('/api/knowledge/v2/sections/:sectionId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const sections = (await db.get('knowledge_guides_v2')) || [];
+    const filtered = sections.filter(s => s.id !== req.params.sectionId);
+    if (filtered.length === sections.length) {
+      return res.status(404).json({ error: 'Section not found' });
+    }
+    await db.set('knowledge_guides_v2', filtered);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete v2 section error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Add a feature to a v2 section (admin only)
+app.post('/api/knowledge/v2/sections/:sectionId/features', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { title, slug, sortOrder, visibleTo, tags, content, knownIssues } = req.body;
+    if (!title) {
+      return res.status(400).json({ error: 'Title is required' });
+    }
+    const sections = (await db.get('knowledge_guides_v2')) || [];
+    const idx = sections.findIndex(s => s.id === req.params.sectionId);
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Section not found' });
+    }
+    const newFeature = {
+      id: uuidv4(),
+      title,
+      slug: slug || title.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      sortOrder: sortOrder || (sections[idx].features || []).length,
+      visibleTo: visibleTo || sections[idx].visibleTo || [],
+      tags: tags || [],
+      content: content || {},
+      knownIssues: knownIssues || '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    sections[idx].features = sections[idx].features || [];
+    sections[idx].features.push(newFeature);
+    sections[idx].updatedAt = new Date().toISOString();
+    await db.set('knowledge_guides_v2', sections);
+    res.json(newFeature);
+  } catch (error) {
+    console.error('Add v2 feature error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update a feature (admin only)
+app.put('/api/knowledge/v2/sections/:sectionId/features/:featureId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { title, slug, sortOrder, visibleTo, tags, content, knownIssues } = req.body;
+    const sections = (await db.get('knowledge_guides_v2')) || [];
+    const sIdx = sections.findIndex(s => s.id === req.params.sectionId);
+    if (sIdx === -1) {
+      return res.status(404).json({ error: 'Section not found' });
+    }
+    const fIdx = (sections[sIdx].features || []).findIndex(f => f.id === req.params.featureId);
+    if (fIdx === -1) {
+      return res.status(404).json({ error: 'Feature not found' });
+    }
+    if (title !== undefined) sections[sIdx].features[fIdx].title = title;
+    if (slug !== undefined) sections[sIdx].features[fIdx].slug = slug;
+    if (sortOrder !== undefined) sections[sIdx].features[fIdx].sortOrder = sortOrder;
+    if (visibleTo !== undefined) sections[sIdx].features[fIdx].visibleTo = visibleTo;
+    if (tags !== undefined) sections[sIdx].features[fIdx].tags = tags;
+    if (content !== undefined) sections[sIdx].features[fIdx].content = content;
+    if (knownIssues !== undefined) sections[sIdx].features[fIdx].knownIssues = knownIssues;
+    sections[sIdx].features[fIdx].updatedAt = new Date().toISOString();
+    sections[sIdx].updatedAt = new Date().toISOString();
+    await db.set('knowledge_guides_v2', sections);
+    res.json(sections[sIdx].features[fIdx]);
+  } catch (error) {
+    console.error('Update v2 feature error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete a feature (admin only)
+app.delete('/api/knowledge/v2/sections/:sectionId/features/:featureId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const sections = (await db.get('knowledge_guides_v2')) || [];
+    const sIdx = sections.findIndex(s => s.id === req.params.sectionId);
+    if (sIdx === -1) {
+      return res.status(404).json({ error: 'Section not found' });
+    }
+    const originalLen = (sections[sIdx].features || []).length;
+    sections[sIdx].features = (sections[sIdx].features || []).filter(f => f.id !== req.params.featureId);
+    if (sections[sIdx].features.length === originalLen) {
+      return res.status(404).json({ error: 'Feature not found' });
+    }
+    sections[sIdx].updatedAt = new Date().toISOString();
+    await db.set('knowledge_guides_v2', sections);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete v2 feature error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Link Directory route
 app.get('/directory', (req, res) => {
   res.sendFile(__dirname + '/public/link-directory.html');
