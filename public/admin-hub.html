@@ -3300,6 +3300,11 @@
       const [templatePreview, setTemplatePreview] = useState(null);
       const [templateSaving, setTemplateSaving] = useState(false);
       const [templateTestSending, setTemplateTestSending] = useState(false);
+      const [collapsedPools, setCollapsedPools] = useState({});
+
+      const togglePoolCollapse = (poolName) => {
+        setCollapsedPools(prev => ({ ...prev, [poolName]: !prev[poolName] }));
+      };
 
       const API_URL = window.location.origin;
       const apiFetch = (url, opts = {}) =>
@@ -3377,12 +3382,14 @@
         setEditingTemplate(template);
         setEditForm({ subject: template.subject, body: template.body, htmlBody: template.htmlBody || '' });
         setTemplatePreview(null);
+        setCollapsedPools({});
       };
 
       const handleCancelEdit = () => {
         setEditingTemplate(null);
         setEditForm({ subject: '', body: '', htmlBody: '' });
         setTemplatePreview(null);
+        setCollapsedPools({});
       };
 
       const handleSaveTemplate = async () => {
@@ -3668,28 +3675,63 @@
                       </div>
                     </div>
 
-                    {/* Variables Sidebar */}
+                    {/* Variables Sidebar — grouped by pool */}
                     <div className="space-y-4">
                       <div className="bg-white rounded-xl shadow-sm p-5">
-                        <h4 className="font-semibold text-sm mb-3">Available Variables</h4>
+                        <h4 className="font-semibold text-sm mb-1">Available Variables</h4>
                         <p className="text-xs text-gray-400 mb-3">Click to insert into subject or body</p>
-                        <div className="space-y-2">
-                          {(editingTemplate.variables || []).map(v => (
-                            <div key={v.key} className="group">
-                              <div className="flex items-center gap-1.5">
-                                <button onClick={() => handleInsertVariable(v.key, 'body')}
-                                  className="text-xs font-mono bg-blue-50 text-blue-700 px-2 py-1 rounded hover:bg-blue-100 transition-colors"
-                                  title={`Insert {{${v.key}}} into body`}>
-                                  {`{{${v.key}}}`}
+                        <div className="space-y-3">
+                          {(editingTemplate.poolGroups && editingTemplate.poolGroups.length > 0) ? (
+                            editingTemplate.poolGroups.map(group => (
+                              <div key={group.pool} className="border border-gray-100 rounded-lg overflow-hidden">
+                                <button
+                                  onClick={() => togglePoolCollapse(group.pool)}
+                                  className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+                                >
+                                  <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">{group.label}</span>
+                                  <span className="text-gray-400 text-xs">{collapsedPools[group.pool] ? '+' : '\u2212'}</span>
                                 </button>
-                                <button onClick={() => handleInsertVariable(v.key, 'subject')}
-                                  className="text-xs text-gray-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity" title="Insert into subject">
-                                  +subj
-                                </button>
+                                {!collapsedPools[group.pool] && (
+                                  <div className="px-3 py-2 space-y-2">
+                                    {group.variables.map(v => (
+                                      <div key={v.key} className="group">
+                                        <div className="flex items-center gap-1.5">
+                                          <button onClick={() => handleInsertVariable(v.key, 'body')}
+                                            className="text-xs font-mono bg-blue-50 text-blue-700 px-2 py-1 rounded hover:bg-blue-100 transition-colors"
+                                            title={`Insert {{${v.key}}} into body`}>
+                                            {`{{${v.key}}}`}
+                                          </button>
+                                          <button onClick={() => handleInsertVariable(v.key, 'subject')}
+                                            className="text-xs text-gray-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity" title="Insert into subject">
+                                            +subj
+                                          </button>
+                                        </div>
+                                        <p className="text-xs text-gray-500 mt-0.5 ml-1">{v.label}: <span className="italic text-gray-400">{v.example}</span></p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
-                              <p className="text-xs text-gray-500 mt-0.5 ml-1">{v.label}: <span className="italic text-gray-400">{v.example}</span></p>
-                            </div>
-                          ))}
+                            ))
+                          ) : (
+                            /* Fallback: flat list for templates without pool groups */
+                            (editingTemplate.variables || []).map(v => (
+                              <div key={v.key} className="group">
+                                <div className="flex items-center gap-1.5">
+                                  <button onClick={() => handleInsertVariable(v.key, 'body')}
+                                    className="text-xs font-mono bg-blue-50 text-blue-700 px-2 py-1 rounded hover:bg-blue-100 transition-colors"
+                                    title={`Insert {{${v.key}}} into body`}>
+                                    {`{{${v.key}}}`}
+                                  </button>
+                                  <button onClick={() => handleInsertVariable(v.key, 'subject')}
+                                    className="text-xs text-gray-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity" title="Insert into subject">
+                                    +subj
+                                  </button>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-0.5 ml-1">{v.label}: <span className="italic text-gray-400">{v.example}</span></p>
+                              </div>
+                            ))
+                          )}
                         </div>
                       </div>
 
