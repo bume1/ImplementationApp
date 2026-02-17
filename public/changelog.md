@@ -4,6 +4,19 @@
 
 ---
 
+### Version 3.4.0 - February 17, 2026
+
+#### New Features
+- Add multi-user support to client portal admin hub
+
+#### Bug Fixes
+- Fix board export to include subtasks and full phase titles
+- Update Known Issues in Knowledge Hub to reflect resolved items
+
+#### Changes
+- Hide Known Issues section from Knowledge Hub
+
+
 ### Version 3.3.1 - February 17, 2026
 
 #### Bug Fixes
