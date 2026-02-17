@@ -114,6 +114,7 @@
     }
 
     function canUserSeeGuide(userTier, user, guide) {
+      if (guide.hidden) return false;
       const visibleTo = guide.visibleTo || [];
       if (visibleTo.length === 0) return true;
       if (!visibleTo.includes(userTier)) return false;
@@ -2851,6 +2852,7 @@ If you suspect unauthorized access:
         icon: Icons.lock,
         color: 'bg-red-600',
         isKnownIssue: true,
+        hidden: true,
         visibleTo: ['super_admin', 'manager'],
         portalSection: 'general',
         articles: [
@@ -2866,13 +2868,13 @@ Tasks can have numeric OR string IDs depending on whether they were created from
           },
           {
             title: 'Slug Changes Break Client Portal URLs',
-            content: `**Status:** Active
-**Severity:** Medium
+            content: `**Status:** Resolved
+**Severity:** N/A
 **Affected:** Client Portal access
 
-When a client's practice name is changed in Admin Hub, their portal URL slug is regenerated. The old URL stops working immediately with no redirect.
+When a client's practice name is changed, the system regenerates their portal slug but now stores the old slug(s) in a \`previousSlugs\` list. Requests to old portal URLs are automatically redirected (302) to the new URL, so existing bookmarks and shared links continue to work.
 
-**Workaround:** Before changing a practice name, notify the client that their portal URL will change. After the change, send them the new URL. Old bookmarks will not work.`
+**No action needed.** Old URLs self-redirect. If a client reports a broken portal link, verify the redirect is resolving correctly by checking their \`previousSlugs\` field in the database.`
           },
           {
             title: 'Activity Log Truncates at 500 Entries',
@@ -2896,13 +2898,15 @@ HubSpot OAuth tokens are cached in-memory only. When the server restarts, a new 
           },
           {
             title: 'Bulk Operations Not Atomic',
-            content: `**Status:** Active (by design)
-**Severity:** Medium
+            content: `**Status:** Partially resolved
+**Severity:** Low
 **Affected:** Launch App bulk task operations
 
-Bulk task updates and deletes have no transaction support. If a bulk operation fails midway, some tasks may be updated while others are not. Additionally, bulk delete checks permissions on ALL tasks before deleting ANY - if one task fails the permission check, the entire batch is rejected.
+Bulk task updates and deletes have no transaction support. If a bulk operation fails midway, some tasks may be updated while others are not.
 
-**Workaround:** For large bulk operations, consider doing them in smaller batches of 10-20 tasks.`
+The previous all-or-nothing permission behavior for bulk delete has been resolved — the system now uses partial success, deleting tasks the user has access to and skipping unauthorized ones, with a summary returned in the response.
+
+**Workaround:** For large bulk updates (not deletes), consider doing them in smaller batches of 10–20 tasks to limit exposure if a mid-operation failure occurs.`
           }
         ]
       },
