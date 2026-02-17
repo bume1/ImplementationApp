@@ -4,6 +4,16 @@
 
 ---
 
+### Version 3.3.0 - February 17, 2026
+
+#### New Features
+- Add Email Notifications guide to Knowledge Hub
+- Add Feature Reference to Knowledge Hub, fix email logo, standardize sidebar icons
+
+#### Bug Fixes
+- Fix email template Preview button in Notifications page
+
+
 ### Version 3.2.0 - February 17, 2026
 
 #### New Features
