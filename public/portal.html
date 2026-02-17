@@ -978,11 +978,6 @@
                                 </p>
                               )}
                               <div className="mt-1 flex items-center gap-2 sm:gap-4 flex-wrap text-sm text-gray-600">
-                                {task.startDate && (
-                                  <span>
-                                    <span className="font-medium">Start:</span> {formatDateForDisplay(task.startDate)}
-                                  </span>
-                                )}
                                 {task.dueDate && !task.completed && (
                                   <span className={new Date(task.dueDate) < new Date() ? 'text-red-600' : 'text-blue-600'}>
                                     <span className="font-medium">Due:</span> {formatDateForDisplay(task.dueDate)}
@@ -1100,11 +1095,6 @@
                                     </p>
                                   )}
                                   <div className="mt-1 flex items-center gap-2 sm:gap-4 flex-wrap text-xs text-gray-600">
-                                    {task.startDate && (
-                                      <span>
-                                        <span className="font-medium">Start:</span> {formatDateForDisplay(task.startDate)}
-                                      </span>
-                                    )}
                                     {task.dueDate && !task.completed && (
                                       <span className={new Date(task.dueDate) < new Date() ? 'text-red-600' : 'text-blue-600'}>
                                         <span className="font-medium">Due:</span> {formatDateForDisplay(task.dueDate)}
