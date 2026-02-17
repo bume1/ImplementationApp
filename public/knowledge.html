@@ -2711,6 +2711,140 @@ If you suspect unauthorized access:
           }
         ]
       },
+      'notifications': {
+        title: 'Email Notifications',
+        description: 'When you\'ll receive emails and what triggers each notification',
+        icon: Icons.milestone,
+        color: 'bg-primary-500',
+        visibleTo: [],
+        portalSection: 'general',
+        articles: [
+          {
+            title: 'How Notifications Work',
+            content: `The system sends automated email notifications based on activity and scheduled checks. Notifications are processed every 15 minutes and delivered to the email address on your account.
+
+**Key things to know:**
+- All emails come from Thrive 365 Labs (no-reply@thrive365labs.live)
+- Duplicate notifications are suppressed — you won't receive the same alert twice for the same event
+- Notifications can be enabled or disabled by an admin from the Admin Hub
+- Up to 500 emails can be sent per day across the entire system`
+          },
+          {
+            title: 'Task Deadline Warnings (Team Members & Admins)',
+            content: `You will receive a deadline warning email when a task assigned to you is approaching its due date.
+
+**When emails are sent:**
+- 7 days before the due date
+- 3 days before the due date
+- 1 day before the due date
+
+**Subject line:** Task due [timeframe]: [Task Title] — [Project Name]
+
+**Who receives it:** The task owner (the email address in the "Owner" field of the task).
+
+**Note:** If a task has no due date set, no deadline email is sent.`
+          },
+          {
+            title: 'Task Overdue Alerts (Team Members & Admins)',
+            content: `If a task passes its due date without being marked complete, overdue alerts are sent.
+
+**Two separate emails:**
+
+**1. Owner alert** — sent to the task's assigned owner as soon as the task becomes overdue, then periodically as it remains overdue.
+
+**2. Admin escalation** — sent to admin accounts after a task has been overdue for 7 days.
+
+**Subject lines:**
+- Owner: OVERDUE (Xd): [Task Title] — [Project Name]
+- Admin: ESCALATION: Task Xd overdue — [Task Title] ([Project Name])
+
+**Who receives it:** Task owner for the first email; admins for the escalation.`
+          },
+          {
+            title: 'Service Report — Signature Request (Admins & Managers)',
+            content: `When a service technician submits a report that requires a signature, the designated signatory receives an email notification automatically.
+
+**Trigger:** Service report status changes to "Signature Needed"
+
+**Subject line:** Action needed: Service report for [Facility Name] awaits your signature
+
+**Who receives it:** The admin or manager responsible for signing off on service reports.
+
+**Contains:** Direct link to the report in the Service Portal.`
+          },
+          {
+            title: 'Service Report — Admin Review Reminder (Admins)',
+            content: `If a submitted service report has been sitting without admin review, a reminder is sent.
+
+**Trigger:** A service report has been pending review for 3 days without action.
+
+**Subject line:** Service report pending review: [Facility Name]
+
+**Who receives it:** Admin accounts.
+
+**Purpose:** Prevents reports from going unreviewed and ensures timely sign-off for client records.`
+          },
+          {
+            title: 'Inventory Submission Reminder (Clients)',
+            content: `Clients are reminded to submit their weekly inventory update if they haven't done so recently.
+
+**Trigger:** No inventory submission received in the past 7 days.
+
+**Subject line:** Reminder: Your weekly inventory update is due — [Practice Name]
+
+**Who receives it:** The client account associated with the practice.
+
+**Contains:** Direct link to the inventory section of your client portal.
+
+**Tip:** Submit your inventory update each week to avoid receiving this reminder.`
+          },
+          {
+            title: 'Milestone Reached (Admins & Project Team)',
+            content: `A notification is sent when a project reaches key completion milestones.
+
+**Trigger:** Project task completion crosses one of these thresholds:
+- 25% complete
+- 50% complete
+- 75% complete
+- 100% complete
+
+**Subject line:** Milestone reached: [Project Name] is X% complete!
+
+**Who receives it:** Admins and team members assigned to the project.
+
+**Note:** Each threshold triggers only once per project — you won't receive repeat emails at the same percentage.`
+          },
+          {
+            title: 'Go-Live Countdown Reminders (Admins & Project Team)',
+            content: `As a project's go-live date approaches, reminder emails are sent to keep the team on track.
+
+**When emails are sent:**
+- 30 days before go-live
+- 14 days before go-live
+- 7 days before go-live
+
+**Subject line:** Go-live in X days: [Project Name]
+
+**Who receives it:** Admins and team members assigned to the project.
+
+**Contains:** Current completion percentage and a link to the project.
+
+**Note:** A go-live date must be set on the project for these reminders to send.`
+          },
+          {
+            title: 'Announcements (Clients)',
+            content: `When an admin publishes an announcement to the Client Portal, an email notification is sent to the relevant client(s).
+
+**Trigger:** Admin publishes a new announcement in the Client Portal Admin section.
+
+**Subject line:** New Announcement: [Announcement Title] (or [PRIORITY] New Announcement: ... for priority items)
+
+**Who receives it:** The client account(s) the announcement is directed to.
+
+**Contains:** Full announcement content and any attached document links.`
+          }
+        ]
+      },
       'known-issues': {
         title: 'Known Issues',
         description: 'Current known issues, workarounds, and status updates',
