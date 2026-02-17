@@ -4,6 +4,12 @@
 
 ---
 
+### Version 3.5.0 - February 17, 2026
+
+#### New Features
+- Add Hidden Features & Internal Notes guide to Knowledge Hub
+
+
 ### Version 3.4.0 - February 17, 2026
 
 #### New Features
