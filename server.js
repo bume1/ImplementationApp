@@ -13,6 +13,7 @@ const googledrive = require('./googledrive');
 const pdfGenerator = require('./pdf-generator');
 const changelogGenerator = require('./changelog-generator');
 const config = require('./config');
+const { sendEmail, sendBulkEmail } = require('./email');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -122,7 +123,7 @@ app.get('/thrive365labslaunch', (req, res) => {
       });
       await db.set('users', users);
     invalidateUsersCache();
-      console.log('✅ Admin user created: bianca@thrive365labs.com / Thrive2025!');
+      console.log('✅ Admin user created: bianca@thrive365labs.live / Thrive2025!');
     }
   } catch (err) {
     console.error('Error creating admin user:', err);
@@ -232,6 +233,784 @@ const logActivity = async (userId, userName, action, entityType, entityId, detai
     await db.set('activity_log', activities);
   } catch (err) {
     console.error('Failed to log activity:', err);
+  }
+};
+
+// ============================================================
+// NOTIFICATION QUEUE SYSTEM (Feature 1)
+// ============================================================
+
+// Create a notification queue entry
+const queueNotification = async (type, recipientUserId, recipientEmail, recipientName, templateData, options = {}) => {
+  try {
+    const queue = (await db.get('pending_notifications')) || [];
+    // Dedup: skip if identical pending notification exists
+    const isDuplicate = queue.some(n =>
+      n.type === type &&
+      n.recipientEmail === recipientEmail &&
+      n.relatedEntityId === (options.relatedEntityId || null) &&
+      n.status === 'pending'
+    );
+    if (isDuplicate) return null;
+
+    const notification = {
+      id: uuidv4(),
+      type,
+      recipientUserId,
+      recipientEmail,
+      recipientName,
+      channel: 'email',
+      triggerDate: options.triggerDate || new Date().toISOString(),
+      status: 'pending',
+      retryCount: 0,
+      maxRetries: config.NOTIFICATION_MAX_RETRIES,
+      relatedEntityId: options.relatedEntityId || null,
+      relatedEntityType: options.relatedEntityType || null,
+      templateData: {
+        subject: templateData.subject,
+        body: templateData.body,
+        htmlBody: templateData.htmlBody || null,
+        ctaUrl: templateData.ctaUrl || null,
+        ctaLabel: templateData.ctaLabel || null
+      },
+      sentAt: null,
+      failedAt: null,
+      failureReason: null,
+      createdAt: new Date().toISOString(),
+      createdBy: options.createdBy || 'system'
+    };
+    queue.push(notification);
+    await db.set('pending_notifications', queue);
+    return notification;
+  } catch (err) {
+    console.error('Failed to queue notification:', err);
+    return null;
+  }
+};
+
+// Process the notification queue — sends pending notifications whose triggerDate has passed
+const processNotificationQueue = async () => {
+  try {
+    const settings = (await db.get('notification_settings')) || { enabled: true };
+    if (!settings.enabled) return;
+
+    const queue = (await db.get('pending_notifications')) || [];
+    const now = new Date();
+    const pending = queue.filter(n => n.status === 'pending' && new Date(n.triggerDate) <= now);
+
+    if (pending.length === 0) return;
+
+    // Daily send limit check
+    const log = (await db.get('notification_log')) || [];
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    const sentToday = log.filter(n => n.sentAt && n.sentAt >= todayStart).length;
+    const remainingBudget = config.NOTIFICATION_DAILY_SEND_LIMIT - sentToday;
+    if (remainingBudget <= 0) {
+      console.warn('[QUEUE] Daily send limit reached, skipping processing');
+      return;
+    }
+
+    const toProcess = pending.slice(0, Math.min(pending.length, remainingBudget));
+    let sentCount = 0;
+    let failCount = 0;
+
+    for (const notification of toProcess) {
+      const idx = queue.findIndex(n => n.id === notification.id);
+      if (idx === -1) continue;
+
+      const result = await sendEmail(
+        notification.recipientEmail,
+        notification.templateData.subject,
+        notification.templateData.body,
+        { htmlBody: notification.templateData.htmlBody }
+      );
+
+      if (result.success) {
+        queue[idx].status = 'sent';
+        queue[idx].sentAt = new Date().toISOString();
+        sentCount++;
+      } else {
+        queue[idx].retryCount = (queue[idx].retryCount || 0) + 1;
+        queue[idx].failedAt = new Date().toISOString();
+        queue[idx].failureReason = result.error;
+        if (queue[idx].retryCount >= queue[idx].maxRetries) {
+          queue[idx].status = 'failed';
+        }
+        failCount++;
+      }
+    }
+
+    // Move sent/failed notifications to log archive
+    const completed = queue.filter(n => n.status === 'sent' || n.status === 'failed');
+    const remaining = queue.filter(n => n.status === 'pending' || n.status === 'cancelled');
+    if (completed.length > 0) {
+      log.unshift(...completed);
+      if (log.length > config.NOTIFICATION_LOG_MAX_ENTRIES) {
+        log.length = config.NOTIFICATION_LOG_MAX_ENTRIES;
+      }
+      await db.set('notification_log', log);
+    }
+    await db.set('pending_notifications', remaining);
+
+    if (sentCount > 0 || failCount > 0) {
+      console.log(`[QUEUE] Processed: ${sentCount} sent, ${failCount} failed, ${remaining.length} remaining`);
+    }
+  } catch (err) {
+    console.error('[QUEUE] Processing error:', err);
+  }
+};
+
+// ============================================================
+// EMAIL TEMPLATE SYSTEM — Dynamic, admin-editable templates
+// ============================================================
+
+// Base HTML email wrapper used when a template has no custom htmlBody
+const BASE_HTML_EMAIL_WRAPPER = `
+<div style="font-family: Inter, -apple-system, sans-serif; max-width: 600px; margin: 0 auto; background: #f8fafc;">
+  <div style="background-color: #ffffff; padding: 24px 28px 20px; border-radius: 8px 8px 0 0; text-align: center; border-bottom: 3px solid #045E9F;">
+    <img src="https://app.thrive365labs.live/thrive365-logo.webp" alt="Thrive 365 Labs" style="height: 44px; max-width: 220px; display: block; margin: 0 auto;" />
+  </div>
+  <div style="background: #ffffff; padding: 28px 24px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+    <div style="color: #374151; line-height: 1.7; font-size: 15px; white-space: pre-wrap;">{{content}}</div>
+    {{ctaBlock}}
+    <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 28px 0 16px;" />
+    <p style="color: #9ca3af; font-size: 12px; margin: 0;">You are receiving this because you have an account with Thrive 365 Labs.</p>
+  </div>
+</div>`;
+
+// Render a template string by replacing {{variable}} placeholders with values
+function renderTemplate(templateStr, variables) {
+  if (!templateStr) return '';
+  return templateStr.replace(/\{\{(\w+)\}\}/g, (match, key) =>
+    variables[key] !== undefined ? String(variables[key]) : match
+  );
+}
+
+// Build HTML email body: use custom htmlBody if provided, otherwise wrap plain body in base layout
+function buildHtmlEmail(body, htmlBody, ctaUrl, ctaLabel) {
+  if (htmlBody) return htmlBody;
+  const ctaBlock = (ctaUrl && ctaLabel)
+    ? `<p style="margin-top: 20px;"><a href="${ctaUrl}" style="display: inline-block; background: #045E9F; color: #ffffff; padding: 10px 24px; border-radius: 6px; text-decoration: none; font-weight: 500; font-size: 14px;">${ctaLabel}</a></p>`
+    : '';
+  return renderTemplate(BASE_HTML_EMAIL_WRAPPER, { content: body, ctaBlock });
+}
+
+// ============================================================
+// VARIABLE POOLS — Grouped sets of template variables by domain
+// ============================================================
+
+const VARIABLE_POOLS = {
+  service_report: {
+    label: 'Service Report',
+    variables: [
+      { key: 'facilityName', label: 'Facility Name', example: 'Valley Medical' },
+      { key: 'technicianName', label: 'Technician Name', example: 'John Smith' },
+      { key: 'reportDate', label: 'Report Date', example: '02/17/2026' },
+      { key: 'serviceType', label: 'Service Type', example: 'Installation' },
+      { key: 'reportStatus', label: 'Report Status', example: 'signature_needed' },
+      { key: 'reportAge', label: 'Days Since Created', example: '5' },
+      { key: 'reportLink', label: 'Direct Report Link', example: 'https://app.thrive365labs.live/service-portal?report=abc-123' },
+      { key: 'portalLink', label: 'Client Portal Link', example: 'https://app.thrive365labs.live/portal/valley-medical' }
+    ]
+  },
+  task: {
+    label: 'Task',
+    variables: [
+      { key: 'taskTitle', label: 'Task Title', example: 'Install AU480 Analyzer' },
+      { key: 'phase', label: 'Phase', example: 'Phase 2' },
+      { key: 'dueDate', label: 'Due Date', example: '03/15/2026' },
+      { key: 'timeframe', label: 'Timeframe', example: 'in 3 days' },
+      { key: 'daysOverdue', label: 'Days Overdue', example: '5' },
+      { key: 'ownerName', label: 'Task Owner', example: 'Jane Doe' },
+      { key: 'taskLink', label: 'Direct Task Link', example: 'https://app.thrive365labs.live/launch/valley-medical?task=42' }
+    ]
+  },
+  project: {
+    label: 'Project',
+    variables: [
+      { key: 'projectName', label: 'Project Name', example: 'Valley Medical Launch' },
+      { key: 'goLiveDate', label: 'Go-Live Date', example: '04/01/2026' },
+      { key: 'daysUntil', label: 'Days Until Go-Live', example: '7' },
+      { key: 'percentage', label: 'Completion %', example: '75' },
+      { key: 'completedTasks', label: 'Completed Tasks', example: '76' },
+      { key: 'totalTasks', label: 'Total Tasks', example: '102' },
+      { key: 'projectLink', label: 'Project Link', example: 'https://app.thrive365labs.live/launch/valley-medical' }
+    ]
+  },
+  inventory: {
+    label: 'Inventory',
+    variables: [
+      { key: 'practiceName', label: 'Practice Name', example: 'Valley Medical' },
+      { key: 'daysSince', label: 'Days Since Last Submission', example: '10' },
+      { key: 'inventoryLink', label: 'Inventory Portal Link', example: 'https://app.thrive365labs.live/portal/valley-medical' }
+    ]
+  },
+  announcement: {
+    label: 'Announcement',
+    variables: [
+      { key: 'title', label: 'Announcement Title', example: 'System Maintenance Scheduled' },
+      { key: 'content', label: 'Announcement Content', example: 'We will be performing system maintenance this weekend.' },
+      { key: 'priorityTag', label: 'Priority Tag', example: '[PRIORITY] ' },
+      { key: 'priorityBanner', label: 'Priority Banner HTML', example: '' },
+      { key: 'attachmentUrl', label: 'Attachment URL', example: '' },
+      { key: 'attachmentName', label: 'Attachment Name', example: '' },
+      { key: 'attachmentLine', label: 'Attachment Text Line', example: '' },
+      { key: 'attachmentBlock', label: 'Attachment HTML Block', example: '' }
+    ]
+  },
+  recipient: {
+    label: 'Recipient',
+    variables: [
+      { key: 'recipientName', label: 'Recipient Name', example: 'Jane Doe' },
+      { key: 'recipientEmail', label: 'Recipient Email', example: 'jane@valleymedical.com' }
+    ]
+  },
+  system: {
+    label: 'System',
+    variables: [
+      { key: 'appUrl', label: 'App Base URL', example: 'https://app.thrive365labs.live' },
+      { key: 'currentDate', label: 'Current Date', example: '02/17/2026' },
+      { key: 'companyName', label: 'Company Name', example: 'Thrive 365 Labs' }
+    ]
+  }
+};
+
+// Maps each template ID to the pools whose variables it can use
+const TEMPLATE_POOL_MAPPING = {
+  service_report_signature: ['service_report', 'recipient', 'system'],
+  service_report_review:    ['service_report', 'recipient', 'system'],
+  task_deadline:            ['task', 'project', 'recipient', 'system'],
+  task_overdue:             ['task', 'project', 'recipient', 'system'],
+  task_overdue_escalation:  ['task', 'project', 'recipient', 'system'],
+  inventory_reminder:       ['inventory', 'recipient', 'system'],
+  milestone_reached:        ['project', 'recipient', 'system'],
+  golive_reminder:          ['project', 'recipient', 'system'],
+  announcement:             ['announcement', 'recipient', 'system']
+};
+
+// Compute the merged variables array for a template from its pools
+function getPoolVariablesForTemplate(templateId) {
+  const poolNames = TEMPLATE_POOL_MAPPING[templateId] || [];
+  const vars = [];
+  const seen = new Set();
+  for (const poolName of poolNames) {
+    const pool = VARIABLE_POOLS[poolName];
+    if (!pool) continue;
+    for (const v of pool.variables) {
+      if (!seen.has(v.key)) {
+        vars.push({ ...v, pool: poolName });
+        seen.add(v.key);
+      }
+    }
+  }
+  return vars;
+}
+
+// Compute pool groupings (with labels) for a template — used by the admin UI
+function getPoolGroupsForTemplate(templateId) {
+  const poolNames = TEMPLATE_POOL_MAPPING[templateId] || [];
+  return poolNames
+    .filter(name => VARIABLE_POOLS[name])
+    .map(name => ({
+      pool: name,
+      label: VARIABLE_POOLS[name].label,
+      variables: VARIABLE_POOLS[name].variables.map(v => ({ ...v }))
+    }));
+}
+
+// ============================================================
+// POOL RESOLVER FUNCTIONS — Build variable values from entity data
+// ============================================================
+
+async function getAppBaseUrl() {
+  const domain = await db.get('client_portal_domain');
+  if (domain) return `https://${domain}`;
+  return process.env.REPLIT_DEV_DOMAIN
+    ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+    : `http://localhost:${config.PORT}`;
+}
+
+function resolveSystemVars(appBaseUrl) {
+  return {
+    appUrl: appBaseUrl,
+    currentDate: new Date().toLocaleDateString(),
+    companyName: 'Thrive 365 Labs'
+  };
+}
+
+function resolveRecipientVars(user) {
+  return {
+    recipientName: user.name || '',
+    recipientEmail: user.email || ''
+  };
+}
+
+function resolveServiceReportVars(report, appBaseUrl) {
+  return {
+    facilityName: report.clientFacilityName || 'your facility',
+    technicianName: report.technicianName || 'your technician',
+    reportDate: new Date(report.createdAt).toLocaleDateString(),
+    serviceType: report.serviceType || '',
+    reportStatus: report.status || '',
+    reportLink: `${appBaseUrl}/service-portal?report=${report.id}`,
+    portalLink: report.clientSlug ? `${appBaseUrl}/portal/${report.clientSlug}` : appBaseUrl
+  };
+}
+
+function resolveTaskVars(task, project, appBaseUrl) {
+  const dueDate = task.dueDate ? new Date(task.dueDate) : null;
+  const now = new Date();
+  const daysUntilDue = dueDate ? Math.floor((dueDate - now) / (1000 * 60 * 60 * 24)) : null;
+  const owner = task.owner || '';
+  return {
+    taskTitle: task.taskTitle || '',
+    phase: task.phase || '',
+    dueDate: dueDate ? dueDate.toLocaleDateString() : '',
+    timeframe: daysUntilDue !== null
+      ? (daysUntilDue === 0 ? 'today' : daysUntilDue === 1 ? 'tomorrow' : daysUntilDue > 0 ? `in ${daysUntilDue} days` : `${Math.abs(daysUntilDue)} days ago`)
+      : '',
+    daysOverdue: (daysUntilDue !== null && daysUntilDue < 0) ? String(Math.abs(daysUntilDue)) : '0',
+    ownerName: owner,
+    taskLink: project && project.clientLinkSlug
+      ? `${appBaseUrl}/launch/${project.clientLinkSlug}?task=${task.id}`
+      : appBaseUrl
+  };
+}
+
+function resolveProjectVars(project, tasks, appBaseUrl) {
+  const completedCount = tasks ? tasks.filter(t => t.completed).length : 0;
+  const totalCount = tasks ? tasks.length : 0;
+  const pct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+  const goLive = project.goLiveDate ? new Date(project.goLiveDate) : null;
+  const daysUntil = goLive ? Math.floor((goLive - new Date()) / (1000 * 60 * 60 * 24)) : null;
+  return {
+    projectName: project.name || '',
+    goLiveDate: goLive ? goLive.toLocaleDateString() : '',
+    daysUntil: daysUntil !== null ? String(daysUntil) : '',
+    percentage: String(pct),
+    completedTasks: String(completedCount),
+    totalTasks: String(totalCount),
+    projectLink: project.clientLinkSlug
+      ? `${appBaseUrl}/launch/${project.clientLinkSlug}`
+      : appBaseUrl
+  };
+}
+
+function resolveInventoryVars(client, daysSince, appBaseUrl) {
+  return {
+    practiceName: client.practiceName || 'Your Practice',
+    daysSince: String(daysSince),
+    inventoryLink: client.slug ? `${appBaseUrl}/portal/${client.slug}` : appBaseUrl
+  };
+}
+
+// Build a full variable map for a template from its pools and entity data
+function buildTemplateVars(pools, recipientUser, appBaseUrl) {
+  let vars = {};
+  for (const [poolName, poolVars] of Object.entries(pools)) {
+    vars = { ...vars, ...poolVars };
+  }
+  if (recipientUser) vars = { ...vars, ...resolveRecipientVars(recipientUser) };
+  vars = { ...vars, ...resolveSystemVars(appBaseUrl) };
+  return vars;
+}
+
+// Default email templates — seeded on first access, admin can edit via UI
+const DEFAULT_EMAIL_TEMPLATES = [
+  {
+    id: 'service_report_signature',
+    name: 'Service Report — Signature Request',
+    category: 'automated',
+    subject: 'Action needed: Service report for {{facilityName}} awaits your signature',
+    body: 'A service report from {{technicianName}} on {{reportDate}} requires your signature. Please review and sign at your earliest convenience.',
+    htmlBody: null,
+    variables: [
+      { key: 'facilityName', label: 'Facility Name', example: 'Valley Medical' },
+      { key: 'technicianName', label: 'Technician Name', example: 'John Smith' },
+      { key: 'reportDate', label: 'Report Date', example: '02/17/2026' }
+    ],
+    isDefault: true, updatedAt: null, updatedBy: null
+  },
+  {
+    id: 'service_report_review',
+    name: 'Service Report — Admin Review',
+    category: 'automated',
+    subject: 'Service report pending review: {{facilityName}}',
+    body: 'A service report from {{technicianName}} for {{facilityName}} has been pending review for {{reportAge}} days.',
+    htmlBody: null,
+    variables: [
+      { key: 'facilityName', label: 'Facility Name', example: 'Valley Medical' },
+      { key: 'technicianName', label: 'Technician Name', example: 'John Smith' },
+      { key: 'reportAge', label: 'Days Pending', example: '5' }
+    ],
+    isDefault: true, updatedAt: null, updatedBy: null
+  },
+  {
+    id: 'task_deadline',
+    name: 'Task Deadline Warning',
+    category: 'automated',
+    subject: 'Task due {{timeframe}}: {{taskTitle}} — {{projectName}}',
+    body: '"{{taskTitle}}" in {{phase}} is due {{dueDate}}. Project: {{projectName}}.',
+    htmlBody: null,
+    variables: [
+      { key: 'taskTitle', label: 'Task Title', example: 'Install AU480 Analyzer' },
+      { key: 'projectName', label: 'Project Name', example: 'Valley Medical Launch' },
+      { key: 'phase', label: 'Phase', example: 'Phase 2' },
+      { key: 'dueDate', label: 'Due Date', example: '03/15/2026' },
+      { key: 'timeframe', label: 'Timeframe', example: 'in 3 days' }
+    ],
+    isDefault: true, updatedAt: null, updatedBy: null
+  },
+  {
+    id: 'task_overdue',
+    name: 'Task Overdue — Owner',
+    category: 'automated',
+    subject: 'OVERDUE ({{daysOverdue}}d): {{taskTitle}} — {{projectName}}',
+    body: '"{{taskTitle}}" in {{phase}} was due {{dueDate}} and is now {{daysOverdue}} day(s) overdue. Project: {{projectName}}.',
+    htmlBody: null,
+    variables: [
+      { key: 'taskTitle', label: 'Task Title', example: 'Install AU480 Analyzer' },
+      { key: 'projectName', label: 'Project Name', example: 'Valley Medical Launch' },
+      { key: 'phase', label: 'Phase', example: 'Phase 2' },
+      { key: 'dueDate', label: 'Due Date', example: '03/01/2026' },
+      { key: 'daysOverdue', label: 'Days Overdue', example: '5' }
+    ],
+    isDefault: true, updatedAt: null, updatedBy: null
+  },
+  {
+    id: 'task_overdue_escalation',
+    name: 'Task Overdue — Admin Escalation',
+    category: 'automated',
+    subject: 'ESCALATION: Task {{daysOverdue}}d overdue — {{taskTitle}} ({{projectName}})',
+    body: '"{{taskTitle}}" assigned to {{ownerName}} in project "{{projectName}}" is {{daysOverdue}} days overdue. Due date: {{dueDate}}.',
+    htmlBody: null,
+    variables: [
+      { key: 'taskTitle', label: 'Task Title', example: 'Install AU480 Analyzer' },
+      { key: 'projectName', label: 'Project Name', example: 'Valley Medical Launch' },
+      { key: 'ownerName', label: 'Owner Name', example: 'Jane Doe' },
+      { key: 'dueDate', label: 'Due Date', example: '03/01/2026' },
+      { key: 'daysOverdue', label: 'Days Overdue', example: '10' }
+    ],
+    isDefault: true, updatedAt: null, updatedBy: null
+  },
+  {
+    id: 'inventory_reminder',
+    name: 'Inventory Reminder',
+    category: 'automated',
+    subject: 'Reminder: Your weekly inventory update is due — {{practiceName}}',
+    body: 'Your last inventory submission was {{daysSince}} days ago. Please submit your weekly update to keep your lab supplies on track.',
+    htmlBody: null,
+    variables: [
+      { key: 'practiceName', label: 'Practice Name', example: 'Valley Medical' },
+      { key: 'daysSince', label: 'Days Since Last Submission', example: '10' }
+    ],
+    isDefault: true, updatedAt: null, updatedBy: null
+  },
+  {
+    id: 'milestone_reached',
+    name: 'Milestone Reached',
+    category: 'automated',
+    subject: 'Milestone reached: {{projectName}} is {{percentage}}% complete!',
+    body: 'Great progress! {{projectName}} has reached {{percentage}}% completion. {{completedTasks}} of {{totalTasks}} tasks are done.',
+    htmlBody: null,
+    variables: [
+      { key: 'projectName', label: 'Project Name', example: 'Valley Medical Launch' },
+      { key: 'percentage', label: 'Completion %', example: '75' },
+      { key: 'completedTasks', label: 'Completed Tasks', example: '76' },
+      { key: 'totalTasks', label: 'Total Tasks', example: '102' }
+    ],
+    isDefault: true, updatedAt: null, updatedBy: null
+  },
+  {
+    id: 'golive_reminder',
+    name: 'Go-Live Reminder',
+    category: 'automated',
+    subject: 'Go-live in {{daysUntil}} days: {{projectName}}',
+    body: '{{projectName}} is scheduled to go live on {{goLiveDate}}. That\'s {{daysUntil}} days from now. Current progress: {{percentage}}% complete.',
+    htmlBody: null,
+    variables: [
+      { key: 'projectName', label: 'Project Name', example: 'Valley Medical Launch' },
+      { key: 'goLiveDate', label: 'Go-Live Date', example: '04/01/2026' },
+      { key: 'daysUntil', label: 'Days Until Go-Live', example: '7' },
+      { key: 'percentage', label: 'Completion %', example: '92' }
+    ],
+    isDefault: true, updatedAt: null, updatedBy: null
+  },
+  {
+    id: 'announcement',
+    name: 'New Announcement',
+    category: 'announcement',
+    subject: '{{priorityTag}}New Announcement: {{title}}',
+    body: '{{priorityTag}}{{title}}\n\n{{content}}{{attachmentLine}}',
+    htmlBody: `<div style="font-family: Inter, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
+  <div style="background-color: #ffffff; padding: 24px 28px 20px; border-radius: 8px 8px 0 0; text-align: center; border-bottom: 3px solid #045E9F;">
+    <img src="https://app.thrive365labs.live/thrive365-logo.webp" alt="Thrive 365 Labs" style="height: 44px; max-width: 220px; display: block; margin: 0 auto;" />
+  </div>
+  <div style="background: #ffffff; padding: 28px 24px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+    {{priorityBanner}}
+    <h2 style="color: #00205A; margin-top: 0;">{{title}}</h2>
+    <div style="color: #374151; line-height: 1.6; white-space: pre-wrap;">{{content}}</div>
+    {{attachmentBlock}}
+    <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
+    <p style="color: #9ca3af; font-size: 12px; margin: 0;">You are receiving this because you have a client portal account with Thrive 365 Labs.</p>
+  </div>
+</div>`,
+    variables: [
+      { key: 'title', label: 'Announcement Title', example: 'System Maintenance Scheduled' },
+      { key: 'content', label: 'Announcement Content', example: 'We will be performing system maintenance this weekend.' },
+      { key: 'priorityTag', label: 'Priority Tag', example: '[PRIORITY] ' },
+      { key: 'priorityBanner', label: 'Priority Banner HTML', example: '' },
+      { key: 'attachmentUrl', label: 'Attachment URL', example: '' },
+      { key: 'attachmentName', label: 'Attachment Name', example: '' },
+      { key: 'attachmentLine', label: 'Attachment Text Line', example: '' },
+      { key: 'attachmentBlock', label: 'Attachment HTML Block', example: '' }
+    ],
+    isDefault: true, updatedAt: null, updatedBy: null
+  }
+];
+
+// Get email templates from DB; seed defaults on first access
+async function getEmailTemplates() {
+  let templates = await db.get('email_templates');
+  if (!templates || !Array.isArray(templates) || templates.length === 0) {
+    templates = DEFAULT_EMAIL_TEMPLATES.map(t => ({ ...t }));
+    await db.set('email_templates', templates);
+  }
+  // Ensure any new default templates are added (forward-compatible)
+  const existingIds = new Set(templates.map(t => t.id));
+  let added = false;
+  for (const def of DEFAULT_EMAIL_TEMPLATES) {
+    if (!existingIds.has(def.id)) {
+      templates.push({ ...def });
+      added = true;
+    }
+  }
+  if (added) await db.set('email_templates', templates);
+
+  // Enrich each template with pool-derived variables and pool groups
+  for (const t of templates) {
+    t.variables = getPoolVariablesForTemplate(t.id);
+    t.poolGroups = getPoolGroupsForTemplate(t.id);
+    t.pools = TEMPLATE_POOL_MAPPING[t.id] || [];
+  }
+  return templates;
+}
+
+// Get a single template by ID with fallback to default
+function getTemplateById(templates, id) {
+  return templates.find(t => t.id === id) || DEFAULT_EMAIL_TEMPLATES.find(t => t.id === id);
+}
+
+// ============================================================
+// NOTIFICATION TRIGGER SCANNER (Feature 2)
+// ============================================================
+
+const scanAndQueueNotifications = async () => {
+  try {
+    const reminderSettings = (await db.get('reminder_settings')) || { enabled: true, scenarios: {} };
+    if (!reminderSettings.enabled) return;
+    const scenarios = reminderSettings.scenarios || {};
+    const users = await getUsers();
+    const now = new Date();
+    const appBaseUrl = await getAppBaseUrl();
+
+    // Load editable email templates
+    const emailTemplates = await getEmailTemplates();
+    const tpl = (id) => getTemplateById(emailTemplates, id);
+
+    // Helper: render a template with pool-resolved vars and queue the notification
+    const renderAndQueue = async (templateId, recipientUser, allVars, ctaLabel, ctaUrl, entityId, entityType) => {
+      const t = tpl(templateId);
+      const renderedSubject = renderTemplate(t.subject, allVars);
+      const renderedBody = renderTemplate(t.body, allVars);
+      const renderedHtml = buildHtmlEmail(
+        renderedBody,
+        t.htmlBody ? renderTemplate(t.htmlBody, allVars) : null,
+        ctaUrl, ctaLabel
+      );
+      await queueNotification(
+        templateId,
+        recipientUser.id, recipientUser.email, recipientUser.name,
+        { subject: renderedSubject, body: renderedBody, htmlBody: renderedHtml, ctaUrl, ctaLabel },
+        { relatedEntityId: entityId, relatedEntityType: entityType, createdBy: 'system' }
+      );
+    };
+
+    // --- Scenario A: Service Report Follow-Ups ---
+    if (!scenarios.serviceReportFollowups || scenarios.serviceReportFollowups.enabled !== false) {
+      const followupDays = (scenarios.serviceReportFollowups && scenarios.serviceReportFollowups.reminderAfterDays) || config.SERVICE_REPORT_FOLLOWUP_DAYS;
+      const serviceReports = (await db.get('service_reports')) || [];
+      for (const report of serviceReports) {
+        const reportAge = Math.floor((now - new Date(report.createdAt)) / (1000 * 60 * 60 * 24));
+        if (reportAge < followupDays) continue;
+
+        const srVars = resolveServiceReportVars(report, appBaseUrl);
+        // Also include reportAge for review templates
+        srVars.reportAge = String(reportAge);
+
+        // Missing client signature
+        if (report.status === 'signature_needed' || (!report.customerSignature && report.status !== 'submitted')) {
+          const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT && u.slug === report.clientSlug && u.email && u.accountStatus !== 'inactive');
+          for (const client of clientUsers) {
+            const allVars = buildTemplateVars({ service_report: srVars }, client, appBaseUrl);
+            const ctaUrl = srVars.portalLink;
+            await renderAndQueue('service_report_signature', client, allVars, 'Review & Sign', ctaUrl, report.id, 'service_report');
+          }
+        }
+
+        // Not reviewed by admin
+        if (report.status && report.status !== 'submitted' && !report.adminReviewedAt) {
+          const admins = users.filter(u => u.role === config.ROLES.ADMIN && u.email && u.accountStatus !== 'inactive');
+          for (const admin of admins) {
+            const allVars = buildTemplateVars({ service_report: srVars }, admin, appBaseUrl);
+            const ctaUrl = srVars.reportLink;
+            await renderAndQueue('service_report_review', admin, allVars, 'Review Report', ctaUrl, report.id, 'service_report');
+          }
+        }
+      }
+    }
+
+    // --- Scenario B: Task Deadline Notifications ---
+    if (!scenarios.taskDeadlines || scenarios.taskDeadlines.enabled !== false) {
+      const daysBefore = (scenarios.taskDeadlines && scenarios.taskDeadlines.daysBefore) || config.TASK_DEADLINE_DAYS_BEFORE;
+      const escalationDays = (scenarios.taskDeadlines && scenarios.taskDeadlines.overdueEscalationDays) || config.TASK_OVERDUE_ESCALATION_DAYS;
+      const projects = await getProjects();
+      const activeProjects = projects.filter(p => p.status === 'active');
+
+      for (const project of activeProjects) {
+        const tasks = await getTasks(project.id);
+        const projVars = resolveProjectVars(project, tasks, appBaseUrl);
+
+        for (const task of tasks) {
+          if (task.completed || !task.dueDate || !task.owner) continue;
+          const dueDate = new Date(task.dueDate);
+          const daysUntilDue = Math.floor((dueDate - now) / (1000 * 60 * 60 * 24));
+
+          const owner = users.find(u => u.email === task.owner);
+          if (!owner) continue;
+
+          const taskVars = resolveTaskVars(task, project, appBaseUrl);
+          const ctaUrl = taskVars.taskLink;
+
+          // Approaching deadline
+          if (daysUntilDue >= 0 && daysBefore.includes(daysUntilDue)) {
+            const allVars = buildTemplateVars({ task: taskVars, project: projVars }, owner, appBaseUrl);
+            await renderAndQueue('task_deadline', owner, allVars, 'View Task', ctaUrl, task.id?.toString(), 'task');
+          }
+
+          // Overdue
+          if (daysUntilDue < 0) {
+            const allVars = buildTemplateVars({ task: taskVars, project: projVars }, owner, appBaseUrl);
+            await renderAndQueue('task_overdue', owner, allVars, 'View Task', ctaUrl, task.id?.toString(), 'task');
+
+            // Escalate to admin after threshold
+            const daysOverdue = Math.abs(daysUntilDue);
+            if (daysOverdue >= escalationDays) {
+              const admins = users.filter(u => u.role === config.ROLES.ADMIN && u.email && u.accountStatus !== 'inactive');
+              for (const admin of admins) {
+                const escVars = buildTemplateVars({ task: { ...taskVars, ownerName: owner.name }, project: projVars }, admin, appBaseUrl);
+                await renderAndQueue('task_overdue_escalation', admin, escVars, 'View Project', projVars.projectLink, task.id?.toString(), 'task');
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // --- Scenario C: Client Portal Activity Nudges ---
+    if (!scenarios.clientActivityNudges || scenarios.clientActivityNudges.enabled !== false) {
+      const inventoryDays = (scenarios.clientActivityNudges && scenarios.clientActivityNudges.inventoryReminderDays) || config.INVENTORY_REMINDER_DAYS;
+      const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT && u.slug && u.email && u.accountStatus !== 'inactive');
+      const slugsSeen = new Set();
+
+      for (const client of clientUsers) {
+        if (slugsSeen.has(client.slug)) continue;
+        slugsSeen.add(client.slug);
+
+        // Check notification preferences
+        if (client.notificationPreferences && client.notificationPreferences.inventoryReminders === false) continue;
+
+        const submissions = (await db.get(`inventory_submissions_${client.slug}`)) || [];
+        if (submissions.length === 0) continue; // No submissions ever, likely not onboarded yet
+        const lastSubmission = submissions.sort((a, b) => new Date(b.submittedAt || b.createdAt) - new Date(a.submittedAt || a.createdAt))[0];
+        const lastDate = new Date(lastSubmission.submittedAt || lastSubmission.createdAt);
+        const daysSince = Math.floor((now - lastDate) / (1000 * 60 * 60 * 24));
+
+        if (daysSince >= inventoryDays) {
+          const portalClients = clientUsers.filter(u => u.slug === client.slug);
+          for (const pc of portalClients) {
+            const invVars = resolveInventoryVars(pc, daysSince, appBaseUrl);
+            const allVars = buildTemplateVars({ inventory: invVars }, pc, appBaseUrl);
+            const ctaUrl = invVars.inventoryLink;
+            await renderAndQueue('inventory_reminder', pc, allVars, 'Submit Inventory', ctaUrl, pc.slug, 'inventory');
+          }
+        }
+      }
+    }
+
+    // --- Scenario D: Implementation Milestone Reminders ---
+    if (!scenarios.milestoneReminders || scenarios.milestoneReminders.enabled !== false) {
+      const thresholds = (scenarios.milestoneReminders && scenarios.milestoneReminders.milestoneThresholds) || config.MILESTONE_THRESHOLDS;
+      const goLiveDaysBefore = (scenarios.milestoneReminders && scenarios.milestoneReminders.goLiveDaysBefore) || config.GOLIVE_REMINDER_DAYS_BEFORE;
+      const projects = await getProjects();
+
+      for (const project of projects.filter(p => p.status === 'active')) {
+        const tasks = await getTasks(project.id);
+        if (tasks.length === 0) continue;
+
+        const projVars = resolveProjectVars(project, tasks, appBaseUrl);
+        const completedCount = tasks.filter(t => t.completed).length;
+        const pct = Math.round((completedCount / tasks.length) * 100);
+        const lastNotified = project.lastMilestoneNotified || 0;
+
+        // Check if we've crossed a new threshold
+        for (const threshold of thresholds) {
+          if (pct >= threshold && lastNotified < threshold) {
+            const projectClients = users.filter(u =>
+              u.role === config.ROLES.CLIENT && u.email && u.accountStatus !== 'inactive' &&
+              (u.assignedProjects || []).includes(project.id)
+            );
+            for (const client of projectClients) {
+              const allVars = buildTemplateVars({ project: projVars }, client, appBaseUrl);
+              await renderAndQueue('milestone_reached', client, allVars, 'View Progress', projVars.projectLink, project.id, 'project');
+            }
+
+            // Update project milestone tracker
+            const allProjects = await getProjects();
+            const pIdx = allProjects.findIndex(p => p.id === project.id);
+            if (pIdx !== -1) {
+              allProjects[pIdx].lastMilestoneNotified = threshold;
+              await db.set('projects', allProjects);
+            }
+            break; // Only notify for the highest crossed threshold
+          }
+        }
+
+        // Go-live date reminders
+        if (project.goLiveDate) {
+          const goLive = new Date(project.goLiveDate);
+          const daysUntilGoLive = Math.floor((goLive - now) / (1000 * 60 * 60 * 24));
+          if (daysUntilGoLive >= 0 && goLiveDaysBefore.includes(daysUntilGoLive)) {
+            const projectClients = users.filter(u =>
+              u.role === config.ROLES.CLIENT && u.email && u.accountStatus !== 'inactive' &&
+              (u.assignedProjects || []).includes(project.id)
+            );
+            const teamMembers = users.filter(u =>
+              (u.role === config.ROLES.USER || u.role === config.ROLES.ADMIN) && u.email && u.accountStatus !== 'inactive' &&
+              (u.assignedProjects || []).includes(project.id)
+            );
+            for (const user of [...projectClients, ...teamMembers]) {
+              const allVars = buildTemplateVars({ project: projVars }, user, appBaseUrl);
+              await renderAndQueue('milestone_reminder', user, allVars, 'View Project', projVars.projectLink, project.id, 'project');
+            }
+          }
+        }
+      }
+    }
+
+    console.log('[SCANNER] Notification trigger scan completed');
+  } catch (err) {
+    console.error('[SCANNER] Error scanning for notifications:', err);
   }
 };
 
@@ -441,44 +1220,8 @@ async function pollHubSpotTickets() {
         continue;
       }
 
-      // Map HubSpot owner to internal user (same logic as webhook handler)
-      let assignedToId = null;
-      let assignedToName = null;
-
-      if (ticket.ownerId) {
-        try {
-          const owners = await hubspot.getOwners();
-          const hubspotOwner = owners.find(o => String(o.id) === String(ticket.ownerId));
-
-          if (hubspotOwner) {
-            // Try email match first
-            if (hubspotOwner.email) {
-              const userByEmail = users.find(u =>
-                u.email && u.email.toLowerCase() === hubspotOwner.email.toLowerCase() &&
-                (u.role === config.ROLES.VENDOR || u.role === config.ROLES.ADMIN || u.hasServicePortalAccess)
-              );
-              if (userByEmail) {
-                assignedToId = userByEmail.id;
-                assignedToName = userByEmail.name;
-              }
-            }
-            // Fall back to name match
-            if (!assignedToId && hubspotOwner.firstName && hubspotOwner.lastName) {
-              const fullName = `${hubspotOwner.firstName} ${hubspotOwner.lastName}`;
-              const userByName = users.find(u =>
-                u.name && u.name.toLowerCase() === fullName.toLowerCase() &&
-                (u.role === config.ROLES.VENDOR || u.role === config.ROLES.ADMIN || u.hasServicePortalAccess)
-              );
-              if (userByName) {
-                assignedToId = userByName.id;
-                assignedToName = userByName.name;
-              }
-            }
-          }
-        } catch (ownerErr) {
-          console.log(`[HubSpot Poll] Could not match owner for ticket ${ticketId}:`, ownerErr.message);
-        }
-      }
+      // Map HubSpot owner to internal user
+      const { id: assignedToId, name: assignedToName } = await resolveHubSpotOwnerToUser(ticket.ownerId, users);
 
       if (!assignedToId) {
         console.log(`[HubSpot Poll] No internal user match for ticket ${ticketId} (owner ${ticket.ownerId}). Skipping.`);
@@ -490,69 +1233,9 @@ async function pollHubSpotTickets() {
       const issueCategoryLower = (ticket.issueCategory || '').toLowerCase();
       const serviceType = config.SERVICE_TYPE_MAP[issueCategoryLower] || '';
 
-      // Build manager notes from ticket description and notes
-      let managerNotes = '';
-      if (ticket.description) {
-        managerNotes += `**Ticket Description:**\n${ticket.description}\n\n`;
-      }
-      if (ticket.notes && ticket.notes.length > 0) {
-        managerNotes += `**Ticket Notes:**\n`;
-        ticket.notes.forEach((note) => {
-          const timestamp = note.timestamp ? new Date(parseInt(note.timestamp)).toLocaleString() : '';
-          managerNotes += `\n[${timestamp}]\n${note.body}\n`;
-          if (note.attachmentIds) {
-            managerNotes += `(Attachments: ${note.attachmentIds})\n`;
-          }
-        });
-      }
-
       // Create the service report
       const clientSlugResolved = await resolveClientSlug(ticket.companyName, ticket.companyId);
-      const newReport = {
-        id: uuidv4(),
-        status: 'assigned',
-        assignedToId,
-        assignedToName,
-        assignedById: 'system',
-        assignedByName: 'HubSpot Polling',
-        assignedAt: new Date().toISOString(),
-        clientFacilityName: ticket.companyName || '',
-        clientSlug: clientSlugResolved,
-        customerName: ticket.submittedBy || '',
-        serviceProviderName: assignedToName,
-        address: '',
-        serviceType,
-        analyzerModel: '',
-        analyzerSerialNumber: ticket.serialNumber || '',
-        hubspotTicketNumber: String(ticket.id),
-        hubspotCompanyId: ticket.companyId || '',
-        hubspotDealId: '',
-        serviceCompletionDate: new Date().toISOString().split('T')[0],
-        managerNotes: managerNotes.trim(),
-        photos: [],
-        clientFiles: [],
-        technicianId: null,
-        technicianName: null,
-        descriptionOfWork: '',
-        materialsUsed: '',
-        solution: '',
-        outstandingIssues: '',
-        validationResults: '',
-        validationStartDate: '',
-        validationEndDate: '',
-        trainingProvided: '',
-        testProcedures: '',
-        recommendations: '',
-        analyzersValidated: [],
-        customerSignature: null,
-        customerSignatureDate: null,
-        technicianSignature: null,
-        technicianSignatureDate: null,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        createdViaWebhook: true,
-        createdViaPolling: true
-      };
+      const newReport = buildServiceReportFromTicket(ticket, assignedToId, assignedToName, serviceType, clientSlugResolved, 'polling');
 
       serviceReports.push(newReport);
       existingTicketIds.add(ticketId);
@@ -918,6 +1601,8 @@ const authenticateToken = async (req, res, next) => {
       const users = await getUsers();
       const freshUser = users.find(u => u.id === tokenUser.id);
       if (!freshUser) return res.status(403).json({ error: 'User not found' });
+      // Block inactive accounts
+      if (freshUser.accountStatus === 'inactive') return res.status(403).json({ error: 'Account is inactive. Please contact an administrator.' });
       // Use fresh data for all user properties to ensure permission changes take effect immediately
       // Determine if user is a manager (has limited admin access)
       const isManager = freshUser.isManager || false;
@@ -1002,6 +1687,106 @@ const resolveClientSlug = async (clientFacilityName, hubspotCompanyId, existingU
 
   return '';
 };
+
+// Map a HubSpot owner ID to an internal user with service portal access
+async function resolveHubSpotOwnerToUser(ownerId, users) {
+  if (!ownerId) return { id: null, name: null };
+
+  try {
+    const owners = await hubspot.getOwners();
+    const hubspotOwner = owners.find(o => String(o.id) === String(ownerId));
+
+    if (!hubspotOwner) return { id: null, name: null };
+
+    // Try email match first
+    if (hubspotOwner.email) {
+      const userByEmail = users.find(u =>
+        u.email && u.email.toLowerCase() === hubspotOwner.email.toLowerCase() &&
+        (u.role === config.ROLES.VENDOR || u.role === config.ROLES.ADMIN || u.hasServicePortalAccess)
+      );
+      if (userByEmail) return { id: userByEmail.id, name: userByEmail.name };
+    }
+
+    // Fall back to name match
+    if (hubspotOwner.firstName && hubspotOwner.lastName) {
+      const fullName = `${hubspotOwner.firstName} ${hubspotOwner.lastName}`;
+      const userByName = users.find(u =>
+        u.name && u.name.toLowerCase() === fullName.toLowerCase() &&
+        (u.role === config.ROLES.VENDOR || u.role === config.ROLES.ADMIN || u.hasServicePortalAccess)
+      );
+      if (userByName) return { id: userByName.id, name: userByName.name };
+    }
+  } catch (err) {
+    console.log(`Could not match HubSpot owner ${ownerId}:`, err.message);
+  }
+
+  return { id: null, name: null };
+}
+
+// Build a service report object from a HubSpot ticket
+// Used by both the polling engine and webhook handler
+function buildServiceReportFromTicket(ticket, assignedToId, assignedToName, serviceType, clientSlug, source) {
+  let managerNotes = '';
+  if (ticket.description) {
+    managerNotes += `**Ticket Description:**\n${ticket.description}\n\n`;
+  }
+  if (ticket.notes && ticket.notes.length > 0) {
+    managerNotes += `**Ticket Notes:**\n`;
+    ticket.notes.forEach((note) => {
+      const timestamp = note.timestamp ? new Date(parseInt(note.timestamp)).toLocaleString() : '';
+      managerNotes += `\n[${timestamp}]\n${note.body}\n`;
+      if (note.attachmentIds) {
+        managerNotes += `(Attachments: ${note.attachmentIds})\n`;
+      }
+    });
+  }
+
+  return {
+    id: uuidv4(),
+    status: 'assigned',
+    assignedToId,
+    assignedToName,
+    assignedById: 'system',
+    assignedByName: source === 'polling' ? 'HubSpot Polling' : 'HubSpot Automation',
+    assignedAt: new Date().toISOString(),
+    clientFacilityName: ticket.companyName || '',
+    clientSlug: clientSlug,
+    customerName: ticket.submittedBy || '',
+    serviceProviderName: assignedToName,
+    address: '',
+    serviceType,
+    analyzerModel: '',
+    analyzerSerialNumber: ticket.serialNumber || '',
+    hubspotTicketNumber: String(ticket.id),
+    hubspotCompanyId: ticket.companyId || '',
+    hubspotDealId: '',
+    serviceCompletionDate: new Date().toISOString().split('T')[0],
+    managerNotes: managerNotes.trim(),
+    photos: [],
+    clientFiles: [],
+    technicianId: null,
+    technicianName: null,
+    descriptionOfWork: '',
+    materialsUsed: '',
+    solution: '',
+    outstandingIssues: '',
+    validationResults: '',
+    validationStartDate: '',
+    validationEndDate: '',
+    trainingProvided: '',
+    testProcedures: '',
+    recommendations: '',
+    analyzersValidated: [],
+    customerSignature: null,
+    customerSignatureDate: null,
+    technicianSignature: null,
+    technicianSignatureDate: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    createdViaWebhook: true,
+    ...(source === 'polling' ? { createdViaPolling: true } : {})
+  };
+}
 
 // Super Admin access - full system access (role === 'admin')
 const requireAdmin = (req, res, next) => {
@@ -1108,7 +1893,7 @@ app.post('/api/users', authenticateToken, async (req, res) => {
       email, password, name, role, practiceName, isNewClient, assignedProjects, logo,
       hasServicePortalAccess, hasAdminHubAccess, hasImplementationsAccess, hasClientPortalAdminAccess,
       isManager, assignedClients, hubspotCompanyId, hubspotDealId, hubspotContactId, projectAccessLevels,
-      existingPortalSlug
+      existingPortalSlug, phone
     } = req.body;
 
     // Managers can only create client users
@@ -1138,6 +1923,17 @@ app.post('/api/users', authenticateToken, async (req, res) => {
       hasImplementationsAccess: hasImplementationsAccess || false,
       hasClientPortalAdminAccess: hasClientPortalAdminAccess || false,
       createdAt: new Date().toISOString(),
+      // Account status — active accounts receive notifications, inactive do not
+      accountStatus: 'active',
+      // Contact
+      phone: phone || '',
+      // Notification preferences
+      notificationPreferences: {
+        emailReminders: true,
+        overdueReminders: true,
+        inventoryReminders: true,
+        milestoneNotifications: true
+      },
       // Force new users to change their password on first login
       requirePasswordChange: true,
       lastPasswordReset: new Date().toISOString()
@@ -1272,6 +2068,10 @@ app.post('/api/auth/login', async (req, res) => {
       console.log('Login failed: Password mismatch for:', email);
       return res.status(400).json({ error: 'Invalid credentials' });
     }
+    // Block inactive accounts from logging in
+    if (user.accountStatus === 'inactive') {
+      return res.status(403).json({ error: 'Account is inactive. Please contact an administrator.' });
+    }
     const token = jwt.sign(
       { id: user.id, email: user.email, name: user.name, role: user.role },
       JWT_SECRET,
@@ -1339,6 +2139,10 @@ app.post('/api/auth/client-login', async (req, res) => {
     const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase() && (u.role === config.ROLES.CLIENT || u.role === config.ROLES.ADMIN || u.isManager));
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(400).json({ error: 'Invalid credentials' });
+    }
+    // Block inactive accounts from logging in
+    if (user.accountStatus === 'inactive') {
+      return res.status(403).json({ error: 'Account is inactive. Please contact an administrator.' });
     }
     // For clients, optionally verify slug matches if provided
     if (user.role === config.ROLES.CLIENT && slug && user.slug !== slug) {
@@ -1553,6 +2357,7 @@ app.get('/api/users', authenticateToken, async (req, res) => {
       email: u.email,
       name: u.name,
       role: u.role,
+      accountStatus: u.accountStatus || 'active',
       createdAt: u.createdAt,
       // Manager flag
       isManager: u.isManager || false,
@@ -1589,11 +2394,20 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
       name, email, role, password, assignedProjects, projectAccessLevels,
       practiceName, isNewClient, logo, hubspotCompanyId, hubspotDealId, hubspotContactId,
       hasServicePortalAccess, hasAdminHubAccess, hasImplementationsAccess, hasClientPortalAdminAccess,
-      isManager, assignedClients
+      isManager, assignedClients, phone, accountStatus
     } = req.body;
     const users = await getUsers();
     const idx = users.findIndex(u => u.id === userId);
     if (idx === -1) return res.status(404).json({ error: 'User not found' });
+
+    if (phone !== undefined) users[idx].phone = phone;
+    if (accountStatus !== undefined) {
+      // Prevent deactivating admin accounts (super admin lockout protection)
+      if (accountStatus === 'inactive' && users[idx].role === 'admin') {
+        return res.status(403).json({ error: 'Admin accounts cannot be deactivated. Remove admin role first if you need to deactivate this account.' });
+      }
+      users[idx].accountStatus = accountStatus;
+    }
 
     // Capture old values before update for cascade propagation
     const oldName = users[idx].name;
@@ -1618,6 +2432,8 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
     if (hasAdminHubAccess !== undefined) users[idx].hasAdminHubAccess = hasAdminHubAccess;
     if (hasImplementationsAccess !== undefined) users[idx].hasImplementationsAccess = hasImplementationsAccess;
     if (hasClientPortalAdminAccess !== undefined) users[idx].hasClientPortalAdminAccess = hasClientPortalAdminAccess;
+
+    // Account active status (no separate isActive - handled by accountStatus above)
 
     // Vendor-specific: assigned clients
     if (assignedClients !== undefined) users[idx].assignedClients = assignedClients;
@@ -1675,6 +2491,7 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
       email: users[idx].email,
       name: users[idx].name,
       role: users[idx].role,
+      accountStatus: users[idx].accountStatus || 'active',
       isManager: users[idx].isManager || false,
       hasServicePortalAccess: users[idx].hasServicePortalAccess || false,
       hasAdminHubAccess: users[idx].hasAdminHubAccess || false,
@@ -1719,7 +2536,7 @@ app.delete('/api/users/:userId', authenticateToken, requireAdmin, async (req, re
 app.put('/api/client-portal/clients/:clientId', authenticateToken, requireClientPortalAdmin, async (req, res) => {
   try {
     const { clientId } = req.params;
-    const { practiceName, logo, hubspotCompanyId, hubspotDealId, hubspotContactId } = req.body;
+    const { practiceName, logo, hubspotCompanyId, hubspotDealId, hubspotContactId, accountStatus } = req.body;
 
     const users = await getUsers();
     const idx = users.findIndex(u => u.id === clientId);
@@ -1758,6 +2575,7 @@ app.put('/api/client-portal/clients/:clientId', authenticateToken, requireClient
     if (hubspotCompanyId !== undefined) users[idx].hubspotCompanyId = hubspotCompanyId;
     if (hubspotDealId !== undefined) users[idx].hubspotDealId = hubspotDealId;
     if (hubspotContactId !== undefined) users[idx].hubspotContactId = hubspotContactId;
+    if (accountStatus !== undefined) users[idx].accountStatus = accountStatus;
 
     // Track modification
     users[idx].updatedAt = new Date().toISOString();
@@ -2536,15 +3354,15 @@ app.get('/api/projects/:id', authenticateToken, async (req, res) => {
 
 app.put('/api/projects/:id', authenticateToken, async (req, res) => {
   try {
-    // Check project access
-    if (!canAccessProject(req.user, req.params.id)) {
-      return res.status(403).json({ error: 'Access denied to this project' });
+    // Check project write access
+    if (!canWriteProject(req.user, req.params.id)) {
+      return res.status(403).json({ error: 'Write access required for this project' });
     }
-    
+
     const projects = await getProjects();
     const idx = projects.findIndex(p => p.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'Project not found' });
-    
+
     // Validate project status against allowed values
     if (req.body.status !== undefined) {
       if (!config.PROJECT_STATUSES.includes(req.body.status)) {
@@ -2908,10 +3726,10 @@ app.put('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req,
 app.delete('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req, res) => {
   try {
     const { projectId, taskId } = req.params;
-    
-    // Check project access
-    if (!canAccessProject(req.user, projectId)) {
-      return res.status(403).json({ error: 'Access denied to this project' });
+
+    // Check project write access (delete is a write operation)
+    if (!canWriteProject(req.user, projectId)) {
+      return res.status(403).json({ error: 'Write access required for this project' });
     }
     
     // Use raw tasks for mutation to prevent normalization drift
@@ -3101,6 +3919,85 @@ app.post('/api/announcements', authenticateToken, requireClientPortalAdmin, asyn
     if (announcements.length > 50) announcements.length = 50;
     await db.set('announcements', announcements);
     res.json(newAnnouncement);
+
+    // Send email notifications to targeted client users (async, non-blocking)
+    try {
+      const users = await getUsers();
+      const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT && u.email && u.accountStatus !== 'inactive');
+      let recipients;
+      if (newAnnouncement.targetAll) {
+        recipients = clientUsers;
+      } else {
+        const targetSlugs = new Set(newAnnouncement.targetClients);
+        recipients = clientUsers.filter(u => u.slug && targetSlugs.has(u.slug));
+      }
+      if (recipients.length > 0) {
+        // Load editable announcement template
+        const annTemplates = await getEmailTemplates();
+        const annTpl = getTemplateById(annTemplates, 'announcement');
+        const annVars = {
+          title: newAnnouncement.title,
+          content: newAnnouncement.content,
+          priorityTag: newAnnouncement.priority ? '[PRIORITY] ' : '',
+          priorityBanner: newAnnouncement.priority ? '<p style="color: #dc2626; font-weight: 600; margin-bottom: 8px;">⚠️ This is a priority announcement</p>' : '',
+          attachmentUrl: newAnnouncement.attachmentUrl || '',
+          attachmentName: newAnnouncement.attachmentName || 'View Attachment',
+          attachmentLine: newAnnouncement.attachmentUrl ? '\n\nAttachment: ' + newAnnouncement.attachmentUrl : '',
+          attachmentBlock: newAnnouncement.attachmentUrl ? `<p style="margin-top: 16px;"><a href="${newAnnouncement.attachmentUrl}" style="color: #045E9F; font-weight: 500;">📎 ${newAnnouncement.attachmentName || 'View Attachment'}</a></p>` : ''
+        };
+        const subject = renderTemplate(annTpl.subject, annVars);
+        // Safeguard: always include full announcement content even if admin edited {{content}} out of template
+        let annBody = annTpl.body || '';
+        let annHtml = annTpl.htmlBody || '';
+        if (!annBody.includes('{{content}}')) {
+          annBody += '\n\n{{content}}';
+        }
+        if (annHtml && !annHtml.includes('{{content}}')) {
+          annHtml = annHtml.replace(/<hr/, '<div style="color: #374151; line-height: 1.6; white-space: pre-wrap;">{{content}}</div><hr');
+        }
+        const htmlBody = annHtml ? renderTemplate(annHtml, annVars) : buildHtmlEmail(renderTemplate(annBody, annVars), null);
+        const textBody = renderTemplate(annBody, annVars);
+        const emailPromises = recipients.map(user =>
+          sendEmail(user.email, subject, textBody, { htmlBody }).then(result => ({
+            email: user.email, ...result
+          })).catch(err => {
+            console.error(`Announcement email failed for ${user.email}:`, err.message);
+            return { email: user.email, success: false, error: err.message };
+          })
+        );
+        Promise.all(emailPromises).then(async (results) => {
+          const sent = results.filter(r => r.success).length;
+          const failed = results.filter(r => !r.success);
+          console.log(`[ANNOUNCEMENTS] Emailed ${sent}/${recipients.length} clients for announcement: ${newAnnouncement.title}`);
+
+          // Save delivery stats on the announcement record
+          try {
+            const current = (await db.get('announcements')) || [];
+            const idx = current.findIndex(a => a.id === newAnnouncement.id);
+            if (idx !== -1) {
+              current[idx].emailDelivery = {
+                sent,
+                failed: failed.length,
+                total: recipients.length,
+                failedRecipients: failed.map(f => f.email),
+                deliveredAt: new Date().toISOString()
+              };
+              await db.set('announcements', current);
+            }
+          } catch (dbErr) {
+            console.error('Failed to save email delivery stats:', dbErr);
+          }
+
+          // Log to activity feed
+          await logActivity(
+            req.user.id, req.user.name, 'announcement_emailed', 'announcement', newAnnouncement.id,
+            { title: newAnnouncement.title, emailsSent: sent, emailsFailed: failed.length, totalRecipients: recipients.length }
+          );
+        });
+      }
+    } catch (emailError) {
+      console.error('Announcement email notification error:', emailError);
+    }
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }
@@ -3230,11 +4127,16 @@ app.get('/api/client-portal/data', authenticateToken, async (req, res) => {
             ['task_completed', 'stage_completed', 'phase_completed', 'phase8_auto_updated'].includes(a.action)) {
           return true;
         }
-        // Client-specific activities (by userId or slug match)
-        if (a.userId === req.user.id || (clientSlug && (a.details?.slug === clientSlug || a.details?.clientSlug === clientSlug))) {
+        // Client-specific activities (by userId, slug match, or clientName match for service reports)
+        const clientName = req.user.practiceName || req.user.name || '';
+        const matchesClient = a.userId === req.user.id ||
+          (clientSlug && (a.details?.slug === clientSlug || a.details?.clientSlug === clientSlug)) ||
+          (clientName && a.details?.clientName && a.details.clientName.toLowerCase() === clientName.toLowerCase());
+        if (matchesClient) {
           if (['inventory_submitted', 'hubspot_file_upload', 'support_ticket_submitted',
-               'document_added', 'service_report_client_signed', 'form_submitted',
-               'inventory_submissions_deleted'].includes(a.action)) {
+               'document_added', 'service_report_client_signed', 'service_report_created',
+               'service_report_completed', 'service_report_pending_signature',
+               'form_submitted', 'inventory_submissions_deleted'].includes(a.action)) {
             return true;
           }
         }
@@ -3275,7 +4177,9 @@ app.get('/api/portal-settings', async (req, res) => {
     const settings = (await db.get('portal_settings')) || {
       inventoryFormEmbed: '',
       filesFormEmbed: '',
-      supportUrl: 'https://thrive365labs-49020024.hs-sites.com/support'
+      supportUrl: 'https://thrive365labs-49020024.hs-sites.com/support',
+      supportFormId: '089d904f-4acb-4ff7-8c61-53ee99e12345',
+      hubspotPortalId: '49020024'
     };
     res.json(settings);
   } catch (error) {
@@ -3286,11 +4190,13 @@ app.get('/api/portal-settings', async (req, res) => {
 // Update portal settings (admin only)
 app.put('/api/portal-settings', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { inventoryFormEmbed, filesFormEmbed, supportUrl } = req.body;
+    const { inventoryFormEmbed, filesFormEmbed, supportUrl, supportFormId, hubspotPortalId } = req.body;
     const settings = {
       inventoryFormEmbed: inventoryFormEmbed || '',
       filesFormEmbed: filesFormEmbed || '',
       supportUrl: supportUrl || 'https://thrive365labs-49020024.hs-sites.com/support',
+      supportFormId: supportFormId || '089d904f-4acb-4ff7-8c61-53ee99e12345',
+      hubspotPortalId: hubspotPortalId || '49020024',
       updatedAt: new Date().toISOString(),
       updatedBy: req.user.name
     };
@@ -3744,9 +4650,28 @@ app.post('/api/client/hubspot/upload', authenticateToken, uploadLimiter, upload.
 
 // ============== CLIENT HUBSPOT TICKETS ==============
 
+// HubSpot webhook validation middleware
+const HUBSPOT_WEBHOOK_SECRET = process.env.HUBSPOT_WEBHOOK_SECRET;
+
+if (!HUBSPOT_WEBHOOK_SECRET) {
+  console.warn('⚠️  WARNING: HUBSPOT_WEBHOOK_SECRET not set. Webhook endpoints will accept ALL requests without validation.');
+  console.warn('   Set HUBSPOT_WEBHOOK_SECRET to enable webhook authentication.');
+}
+
+function validateHubSpotWebhook(req, res, next) {
+  if (HUBSPOT_WEBHOOK_SECRET) {
+    const providedSecret = req.headers['x-hubspot-webhook-secret'] || req.query.secret;
+    if (providedSecret !== HUBSPOT_WEBHOOK_SECRET) {
+      console.warn('HubSpot webhook rejected: invalid secret');
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+  }
+  next();
+}
+
 // Webhook endpoint for HubSpot to register portal-created tickets
 // HubSpot workflow should call this when a ticket is created from the portal form
-app.post('/api/webhook/hubspot/ticket-created', async (req, res) => {
+app.post('/api/webhook/hubspot/ticket-created', validateHubSpotWebhook, async (req, res) => {
   try {
     const { ticketId, contactEmail, companyId, subject } = req.body;
 
@@ -3786,7 +4711,7 @@ app.post('/api/webhook/hubspot/ticket-created', async (req, res) => {
 
 // Webhook endpoint for HubSpot ticket stage changes
 // HubSpot workflow should trigger this when ticket moves to "Assigned" or "Vendor Escalation" stage
-app.post('/api/webhook/hubspot/ticket-stage-change', async (req, res) => {
+app.post('/api/webhook/hubspot/ticket-stage-change', validateHubSpotWebhook, async (req, res) => {
   try {
     const { ticketId, stageId, stageName } = req.body;
 
@@ -3838,45 +4763,8 @@ app.post('/api/webhook/hubspot/ticket-stage-change', async (req, res) => {
     }
 
     // Map HubSpot owner ID to internal user
-    let assignedToId = null;
-    let assignedToName = null;
     const users = (await db.get('users')) || [];
-
-    if (ticket.ownerId) {
-      try {
-        const owners = await hubspot.getOwners();
-        const hubspotOwner = owners.find(o => String(o.id) === String(ticket.ownerId));
-
-        if (hubspotOwner) {
-          // Try to match by email first
-          if (hubspotOwner.email) {
-            const userByEmail = users.find(u =>
-              u.email && u.email.toLowerCase() === hubspotOwner.email.toLowerCase() &&
-              (u.role === config.ROLES.VENDOR || u.role === config.ROLES.ADMIN || u.hasServicePortalAccess)
-            );
-            if (userByEmail) {
-              assignedToId = userByEmail.id;
-              assignedToName = userByEmail.name;
-            }
-          }
-
-          // If no match by email, try by name
-          if (!assignedToId && hubspotOwner.firstName && hubspotOwner.lastName) {
-            const fullName = `${hubspotOwner.firstName} ${hubspotOwner.lastName}`;
-            const userByName = users.find(u =>
-              u.name && u.name.toLowerCase() === fullName.toLowerCase() &&
-              (u.role === config.ROLES.VENDOR || u.role === config.ROLES.ADMIN || u.hasServicePortalAccess)
-            );
-            if (userByName) {
-              assignedToId = userByName.id;
-              assignedToName = userByName.name;
-            }
-          }
-        }
-      } catch (ownerErr) {
-        console.log('Could not match HubSpot owner to internal user:', ownerErr.message);
-      }
-    }
+    const { id: assignedToId, name: assignedToName } = await resolveHubSpotOwnerToUser(ticket.ownerId, users);
 
     // If no assignee found, we cannot auto-create the service report
     if (!assignedToId) {
@@ -3893,73 +4781,9 @@ app.post('/api/webhook/hubspot/ticket-stage-change', async (req, res) => {
     const issueCategoryLower = (ticket.issueCategory || '').toLowerCase();
     const serviceType = config.SERVICE_TYPE_MAP[issueCategoryLower] || '';
 
-    // Combine ticket description and notes into manager notes
-    let managerNotes = '';
-    if (ticket.description) {
-      managerNotes += `**Ticket Description:**\n${ticket.description}\n\n`;
-    }
-    if (ticket.notes && ticket.notes.length > 0) {
-      managerNotes += `**Ticket Notes:**\n`;
-      ticket.notes.forEach((note, index) => {
-        const timestamp = note.timestamp ? new Date(parseInt(note.timestamp)).toLocaleString() : '';
-        managerNotes += `\n[${timestamp}]\n${note.body}\n`;
-        if (note.attachmentIds) {
-          managerNotes += `(Attachments: ${note.attachmentIds})\n`;
-        }
-      });
-    }
-
     // Create the service report
     const webhookClientSlug = await resolveClientSlug(ticket.companyName, ticket.companyId);
-    const newReport = {
-      id: uuidv4(),
-      // Assignment info
-      status: 'assigned',
-      assignedToId,
-      assignedToName,
-      assignedById: 'system', // System-generated from webhook
-      assignedByName: 'HubSpot Automation',
-      assignedAt: new Date().toISOString(),
-      // Pre-filled info from HubSpot ticket
-      clientFacilityName: ticket.companyName || '',
-      clientSlug: webhookClientSlug,
-      customerName: ticket.submittedBy || '',
-      serviceProviderName: assignedToName,
-      address: '',
-      serviceType: serviceType,
-      analyzerModel: '',
-      analyzerSerialNumber: ticket.serialNumber || '',
-      hubspotTicketNumber: String(ticket.id),
-      hubspotCompanyId: ticket.companyId || '',
-      hubspotDealId: '',
-      serviceCompletionDate: new Date().toISOString().split('T')[0],
-      // Manager-only fields
-      managerNotes: managerNotes.trim(),
-      photos: [],
-      clientFiles: [],
-      // Technician fields (to be filled when completing)
-      technicianId: null,
-      technicianName: null,
-      descriptionOfWork: '',
-      materialsUsed: '',
-      solution: '',
-      outstandingIssues: '',
-      validationResults: '',
-      validationStartDate: '',
-      validationEndDate: '',
-      trainingProvided: '',
-      testProcedures: '',
-      recommendations: '',
-      analyzersValidated: [],
-      customerSignature: null,
-      customerSignatureDate: null,
-      technicianSignature: null,
-      technicianSignatureDate: null,
-      // Metadata
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      createdViaWebhook: true
-    };
+    const newReport = buildServiceReportFromTicket(ticket, assignedToId, assignedToName, serviceType, webhookClientSlug, 'webhook');
 
     serviceReports.push(newReport);
     await db.set('service_reports', serviceReports);
@@ -4339,9 +5163,9 @@ app.get('/api/client/service-reports', authenticateToken, async (req, res) => {
       if (slugLinkedReportIds.has(report.id)) {
         return true;
       }
-      // Fallback: bidirectional match by any of the client's names
+      // Fallback: exact case-insensitive match by any of the client's names
       const reportClient = (report.clientFacilityName || '').toLowerCase().trim();
-      if (reportClient && uniqueClientNames.some(name => reportClient.includes(name) || name.includes(reportClient))) {
+      if (reportClient && uniqueClientNames.some(name => reportClient === name)) {
         return true;
       }
       return false;
@@ -4414,6 +5238,40 @@ app.get('/api/client/service-reports', authenticateToken, async (req, res) => {
   }
 });
 
+// Get a single service report by ID (client access via slug-based document matching)
+app.get('/api/client/service-reports/:id', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'client') {
+      return res.status(403).json({ error: 'Client access required' });
+    }
+
+    const reportId = req.params.id;
+    const clientSlug = req.user.slug;
+    if (!clientSlug) {
+      return res.status(400).json({ error: 'Client slug not found' });
+    }
+
+    // Verify client owns this report via client_documents (slug-based, reliable)
+    const clientDocs = (await db.get('client_documents')) || [];
+    const matchingDoc = clientDocs.find(d => d.slug === clientSlug && d.serviceReportId === reportId);
+    if (!matchingDoc) {
+      return res.status(404).json({ error: 'Service report not found' });
+    }
+
+    // Fetch the actual service report
+    const serviceReports = (await db.get('service_reports')) || [];
+    const report = serviceReports.find(r => r.id === reportId);
+    if (!report) {
+      return res.status(404).json({ error: 'Service report not found' });
+    }
+
+    res.json(report);
+  } catch (error) {
+    console.error('Error fetching single service report:', error);
+    res.status(500).json({ error: 'Failed to fetch service report' });
+  }
+});
+
 // Client signs a service report that is pending their signature
 app.put('/api/client/service-reports/:id/sign', authenticateToken, async (req, res) => {
   try {
@@ -4471,7 +5329,7 @@ app.put('/api/client/service-reports/:id/sign', authenticateToken, async (req, r
     }
     if (!isClientReport) {
       const reportClient = (report.clientFacilityName || '').toLowerCase().trim();
-      if (reportClient && uniqueClientNames.some(name => reportClient.includes(name) || name.includes(reportClient))) {
+      if (reportClient && uniqueClientNames.some(name => reportClient === name)) {
         isClientReport = true;
       }
     }
@@ -4647,7 +5505,8 @@ app.get('/api/client/service-reports/:id/pdf', authenticateToken, async (req, re
 
       const isMatch = (hubspotCompanyId && report.hubspotCompanyId === hubspotCompanyId) ||
                       slugLinked ||
-                      (reportClient && uniqueClientNames.some(name => reportClient.includes(name) || name.includes(reportClient)));
+                      (clientSlug && report.clientSlug && report.clientSlug === clientSlug) ||
+                      (reportClient && uniqueClientNames.some(name => reportClient === name));
 
       if (!isMatch) {
         return res.status(403).json({ error: 'Not authorized to access this report' });
@@ -4739,26 +5598,9 @@ app.get('/api/client/hubspot/file/:fileId', authenticateToken, async (req, res) 
 });
 
 // ============== HUBSPOT WEBHOOKS ==============
-const HUBSPOT_WEBHOOK_SECRET = process.env.HUBSPOT_WEBHOOK_SECRET;
 
-// Startup warning for missing webhook secret (Gotcha #18)
-if (!HUBSPOT_WEBHOOK_SECRET) {
-  console.warn('⚠️  WARNING: HUBSPOT_WEBHOOK_SECRET not set. Webhook endpoint will accept ALL requests without validation.');
-  console.warn('   Set HUBSPOT_WEBHOOK_SECRET to enable webhook authentication.');
-}
-
-app.post('/api/webhooks/hubspot', async (req, res) => {
+app.post('/api/webhooks/hubspot', validateHubSpotWebhook, async (req, res) => {
   try {
-    if (HUBSPOT_WEBHOOK_SECRET) {
-      const providedSecret = req.headers['x-hubspot-webhook-secret'] || req.query.secret;
-      if (providedSecret !== HUBSPOT_WEBHOOK_SECRET) {
-        console.warn('HubSpot webhook rejected: invalid secret');
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
-    } else {
-      console.warn('HubSpot webhook secret not configured - consider setting HUBSPOT_WEBHOOK_SECRET');
-    }
-    
     const payload = req.body;
     console.log('HubSpot webhook received');
     
@@ -6337,39 +7179,84 @@ const escapeCSV = (value) => {
   return str;
 };
 
+const PHASE_NAMES = {
+  'Phase 1': 'Phase 1: Contract & Initial Setup',
+  'Phase 2': 'Phase 2: Billing, CLIA & Hiring',
+  'Phase 3': 'Phase 3: Tech Infrastructure & LIS Integration',
+  'Phase 4': 'Phase 4: Inventory Forecasting & Procurement',
+  'Phase 5': 'Phase 5: Supply Orders & Logistics',
+  'Phase 6': 'Phase 6: Onboarding & Welcome Calls',
+  'Phase 7': 'Phase 7: Virtual Soft Pilot & Prep',
+  'Phase 8': 'Phase 8: Training & Full Validation',
+  'Phase 9': 'Phase 9: Go-Live',
+  'Phase 10': 'Phase 10: Post-Launch Support & Optimization'
+};
+
 app.get('/api/projects/:id/export', authenticateToken, async (req, res) => {
   try {
     // Check project access
     if (!canAccessProject(req.user, req.params.id)) {
       return res.status(403).json({ error: 'Access denied to this project' });
     }
-    
+
     const projects = await getProjects();
     const project = projects.find(p => p.id === req.params.id);
     if (!project) return res.status(404).json({ error: 'Project not found' });
     const tasks = await getTasks(req.params.id);
-    
-    const headers = ['id', 'phase', 'stage', 'taskTitle', 'owner', 'startDate', 'dueDate', 'showToClient', 'clientName', 'completed', 'dateCompleted', 'tags', 'dependencies', 'notes'];
-    
-    const rows = tasks.map(t => [
-      t.id,
-      t.phase || '',
-      t.stage || '',
-      t.taskTitle || '',
-      t.owner || '',
-      t.startDate || '',
-      t.dueDate || '',
-      t.showToClient ? 'true' : 'false',
-      t.clientName || '',
-      t.completed ? 'true' : 'false',
-      t.dateCompleted || '',
-      Array.isArray(t.tags) ? t.tags.join(';') : '',
-      Array.isArray(t.dependencies) ? t.dependencies.join(';') : '',
-      Array.isArray(t.notes) ? t.notes.map(n => n.content || n.text || '').join(' | ') : ''
-    ].map(escapeCSV));
-    
+
+    const headers = ['id', 'phase', 'stage', 'taskTitle', 'isSubtask', 'parentTaskId', 'subtaskStatus', 'owner', 'startDate', 'dueDate', 'showToClient', 'clientName', 'completed', 'dateCompleted', 'tags', 'dependencies', 'notes'];
+
+    const rows = [];
+    tasks.forEach(t => {
+      const fullPhase = PHASE_NAMES[t.phase] || t.phase || '';
+      // Parent task row
+      rows.push([
+        t.id,
+        fullPhase,
+        t.stage || '',
+        t.taskTitle || '',
+        'false',
+        '',
+        '',
+        t.owner || '',
+        t.startDate || '',
+        t.dueDate || '',
+        t.showToClient ? 'true' : 'false',
+        t.clientName || '',
+        t.completed ? 'true' : 'false',
+        t.dateCompleted || '',
+        Array.isArray(t.tags) ? t.tags.join(';') : '',
+        Array.isArray(t.dependencies) ? t.dependencies.join(';') : '',
+        Array.isArray(t.notes) ? t.notes.map(n => n.content || n.text || '').join(' | ') : ''
+      ].map(escapeCSV));
+      // Subtask rows
+      if (Array.isArray(t.subtasks)) {
+        t.subtasks.forEach(st => {
+          rows.push([
+            st.id,
+            fullPhase,
+            t.stage || '',
+            st.title || '',
+            'true',
+            t.id,
+            st.status || (st.completed ? 'Completed' : (st.notApplicable ? 'N/A' : 'Pending')),
+            st.owner || '',
+            '',
+            st.dueDate || '',
+            st.showToClient ? 'true' : 'false',
+            '',
+            st.completed ? 'true' : 'false',
+            '',
+            '',
+            '',
+            ''
+          ].map(escapeCSV));
+        });
+      }
+    });
+
     const csv = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
-    
+
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${project.name.replace(/[^a-zA-Z0-9]/g, '_')}.csv"`);
     res.send(csv);
@@ -6857,6 +7744,10 @@ app.post('/api/auth/service-login', async (req, res) => {
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
+    // Block inactive accounts from logging in
+    if (user.accountStatus === 'inactive') {
+      return res.status(403).json({ error: 'Account is inactive. Please contact an administrator.' });
+    }
 
     // Check if user has service portal access
     if (user.role !== config.ROLES.ADMIN && !user.hasServicePortalAccess) {
@@ -7260,33 +8151,13 @@ app.get('/api/service-reports/assigned', authenticateToken, requireServiceAccess
   try {
     const serviceReports = (await db.get('service_reports')) || [];
 
-    console.log('=== ASSIGNED REPORTS DEBUG ===');
-    console.log('User ID:', req.user.id, 'Type:', typeof req.user.id);
-    console.log('User Role:', req.user.role);
-    console.log('User Name:', req.user.name);
-    console.log('Total reports in DB:', serviceReports.length);
-
-    // Log all assigned reports for debugging
-    const allAssignedReports = serviceReports.filter(r => r.status === 'assigned');
-    console.log('All reports with status=assigned:', allAssignedReports.length);
-    allAssignedReports.forEach(r => {
-      console.log(`  Report ${r.id.substring(0, 8)}: assignedToId=${r.assignedToId} (type: ${typeof r.assignedToId}), client=${r.clientFacilityName}, status=${r.status}`);
-    });
-
     // Filter reports assigned to this user that haven't been submitted yet
     // Convert both IDs to strings to ensure proper comparison regardless of type
     const userIdString = String(req.user.id);
     let assignedReports = serviceReports.filter(r => {
       const reportAssignedId = String(r.assignedToId || '');
-      const idMatch = reportAssignedId === userIdString;
-      const statusMatch = r.status === 'assigned';
-      if (r.status === 'assigned') {
-        console.log(`  Checking report ${r.id?.substring(0, 8)}: assignedToId="${r.assignedToId}" (converted: "${reportAssignedId}") === userId="${req.user.id}" (converted: "${userIdString}")? ${idMatch}, status=${r.status}==='assigned'? ${statusMatch}`);
-      }
-      return idMatch && statusMatch;
+      return reportAssignedId === userIdString && r.status === 'assigned';
     });
-
-    console.log('Matched reports for user:', assignedReports.length);
 
     // NOTE: Client filtering removed - vendors should see ALL reports assigned to them
     // The act of assigning a report to a vendor implicitly grants access to that client
@@ -7294,9 +8165,6 @@ app.get('/api/service-reports/assigned', authenticateToken, requireServiceAccess
 
     // Sort by assignment date (most recent first)
     assignedReports.sort((a, b) => new Date(b.assignedAt) - new Date(a.assignedAt));
-
-    console.log('Final assigned reports count:', assignedReports.length);
-    console.log('=== END DEBUG ===');
 
     res.json(assignedReports);
   } catch (error) {
@@ -7535,65 +8403,15 @@ app.get('/api/hubspot/ticket/:ticketId/map-to-service-report', authenticateToken
     const ticket = await hubspot.getTicketById(ticketId);
 
     // Map HubSpot owner ID to internal user
-    let assignedToId = null;
-    let assignedToName = null;
-    if (ticket.ownerId) {
-      const users = (await db.get('users')) || [];
-
-      // Try to find user by matching HubSpot owner ID
-      // First, get the HubSpot owner details
-      try {
-        const owners = await hubspot.getOwners();
-        const hubspotOwner = owners.find(o => String(o.id) === String(ticket.ownerId));
-
-        if (hubspotOwner) {
-          // Try to match by email first
-          if (hubspotOwner.email) {
-            const userByEmail = users.find(u =>
-              u.email && u.email.toLowerCase() === hubspotOwner.email.toLowerCase()
-            );
-            if (userByEmail) {
-              assignedToId = userByEmail.id;
-              assignedToName = userByEmail.name;
-            }
-          }
-
-          // If no match by email, try by name
-          if (!assignedToId && hubspotOwner.firstName && hubspotOwner.lastName) {
-            const fullName = `${hubspotOwner.firstName} ${hubspotOwner.lastName}`;
-            const userByName = users.find(u =>
-              u.name && u.name.toLowerCase() === fullName.toLowerCase()
-            );
-            if (userByName) {
-              assignedToId = userByName.id;
-              assignedToName = userByName.name;
-            }
-          }
-        }
-      } catch (ownerErr) {
-        console.log('Could not match HubSpot owner to internal user:', ownerErr.message);
-      }
-    }
+    const users = (await db.get('users')) || [];
+    const { id: assignedToId, name: assignedToName } = await resolveHubSpotOwnerToUser(ticket.ownerId, users);
 
     // Map Service Type from Issue Category
     const issueCategoryLower = (ticket.issueCategory || '').toLowerCase();
     const serviceType = config.SERVICE_TYPE_MAP[issueCategoryLower] || '';
 
-    // Combine ticket description and notes into manager notes
-    let managerNotes = '';
-    if (ticket.description) {
-      managerNotes += `**Ticket Description:**\n${ticket.description}\n\n`;
-    }
-    if (ticket.notes && ticket.notes.length > 0) {
-      managerNotes += `**Ticket Notes:**\n`;
-      ticket.notes.forEach((note, index) => {
-        const timestamp = note.timestamp ? new Date(parseInt(note.timestamp)).toLocaleString() : '';
-        managerNotes += `\n[${timestamp}]\n${note.body}\n`;
-        if (note.attachmentIds) {
-          managerNotes += `(Attachments: ${note.attachmentIds})\n`;
-        }
-      });
-    }
+    // Build a temporary report to extract managerNotes
+    const tempReport = buildServiceReportFromTicket(ticket, assignedToId, assignedToName, serviceType, '', 'webhook');
 
     // Build the mapped service report data
     const mappedData = {
@@ -7611,7 +8429,7 @@ app.get('/api/hubspot/ticket/:ticketId/map-to-service-report', authenticateToken
       analyzerSerialNumber: ticket.serialNumber || '',
       hubspotTicketNumber: ticket.id,
       hubspotCompanyId: ticket.companyId || '',
-      managerNotes: managerNotes.trim(),
+      managerNotes: tempReport.managerNotes,
       serviceCompletionDate: new Date().toISOString().split('T')[0], // Today's date
 
       // Additional info
@@ -9079,16 +9897,52 @@ app.get('/knowledge', (req, res) => {
 
 // ============== KNOWLEDGE HUB API ==============
 
+// 5-tier permission system for Knowledge Hub content
+function getKnowledgeTier(user) {
+  if (user.role === config.ROLES.ADMIN) return 'super_admin';
+  if (user.isManager) return 'manager';
+  if (user.role === config.ROLES.VENDOR) return 'vendor';
+  if (user.role === config.ROLES.CLIENT) return 'client';
+  return 'team_member';
+}
+
+function canUserSeeKnowledgeGuide(user, guide) {
+  const tier = getKnowledgeTier(user);
+
+  // Backward compat: convert old flags to visibleTo if missing
+  let visibleTo = guide.visibleTo;
+  if (!visibleTo) {
+    if (guide.ownerOnly) visibleTo = ['super_admin'];
+    else if (guide.adminOnly) visibleTo = ['super_admin', 'manager'];
+    else visibleTo = [];
+  }
+
+  // Empty visibleTo means visible to all authenticated users
+  if (visibleTo.length === 0) return true;
+
+  // Check tier membership
+  if (!visibleTo.includes(tier)) return false;
+
+  // For team members, also check portal-section-specific permission flags
+  if (tier === 'team_member' && guide.portalSection) {
+    switch (guide.portalSection) {
+      case 'admin_hub': return !!user.hasAdminHubAccess;
+      case 'launch_portal': return !!user.hasImplementationsAccess || (user.assignedProjects && user.assignedProjects.length > 0);
+      case 'service_portal': return !!user.hasServicePortalAccess;
+      case 'client_portal_admin': return !!user.hasClientPortalAdminAccess;
+      case 'client_portal': return false;
+      default: return true;
+    }
+  }
+
+  return true;
+}
+
 // Get all guides (authenticated users)
 app.get('/api/knowledge/guides', authenticateToken, async (req, res) => {
   try {
     const guides = (await db.get('knowledge_guides')) || [];
-    // Filter based on user permissions
-    const filteredGuides = guides.filter(guide => {
-      if (guide.ownerOnly && req.user.email !== 'bianca@thrive365labs.com') return false;
-      if (guide.adminOnly && req.user.role !== config.ROLES.ADMIN) return false;
-      return true;
-    });
+    const filteredGuides = guides.filter(guide => canUserSeeKnowledgeGuide(req.user, guide));
     res.json(filteredGuides);
   } catch (error) {
     console.error('Get guides error:', error);
@@ -9104,11 +9958,8 @@ app.get('/api/knowledge/guides/:guideId', authenticateToken, async (req, res) =>
     if (!guide) {
       return res.status(404).json({ error: 'Guide not found' });
     }
-    // Check permissions
-    if (guide.ownerOnly && req.user.email !== 'bianca@thrive365labs.com') {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-    if (guide.adminOnly && req.user.role !== config.ROLES.ADMIN) {
+    // Check permissions using 5-tier system
+    if (!canUserSeeKnowledgeGuide(req.user, guide)) {
       return res.status(403).json({ error: 'Access denied' });
     }
     res.json(guide);
@@ -9121,7 +9972,7 @@ app.get('/api/knowledge/guides/:guideId', authenticateToken, async (req, res) =>
 // Create a new guide (admin only)
 app.post('/api/knowledge/guides', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { key, title, description, icon, color, ownerOnly, adminOnly, articles } = req.body;
+    const { key, title, description, icon, color, ownerOnly, adminOnly, visibleTo, portalSection, isKnownIssue, articles } = req.body;
     if (!key || !title) {
       return res.status(400).json({ error: 'Key and title are required' });
     }
@@ -9139,10 +9990,14 @@ app.post('/api/knowledge/guides', authenticateToken, requireAdmin, async (req, r
       color: color || 'bg-gray-500',
       ownerOnly: ownerOnly || false,
       adminOnly: adminOnly || false,
+      visibleTo: Array.isArray(visibleTo) ? visibleTo : [],
+      portalSection: portalSection || 'general',
+      isKnownIssue: isKnownIssue || false,
       articles: (articles || []).map(a => ({
         id: uuidv4(),
         title: a.title,
         content: a.content,
+        format: a.format || null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       })),
@@ -9161,7 +10016,7 @@ app.post('/api/knowledge/guides', authenticateToken, requireAdmin, async (req, r
 // Update a guide (admin only)
 app.put('/api/knowledge/guides/:guideId', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { title, description, icon, color, ownerOnly, adminOnly } = req.body;
+    const { title, description, icon, color, ownerOnly, adminOnly, visibleTo, portalSection, isKnownIssue } = req.body;
     const guides = (await db.get('knowledge_guides')) || [];
     const idx = guides.findIndex(g => g.id === req.params.guideId);
     if (idx === -1) {
@@ -9173,6 +10028,9 @@ app.put('/api/knowledge/guides/:guideId', authenticateToken, requireAdmin, async
     if (color !== undefined) guides[idx].color = color;
     if (ownerOnly !== undefined) guides[idx].ownerOnly = ownerOnly;
     if (adminOnly !== undefined) guides[idx].adminOnly = adminOnly;
+    if (visibleTo !== undefined) guides[idx].visibleTo = Array.isArray(visibleTo) ? visibleTo : [];
+    if (portalSection !== undefined) guides[idx].portalSection = portalSection;
+    if (isKnownIssue !== undefined) guides[idx].isKnownIssue = isKnownIssue;
     guides[idx].updatedAt = new Date().toISOString();
     await db.set('knowledge_guides', guides);
     res.json(guides[idx]);
@@ -9201,9 +10059,9 @@ app.delete('/api/knowledge/guides/:guideId', authenticateToken, requireAdmin, as
 // Add an article to a guide (admin only)
 app.post('/api/knowledge/guides/:guideId/articles', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { title, content } = req.body;
-    if (!title || !content) {
-      return res.status(400).json({ error: 'Title and content are required' });
+    const { title, content, format } = req.body;
+    if (!title || (!content && !format)) {
+      return res.status(400).json({ error: 'Title and content (or format) are required' });
     }
     const guides = (await db.get('knowledge_guides')) || [];
     const idx = guides.findIndex(g => g.id === req.params.guideId);
@@ -9213,7 +10071,8 @@ app.post('/api/knowledge/guides/:guideId/articles', authenticateToken, requireAd
     const newArticle = {
       id: uuidv4(),
       title,
-      content,
+      content: content || '',
+      format: format || null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -9231,7 +10090,7 @@ app.post('/api/knowledge/guides/:guideId/articles', authenticateToken, requireAd
 // Update an article (admin only)
 app.put('/api/knowledge/guides/:guideId/articles/:articleId', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { title, content } = req.body;
+    const { title, content, format } = req.body;
     const guides = (await db.get('knowledge_guides')) || [];
     const guideIdx = guides.findIndex(g => g.id === req.params.guideId);
     if (guideIdx === -1) {
@@ -9243,6 +10102,7 @@ app.put('/api/knowledge/guides/:guideId/articles/:articleId', authenticateToken,
     }
     if (title !== undefined) guides[guideIdx].articles[articleIdx].title = title;
     if (content !== undefined) guides[guideIdx].articles[articleIdx].content = content;
+    if (format !== undefined) guides[guideIdx].articles[articleIdx].format = format;
     guides[guideIdx].articles[articleIdx].updatedAt = new Date().toISOString();
     guides[guideIdx].updatedAt = new Date().toISOString();
     await db.set('knowledge_guides', guides);
@@ -9333,10 +10193,14 @@ app.post('/api/knowledge/seed', authenticateToken, requireAdmin, async (req, res
       color: guide.color || 'bg-gray-500',
       ownerOnly: guide.ownerOnly || false,
       adminOnly: guide.adminOnly || false,
+      visibleTo: Array.isArray(guide.visibleTo) ? guide.visibleTo : [],
+      portalSection: guide.portalSection || 'general',
+      isKnownIssue: guide.isKnownIssue || false,
       articles: (guide.articles || []).map(article => ({
         id: uuidv4(),
         title: article.title,
-        content: article.content,
+        content: article.content || '',
+        format: article.format || null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       })),
@@ -9347,6 +10211,391 @@ app.post('/api/knowledge/seed', authenticateToken, requireAdmin, async (req, res
     res.json({ success: true, count: seededGuides.length });
   } catch (error) {
     console.error('Seed guides error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============== KNOWLEDGE HUB V2 API ==============
+
+// Helper: Determine user type from req.user
+function getKnowledgeUserType(user) {
+  if (!user) return 'public';
+  if (user.role === config.ROLES.ADMIN) return 'superAdmin';
+  if (user.role === 'user' && user.isManager) return 'manager';
+  if (user.role === 'user') return 'teamMember';
+  if (user.role === config.ROLES.VENDOR) return 'vendor';
+  if (user.role === config.ROLES.CLIENT) return 'client';
+  return 'teamMember';
+}
+
+// Helper: Filter v2 content by user type
+function filterV2ContentForUser(sections, userType) {
+  const isInternal = ['superAdmin', 'manager', 'teamMember'].includes(userType);
+  return sections
+    .filter(s => (s.visibleTo || []).includes(userType))
+    .map(s => ({
+      ...s,
+      features: (s.features || [])
+        .filter(f => (f.visibleTo || []).includes(userType))
+        .map(f => {
+          if (!isInternal) {
+            const { knownIssues, ...rest } = f;
+            return rest;
+          }
+          return f;
+        })
+        .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+    }))
+    .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+}
+
+// Optional auth middleware - populates req.user if token exists, otherwise continues
+const optionalAuthenticateToken = async (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  let token = authHeader && authHeader.split(' ')[1];
+  if (!token && req.query.token) {
+    token = req.query.token;
+  }
+  if (!token) {
+    req.user = null;
+    return next();
+  }
+  jwt.verify(token, JWT_SECRET, async (err, tokenUser) => {
+    if (err) {
+      req.user = null;
+      return next();
+    }
+    try {
+      const users = await getUsers();
+      const freshUser = users.find(u => u.id === tokenUser.id);
+      if (!freshUser) {
+        req.user = null;
+        return next();
+      }
+      const isManager = freshUser.isManager || false;
+      req.user = {
+        id: freshUser.id,
+        email: freshUser.email,
+        name: freshUser.name,
+        role: freshUser.role,
+        assignedProjects: freshUser.assignedProjects || [],
+        projectAccessLevels: freshUser.projectAccessLevels || {},
+        isManager: isManager,
+        hasServicePortalAccess: freshUser.hasServicePortalAccess || false,
+        hasAdminHubAccess: freshUser.hasAdminHubAccess || false,
+        hasImplementationsAccess: freshUser.hasImplementationsAccess || false,
+        hasClientPortalAdminAccess: freshUser.hasClientPortalAdminAccess || isManager || false,
+        assignedClients: freshUser.assignedClients || [],
+        isNewClient: freshUser.isNewClient || false,
+        slug: freshUser.slug || null,
+        practiceName: freshUser.practiceName || null
+      };
+      next();
+    } catch (error) {
+      req.user = null;
+      next();
+    }
+  });
+};
+
+// Get all v2 sections filtered by user type
+app.get('/api/knowledge/v2/sections', optionalAuthenticateToken, async (req, res) => {
+  try {
+    const sections = (await db.get('knowledge_guides_v2')) || [];
+    const userType = getKnowledgeUserType(req.user);
+    const filtered = filterV2ContentForUser(sections, userType);
+    res.json({ sections: filtered, userType });
+  } catch (error) {
+    console.error('Get v2 sections error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get a specific v2 section by key
+app.get('/api/knowledge/v2/sections/:sectionKey', optionalAuthenticateToken, async (req, res) => {
+  try {
+    const sections = (await db.get('knowledge_guides_v2')) || [];
+    const userType = getKnowledgeUserType(req.user);
+    const filtered = filterV2ContentForUser(sections, userType);
+    const section = filtered.find(s => s.key === req.params.sectionKey);
+    if (!section) {
+      return res.status(404).json({ error: 'Section not found or access denied' });
+    }
+    res.json({ section, userType });
+  } catch (error) {
+    console.error('Get v2 section error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Search v2 content
+app.get('/api/knowledge/v2/search', optionalAuthenticateToken, async (req, res) => {
+  try {
+    const { q } = req.query;
+    if (!q || q.trim().length < 2) {
+      return res.json({ results: [] });
+    }
+    const sections = (await db.get('knowledge_guides_v2')) || [];
+    const userType = getKnowledgeUserType(req.user);
+    const filtered = filterV2ContentForUser(sections, userType);
+    const lower = q.toLowerCase().trim();
+    const results = [];
+    filtered.forEach(section => {
+      (section.features || []).forEach(feature => {
+        const searchable = [
+          feature.title || '',
+          feature.content?.whatItIs || '',
+          feature.content?.howToUseIt || '',
+          feature.content?.whenToUseIt || '',
+          feature.content?.whoUsesIt || '',
+          feature.content?.whatHappensNext || '',
+          feature.content?.commonMistakes || '',
+          ...(feature.tags || [])
+        ].join(' ').toLowerCase();
+        if (searchable.includes(lower)) {
+          results.push({
+            sectionKey: section.key,
+            sectionTitle: section.title,
+            sectionColor: section.color,
+            featureId: feature.id,
+            featureTitle: feature.title,
+            featureSlug: feature.slug,
+            snippet: getSearchSnippet(searchable, lower),
+            tags: feature.tags || []
+          });
+        }
+      });
+    });
+    res.json({ results, query: q });
+  } catch (error) {
+    console.error('Search v2 error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Helper: Extract a text snippet around search match
+function getSearchSnippet(text, query) {
+  const idx = text.indexOf(query);
+  if (idx === -1) return text.substring(0, 120) + '...';
+  const start = Math.max(0, idx - 50);
+  const end = Math.min(text.length, idx + query.length + 70);
+  let snippet = '';
+  if (start > 0) snippet += '...';
+  snippet += text.substring(start, end);
+  if (end < text.length) snippet += '...';
+  return snippet;
+}
+
+// Check if v2 data needs seeding
+app.get('/api/knowledge/v2/needs-seed', optionalAuthenticateToken, async (req, res) => {
+  try {
+    const sections = (await db.get('knowledge_guides_v2')) || [];
+    res.json({ needsSeed: sections.length === 0 });
+  } catch (error) {
+    console.error('Check v2 seed error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Seed v2 content (admin only, one-time)
+app.post('/api/knowledge/v2/seed', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const existing = (await db.get('knowledge_guides_v2')) || [];
+    if (existing.length > 0) {
+      return res.status(400).json({ error: 'V2 content already exists. Use update endpoints to modify.' });
+    }
+    const { sections } = req.body;
+    if (!Array.isArray(sections) || sections.length === 0) {
+      return res.status(400).json({ error: 'Sections array is required' });
+    }
+    const seeded = sections.map(section => ({
+      id: uuidv4(),
+      key: section.key,
+      title: section.title,
+      description: section.description || '',
+      icon: section.icon || 'book',
+      color: section.color || 'bg-gray-500',
+      sortOrder: section.sortOrder || 0,
+      visibleTo: section.visibleTo || [],
+      features: (section.features || []).map(f => ({
+        id: uuidv4(),
+        title: f.title,
+        slug: f.slug || f.title.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        sortOrder: f.sortOrder || 0,
+        visibleTo: f.visibleTo || section.visibleTo || [],
+        tags: f.tags || [],
+        content: f.content || {},
+        knownIssues: f.knownIssues || '',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }));
+    await db.set('knowledge_guides_v2', seeded);
+    res.json({ success: true, count: seeded.length });
+  } catch (error) {
+    console.error('Seed v2 error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Create a v2 section (admin only)
+app.post('/api/knowledge/v2/sections', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { key, title, description, icon, color, sortOrder, visibleTo } = req.body;
+    if (!key || !title) {
+      return res.status(400).json({ error: 'Key and title are required' });
+    }
+    const sections = (await db.get('knowledge_guides_v2')) || [];
+    if (sections.find(s => s.key === key)) {
+      return res.status(400).json({ error: 'A section with this key already exists' });
+    }
+    const newSection = {
+      id: uuidv4(),
+      key,
+      title,
+      description: description || '',
+      icon: icon || 'book',
+      color: color || 'bg-gray-500',
+      sortOrder: sortOrder || sections.length,
+      visibleTo: visibleTo || [],
+      features: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    sections.push(newSection);
+    await db.set('knowledge_guides_v2', sections);
+    res.json(newSection);
+  } catch (error) {
+    console.error('Create v2 section error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update a v2 section (admin only)
+app.put('/api/knowledge/v2/sections/:sectionId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { title, description, icon, color, sortOrder, visibleTo } = req.body;
+    const sections = (await db.get('knowledge_guides_v2')) || [];
+    const idx = sections.findIndex(s => s.id === req.params.sectionId);
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Section not found' });
+    }
+    if (title !== undefined) sections[idx].title = title;
+    if (description !== undefined) sections[idx].description = description;
+    if (icon !== undefined) sections[idx].icon = icon;
+    if (color !== undefined) sections[idx].color = color;
+    if (sortOrder !== undefined) sections[idx].sortOrder = sortOrder;
+    if (visibleTo !== undefined) sections[idx].visibleTo = visibleTo;
+    sections[idx].updatedAt = new Date().toISOString();
+    await db.set('knowledge_guides_v2', sections);
+    res.json(sections[idx]);
+  } catch (error) {
+    console.error('Update v2 section error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete a v2 section (admin only)
+app.delete('/api/knowledge/v2/sections/:sectionId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const sections = (await db.get('knowledge_guides_v2')) || [];
+    const filtered = sections.filter(s => s.id !== req.params.sectionId);
+    if (filtered.length === sections.length) {
+      return res.status(404).json({ error: 'Section not found' });
+    }
+    await db.set('knowledge_guides_v2', filtered);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete v2 section error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Add a feature to a v2 section (admin only)
+app.post('/api/knowledge/v2/sections/:sectionId/features', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { title, slug, sortOrder, visibleTo, tags, content, knownIssues } = req.body;
+    if (!title) {
+      return res.status(400).json({ error: 'Title is required' });
+    }
+    const sections = (await db.get('knowledge_guides_v2')) || [];
+    const idx = sections.findIndex(s => s.id === req.params.sectionId);
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Section not found' });
+    }
+    const newFeature = {
+      id: uuidv4(),
+      title,
+      slug: slug || title.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      sortOrder: sortOrder || (sections[idx].features || []).length,
+      visibleTo: visibleTo || sections[idx].visibleTo || [],
+      tags: tags || [],
+      content: content || {},
+      knownIssues: knownIssues || '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    sections[idx].features = sections[idx].features || [];
+    sections[idx].features.push(newFeature);
+    sections[idx].updatedAt = new Date().toISOString();
+    await db.set('knowledge_guides_v2', sections);
+    res.json(newFeature);
+  } catch (error) {
+    console.error('Add v2 feature error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update a feature (admin only)
+app.put('/api/knowledge/v2/sections/:sectionId/features/:featureId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { title, slug, sortOrder, visibleTo, tags, content, knownIssues } = req.body;
+    const sections = (await db.get('knowledge_guides_v2')) || [];
+    const sIdx = sections.findIndex(s => s.id === req.params.sectionId);
+    if (sIdx === -1) {
+      return res.status(404).json({ error: 'Section not found' });
+    }
+    const fIdx = (sections[sIdx].features || []).findIndex(f => f.id === req.params.featureId);
+    if (fIdx === -1) {
+      return res.status(404).json({ error: 'Feature not found' });
+    }
+    if (title !== undefined) sections[sIdx].features[fIdx].title = title;
+    if (slug !== undefined) sections[sIdx].features[fIdx].slug = slug;
+    if (sortOrder !== undefined) sections[sIdx].features[fIdx].sortOrder = sortOrder;
+    if (visibleTo !== undefined) sections[sIdx].features[fIdx].visibleTo = visibleTo;
+    if (tags !== undefined) sections[sIdx].features[fIdx].tags = tags;
+    if (content !== undefined) sections[sIdx].features[fIdx].content = content;
+    if (knownIssues !== undefined) sections[sIdx].features[fIdx].knownIssues = knownIssues;
+    sections[sIdx].features[fIdx].updatedAt = new Date().toISOString();
+    sections[sIdx].updatedAt = new Date().toISOString();
+    await db.set('knowledge_guides_v2', sections);
+    res.json(sections[sIdx].features[fIdx]);
+  } catch (error) {
+    console.error('Update v2 feature error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete a feature (admin only)
+app.delete('/api/knowledge/v2/sections/:sectionId/features/:featureId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const sections = (await db.get('knowledge_guides_v2')) || [];
+    const sIdx = sections.findIndex(s => s.id === req.params.sectionId);
+    if (sIdx === -1) {
+      return res.status(404).json({ error: 'Section not found' });
+    }
+    const originalLen = (sections[sIdx].features || []).length;
+    sections[sIdx].features = (sections[sIdx].features || []).filter(f => f.id !== req.params.featureId);
+    if (sections[sIdx].features.length === originalLen) {
+      return res.status(404).json({ error: 'Feature not found' });
+    }
+    sections[sIdx].updatedAt = new Date().toISOString();
+    await db.set('knowledge_guides_v2', sections);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete v2 feature error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -9501,7 +10750,6 @@ app.post('/api/admin/reset-user-password/:userId', authenticateToken, requireAdm
 // Test email endpoint (admin only) - remove after validating Resend setup
 app.post('/api/admin/test-email', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { sendEmail } = require('./email');
     const { to, subject, body } = req.body;
     const result = await sendEmail(
       to || req.user.email,
@@ -9512,6 +10760,518 @@ app.post('/api/admin/test-email', authenticateToken, requireAdmin, async (req, r
   } catch (error) {
     console.error('Test email error:', error);
     res.status(500).json({ error: 'Failed to send test email' });
+  }
+});
+
+// ============================================================
+// NOTIFICATION QUEUE MANAGEMENT ENDPOINTS (Feature 1)
+// ============================================================
+
+// View pending notifications queue
+app.get('/api/admin/notifications/queue', authenticateToken, requireAdminHubAccess, async (req, res) => {
+  try {
+    const queue = (await db.get('pending_notifications')) || [];
+    const { type, status } = req.query;
+    let filtered = queue;
+    if (type) filtered = filtered.filter(n => n.type === type);
+    if (status) filtered = filtered.filter(n => n.status === status);
+    filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    res.json(filtered);
+  } catch (error) {
+    console.error('Get notification queue error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// View sent/failed notification history (log archive)
+app.get('/api/admin/notifications/log', authenticateToken, requireAdminHubAccess, async (req, res) => {
+  try {
+    const log = (await db.get('notification_log')) || [];
+    const { type, status, limit } = req.query;
+    let filtered = log;
+    if (type) filtered = filtered.filter(n => n.type === type);
+    if (status) filtered = filtered.filter(n => n.status === status);
+    if (limit) filtered = filtered.slice(0, parseInt(limit));
+    res.json(filtered);
+  } catch (error) {
+    console.error('Get notification log error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Cancel a pending notification
+app.post('/api/admin/notifications/cancel/:id', authenticateToken, requireAdminHubAccess, async (req, res) => {
+  try {
+    const queue = (await db.get('pending_notifications')) || [];
+    const idx = queue.findIndex(n => n.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Notification not found' });
+    if (queue[idx].status !== 'pending') return res.status(400).json({ error: 'Only pending notifications can be cancelled' });
+    queue[idx].status = 'cancelled';
+    await db.set('pending_notifications', queue);
+    res.json({ message: 'Notification cancelled' });
+  } catch (error) {
+    console.error('Cancel notification error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Bulk cancel/delete notifications from queue (admin only)
+app.post('/api/admin/notifications/bulk-delete', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+    const queue = (await db.get('pending_notifications')) || [];
+    const idSet = new Set(ids);
+    const remaining = queue.filter(n => !idSet.has(n.id));
+    const removedCount = queue.length - remaining.length;
+    await db.set('pending_notifications', remaining);
+    await logActivity(req.user.id, req.user.name, 'bulk_deleted', 'notifications', null, { count: removedCount });
+    res.json({ message: `${removedCount} notification(s) removed`, removedCount });
+  } catch (error) {
+    console.error('Bulk delete notifications error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Retry a failed notification (move from log back to queue)
+app.post('/api/admin/notifications/retry/:id', authenticateToken, requireAdminHubAccess, async (req, res) => {
+  try {
+    const log = (await db.get('notification_log')) || [];
+    const idx = log.findIndex(n => n.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Notification not found in log' });
+    if (log[idx].status !== 'failed') return res.status(400).json({ error: 'Only failed notifications can be retried' });
+
+    const notification = log.splice(idx, 1)[0];
+    notification.status = 'pending';
+    notification.retryCount = 0;
+    notification.failedAt = null;
+    notification.failureReason = null;
+    notification.triggerDate = new Date().toISOString();
+
+    const queue = (await db.get('pending_notifications')) || [];
+    queue.push(notification);
+    await db.set('pending_notifications', queue);
+    await db.set('notification_log', log);
+    res.json({ message: 'Notification re-queued for retry' });
+  } catch (error) {
+    console.error('Retry notification error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Queue stats — pending count, sent today, failure rate
+app.get('/api/admin/notifications/stats', authenticateToken, requireAdminHubAccess, async (req, res) => {
+  try {
+    const queue = (await db.get('pending_notifications')) || [];
+    const log = (await db.get('notification_log')) || [];
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    const sentToday = log.filter(n => n.status === 'sent' && n.sentAt >= todayStart).length;
+    const failedToday = log.filter(n => n.status === 'failed' && n.failedAt >= todayStart).length;
+    const pendingCount = queue.filter(n => n.status === 'pending').length;
+    const totalSent = log.filter(n => n.status === 'sent').length;
+    const totalFailed = log.filter(n => n.status === 'failed').length;
+    const failureRate = (totalSent + totalFailed) > 0 ? Math.round((totalFailed / (totalSent + totalFailed)) * 100) : 0;
+
+    // Group pending by type
+    const pendingByType = {};
+    queue.filter(n => n.status === 'pending').forEach(n => {
+      pendingByType[n.type] = (pendingByType[n.type] || 0) + 1;
+    });
+
+    res.json({
+      pending: pendingCount,
+      pendingByType,
+      sentToday,
+      failedToday,
+      dailyLimit: config.NOTIFICATION_DAILY_SEND_LIMIT,
+      totalSent,
+      totalFailed,
+      failureRate,
+      logSize: log.length
+    });
+  } catch (error) {
+    console.error('Notification stats error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============================================================
+// AD-HOC EMAIL ENDPOINTS (Feature 1)
+// ============================================================
+
+// Queue an ad-hoc email to selected users
+app.post('/api/email/send', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { to, subject, message, projectId } = req.body;
+    if (!to || !Array.isArray(to) || to.length === 0) return res.status(400).json({ error: 'Recipients (to) array is required' });
+    if (!subject || !message) return res.status(400).json({ error: 'Subject and message are required' });
+
+    const users = await getUsers();
+    const queued = [];
+    for (const email of to) {
+      const user = users.find(u => u.email === email);
+      const notification = await queueNotification(
+        'custom_email',
+        user ? user.id : null,
+        email,
+        user ? user.name : email,
+        { subject, body: message },
+        { relatedEntityId: projectId || null, relatedEntityType: projectId ? 'project' : null, createdBy: req.user.id }
+      );
+      if (notification) queued.push(notification.id);
+    }
+
+    await logActivity(req.user.id, req.user.name, 'email_queued', 'email', null, {
+      recipientCount: queued.length, subject
+    });
+
+    res.json({ message: `${queued.length} email(s) queued for delivery`, queued: queued.length });
+  } catch (error) {
+    console.error('Send email error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Queue a project progress summary email
+app.post('/api/email/send-progress-update/:projectId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const projects = await getProjects();
+    const project = projects.find(p => p.id === req.params.projectId);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const tasks = await getTasks(project.id);
+    const totalTasks = tasks.length;
+    const completedTasks = tasks.filter(t => t.completed).length;
+    const pct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+    // Find phases with completion stats
+    const phaseStats = {};
+    tasks.forEach(t => {
+      if (!phaseStats[t.phase]) phaseStats[t.phase] = { total: 0, done: 0 };
+      phaseStats[t.phase].total++;
+      if (t.completed) phaseStats[t.phase].done++;
+    });
+    const phaseBreakdown = Object.entries(phaseStats)
+      .map(([phase, s]) => `  ${phase}: ${s.done}/${s.total} tasks complete`)
+      .join('\n');
+
+    const subject = `Progress Update: ${project.name} — ${pct}% Complete`;
+    const body = `Project: ${project.name}\nOverall Progress: ${completedTasks}/${totalTasks} tasks complete (${pct}%)\n\nPhase Breakdown:\n${phaseBreakdown}\n\n${project.goLiveDate ? `Go-Live Date: ${new Date(project.goLiveDate).toLocaleDateString()}` : ''}`;
+
+    // Find client users for this project
+    const users = await getUsers();
+    const recipients = req.body.to || users
+      .filter(u => u.role === config.ROLES.CLIENT && (u.assignedProjects || []).includes(project.id) && u.email && u.accountStatus !== 'inactive')
+      .map(u => u.email);
+
+    const queued = [];
+    for (const email of recipients) {
+      const user = users.find(u => u.email === email);
+      const notification = await queueNotification(
+        'custom_email',
+        user ? user.id : null, email, user ? user.name : email,
+        { subject, body },
+        { relatedEntityId: project.id, relatedEntityType: 'project', createdBy: req.user.id }
+      );
+      if (notification) queued.push(notification.id);
+    }
+
+    res.json({ message: `Progress update queued for ${queued.length} recipient(s)`, queued: queued.length, progress: { pct, completedTasks, totalTasks } });
+  } catch (error) {
+    console.error('Send progress update error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// View sent email history (filtered from notification log)
+app.get('/api/email/history', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const log = (await db.get('notification_log')) || [];
+    const { projectId, limit } = req.query;
+    let emails = log.filter(n => n.status === 'sent');
+    if (projectId) emails = emails.filter(n => n.relatedEntityId === projectId);
+    if (limit) emails = emails.slice(0, parseInt(limit));
+    res.json(emails);
+  } catch (error) {
+    console.error('Email history error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============================================================
+// NOTIFICATION SETTINGS ENDPOINTS (Feature 1)
+// ============================================================
+
+// Get notification settings
+app.get('/api/admin/notification-settings', authenticateToken, requireAdminHubAccess, async (req, res) => {
+  try {
+    const settings = (await db.get('notification_settings')) || {
+      enabled: true,
+      checkIntervalMinutes: config.NOTIFICATION_CHECK_INTERVAL_MINUTES,
+      maxRetriesDefault: config.NOTIFICATION_MAX_RETRIES,
+      dailySendLimit: config.NOTIFICATION_DAILY_SEND_LIMIT,
+      enabledChannels: ['email']
+    };
+    res.json(settings);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update notification settings
+app.put('/api/admin/notification-settings', authenticateToken, requireAdminHubAccess, async (req, res) => {
+  try {
+    const current = (await db.get('notification_settings')) || {};
+    const updated = { ...current, ...req.body, updatedAt: new Date().toISOString(), updatedBy: req.user.name };
+    await db.set('notification_settings', updated);
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============================================================
+// EMAIL TEMPLATE MANAGEMENT ENDPOINTS
+// ============================================================
+
+// List all email templates
+app.get('/api/admin/email-templates', authenticateToken, requireAdminHubAccess, async (req, res) => {
+  try {
+    const templates = await getEmailTemplates();
+    res.json(templates);
+  } catch (error) {
+    console.error('Get email templates error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get all variable pool definitions (for admin reference / future custom templates)
+app.get('/api/admin/email-templates/pools', authenticateToken, requireAdminHubAccess, async (req, res) => {
+  try {
+    res.json({ pools: VARIABLE_POOLS, templateMapping: TEMPLATE_POOL_MAPPING });
+  } catch (error) {
+    console.error('Get variable pools error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get a single email template by ID
+app.get('/api/admin/email-templates/:id', authenticateToken, requireAdminHubAccess, async (req, res) => {
+  try {
+    const templates = await getEmailTemplates();
+    const template = templates.find(t => t.id === req.params.id);
+    if (!template) return res.status(404).json({ error: 'Template not found' });
+    res.json(template);
+  } catch (error) {
+    console.error('Get email template error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update an email template (subject, body, htmlBody)
+app.put('/api/admin/email-templates/:id', authenticateToken, requireAdminHubAccess, async (req, res) => {
+  try {
+    const templates = await getEmailTemplates();
+    const idx = templates.findIndex(t => t.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Template not found' });
+
+    const { subject, body, htmlBody } = req.body;
+    if (subject !== undefined) templates[idx].subject = subject;
+    if (body !== undefined) templates[idx].body = body;
+    if (htmlBody !== undefined) templates[idx].htmlBody = htmlBody;
+    templates[idx].isDefault = false;
+    templates[idx].updatedAt = new Date().toISOString();
+    templates[idx].updatedBy = req.user.name;
+
+    // Strip computed pool fields before persisting
+    const toSave = templates.map(t => {
+      const { variables, poolGroups, pools, ...rest } = t;
+      return rest;
+    });
+    await db.set('email_templates', toSave);
+    await logActivity(req.user.id, req.user.name, 'updated', 'email_template', req.params.id, { templateName: templates[idx].name });
+    res.json(templates[idx]);
+  } catch (error) {
+    console.error('Update email template error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Reset an email template to its shipped default
+app.post('/api/admin/email-templates/:id/reset', authenticateToken, requireAdminHubAccess, async (req, res) => {
+  try {
+    const templates = await getEmailTemplates();
+    const idx = templates.findIndex(t => t.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Template not found' });
+
+    const defaultTpl = DEFAULT_EMAIL_TEMPLATES.find(t => t.id === req.params.id);
+    if (!defaultTpl) return res.status(404).json({ error: 'No default found for this template' });
+
+    templates[idx] = { ...defaultTpl, updatedAt: new Date().toISOString(), updatedBy: req.user.name };
+    // Strip computed pool fields before persisting
+    const toSave = templates.map(t => {
+      const { variables, poolGroups, pools, ...rest } = t;
+      return rest;
+    });
+    await db.set('email_templates', toSave);
+    // Re-enrich for response
+    templates[idx].variables = getPoolVariablesForTemplate(req.params.id);
+    templates[idx].poolGroups = getPoolGroupsForTemplate(req.params.id);
+    templates[idx].pools = TEMPLATE_POOL_MAPPING[req.params.id] || [];
+    await logActivity(req.user.id, req.user.name, 'reset', 'email_template', req.params.id, { templateName: templates[idx].name });
+    res.json(templates[idx]);
+  } catch (error) {
+    console.error('Reset email template error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Preview an email template rendered with example data
+app.post('/api/admin/email-templates/:id/preview', authenticateToken, requireAdminHubAccess, async (req, res) => {
+  try {
+    const templates = await getEmailTemplates();
+    const template = templates.find(t => t.id === req.params.id);
+    if (!template) return res.status(404).json({ error: 'Template not found' });
+
+    // Build example variables from the template's variable definitions
+    const exampleVars = {};
+    (template.variables || []).forEach(v => { exampleVars[v.key] = v.example || `[${v.label}]`; });
+    // Allow caller to override with custom preview data
+    const vars = { ...exampleVars, ...(req.body.variables || {}) };
+
+    const renderedSubject = renderTemplate(template.subject, vars);
+    const renderedBody = renderTemplate(template.body, vars);
+    const renderedHtml = template.htmlBody
+      ? renderTemplate(template.htmlBody, vars)
+      : buildHtmlEmail(renderedBody, null);
+
+    res.json({ subject: renderedSubject, body: renderedBody, html: renderedHtml });
+  } catch (error) {
+    console.error('Preview email template error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Send a test email using a template (to the admin's own email)
+app.post('/api/admin/email-templates/:id/test-send', authenticateToken, requireAdminHubAccess, async (req, res) => {
+  try {
+    const templates = await getEmailTemplates();
+    const template = templates.find(t => t.id === req.params.id);
+    if (!template) return res.status(404).json({ error: 'Template not found' });
+
+    const exampleVars = {};
+    (template.variables || []).forEach(v => { exampleVars[v.key] = v.example || `[${v.label}]`; });
+    const vars = { ...exampleVars, ...(req.body.variables || {}) };
+
+    const renderedSubject = renderTemplate(template.subject, vars);
+    const renderedBody = renderTemplate(template.body, vars);
+    const renderedHtml = template.htmlBody
+      ? renderTemplate(template.htmlBody, vars)
+      : buildHtmlEmail(renderedBody, null);
+
+    const result = await sendEmail(
+      req.user.email,
+      `[TEST] ${renderedSubject}`,
+      renderedBody,
+      { htmlBody: renderedHtml }
+    );
+
+    if (result.success) {
+      res.json({ message: `Test email sent to ${req.user.email}`, id: result.id });
+    } else {
+      res.status(500).json({ error: `Failed to send test email: ${result.error}` });
+    }
+  } catch (error) {
+    console.error('Test send email template error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============================================================
+// REMINDER SETTINGS & TRIGGER ENDPOINTS (Feature 2)
+// ============================================================
+
+// Get reminder settings
+app.get('/api/admin/reminder-settings', authenticateToken, requireAdminHubAccess, async (req, res) => {
+  try {
+    const settings = (await db.get('reminder_settings')) || {
+      enabled: true,
+      scanIntervalMinutes: config.NOTIFICATION_SCAN_INTERVAL_MINUTES,
+      scenarios: {
+        serviceReportFollowups: { enabled: true, reminderAfterDays: config.SERVICE_REPORT_FOLLOWUP_DAYS },
+        taskDeadlines: { enabled: true, daysBefore: config.TASK_DEADLINE_DAYS_BEFORE, overdueEscalationDays: config.TASK_OVERDUE_ESCALATION_DAYS },
+        clientActivityNudges: { enabled: true, inventoryReminderDays: config.INVENTORY_REMINDER_DAYS },
+        milestoneReminders: { enabled: true, milestoneThresholds: config.MILESTONE_THRESHOLDS, goLiveDaysBefore: config.GOLIVE_REMINDER_DAYS_BEFORE }
+      }
+    };
+    res.json(settings);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update reminder settings
+app.put('/api/admin/reminder-settings', authenticateToken, requireAdminHubAccess, async (req, res) => {
+  try {
+    const current = (await db.get('reminder_settings')) || {};
+    const updated = { ...current, ...req.body, updatedAt: new Date().toISOString(), updatedBy: req.user.name };
+    await db.set('reminder_settings', updated);
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Manually trigger a notification scan (admin)
+app.post('/api/admin/reminders/trigger', authenticateToken, requireAdminHubAccess, async (req, res) => {
+  try {
+    await scanAndQueueNotifications();
+    const queue = (await db.get('pending_notifications')) || [];
+    const pendingCount = queue.filter(n => n.status === 'pending').length;
+    res.json({ message: 'Notification scan completed', pendingNotifications: pendingCount });
+  } catch (error) {
+    console.error('Manual scan trigger error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Manually trigger queue processing (admin)
+app.post('/api/admin/notifications/process', authenticateToken, requireAdminHubAccess, async (req, res) => {
+  try {
+    await processNotificationQueue();
+    const queue = (await db.get('pending_notifications')) || [];
+    const pendingCount = queue.filter(n => n.status === 'pending').length;
+    res.json({ message: 'Queue processing completed', remainingPending: pendingCount });
+  } catch (error) {
+    console.error('Manual queue process error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update user notification preferences
+app.put('/api/users/:userId/notification-preferences', authenticateToken, async (req, res) => {
+  try {
+    // Users can update their own prefs, admins can update anyone's
+    if (req.user.id !== req.params.userId && req.user.role !== config.ROLES.ADMIN) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    const users = await getUsers();
+    const idx = users.findIndex(u => u.id === req.params.userId);
+    if (idx === -1) return res.status(404).json({ error: 'User not found' });
+
+    users[idx].notificationPreferences = {
+      ...(users[idx].notificationPreferences || {}),
+      ...req.body
+    };
+    await db.set('users', users);
+    invalidateUsersCache();
+    res.json({ message: 'Notification preferences updated', notificationPreferences: users[idx].notificationPreferences });
+  } catch (error) {
+    console.error('Update notification preferences error:', error);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -9578,6 +11338,10 @@ app.post('/api/auth/admin-login', async (req, res) => {
     const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase() && (u.role === config.ROLES.ADMIN || u.hasAdminHubAccess));
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(400).json({ error: 'Invalid credentials' });
+    }
+    // Block inactive accounts from logging in
+    if (user.accountStatus === 'inactive') {
+      return res.status(403).json({ error: 'Account is inactive. Please contact an administrator.' });
     }
 
     const token = jwt.sign(
@@ -9758,10 +11522,41 @@ process.on('unhandledRejection', (reason, promise) => {
 
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
-  console.log(`🔐 Admin login: bianca@thrive365labs.com / Thrive2025!`);
+  console.log(`🔐 Admin login: bianca@thrive365labs.live / Thrive2025!`);
+
+  // Safety net: reactivate any admin accounts that are inactive (prevent lockout)
+  (async () => {
+    try {
+      const users = await getUsers();
+      let reactivated = false;
+      users.forEach(u => {
+        if (u.role === 'admin' && u.accountStatus === 'inactive') {
+          u.accountStatus = 'active';
+          reactivated = true;
+          console.log(`🔓 Reactivated locked-out admin account: ${u.email}`);
+        }
+      });
+      if (reactivated) {
+        await db.set('users', users);
+        invalidateUsersCache();
+      }
+    } catch (err) {
+      console.error('Admin lockout recovery failed:', err.message);
+    }
+  })();
 
   // Start HubSpot ticket polling (webhook workaround)
   initializeTicketPolling();
+
+  // Start notification queue processor (Feature 1)
+  const queueInterval = config.NOTIFICATION_CHECK_INTERVAL_MINUTES * 60 * 1000;
+  setInterval(processNotificationQueue, queueInterval);
+  console.log(`📧 Notification queue processor started (every ${config.NOTIFICATION_CHECK_INTERVAL_MINUTES}m)`);
+
+  // Start notification trigger scanner (Feature 2)
+  const scanInterval = config.NOTIFICATION_SCAN_INTERVAL_MINUTES * 60 * 1000;
+  setInterval(scanAndQueueNotifications, scanInterval);
+  console.log(`🔍 Notification trigger scanner started (every ${config.NOTIFICATION_SCAN_INTERVAL_MINUTES}m)`);
 
   // One-time migrations for service reports
   (async () => {

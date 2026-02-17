@@ -1,6 +1,6 @@
 {
   "name": "project-tracker",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Multi-project launch tracker with templates and HubSpot integration",
   "main": "server.js",
   "scripts": {

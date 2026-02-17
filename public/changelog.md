@@ -4,6 +4,111 @@
 
 ---
 
+### Version 3.5.0 - February 17, 2026
+
+#### New Features
+- Add Hidden Features & Internal Notes guide to Knowledge Hub
+
+
+### Version 3.4.0 - February 17, 2026
+
+#### New Features
+- Add multi-user support to client portal admin hub
+
+#### Bug Fixes
+- Fix board export to include subtasks and full phase titles
+- Update Known Issues in Knowledge Hub to reflect resolved items
+
+#### Changes
+- Hide Known Issues section from Knowledge Hub
+
+
+### Version 3.3.1 - February 17, 2026
+
+#### Bug Fixes
+- Fix client portal sign-out leaving admin session active
+- Fix Knowledge Hub guide visibility for client and vendor roles
+
+
+### Version 3.3.0 - February 17, 2026
+
+#### New Features
+- Add Email Notifications guide to Knowledge Hub
+- Add Feature Reference to Knowledge Hub, fix email logo, standardize sidebar icons
+
+#### Bug Fixes
+- Fix email template Preview button in Notifications page
+
+
+### Version 3.2.0 - February 17, 2026
+
+#### New Features
+- Add variable pools system for email templates
+
+#### Bug Fixes
+- Remove Knowledge Hub from admin sidebar menu, fix sign-out redirect
+
+#### Changes
+- Make notification page data loading resilient to partial failures
+- Grant Managers access to all notification endpoints
+- Make Knowledge Hub search bar sticky when actively searching
+
+
+### Version 3.1.0 - February 17, 2026
+
+#### New Features
+- Add safeguard: announcement emails always include full content text
+- Add dynamic email template system with admin editor UI
+- Add implementation plan for dynamic email templates
+- Add bulk select and delete for notification queue
+- Bump to v3.0.0, add search navigation arrows, and enable Knowledge Hub for all user roles
+
+#### Bug Fixes
+- Fix Knowledge Hub content formatting: proper list numbering and styled checkmarks
+
+#### Changes
+- Remove start date display from client portal milestones
+- Align client portal milestones with internal launch board view
+
+
+### Version 3.0.0 - February 17, 2026
+
+#### Major Release - Platform Evolution
+
+**Knowledge Hub v2**
+- Complete Knowledge Hub rebuild with 5-tier permission system (Super Admin, Manager, Team Member, Vendor, Client)
+- Sticky sidebar navigation organized by portal section
+- Full-text search with keyword highlighting and result-to-result navigation arrows
+- Role-specific workflow walkthroughs for all 5 user roles
+- 50+ documentation articles covering all 5 portal sections
+- Internal-only Known Issues section for admin/manager visibility
+- Developer Guide with API reference and content management docs
+- V2 backend API with full CRUD, search, and one-time seed endpoints
+
+**Notification System**
+- Queue-based notification architecture (Features 1 & 2)
+- Automated reminder triggers for overdue tasks and milestones
+- Manager access to Notifications tab
+
+**Email Integration**
+- Resend email module for system notifications
+- Announcement email delivery with read/delivery stats tracking
+
+**Account & Security**
+- Active/inactive account status to control portal access and notification delivery
+- Locked inactive accounts blocked from all portals
+- Security vulnerability fixes and HubSpot integration cleanup
+
+**Service Portal**
+- Full report view for customer signing workflow
+- Simplified service report submission flow
+- Enhanced activity tracking
+
+**Mobile & UI**
+- Cross-portal mobile visibility optimizations
+- Responsive improvements across all portal files
+
+
 ### Version 2.19.0 - February 16, 2026
 
 #### New Features
@@ -44,6 +149,12 @@
 
 #### Bug Fixes
 - Fix PDF download 404 and allow preview before signing
+
+
+### Version 2.16.0 - February 9, 2026
+
+#### New Features
+- Fix 403 error when managers add validation day segments
 
 
 ### Version 2.15.0 - February 9, 2026

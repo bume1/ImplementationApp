@@ -747,4 +747,4 @@ If you're still stuck:
 
 ---
 
-**Last Updated:** January 26, 2026 (v2.7.5)
+**Last Updated:** February 17, 2026 (v3.0.0)

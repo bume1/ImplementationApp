@@ -65,33 +65,47 @@
     // Helper function to handle fetch responses properly
     const handleResponse = async (response) => {
       if (!response.ok) {
-        // Auto-redirect to login on auth failure (expired/invalid token)
-        if (response.status === 401 || response.status === 403) {
-          try {
-            const errData = await response.clone().json();
-            if (errData.error === 'Invalid token' || errData.error === 'User not found' || response.status === 401) {
-              localStorage.removeItem('portal_token');
-              localStorage.removeItem('portal_user');
-              localStorage.removeItem('unified_token');
-              localStorage.removeItem('unified_user');
-              window.location.href = '/';
-              throw new Error('Session expired. Redirecting to login...');
-            }
-          } catch (redirectErr) {
-            if (redirectErr.message.includes('Session expired')) throw redirectErr;
-          }
-        }
-        // Try to parse error message from response
+        let errorData;
         try {
-          const errorData = await response.json();
-          throw new Error(errorData.error || `HTTP error ${response.status}`);
-        } catch (e) {
-          if (e.message.includes('Session expired')) throw e;
-          // If parsing fails, throw generic error
-          throw new Error(`HTTP error ${response.status}`);
+          errorData = await response.json();
+        } catch (_) {
+          // Response body not valid JSON
         }
+
+        // Auto-redirect to login on auth failure (expired/invalid token)
+        if (response.status === 401 || (response.status === 403 &&
+            (errorData?.error === 'Invalid token' || errorData?.error === 'User not found'))) {
+          localStorage.removeItem('portal_token');
+          localStorage.removeItem('portal_user');
+          localStorage.removeItem('unified_token');
+          localStorage.removeItem('unified_user');
+          localStorage.removeItem('admin_token');
+          localStorage.removeItem('admin_user');
+          window.location.href = '/login';
+          throw new Error('Session expired. Redirecting to login...');
+        }
+
+        throw new Error(errorData?.error || `HTTP error ${response.status}`);
       }
       return response.json();
+    };
+
+    // Helper to download a PDF via Authorization header instead of token in URL
+    const openPdfSecurely = async (url, token) => {
+      try {
+        const response = await fetch(url, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        window.open(blobUrl, '_blank');
+        // Revoke after a delay to allow the browser to load it
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+      } catch (err) {
+        console.error('PDF download failed:', err);
+        alert('Failed to download PDF. Please try again.');
+      }
     };
 
     const api = {
@@ -169,8 +183,8 @@
             <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full opacity-10" style={{background: 'radial-gradient(circle, #00205A 0%, transparent 70%)'}}></div>
           </div>
 
-          <div className="glass-card p-8 rounded-2xl shadow-xl w-full max-w-md animate-fade-in relative border border-white/50">
-            <div className="text-center mb-8">
+          <div className="glass-card p-5 sm:p-8 rounded-2xl shadow-xl w-full max-w-md animate-fade-in relative border border-white/50">
+            <div className="text-center mb-6 sm:mb-8">
               <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-12 mx-auto mb-4" />
               <h1 className="text-xl font-semibold text-gray-900">Client Portal</h1>
               <p className="text-gray-500 mt-1 text-sm">Sign in to access your portal</p>
@@ -443,6 +457,13 @@
             </nav>
             
             <div className="absolute bottom-0 left-0 right-0 p-4 border-t space-y-2">
+              <button
+                onClick={() => { window.location.href = '/knowledge'; }}
+                className="w-full text-left px-4 py-2 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg flex items-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/></svg>
+                <span>Knowledge Hub</span>
+              </button>
               {isAdmin && (
                 <button
                   onClick={() => { window.location.href = '/'; }}
@@ -458,7 +479,9 @@
                   localStorage.removeItem('portal_user');
                   localStorage.removeItem('unified_token');
                   localStorage.removeItem('unified_user');
-                  window.location.href = '/';
+                  localStorage.removeItem('admin_token');
+                  localStorage.removeItem('admin_user');
+                  window.location.href = '/login';
                 }}
                 className="w-full text-left px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2"
               >
@@ -566,6 +589,9 @@
                       if (act.action === 'task_completed') return { icon: Icons.target, color: 'text-green-500' };
                       if (act.action === 'document_added') return { icon: Icons.folder, color: 'text-primary' };
                       if (act.action === 'service_report_client_signed') return { icon: Icons.check, color: 'text-green-600' };
+                      if (act.action === 'service_report_created') return { icon: Icons.clipboard, color: 'text-blue-600' };
+                      if (act.action === 'service_report_completed') return { icon: Icons.check, color: 'text-green-600' };
+                      if (act.action === 'service_report_pending_signature') return { icon: Icons.warning, color: 'text-orange-500' };
                       if (act.action === 'inventory_submissions_deleted') return { icon: Icons.clipboard, color: 'text-red-500' };
                       return { icon: Icons.activity, color: 'text-gray-500' };
                     };
@@ -579,6 +605,9 @@
                       if (act.action === 'task_completed') return act.details?.taskTitle || 'Task completed';
                       if (act.action === 'document_added') return `New document: ${act.details?.documentTitle || 'File shared'}`;
                       if (act.action === 'service_report_client_signed') return `Service report signed: ${act.details?.serviceType || 'Report'}`;
+                      if (act.action === 'service_report_created') return `New service report: ${act.details?.serviceType || 'Service'} - ${act.details?.clientName || ''}`;
+                      if (act.action === 'service_report_completed') return `Service report completed: ${act.details?.serviceType || 'Report'}`;
+                      if (act.action === 'service_report_pending_signature') return `Service report requires your signature`;
                       if (act.action === 'inventory_submissions_deleted') return `Inventory submissions removed`;
                       return typeof act.details === 'string' ? act.details : 'Activity recorded';
                     };
@@ -601,19 +630,19 @@
             )}
           </div>
 
-          <div className="grid md:grid-cols-3 gap-4">
-            <button onClick={() => onNavigate('inventory')} className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center cursor-pointer w-full">
-              <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.package, { className: 'w-10 h-10' })}</div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <button onClick={() => onNavigate('inventory')} className="bg-white p-4 sm:p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center cursor-pointer w-full">
+              <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.package, { className: 'w-8 h-8 sm:w-10 sm:h-10' })}</div>
               <h3 className="font-semibold text-gray-800">Inventory Management</h3>
               <p className="text-sm text-gray-500 mt-1">Submit inventory requests</p>
             </button>
-            <button onClick={() => onNavigate('support')} className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center cursor-pointer w-full">
-              <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.chat, { className: 'w-10 h-10' })}</div>
+            <button onClick={() => onNavigate('support')} className="bg-white p-4 sm:p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center cursor-pointer w-full">
+              <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.chat, { className: 'w-8 h-8 sm:w-10 sm:h-10' })}</div>
               <h3 className="font-semibold text-gray-800">Customer Support</h3>
               <p className="text-sm text-gray-500 mt-1">Get help from our team</p>
             </button>
-            <button onClick={() => onNavigate('files')} className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center cursor-pointer w-full">
-              <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.folder, { className: 'w-10 h-10' })}</div>
+            <button onClick={() => onNavigate('files')} className="bg-white p-4 sm:p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center cursor-pointer w-full">
+              <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.folder, { className: 'w-8 h-8 sm:w-10 sm:h-10' })}</div>
               <h3 className="font-semibold text-gray-800">Files</h3>
               <p className="text-sm text-gray-500 mt-1">Upload and view documents</p>
             </button>
@@ -622,13 +651,29 @@
       );
     };
     
-    const MilestonesPage = ({ data, onNavigate, token }) => {
+    const MilestonesPage = ({ data, onNavigate, token, currentUser }) => {
       const project = data?.projects?.[0];
       const allTasks = project?.tasks || [];
       const tasks = allTasks.filter(t => t.showToClient !== false);
       const [viewType, setViewType] = useState('list');
       const [validationProgress, setValidationProgress] = useState([]);
       const [showValidationDetails, setShowValidationDetails] = useState(false);
+      const [collapsedPhases, setCollapsedPhases] = useState([]);
+
+      // Get current client user's email for ownership comparison
+      const clientUserEmail = currentUser?.email || '';
+
+      // Check if a task is owned by the current client user
+      const isClientOwnedTask = (task) => {
+        if (!clientUserEmail || !task.owner) return false;
+        return task.owner.toLowerCase() === clientUserEmail.toLowerCase();
+      };
+
+      const togglePhaseCollapse = (phase) => {
+        setCollapsedPhases(prev =>
+          prev.includes(phase) ? prev.filter(p => p !== phase) : [...prev, phase]
+        );
+      };
 
       // Fetch active validation progress
       useEffect(() => {
@@ -858,25 +903,34 @@
         <div className="space-y-8">
           <ValidationProgressCard />
           {PHASE_ORDER.map((phase, phaseIndex) => {
+            const isCollapsed = collapsedPhases.includes(phase);
             const phaseTasks = Object.values(groupedByPhase[phase] || {}).flat();
             const phaseCompleted = phaseTasks.filter(t => t.completed).length;
             const phaseTotal = phaseTasks.length;
             const phasePercent = phaseTotal > 0 ? Math.round((phaseCompleted / phaseTotal) * 100) : 0;
             return (
             <div key={phase} className="space-y-4">
-              <div className={`${getPhaseGradient(phase, phaseIndex)} p-4 rounded-lg text-white shadow-md`}>
+              <div
+                className={`${getPhaseGradient(phase, phaseIndex)} p-4 rounded-lg text-white shadow-md cursor-pointer hover:opacity-90 transition-opacity`}
+                onClick={() => togglePhaseCollapse(phase)}
+              >
                 <div className="flex items-center justify-between">
-                  <div>
+                  <div className="flex-1">
                     <h2 className="text-lg font-bold">{dynamicPhases[phase]?.name || phase.replace(/^Phase\s*\d+\s*:\s*/i, '')}</h2>
                     <p className="text-sm opacity-90 mt-1">
                       {phaseTotal > 0 ? `${phaseCompleted} of ${phaseTotal} complete` : 'No tasks assigned yet'}
                     </p>
                   </div>
-                  {phaseTotal > 0 && (
-                    <div className="text-right">
-                      <div className="text-2xl font-bold">{phasePercent}%</div>
+                  <div className="flex items-center gap-3">
+                    {phaseTotal > 0 && (
+                      <div className="text-right">
+                        <div className="text-2xl font-bold">{phasePercent}%</div>
+                      </div>
+                    )}
+                    <div className="text-2xl">
+                      {isCollapsed ? '▶' : '▼'}
                     </div>
-                  )}
+                  </div>
                 </div>
                 {phaseTotal > 0 && (
                   <div className="mt-3 w-full bg-white/20 rounded-full h-2 overflow-hidden">
@@ -884,7 +938,7 @@
                   </div>
                 )}
               </div>
-              {Object.entries(groupedByPhase[phase] || {}).map(([stageName, stageTasks]) => {
+              {!isCollapsed && Object.entries(groupedByPhase[phase] || {}).map(([stageName, stageTasks]) => {
                 const dueDates = stageTasks.filter(t => t.dueDate).map(t => t.dueDate).sort();
                 const targetDate = dueDates.length > 0 ? dueDates[dueDates.length - 1] : null;
                 return (
@@ -908,34 +962,44 @@
                     <div className="divide-y divide-gray-200">
                       {stageTasks.length === 0 ? (
                         <div className="p-4 text-gray-400 text-sm italic">No tasks in this stage</div>
-                      ) : stageTasks.map(task => (
+                      ) : stageTasks.map(task => {
+                        const clientOwns = isClientOwnedTask(task);
+                        const clientVisibleSubtasks = (task.subtasks || []).filter(st => st.showToClient !== false);
+                        const completedSubtasks = clientVisibleSubtasks.filter(s => s.completed || s.notApplicable || s.status === 'Complete' || s.status === 'N/A').length;
+                        return (
                         <div key={task.id} className="p-4">
                           <div className="flex items-start gap-3">
                             <div className="mt-1">
                               {task.completed ? (
-                                <div className="w-5 h-5 bg-green-600 rounded-full flex items-center justify-center text-white text-xs">✓</div>
+                                <div className="w-6 h-6 bg-green-600 rounded-full flex items-center justify-center text-white text-xs">✓</div>
                               ) : (
-                                <div className="w-5 h-5 border-2 border-gray-300 rounded-full" />
+                                <div className="w-6 h-6 border-2 border-gray-300 rounded-full" />
                               )}
                             </div>
-                            <div className="flex-1">
-                              <h3 className={`font-medium ${task.completed ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
+                            <div className="flex-1 min-w-0">
+                              <h3 className={`font-medium break-words ${task.completed ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
                                 {task.clientName || task.taskTitle}
                                 {(task.files || []).length > 0 && (
                                   <span className="ml-2 text-gray-400" title={`${task.files.length} file${task.files.length > 1 ? 's' : ''} attached`}>📎</span>
                                 )}
                               </h3>
-                              {(task.dateCompleted || task.dueDate) && (
-                                <p className="text-sm text-gray-600 mt-1">
-                                  {task.dueDate && !task.completed && (
-                                    <span className={new Date(task.dueDate) < new Date() ? 'text-red-600' : 'text-blue-600'}>
-                                      Due: {new Date(task.dueDate + 'T12:00:00').toLocaleDateString()}
-                                    </span>
-                                  )}
-                                  {task.dueDate && !task.completed && task.dateCompleted && <span className="mx-2">•</span>}
-                                  {task.dateCompleted && <span className="text-green-600">Completed: {formatDateForDisplay(task.dateCompleted)}</span>}
+                              {clientOwns && task.ownerDisplayName && (
+                                <p className="mt-1 text-xs sm:text-sm text-gray-600">
+                                  <span className="font-medium">Assigned to:</span> {task.ownerDisplayName}
                                 </p>
                               )}
+                              <div className="mt-1 flex items-center gap-2 sm:gap-4 flex-wrap text-sm text-gray-600">
+                                {task.dueDate && !task.completed && (
+                                  <span className={new Date(task.dueDate) < new Date() ? 'text-red-600' : 'text-blue-600'}>
+                                    <span className="font-medium">Due:</span> {formatDateForDisplay(task.dueDate)}
+                                  </span>
+                                )}
+                                {task.completed && task.dateCompleted && (
+                                  <span className="text-green-600">
+                                    Completed: {formatDateForDisplay(task.dateCompleted)}
+                                  </span>
+                                )}
+                              </div>
                               {task.description && (
                                 <div className="mt-2 p-2 bg-gray-50 rounded-md border-l-2 border-primary">
                                   <p className="text-sm text-gray-700">{task.description}</p>
@@ -954,9 +1018,9 @@
                                         className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-primary text-xs rounded hover:bg-blue-100 border border-blue-200"
                                       >
                                         <span>
-                                          {file.mimeType?.includes('pdf') ? '📄' : 
-                                           file.mimeType?.includes('image') ? '🖼️' : 
-                                           file.mimeType?.includes('word') ? '📝' : 
+                                          {file.mimeType?.includes('pdf') ? '📄' :
+                                           file.mimeType?.includes('image') ? '🖼️' :
+                                           file.mimeType?.includes('word') ? '📝' :
                                            file.mimeType?.includes('excel') || file.mimeType?.includes('spreadsheet') ? '📊' : '📎'}
                                         </span>
                                         {file.name}
@@ -965,10 +1029,18 @@
                                   </div>
                                 </div>
                               )}
+                              {clientVisibleSubtasks.length > 0 && (
+                                <div className="mt-2">
+                                  <span className="text-xs sm:text-sm text-purple-600">
+                                    Subtasks ({completedSubtasks}/{clientVisibleSubtasks.length})
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 );
@@ -980,8 +1052,8 @@
       );
 
       const TimelineView = () => (
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <h2 className="text-2xl font-bold mb-6 text-accent">Project Timeline</h2>
+        <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6">
+          <h2 className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6 text-accent">Project Timeline</h2>
           <ValidationProgressCard />
           <div className="space-y-8">
             {PHASE_ORDER.map((phase, phaseIndex) => {
@@ -1012,9 +1084,13 @@
                             {targetDate && <span className="text-xs bg-blue-100 text-primary px-2 py-1 rounded">Target Due Date: {targetDate}</span>}
                           </div>
                           <div className="space-y-2">
-                            {stageTasks.map(task => (
+                            {stageTasks.map(task => {
+                              const clientOwns = isClientOwnedTask(task);
+                              const clientVisibleSubtasks = (task.subtasks || []).filter(st => st.showToClient !== false);
+                              const completedSubs = clientVisibleSubtasks.filter(s => s.completed || s.notApplicable || s.status === 'Complete' || s.status === 'N/A').length;
+                              return (
                               <div key={task.id} className={`flex items-start gap-3 p-3 rounded-lg ${task.completed ? 'bg-green-50' : 'bg-white'} border border-gray-200`}>
-                                <div className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${task.completed ? 'bg-green-500 text-white' : 'border-2 border-gray-300'}`}>
+                                <div className={`mt-0.5 w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${task.completed ? 'bg-green-500 text-white' : 'border-2 border-gray-300'}`}>
                                   {task.completed && <span className="text-xs">✓</span>}
                                 </div>
                                 <div className="flex-1 min-w-0">
@@ -1024,11 +1100,23 @@
                                       <span className="ml-2 text-gray-400" title={`${task.files.length} file${task.files.length > 1 ? 's' : ''} attached`}>📎</span>
                                     )}
                                   </h5>
-                                  {task.dateCompleted && (
+                                  {clientOwns && task.ownerDisplayName && (
                                     <p className="mt-1 text-xs text-gray-600">
-                                      <span className="text-green-600">Completed: {formatDateForDisplay(task.dateCompleted)}</span>
+                                      <span className="font-medium">Assigned to:</span> {task.ownerDisplayName}
                                     </p>
                                   )}
+                                  <div className="mt-1 flex items-center gap-2 sm:gap-4 flex-wrap text-xs text-gray-600">
+                                    {task.dueDate && !task.completed && (
+                                      <span className={new Date(task.dueDate) < new Date() ? 'text-red-600' : 'text-blue-600'}>
+                                        <span className="font-medium">Due:</span> {formatDateForDisplay(task.dueDate)}
+                                      </span>
+                                    )}
+                                    {task.completed && task.dateCompleted && (
+                                      <span className="text-green-600">
+                                        Completed: {formatDateForDisplay(task.dateCompleted)}
+                                      </span>
+                                    )}
+                                  </div>
                                   {task.description && (
                                     <div className="mt-2 p-2 bg-gray-50 rounded-md border-l-2 border-primary">
                                       <p className="text-sm text-gray-700">{task.description}</p>
@@ -1047,9 +1135,9 @@
                                             className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-primary text-xs rounded hover:bg-blue-100 border border-blue-200"
                                           >
                                             <span>
-                                              {file.mimeType?.includes('pdf') ? '📄' : 
-                                               file.mimeType?.includes('image') ? '🖼️' : 
-                                               file.mimeType?.includes('word') ? '📝' : 
+                                              {file.mimeType?.includes('pdf') ? '📄' :
+                                               file.mimeType?.includes('image') ? '🖼️' :
+                                               file.mimeType?.includes('word') ? '📝' :
                                                file.mimeType?.includes('excel') || file.mimeType?.includes('spreadsheet') ? '📊' : '📎'}
                                             </span>
                                             {file.name}
@@ -1058,9 +1146,17 @@
                                       </div>
                                     </div>
                                   )}
+                                  {clientVisibleSubtasks.length > 0 && (
+                                    <div className="mt-2">
+                                      <span className="text-xs text-purple-600">
+                                        Subtasks ({completedSubs}/{clientVisibleSubtasks.length})
+                                      </span>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       );
@@ -1090,27 +1186,27 @@
           return tasks.filter(t => t.dueDate === dateStr || t.dateCompleted === dateStr);
         };
         return (
-          <div className="bg-white rounded-lg shadow-sm p-6">
+          <div className="bg-white rounded-lg shadow-sm p-3 sm:p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-bold text-accent">{monthNames[month]} {year}</h2>
+              <h2 className="text-lg sm:text-2xl font-bold text-accent">{monthNames[month]} {year}</h2>
               <div className="flex gap-1">
                 <button onClick={() => setSelectedDate(new Date(year, month - 1, 1))} className="p-2 hover:bg-gray-100 rounded-lg">←</button>
                 <button onClick={() => setSelectedDate(new Date())} className="px-3 py-1 text-sm text-primary hover:underline">Today</button>
                 <button onClick={() => setSelectedDate(new Date(year, month + 1, 1))} className="p-2 hover:bg-gray-100 rounded-lg">→</button>
               </div>
             </div>
-            <div className="grid grid-cols-7 gap-2 mb-2">
-              {dayNames.map(day => (<div key={day} className="text-center text-sm font-semibold text-gray-600 py-2">{day}</div>))}
+            <div className="grid grid-cols-7 gap-1 sm:gap-2 mb-2">
+              {dayNames.map(day => (<div key={day} className="text-center text-xs sm:text-sm font-semibold text-gray-600 py-1 sm:py-2">{day}</div>))}
             </div>
-            <div className="grid grid-cols-7 gap-2">
+            <div className="grid grid-cols-7 gap-1 sm:gap-2">
               {[...Array(startingDayOfWeek)].map((_, idx) => (<div key={`empty-${idx}`} className="aspect-square"></div>))}
               {[...Array(daysInMonth)].map((_, idx) => {
                 const day = idx + 1;
                 const dayTasks = getTasksForDay(day);
                 const isToday = new Date().getDate() === day && new Date().getMonth() === month && new Date().getFullYear() === year;
                 return (
-                  <div key={day} className={`min-h-[80px] border rounded-lg p-2 ${isToday ? 'border-primary bg-blue-50' : 'border-gray-200'}`}>
-                    <div className={`text-sm font-semibold mb-1 ${isToday ? 'text-primary' : 'text-gray-700'}`}>{day}</div>
+                  <div key={day} className={`min-h-[50px] sm:min-h-[80px] border rounded-lg p-1 sm:p-2 ${isToday ? 'border-primary bg-blue-50' : 'border-gray-200'}`}>
+                    <div className={`text-xs sm:text-sm font-semibold mb-1 ${isToday ? 'text-primary' : 'text-gray-700'}`}>{day}</div>
                     <div className="space-y-1">
                       {dayTasks.slice(0, 2).map(task => (
                         <div key={task.id} className={`text-xs px-1 py-0.5 rounded truncate ${task.completed ? 'bg-green-200 text-green-800' : 'bg-blue-100 text-primary'}`} title={task.clientName || task.taskTitle}>
@@ -1237,7 +1333,7 @@
           const normalized = {};
           Object.entries(latestData.data || {}).forEach(([key, value]) => {
             if (value.batches) { normalized[key] = value; }
-            else { normalized[key] = { batches: [value] }; }
+            else { normalized[key] = { batches: [value || {}] }; }
           });
           setInventoryData(normalized);
           setLastSubmitted(latestData.submittedAt);
@@ -1295,12 +1391,17 @@
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ slug, data: inventoryData })
           });
+          if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            setMessage(errData.error || 'Failed to submit inventory');
+            return;
+          }
           const result = await response.json();
           if (result.success) {
             setMessage('Inventory submitted successfully!');
             setLastSubmitted(new Date().toISOString());
             setTimeout(() => setMessage(''), 5000);
-          } else { setMessage('Failed to submit inventory'); }
+          } else { setMessage(result.error || 'Failed to submit inventory'); }
         } catch (err) { setMessage('Error submitting inventory'); }
         finally { setSaving(false); }
       };
@@ -1481,7 +1582,7 @@
 
       useEffect(() => {
         fetch(`${API_URL}/api/inventory/report/${slug}`, { headers: { 'Authorization': `Bearer ${token}` } })
-          .then(r => r.json())
+          .then(r => { if (!r.ok) throw new Error(`HTTP error ${r.status}`); return r.json(); })
           .then(data => { setReport(data); setLoading(false); })
           .catch(err => { console.error(err); setLoading(false); });
       }, []);
@@ -1534,7 +1635,7 @@
       );
 
       const handleDownload = () => {
-        window.open(`${API_URL}/api/inventory/export/${slug}?token=${token}`, '_blank');
+        openPdfSecurely(`${API_URL}/api/inventory/export/${slug}`, token);
       };
 
       return (
@@ -1717,13 +1818,13 @@
 
       useEffect(() => {
         fetch(`${API_URL}/api/inventory/report-all`, { headers: { 'Authorization': `Bearer ${token}` } })
-          .then(r => r.json())
+          .then(r => { if (!r.ok) throw new Error(`HTTP error ${r.status}`); return r.json(); })
           .then(data => { setReport(data); setLoading(false); })
           .catch(err => { console.error(err); setLoading(false); });
       }, []);
 
       const handleDownloadAll = () => {
-        window.open(`${API_URL}/api/inventory/export-all?token=${token}`, '_blank');
+        openPdfSecurely(`${API_URL}/api/inventory/export-all`, token);
       };
 
       if (loading) {
@@ -1938,11 +2039,12 @@
       const loadSubmissions = async (clientSlug) => {
         setLoading(true);
         try {
-          const response = await fetch(`${API_URL}/api/inventory/submissions/${clientSlug}`, { 
-            headers: { 'Authorization': `Bearer ${token}` } 
+          const response = await fetch(`${API_URL}/api/inventory/submissions/${clientSlug}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
           });
+          if (!response.ok) throw new Error(`HTTP error ${response.status}`);
           const data = await response.json();
-          const sorted = data.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
+          const sorted = (Array.isArray(data) ? data : []).sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
           setSubmissions(sorted);
           
           // Flatten into item rows
@@ -2020,18 +2122,21 @@
         const headers = ['Date', 'Submitted By', 'Item Name', 'Category', 'Lot Number', 'Expiry Date', 'Open Qty', 'Closed Qty', 'Total Qty', 'Notes'];
         const csvContent = [
           headers.join(','),
-          ...rowsToExport.map(row => [
-            row.submissionDate.toLocaleDateString(),
-            `"${row.submittedBy}"`,
-            `"${row.itemName}"`,
-            `"${row.category}"`,
-            `"${row.lotNumber}"`,
-            row.expiry ? new Date(row.expiry).toLocaleDateString() : '',
-            row.openQty,
-            row.closedQty,
-            row.totalQty,
-            `"${row.notes}"`
-          ].join(','))
+          ...rowsToExport.map(row => {
+            const esc = (v) => `"${String(v || '').replace(/"/g, '""')}"`;
+            return [
+              esc(row.submissionDate.toLocaleDateString()),
+              esc(row.submittedBy),
+              esc(row.itemName),
+              esc(row.category),
+              esc(row.lotNumber),
+              esc(row.expiry ? new Date(row.expiry).toLocaleDateString() : ''),
+              row.openQty,
+              row.closedQty,
+              row.totalQty,
+              esc(row.notes)
+            ].join(',');
+          })
         ].join('\n');
 
         const blob = new Blob([csvContent], { type: 'text/csv' });
@@ -2376,7 +2481,10 @@
 
       useEffect(() => {
         if (initialValue && canvasRef.current) {
-          const ctx = canvasRef.current.getContext('2d');
+          const canvas = canvasRef.current;
+          const ctx = canvas.getContext('2d');
+          // Clear existing content before drawing new signature
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
           const img = new Image();
           img.onload = () => { ctx.drawImage(img, 0, 0); };
           img.src = initialValue;
@@ -2451,7 +2559,7 @@
     };
 
     // Service Report Detail View for Client Portal (read-only view + signing)
-    const ServiceReportDetail = ({ report, token, onBack, onSigned }) => {
+    const ServiceReportDetail = ({ report, token, onBack, onSigned, backLabel }) => {
       const [signing, setSigning] = useState(false);
       const [customerSignature, setCustomerSignature] = useState('');
       const [submitting, setSubmitting] = useState(false);
@@ -2463,7 +2571,7 @@
         return new Date(dateStr).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
       };
 
-      const needsSignature = report.rawStatus === 'signature_needed';
+      const needsSignature = report.status === 'signature_needed';
 
       const handleSign = async () => {
         if (!customerSignature || !customerSignature.startsWith('data:image')) {
@@ -2506,7 +2614,7 @@
           {/* Back button */}
           <button onClick={onBack} className="flex items-center gap-2 text-primary hover:text-accent font-medium text-sm">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
-            Back to Service History
+            {backLabel || 'Back'}
           </button>
 
           {/* Report Header */}
@@ -2732,7 +2840,7 @@
                   <h4 className="font-semibold text-green-800 text-lg">Signature Submitted Successfully</h4>
                   <p className="text-sm text-green-700 mt-1">This service report is now complete. Thank you!</p>
                   <button onClick={onBack} className="mt-4 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 text-sm">
-                    Return to Service History
+                    {backLabel ? `Return to ${backLabel.replace('Back to ', '')}` : 'Return'}
                   </button>
                 </div>
               )}
@@ -3013,7 +3121,7 @@
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          window.open(`${API_URL}/api/client/service-reports/${ticket.serviceReport.id}/pdf?token=${encodeURIComponent(token)}`, '_blank');
+                                          openPdfSecurely(`${API_URL}/api/client/service-reports/${ticket.serviceReport.id}/pdf`, token);
                                         }}
                                         className="ml-3 flex items-center gap-1 px-3 py-1.5 bg-primary text-white text-xs font-medium rounded-lg hover:bg-accent transition whitespace-nowrap"
                                       >
@@ -3035,14 +3143,14 @@
 
               {/* Submit Ticket Tab */}
               {activeTab === 'submit' && (
-                <div className="grid md:grid-cols-2 gap-8 items-stretch min-h-[500px]">
+                <div className="grid md:grid-cols-2 gap-6 sm:gap-8 items-stretch min-h-0 sm:min-h-[500px]">
                   {/* Left Side - Header */}
-                  <div className="bg-white rounded-xl flex flex-col justify-center items-center text-center p-8">
-                    <h2 className="text-4xl font-bold text-gray-800 mb-6">Submit a Ticket</h2>
+                  <div className="bg-white rounded-xl flex flex-col justify-center items-center text-center p-5 sm:p-8">
+                    <h2 className="text-2xl sm:text-4xl font-bold text-gray-800 mb-4 sm:mb-6">Submit a Ticket</h2>
                     <p className="text-gray-500 text-lg">
                       <span className="italic">or</span> email us at{' '}
-                      <a href="mailto:support@thrive365labs.com" className="text-primary hover:text-accent font-semibold">
-                        support@thrive365labs.com
+                      <a href="mailto:support@thrive365labs.live" className="text-primary hover:text-accent font-semibold">
+                        support@thrive365labs.live
                       </a>
                     </p>
                   </div>
@@ -3053,13 +3161,14 @@
                     <div
                       className="hs-form-frame"
                       data-region="na1"
-                      data-form-id="089d904f-4acb-4ff7-8c61-53ee99e12345"
-                      data-portal-id="49020024"
+                      data-form-id={settings?.supportFormId || '089d904f-4acb-4ff7-8c61-53ee99e12345'}
+                      data-portal-id={settings?.hubspotPortalId || '49020024'}
                       ref={(el) => {
                         if (el && !document.getElementById('hs-form-script')) {
+                          const portalId = settings?.hubspotPortalId || '49020024';
                           const script = document.createElement('script');
                           script.id = 'hs-form-script';
-                          script.src = 'https://js.hsforms.net/forms/embed/49020024.js';
+                          script.src = `https://js.hsforms.net/forms/embed/${portalId}.js`;
                           script.defer = true;
                           document.body.appendChild(script);
                         }
@@ -3082,10 +3191,8 @@
       const [note, setNote] = useState('');
       const [uploading, setUploading] = useState(false);
       const [uploadMessage, setUploadMessage] = useState(null);
-      const [signingReportId, setSigningReportId] = useState(null);
-      const [customerSignature, setCustomerSignature] = useState('');
-      const [signSubmitting, setSignSubmitting] = useState(false);
-      const [signError, setSignError] = useState(null);
+      const [viewingReport, setViewingReport] = useState(null);
+      const [fetchingReport, setFetchingReport] = useState(false);
       const [reportSort, setReportSort] = useState('date_desc');
       const [reportStatusFilter, setReportStatusFilter] = useState('');
       const highlightRef = useRef(null);
@@ -3094,15 +3201,6 @@
 
       // Check if user has any HubSpot IDs configured for uploads
       const hasHubSpotConfig = userData?.hubspotCompanyId || userData?.hubspotDealId || userData?.hubspotContactId;
-
-      // Scroll to highlighted report when navigating from Service History
-      useEffect(() => {
-        if (highlightServiceReportId && highlightRef.current) {
-          setTimeout(() => {
-            highlightRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }, 300);
-        }
-      }, [highlightServiceReportId, documents]);
 
       const refreshDocuments = async () => {
         if (!slug) return;
@@ -3117,50 +3215,67 @@
         }
       };
 
-      // Handle signing a service report from the Files area
-      const handleSignReport = async () => {
-        if (!signingReportId) return;
-        if (!customerSignature || !customerSignature.startsWith('data:image')) {
-          setSignError('Please provide your signature before submitting.');
-          return;
-        }
-        setSignSubmitting(true);
-        setSignError(null);
+      // Open full service report view (for review + sign or just viewing)
+      const openReportView = async (serviceReportId) => {
+        setFetchingReport(true);
         try {
-          const response = await fetch(`${API_URL}/api/client/service-reports/${signingReportId}/sign`, {
-            method: 'PUT',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              customerSignature,
-              customerSignatureDate: new Date().toISOString().split('T')[0]
-            })
+          const response = await fetch(`${API_URL}/api/client/service-reports/${serviceReportId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
           });
-          const result = await response.json();
           if (!response.ok) {
-            setSignError(result.error || 'Failed to submit signature');
+            const err = await response.json();
+            alert(err.error || 'Failed to load report');
             return;
           }
-          // Update status locally, close modal, refresh docs
-          setDocuments(prev => prev.map(d => d.serviceReportId === signingReportId ? { ...d, reportStatus: 'submitted' } : d));
-          const signedId = signingReportId;
-          setSigningReportId(null);
-          setCustomerSignature('');
-          refreshDocuments();
-          // Open the now-signed report PDF in a new tab
-          try {
-            window.open(`${API_URL}/api/client/service-reports/${signedId}/pdf?token=${encodeURIComponent(token)}`, '_blank');
-          } catch (dlErr) {
-            console.error('Auto-download after signing failed:', dlErr);
-          }
+          const report = await response.json();
+          setViewingReport(report);
         } catch (err) {
-          setSignError('Network error. Please try again.');
+          console.error('Error fetching report:', err);
+          alert('Failed to load service report. Please try again.');
         } finally {
-          setSignSubmitting(false);
+          setFetchingReport(false);
         }
       };
+
+      // Called after client signs the report within ServiceReportDetail
+      const handleReportSigned = async (reportId) => {
+        setDocuments(prev => prev.map(d => d.serviceReportId === reportId ? { ...d, reportStatus: 'submitted' } : d));
+        refreshDocuments();
+        // Auto-download the now-signed report PDF
+        try {
+          const pdfResp = await fetch(`${API_URL}/api/client/service-reports/${reportId}/pdf`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (pdfResp.ok) {
+            const blob = await pdfResp.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'Service_Report.pdf';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            a.remove();
+          }
+        } catch (dlErr) {
+          console.error('Auto-download after signing failed:', dlErr);
+        }
+      };
+
+      // When navigating from Service History, auto-open the report view
+      useEffect(() => {
+        if (highlightServiceReportId) {
+          if (highlightRef.current) {
+            setTimeout(() => {
+              highlightRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 300);
+          }
+          const doc = (documents || []).find(d => d.serviceReportId === highlightServiceReportId);
+          if (doc) {
+            openReportView(doc.serviceReportId);
+          }
+        }
+      }, [highlightServiceReportId]);
 
       const adminDocs = (documents || []).filter(doc => doc.uploadedBy !== 'client');
       const clientUploads = (documents || []).filter(doc => doc.uploadedBy === 'client');
@@ -3196,9 +3311,8 @@
             body: formData
           });
           
-          const result = await response.json();
-          
           if (response.ok) {
+            const result = await response.json();
             setUploadMessage({ type: 'success', text: result.message || 'File uploaded successfully!' });
             setSelectedFile(null);
             setNote('');
@@ -3206,7 +3320,9 @@
             document.getElementById('clientFileInput').value = '';
             refreshDocuments();
           } else {
-            setUploadMessage({ type: 'error', text: result.error || 'Upload failed' });
+            let errorMsg = 'Upload failed';
+            try { const errData = await response.json(); errorMsg = errData.error || errorMsg; } catch (_) {}
+            setUploadMessage({ type: 'error', text: errorMsg });
           }
         } catch (error) {
           setUploadMessage({ type: 'error', text: 'Failed to upload file. Please try again.' });
@@ -3238,14 +3354,10 @@
                         const isSigned = reportStatus === 'submitted';
                         const isHighlighted = highlightServiceReportId && doc.serviceReportId === highlightServiceReportId;
 
-                        const handleDocAction = (e) => {
+                        const handleDocDownload = (e) => {
                           e.preventDefault();
                           if (doc.serviceReportId) {
-                            if (needsSignature) {
-                              setSigningReportId(doc.serviceReportId);
-                              return;
-                            }
-                            window.open(`${API_URL}/api/client/service-reports/${doc.serviceReportId}/pdf?token=${encodeURIComponent(token)}`, '_blank');
+                            openPdfSecurely(`${API_URL}/api/client/service-reports/${doc.serviceReportId}/pdf`, token);
                           }
                         };
 
@@ -3288,37 +3400,41 @@
                               <p className="font-medium text-gray-800">{doc.title}</p>
                               {doc.description && <p className="text-sm text-gray-500">{doc.description}</p>}
                               {needsSignature && (
-                                <p className="text-xs text-orange-600 font-medium mt-1">Signature required before download</p>
+                                <p className="text-xs text-orange-600 font-medium mt-1">Review and signature required before download</p>
                               )}
                             </div>
                             {needsSignature ? (
-                              <div className="flex items-center gap-2 flex-shrink-0">
+                              <button
+                                onClick={(e) => { e.preventDefault(); openReportView(doc.serviceReportId); }}
+                                disabled={fetchingReport}
+                                className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 transition whitespace-nowrap disabled:opacity-50"
+                              >
+                                {fetchingReport ? (
+                                  <><div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div> Loading...</>
+                                ) : (
+                                  <><svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                  Review & Sign</>
+                                )}
+                              </button>
+                            ) : (
+                              <div className="flex-shrink-0 flex items-center gap-2">
+                                {isSigned && <span className="text-green-600 text-xs font-semibold">✓ Signed</span>}
                                 <button
-                                  onClick={() => window.open(`${API_URL}/api/client/service-reports/${doc.serviceReportId}/pdf?token=${encodeURIComponent(token)}`, '_blank')}
-                                  className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 hover:bg-gray-50 transition whitespace-nowrap text-gray-700"
+                                  onClick={(e) => { e.preventDefault(); openReportView(doc.serviceReportId); }}
+                                  disabled={fetchingReport}
+                                  className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-gray-600 rounded-lg hover:bg-gray-100 transition whitespace-nowrap"
                                 >
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                  Preview
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                                  View
                                 </button>
                                 <button
-                                  onClick={handleDocAction}
-                                  className="flex items-center gap-1.5 px-3 py-2 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 transition whitespace-nowrap"
+                                  onClick={handleDocDownload}
+                                  className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-primary rounded-lg hover:bg-gray-100 transition whitespace-nowrap"
                                 >
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                                  Sign & Download
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                  Download
                                 </button>
                               </div>
-                            ) : (
-                              <button
-                                onClick={handleDocAction}
-                                className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg hover:bg-gray-100 transition whitespace-nowrap"
-                              >
-                                {isSigned && <span className="text-green-600 text-xs font-semibold">✓ Signed</span>}
-                                <span className="text-primary flex items-center gap-1">
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                                  Download PDF
-                                </span>
-                              </button>
                             )}
                           </div>
                         );
@@ -3433,69 +3549,47 @@
                 <span>📝</span> Additional Upload Options
               </h2>
               <div dangerouslySetInnerHTML={{ __html: (() => {
-                // Sanitize embed HTML: strip script tags and event handlers
-                let html = settings.filesFormEmbed;
-                html = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-                html = html.replace(/\son\w+\s*=\s*["'][^"']*["']/gi, '');
-                html = html.replace(/\son\w+\s*=\s*[^\s>]*/gi, '');
-                html = html.replace(/javascript\s*:/gi, '');
-                return html;
+                // Sanitize embed HTML using DOM-based approach for robust XSS prevention
+                const ALLOWED_TAGS = new Set(['iframe', 'form', 'input', 'select', 'option', 'textarea', 'button', 'label', 'div', 'span', 'p', 'a', 'br', 'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'table', 'tr', 'td', 'th', 'thead', 'tbody', 'img', 'strong', 'em', 'b', 'i']);
+                const ALLOWED_ATTRS = new Set(['src', 'href', 'target', 'rel', 'class', 'id', 'style', 'width', 'height', 'frameborder', 'allowfullscreen', 'allow', 'name', 'value', 'type', 'placeholder', 'action', 'method', 'enctype', 'alt', 'title', 'loading', 'referrerpolicy', 'sandbox']);
+                const DANGEROUS_PROTOCOLS = /^\s*(javascript|data|vbscript)\s*:/i;
+                try {
+                  const doc = new DOMParser().parseFromString(settings.filesFormEmbed, 'text/html');
+                  const sanitize = (node) => {
+                    const walker = doc.createTreeWalker(node, NodeFilter.SHOW_ELEMENT);
+                    const toRemove = [];
+                    while (walker.nextNode()) {
+                      const el = walker.currentNode;
+                      if (!ALLOWED_TAGS.has(el.tagName.toLowerCase())) { toRemove.push(el); continue; }
+                      [...el.attributes].forEach(attr => {
+                        const name = attr.name.toLowerCase();
+                        if (name.startsWith('on') || !ALLOWED_ATTRS.has(name)) { el.removeAttribute(attr.name); return; }
+                        if ((name === 'src' || name === 'href' || name === 'action') && DANGEROUS_PROTOCOLS.test(attr.value)) { el.removeAttribute(attr.name); }
+                      });
+                    }
+                    toRemove.forEach(el => el.remove());
+                  };
+                  sanitize(doc.body);
+                  return doc.body.innerHTML;
+                } catch (e) { return ''; }
               })() }} />
             </div>
           )}
 
-          {/* Signature Modal for unsigned service reports */}
-          {signingReportId && (
-            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => { setSigningReportId(null); setCustomerSignature(''); setSignError(null); }}>
-              <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-bold text-gray-900">Sign Service Report</h3>
-                  <button onClick={() => { setSigningReportId(null); setCustomerSignature(''); setSignError(null); }} className="text-gray-400 hover:text-gray-600">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-                  </button>
-                </div>
-
-                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
-                  <p className="text-sm text-orange-800">
-                    Your signature is required to acknowledge this service report. Once signed, the report PDF will download automatically.
-                  </p>
-                </div>
-
-                <SignaturePad
-                  label="Your Signature"
-                  onSave={(sig) => setCustomerSignature(sig)}
+          {/* Full Report View overlay for reviewing + signing service reports */}
+          {viewingReport && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
+                <ServiceReportDetail
+                  report={viewingReport}
+                  token={token}
+                  backLabel="Back to Files"
+                  onBack={() => setViewingReport(null)}
+                  onSigned={(reportId) => {
+                    handleReportSigned(reportId);
+                    setTimeout(() => setViewingReport(null), 2000);
+                  }}
                 />
-
-                {signError && (
-                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">{signError}</div>
-                )}
-
-                <div className="flex gap-3 pt-2">
-                  <button
-                    onClick={() => { setSigningReportId(null); setCustomerSignature(''); setSignError(null); }}
-                    className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition"
-                    disabled={signSubmitting}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleSignReport}
-                    disabled={signSubmitting || !customerSignature}
-                    className="flex-1 px-4 py-2.5 bg-primary text-white rounded-lg font-medium hover:bg-accent transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  >
-                    {signSubmitting ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                        Submitting...
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                        Sign & Download
-                      </>
-                    )}
-                  </button>
-                </div>
               </div>
             </div>
           )}
@@ -3545,16 +3639,16 @@
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-500 text-sm">Client Users</p>
-                  <p className="text-3xl font-bold text-accent">{stats.clients}</p>
+                  <p className="text-2xl sm:text-3xl font-bold text-accent">{stats.clients}</p>
                 </div>
-                <div className="text-primary opacity-50">{React.cloneElement(AdminIcons.users, { className: 'w-12 h-12' })}</div>
+                <div className="text-primary opacity-50">{React.cloneElement(AdminIcons.users, { className: 'w-10 h-10 sm:w-12 sm:h-12' })}</div>
               </div>
             </div>
-            <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-green-500">
+            <div className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border-l-4 border-green-500">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-500 text-sm">Announcements</p>
-                  <p className="text-3xl font-bold text-accent">{stats.announcements}</p>
+                  <p className="text-2xl sm:text-3xl font-bold text-accent">{stats.announcements}</p>
                 </div>
                 <div className="text-green-500 opacity-50">{React.cloneElement(Icons.megaphone, { className: 'w-12 h-12' })}</div>
               </div>
@@ -3594,7 +3688,9 @@
     const AdminSettingsPage = ({ token, settings, onSettingsChange }) => {
       const [formData, setFormData] = useState({
         filesFormEmbed: settings?.filesFormEmbed || '',
-        supportUrl: settings?.supportUrl || ''
+        supportUrl: settings?.supportUrl || '',
+        supportFormId: settings?.supportFormId || '',
+        hubspotPortalId: settings?.hubspotPortalId || ''
       });
       const [saving, setSaving] = useState(false);
       const [message, setMessage] = useState('');
@@ -3656,7 +3752,31 @@
                 placeholder="https://support.example.com"
               />
             </div>
-            
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">HubSpot Portal ID</label>
+              <input
+                type="text"
+                value={formData.hubspotPortalId}
+                onChange={(e) => setFormData({ ...formData, hubspotPortalId: e.target.value })}
+                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
+                placeholder="49020024"
+              />
+              <p className="text-xs text-gray-400 mt-1">Used for the HubSpot support form embed on the Support page</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">HubSpot Support Form ID</label>
+              <input
+                type="text"
+                value={formData.supportFormId}
+                onChange={(e) => setFormData({ ...formData, supportFormId: e.target.value })}
+                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
+                placeholder="089d904f-4acb-4ff7-8c61-53ee99e12345"
+              />
+              <p className="text-xs text-gray-400 mt-1">The form ID from your HubSpot support ticket form</p>
+            </div>
+
             <button
               onClick={handleSave}
               disabled={saving}
@@ -4325,11 +4445,13 @@
       const [saving, setSaving] = useState(false);
       const [message, setMessage] = useState(null);
       const [showCreateForm, setShowCreateForm] = useState(false);
+      const [addToExisting, setAddToExisting] = useState(false);
       const [createForm, setCreateForm] = useState({
         email: '',
         name: '',
         password: '',
         practiceName: '',
+        existingPortalSlug: '',
         logo: '',
         hubspotCompanyId: '',
         hubspotDealId: '',
@@ -4430,8 +4552,18 @@
         setMessage(null);
 
         // Validate required fields
-        if (!createForm.email || !createForm.name || !createForm.password || !createForm.practiceName) {
-          setMessage({ type: 'error', text: 'Email, name, password, and practice name are required' });
+        if (!createForm.email || !createForm.name || !createForm.password) {
+          setMessage({ type: 'error', text: 'Email, name, and password are required' });
+          setSaving(false);
+          return;
+        }
+        if (addToExisting && !createForm.existingPortalSlug) {
+          setMessage({ type: 'error', text: 'Please select an existing portal' });
+          setSaving(false);
+          return;
+        }
+        if (!addToExisting && !createForm.practiceName) {
+          setMessage({ type: 'error', text: 'Practice name is required for new portals' });
           setSaving(false);
           return;
         }
@@ -4455,11 +4587,13 @@
             await loadClients();
             // Reset and close form
             setShowCreateForm(false);
+            setAddToExisting(false);
             setCreateForm({
               email: '',
               name: '',
               password: '',
               practiceName: '',
+              existingPortalSlug: '',
               logo: '',
               hubspotCompanyId: '',
               hubspotDealId: '',
@@ -4512,6 +4646,7 @@
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Practice Name</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Portal URL</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">HubSpot IDs</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Status</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                     </tr>
                   </thead>
@@ -4540,6 +4675,23 @@
                             <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded">Not linked</span>
                           )}
                         </td>
+                        <td className="px-4 py-3 text-center">
+                          <button
+                            onClick={async () => {
+                              const newStatus = c.accountStatus === 'inactive' ? 'active' : 'inactive';
+                              try {
+                                await fetch(`${API_URL}/api/client-portal/clients/${c.id}`, {
+                                  method: 'PUT',
+                                  headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ accountStatus: newStatus })
+                                });
+                                loadClients();
+                              } catch (err) { console.error('Toggle status error:', err); }
+                            }}
+                            className={`px-2.5 py-1 text-xs rounded-full font-medium ${c.accountStatus === 'inactive' ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}
+                            title="Click to toggle active/inactive"
+                          >{c.accountStatus === 'inactive' ? 'Inactive' : 'Active'}</button>
+                        </td>
                         <td className="px-4 py-3 text-sm">
                           <button
                             onClick={() => handleEdit(c)}
@@ -4562,9 +4714,48 @@
               <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
                 <div className="p-6 border-b">
                   <h2 className="text-xl font-bold text-accent">Add New Client User</h2>
-                  <p className="text-sm text-gray-500 mt-1">Create a new client portal account (syncs with Admin Hub)</p>
+                  <p className="text-sm text-gray-500 mt-1">Create a new account or add a user to an existing portal</p>
                 </div>
                 <div className="p-6 space-y-4">
+                  {/* Portal mode toggle */}
+                  <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm font-medium">
+                    <button
+                      type="button"
+                      onClick={() => { setAddToExisting(false); setCreateForm(f => ({...f, existingPortalSlug: ''})); }}
+                      className={`flex-1 py-2 transition-colors ${!addToExisting ? 'bg-primary text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                    >
+                      New Portal
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAddToExisting(true)}
+                      className={`flex-1 py-2 transition-colors ${addToExisting ? 'bg-primary text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                    >
+                      Add to Existing Portal
+                    </button>
+                  </div>
+
+                  {/* Portal picker (existing mode only) */}
+                  {addToExisting && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Select Portal <span className="text-red-500">*</span></label>
+                      <select
+                        value={createForm.existingPortalSlug}
+                        onChange={(e) => setCreateForm({...createForm, existingPortalSlug: e.target.value})}
+                        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      >
+                        <option value="">-- Select a portal --</option>
+                        {clients.reduce((acc, c) => {
+                          if (c.slug && !acc.find(p => p.slug === c.slug)) acc.push(c);
+                          return acc;
+                        }, []).map(p => (
+                          <option key={p.slug} value={p.slug}>{p.practiceName || p.slug} — /portal/{p.slug}</option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-400 mt-1">The new user will share access to this portal and inherit its settings</p>
+                    </div>
+                  )}
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Email <span className="text-red-500">*</span></label>
                     <input
@@ -4599,76 +4790,84 @@
                     />
                     <p className="text-xs text-gray-400 mt-1">User will be required to change password on first login</p>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Practice Name <span className="text-red-500">*</span></label>
-                    <input
-                      type="text"
-                      value={createForm.practiceName}
-                      onChange={(e) => setCreateForm({...createForm, practiceName: e.target.value})}
-                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                      placeholder="e.g., ABC Medical Labs"
-                      required
-                    />
-                    <p className="text-xs text-gray-400 mt-1">Will auto-generate portal URL slug</p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Practice Logo</label>
-                    <div className="flex items-center gap-4">
-                      {createForm.logo && <img src={createForm.logo} alt="Logo" className="h-16 w-16 object-contain border rounded" />}
-                      <input type="file" ref={createLogoInputRef} accept="image/png,image/jpeg" onChange={(e) => handleLogoUpload(e, 'create')} className="hidden" />
-                      <button type="button" onClick={() => createLogoInputRef.current?.click()}
-                        className="px-4 py-2 border border-primary text-primary rounded-lg hover:bg-primary hover:text-white transition flex items-center gap-2 text-sm font-medium">
-                        {Icons.upload} Upload Logo
-                      </button>
-                      {createForm.logo && <button type="button" onClick={() => setCreateForm({...createForm, logo: ''})} className="text-red-600 text-sm hover:text-red-800">Remove</button>}
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">Max 2MB, PNG or JPEG</p>
-                  </div>
-                  <div className="border-t pt-4">
-                    <p className="text-sm font-medium text-gray-700 mb-3">HubSpot Integration IDs (Optional)</p>
-                    <div className="space-y-3">
+
+                  {/* New portal fields (hidden when adding to existing) */}
+                  {!addToExisting && (
+                    <>
                       <div>
-                        <label className="block text-xs text-gray-500 mb-1">Company ID</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Practice Name <span className="text-red-500">*</span></label>
                         <input
                           type="text"
-                          value={createForm.hubspotCompanyId}
-                          onChange={(e) => setCreateForm({...createForm, hubspotCompanyId: e.target.value})}
-                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
-                          placeholder="e.g., 12345678"
+                          value={createForm.practiceName}
+                          onChange={(e) => setCreateForm({...createForm, practiceName: e.target.value})}
+                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                          placeholder="e.g., ABC Medical Labs"
+                          required
                         />
+                        <p className="text-xs text-gray-400 mt-1">Will auto-generate portal URL slug</p>
                       </div>
                       <div>
-                        <label className="block text-xs text-gray-500 mb-1">Deal ID</label>
-                        <input
-                          type="text"
-                          value={createForm.hubspotDealId}
-                          onChange={(e) => setCreateForm({...createForm, hubspotDealId: e.target.value})}
-                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
-                          placeholder="e.g., 87654321"
-                        />
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Practice Logo</label>
+                        <div className="flex items-center gap-4">
+                          {createForm.logo && <img src={createForm.logo} alt="Logo" className="h-16 w-16 object-contain border rounded" />}
+                          <input type="file" ref={createLogoInputRef} accept="image/png,image/jpeg" onChange={(e) => handleLogoUpload(e, 'create')} className="hidden" />
+                          <button type="button" onClick={() => createLogoInputRef.current?.click()}
+                            className="px-4 py-2 border border-primary text-primary rounded-lg hover:bg-primary hover:text-white transition flex items-center gap-2 text-sm font-medium">
+                            {Icons.upload} Upload Logo
+                          </button>
+                          {createForm.logo && <button type="button" onClick={() => setCreateForm({...createForm, logo: ''})} className="text-red-600 text-sm hover:text-red-800">Remove</button>}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">Max 2MB, PNG or JPEG</p>
                       </div>
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Contact ID</label>
-                        <input
-                          type="text"
-                          value={createForm.hubspotContactId}
-                          onChange={(e) => setCreateForm({...createForm, hubspotContactId: e.target.value})}
-                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
-                          placeholder="e.g., 11223344"
-                        />
+                      <div className="border-t pt-4">
+                        <p className="text-sm font-medium text-gray-700 mb-3">HubSpot Integration IDs (Optional)</p>
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Company ID</label>
+                            <input
+                              type="text"
+                              value={createForm.hubspotCompanyId}
+                              onChange={(e) => setCreateForm({...createForm, hubspotCompanyId: e.target.value})}
+                              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                              placeholder="e.g., 12345678"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Deal ID</label>
+                            <input
+                              type="text"
+                              value={createForm.hubspotDealId}
+                              onChange={(e) => setCreateForm({...createForm, hubspotDealId: e.target.value})}
+                              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                              placeholder="e.g., 87654321"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Contact ID</label>
+                            <input
+                              type="text"
+                              value={createForm.hubspotContactId}
+                              onChange={(e) => setCreateForm({...createForm, hubspotContactId: e.target.value})}
+                              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                              placeholder="e.g., 11223344"
+                            />
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
+                    </>
+                  )}
                 </div>
                 <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
                   <button
                     onClick={() => {
                       setShowCreateForm(false);
+                      setAddToExisting(false);
                       setCreateForm({
                         email: '',
                         name: '',
                         password: '',
                         practiceName: '',
+                        existingPortalSlug: '',
                         logo: '',
                         hubspotCompanyId: '',
                         hubspotDealId: '',
@@ -4913,7 +5112,7 @@
 
         // Client pages
         if (activePage === 'home') return <HomePage data={data} announcements={announcements} onNavigate={navigateTo} />;
-        if (activePage === 'milestones') return <MilestonesPage data={data} onNavigate={navigateTo} token={token} />;
+        if (activePage === 'milestones') return <MilestonesPage data={data} onNavigate={navigateTo} token={token} currentUser={user} />;
         if (activePage === 'inventory') return <InventoryPage token={token} slug={slug} />;
         if (activePage === 'reports') return <ReportsPage token={token} slug={slug} onNavigate={navigateTo} />;
         if (activePage === 'submission_history') return <SubmissionHistoryPage token={token} slug={slug} isAdmin={false} onNavigate={navigateTo} currentUser={user} />;
@@ -4957,7 +5156,7 @@
                     <p className="font-semibold text-red-800">
                       {unsignedCount} service report{unsignedCount > 1 ? 's' : ''} requires your signature
                     </p>
-                    <p className="text-sm text-red-600">Please sign to download your service report{unsignedCount > 1 ? 's' : ''}.</p>
+                    <p className="text-sm text-red-600">Please review and sign your service report{unsignedCount > 1 ? 's' : ''} to download.</p>
                   </div>
                   <button
                     onClick={() => navigateToFile(null)}

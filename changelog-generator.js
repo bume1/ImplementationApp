@@ -476,7 +476,7 @@ async function autoUpdateChangelog(db) {
     // Determine next version number
     // Collect all known versions from DB entries and static baseline
     const allVersions = changelog.map(e => e.version);
-    allVersions.push('2.7.4'); // Known static max as baseline
+    allVersions.push('3.0.0'); // Known static max as baseline
 
     // Find the highest version
     let maxParts = [0, 0, 0];

@@ -23,17 +23,29 @@
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
-    body { font-family: system-ui, -apple-system, sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%); }
+    * { font-family: 'Inter', system-ui, sans-serif; }
+    body { background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #f1f5f9 100%); min-height: 100vh; }
     .card-hover { transition: all 0.3s ease; }
     .card-hover:hover { transform: translateY(-4px); box-shadow: 0 12px 24px rgba(0,0,0,0.1); }
     .guide-content { max-height: 0; overflow: hidden; transition: max-height 0.3s ease-out; }
-    .guide-content.open { max-height: 2000px; transition: max-height 0.5s ease-in; }
+    .guide-content.open { max-height: 5000px; transition: max-height 0.5s ease-in; }
+    .sidebar-link { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); border-radius: 0.75rem; }
+    .sidebar-link:hover { background: linear-gradient(135deg, rgba(4, 94, 159, 0.08) 0%, rgba(4, 94, 159, 0.12) 100%); }
+    .sidebar-link.active { background: linear-gradient(135deg, #045E9F 0%, #0353a4 100%); color: white; box-shadow: 0 4px 14px -3px rgba(4, 94, 159, 0.4); }
+    .gradient-header { background: linear-gradient(135deg, #045E9F 0%, #00205A 100%); }
+    .search-input:focus { box-shadow: 0 0 0 3px rgba(4,94,159,0.15); outline: none; }
+    .search-dropdown { max-height: 400px; overflow-y: auto; }
+    .search-item { transition: background 0.15s ease; }
+    .search-item:hover { background: #f0f7ff; }
+    mark.active-match { background: #f97316; color: white; box-shadow: 0 0 0 2px #f97316, 0 0 8px rgba(249,115,22,0.4); border-radius: 2px; }
+    @keyframes match-pulse { 0%,100% { box-shadow: 0 0 0 2px #f97316, 0 0 8px rgba(249,115,22,0.4); } 50% { box-shadow: 0 0 0 4px #f97316, 0 0 16px rgba(249,115,22,0.6); } }
+    mark.active-match { animation: match-pulse 1s ease-in-out; }
   </style>
 </head>
 <body>
   <div id="root"></div>
   <script type="text/babel">
-    const { useState, useEffect } = React;
+    const { useState, useEffect, useMemo, useRef, useCallback } = React;
 
     // Icons
     const Icons = {
@@ -57,6 +69,124 @@
       lock: <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
     };
 
+    // ============== 5-TIER PERMISSION SYSTEM ==============
+    const USER_TIERS = {
+      SUPER_ADMIN: 'super_admin',
+      MANAGER: 'manager',
+      TEAM_MEMBER: 'team_member',
+      VENDOR: 'vendor',
+      CLIENT: 'client'
+    };
+
+    const TIER_LABELS = {
+      super_admin: 'Super Admin',
+      manager: 'Manager',
+      team_member: 'Team Member',
+      vendor: 'Vendor Technician',
+      client: 'Client'
+    };
+
+    const PORTAL_SECTIONS = {
+      GENERAL: 'general',
+      ADMIN_HUB: 'admin_hub',
+      LAUNCH_PORTAL: 'launch_portal',
+      SERVICE_PORTAL: 'service_portal',
+      CLIENT_PORTAL: 'client_portal',
+      CLIENT_PORTAL_ADMIN: 'client_portal_admin'
+    };
+
+    const PORTAL_SECTION_LABELS = {
+      general: 'General',
+      admin_hub: 'Admin Hub',
+      launch_portal: 'Implementations',
+      service_portal: 'Service Portal',
+      client_portal: 'Client Portal',
+      client_portal_admin: 'Client Portal Admin'
+    };
+
+    function getUserTier(user) {
+      if (!user) return null;
+      if (user.role === 'admin') return USER_TIERS.SUPER_ADMIN;
+      if (user.isManager) return USER_TIERS.MANAGER;
+      if (user.role === 'vendor') return USER_TIERS.VENDOR;
+      if (user.role === 'client') return USER_TIERS.CLIENT;
+      return USER_TIERS.TEAM_MEMBER;
+    }
+
+    function canUserSeeGuide(userTier, user, guide) {
+      if (guide.hidden) return false;
+      const visibleTo = guide.visibleTo || [];
+      if (visibleTo.length === 0) return true;
+      if (!visibleTo.includes(userTier)) return false;
+      if (userTier === 'team_member' && guide.portalSection) {
+        switch (guide.portalSection) {
+          case 'admin_hub': return !!user.hasAdminHubAccess;
+          case 'launch_portal': return !!user.hasImplementationsAccess || (user.assignedProjects && user.assignedProjects.length > 0);
+          case 'service_portal': return !!user.hasServicePortalAccess;
+          case 'client_portal_admin': return !!user.hasClientPortalAdminAccess;
+          case 'client_portal': return false;
+          default: return true;
+        }
+      }
+      return true;
+    }
+
+    // ============== WORKFLOW WALKTHROUGHS ==============
+    const WORKFLOW_WALKTHROUGHS = {
+      super_admin: {
+        title: 'Super Admin Daily Workflow',
+        subtitle: 'Your end-to-end daily routine as system administrator',
+        steps: [
+          { step: 1, title: 'Check Admin Hub Inbox', description: 'Process password resets (urgent - users are blocked), review bug reports, triage feature requests.', link: 'admin-hub' },
+          { step: 2, title: 'Review Dashboard Stats', description: 'Check active launch count, open tickets, and look for any anomalies in the numbers.', link: 'admin-hub' },
+          { step: 3, title: 'Monitor Implementations', description: 'Review project progress across all active launches, check for overdue tasks, follow up with project managers.', link: 'launch-app' },
+          { step: 4, title: 'Oversee Service Operations', description: 'Check pending service assignments, review completed reports for quality, monitor active validations.', link: 'service-portal' },
+          { step: 5, title: 'Client Portal Oversight', description: 'Review inventory compliance, update announcements, ensure client documents are current.', link: 'client-portal-admin' }
+        ]
+      },
+      manager: {
+        title: 'Manager Daily Workflow',
+        subtitle: 'Your workflow for overseeing teams and service operations',
+        steps: [
+          { step: 1, title: 'Review Service Assignments', description: 'Check pending service visits in the Service Portal. Assign new work to available technicians.', link: 'service-portal' },
+          { step: 2, title: 'Monitor Completed Reports', description: 'Review submitted service and validation reports for completeness and quality.', link: 'service-portal' },
+          { step: 3, title: 'Check Client Portal', description: 'Review inventory submissions, update client-facing announcements, ensure documents are current.', link: 'client-portal-admin' },
+          { step: 4, title: 'Dashboard Overview', description: 'Check Admin Hub dashboard for team performance metrics and any pending items.', link: 'admin-hub' }
+        ]
+      },
+      team_member: {
+        title: 'Team Member Daily Workflow',
+        subtitle: 'Your daily routine for implementations and project tasks',
+        steps: [
+          { step: 1, title: 'Check Your Assigned Projects', description: 'Open the Launch App to see your current projects, pending tasks, and upcoming milestones.', link: 'launch-app' },
+          { step: 2, title: 'Update Task Progress', description: 'Mark completed tasks, add notes for updates, upload any required documentation.', link: 'launch-app' },
+          { step: 3, title: 'Submit Service Reports', description: 'If you completed service work today, file reports within 24 hours in the Service Portal.', link: 'service-portal' },
+          { step: 4, title: 'Review Client Documents', description: 'Ensure client-facing documents are current and accurate in the Client Portal Admin.', link: 'client-portal-admin' }
+        ]
+      },
+      vendor: {
+        title: 'Vendor Technician Workflow',
+        subtitle: 'Your workflow for assigned service visits and report submission',
+        steps: [
+          { step: 1, title: 'Check Dashboard for Assignments', description: 'Look for the red notification box on the Service Portal dashboard with pending service assignments.', link: 'service-portal' },
+          { step: 2, title: 'Review Assignment Details', description: 'Read manager notes, check attached photos and files, understand the scope of work before visiting.', link: 'service-portal' },
+          { step: 3, title: 'Complete Service Visit', description: 'Perform the work on-site, gather customer signatures, note materials used and any outstanding issues.', link: 'service-portal' },
+          { step: 4, title: 'Submit Report', description: 'Fill in findings, attach photos, get customer signature, and submit within 24 hours of completing the visit.', link: 'service-portal' }
+        ]
+      },
+      client: {
+        title: 'Client Portal Walkthrough',
+        subtitle: 'How to get the most out of your client portal',
+        steps: [
+          { step: 1, title: 'Check Announcements', description: 'View the home dashboard for important updates, pinned announcements, and recent activity.', link: 'client-portal' },
+          { step: 2, title: 'Submit Weekly Inventory', description: 'Navigate to Inventory Management and enter your current stock levels for all required items.', link: 'inventory' },
+          { step: 3, title: 'Review Documents', description: 'Check the Files & Documents section for new certificates, contracts, or package inserts.', link: 'files-documents' },
+          { step: 4, title: 'Get Support', description: 'Use the Customer Support Center to create tickets for any issues or questions.', link: 'customer-support' }
+        ]
+      }
+    };
+
+    // ============== GUIDE DATA ==============
     // Comprehensive Guide Data - Expert Level How-Tos for Internal Users
     const guides = {
       'portal-hub': {
@@ -64,6 +194,8 @@
         description: 'Your central navigation point for all Thrive 365 Labs services',
         icon: Icons.hub,
         color: 'bg-primary-500',
+        visibleTo: [],
+        portalSection: 'general',
         articles: [
           {
             title: 'Getting Started with Portal Hub',
@@ -200,6 +332,8 @@ If you have the "Is Manager" designation, you get limited Admin Hub access witho
         description: 'User management, permissions, and administration',
         icon: Icons.admin,
         color: 'bg-blue-600',
+        visibleTo: ['super_admin', 'manager', 'team_member'],
+        portalSection: 'admin_hub',
         articles: [
           {
             title: 'Admin Dashboard Overview',
@@ -523,6 +657,8 @@ The technician will then:
         description: 'Project tracking, client onboarding, and implementations',
         icon: Icons.launch,
         color: 'bg-purple-600',
+        visibleTo: ['super_admin', 'manager', 'team_member'],
+        portalSection: 'launch_portal',
         articles: [
           {
             title: 'Understanding the Project Board',
@@ -825,6 +961,8 @@ When a project is marked "Complete":
         description: 'Service reports, field operations, and vendor management',
         icon: Icons.service,
         color: 'bg-emerald-600',
+        visibleTo: ['super_admin', 'manager', 'team_member', 'vendor'],
+        portalSection: 'service_portal',
         articles: [
           {
             title: 'Service Portal Overview',
@@ -1347,6 +1485,8 @@ Click "Create Assignment" - the technician will see it in their dashboard.
         description: 'Managing client portals, content, and communications',
         icon: Icons.client,
         color: 'bg-amber-500',
+        visibleTo: ['super_admin', 'manager'],
+        portalSection: 'client_portal_admin',
         articles: [
           {
             title: 'Understanding Client Portals',
@@ -1674,6 +1814,8 @@ Regularly review tickets to ensure:
         description: 'Weekly inventory updates, reports, and alerts',
         icon: Icons.inventory,
         color: 'bg-teal-600',
+        visibleTo: ['super_admin', 'manager', 'client'],
+        portalSection: 'client_portal',
         articles: [
           {
             title: 'Inventory System Overview (For Internal Staff)',
@@ -1910,6 +2052,8 @@ For technical issues beyond these solutions:
         description: 'Tickets, live chat, and support resources',
         icon: Icons.support,
         color: 'bg-sky-600',
+        visibleTo: ['super_admin', 'manager', 'client'],
+        portalSection: 'client_portal',
         articles: [
           {
             title: 'Support Center Overview',
@@ -1993,6 +2137,8 @@ Support agents are available during business hours. The green indicator shows wh
         description: 'Document management and file uploads',
         icon: Icons.files,
         color: 'bg-violet-600',
+        visibleTo: ['super_admin', 'manager', 'client'],
+        portalSection: 'client_portal',
         articles: [
           {
             title: 'Accessing Documents',
@@ -2038,6 +2184,8 @@ If configured, uploaded files are automatically attached to your HubSpot company
         icon: Icons.code,
         color: 'bg-slate-700',
         ownerOnly: true,
+        visibleTo: ['super_admin'],
+        portalSection: 'general',
         articles: [
           {
             title: 'System Overview',
@@ -2379,6 +2527,8 @@ The application supports custom domains for main application access and client p
         icon: Icons.admin,
         color: 'bg-rose-600',
         adminOnly: true,
+        visibleTo: ['super_admin', 'manager'],
+        portalSection: 'general',
         articles: [
           {
             title: 'Admin Hub Best Practices',
@@ -2561,11 +2711,494 @@ If you suspect unauthorized access:
 5. Notify affected clients if their data was accessed`
           }
         ]
+      },
+      'notifications': {
+        title: 'Email Notifications',
+        description: 'When you\'ll receive emails and what triggers each notification',
+        icon: Icons.milestone,
+        color: 'bg-primary-500',
+        visibleTo: [],
+        portalSection: 'general',
+        articles: [
+          {
+            title: 'How Notifications Work',
+            content: `The system sends automated email notifications based on activity and scheduled checks. Notifications are processed every 15 minutes and delivered to the email address on your account.
+
+**Key things to know:**
+- All emails come from Thrive 365 Labs (no-reply@thrive365labs.live)
+- Duplicate notifications are suppressed — you won't receive the same alert twice for the same event
+- Notifications can be enabled or disabled by an admin from the Admin Hub
+- Up to 500 emails can be sent per day across the entire system`
+          },
+          {
+            title: 'Task Deadline Warnings (Team Members & Admins)',
+            content: `You will receive a deadline warning email when a task assigned to you is approaching its due date.
+
+**When emails are sent:**
+- 7 days before the due date
+- 3 days before the due date
+- 1 day before the due date
+
+**Subject line:** Task due [timeframe]: [Task Title] — [Project Name]
+
+**Who receives it:** The task owner (the email address in the "Owner" field of the task).
+
+**Note:** If a task has no due date set, no deadline email is sent.`
+          },
+          {
+            title: 'Task Overdue Alerts (Team Members & Admins)',
+            content: `If a task passes its due date without being marked complete, overdue alerts are sent.
+
+**Two separate emails:**
+
+**1. Owner alert** — sent to the task's assigned owner as soon as the task becomes overdue, then periodically as it remains overdue.
+
+**2. Admin escalation** — sent to admin accounts after a task has been overdue for 7 days.
+
+**Subject lines:**
+- Owner: OVERDUE (Xd): [Task Title] — [Project Name]
+- Admin: ESCALATION: Task Xd overdue — [Task Title] ([Project Name])
+
+**Who receives it:** Task owner for the first email; admins for the escalation.`
+          },
+          {
+            title: 'Service Report — Signature Request (Admins & Managers)',
+            content: `When a service technician submits a report that requires a signature, the designated signatory receives an email notification automatically.
+
+**Trigger:** Service report status changes to "Signature Needed"
+
+**Subject line:** Action needed: Service report for [Facility Name] awaits your signature
+
+**Who receives it:** The admin or manager responsible for signing off on service reports.
+
+**Contains:** Direct link to the report in the Service Portal.`
+          },
+          {
+            title: 'Service Report — Admin Review Reminder (Admins)',
+            content: `If a submitted service report has been sitting without admin review, a reminder is sent.
+
+**Trigger:** A service report has been pending review for 3 days without action.
+
+**Subject line:** Service report pending review: [Facility Name]
+
+**Who receives it:** Admin accounts.
+
+**Purpose:** Prevents reports from going unreviewed and ensures timely sign-off for client records.`
+          },
+          {
+            title: 'Inventory Submission Reminder (Clients)',
+            content: `Clients are reminded to submit their weekly inventory update if they haven't done so recently.
+
+**Trigger:** No inventory submission received in the past 7 days.
+
+**Subject line:** Reminder: Your weekly inventory update is due — [Practice Name]
+
+**Who receives it:** The client account associated with the practice.
+
+**Contains:** Direct link to the inventory section of your client portal.
+
+**Tip:** Submit your inventory update each week to avoid receiving this reminder.`
+          },
+          {
+            title: 'Milestone Reached (Admins & Project Team)',
+            content: `A notification is sent when a project reaches key completion milestones.
+
+**Trigger:** Project task completion crosses one of these thresholds:
+- 25% complete
+- 50% complete
+- 75% complete
+- 100% complete
+
+**Subject line:** Milestone reached: [Project Name] is X% complete!
+
+**Who receives it:** Admins and team members assigned to the project.
+
+**Note:** Each threshold triggers only once per project — you won't receive repeat emails at the same percentage.`
+          },
+          {
+            title: 'Go-Live Countdown Reminders (Admins & Project Team)',
+            content: `As a project's go-live date approaches, reminder emails are sent to keep the team on track.
+
+**When emails are sent:**
+- 30 days before go-live
+- 14 days before go-live
+- 7 days before go-live
+
+**Subject line:** Go-live in X days: [Project Name]
+
+**Who receives it:** Admins and team members assigned to the project.
+
+**Contains:** Current completion percentage and a link to the project.
+
+**Note:** A go-live date must be set on the project for these reminders to send.`
+          },
+          {
+            title: 'Announcements (Clients)',
+            content: `When an admin publishes an announcement to the Client Portal, an email notification is sent to the relevant client(s).
+
+**Trigger:** Admin publishes a new announcement in the Client Portal Admin section.
+
+**Subject line:** New Announcement: [Announcement Title] (or [PRIORITY] New Announcement: ... for priority items)
+
+**Who receives it:** The client account(s) the announcement is directed to.
+
+**Contains:** Full announcement content and any attached document links.`
+          }
+        ]
+      },
+      'known-issues': {
+        title: 'Known Issues',
+        description: 'Current known issues, workarounds, and status updates',
+        icon: Icons.lock,
+        color: 'bg-red-600',
+        isKnownIssue: true,
+        hidden: true,
+        visibleTo: ['super_admin', 'manager'],
+        portalSection: 'general',
+        articles: [
+          {
+            title: 'Task ID Type Coercion',
+            content: `**Status:** Active (by design)
+**Severity:** Low
+**Affected:** Launch App task operations
+
+Tasks can have numeric OR string IDs depending on whether they were created from templates or via the UI. When comparing task IDs, always normalize to strings. If you notice a task update "not saving," this is likely the cause.
+
+**Workaround:** The system normalizes IDs in most operations, but edge cases exist in CSV import and dependency linking. Report any instances where task operations silently fail.`
+          },
+          {
+            title: 'Slug Changes Break Client Portal URLs',
+            content: `**Status:** Resolved
+**Severity:** N/A
+**Affected:** Client Portal access
+
+When a client's practice name is changed, the system regenerates their portal slug but now stores the old slug(s) in a \`previousSlugs\` list. Requests to old portal URLs are automatically redirected (302) to the new URL, so existing bookmarks and shared links continue to work.
+
+**No action needed.** Old URLs self-redirect. If a client reports a broken portal link, verify the redirect is resolving correctly by checking their \`previousSlugs\` field in the database.`
+          },
+          {
+            title: 'Activity Log Truncates at 500 Entries',
+            content: `**Status:** Active (by design)
+**Severity:** Low
+**Affected:** Admin Hub activity tracking
+
+The activity log permanently deletes entries beyond 500. There is no archive mechanism.
+
+**Workaround:** If you need long-term audit trails, periodically export activity data before it reaches 500 entries.`
+          },
+          {
+            title: 'HubSpot Token Lost on Server Restart',
+            content: `**Status:** Active (by design)
+**Severity:** Low
+**Affected:** HubSpot integration
+
+HubSpot OAuth tokens are cached in-memory only. When the server restarts, a new token handshake is required automatically, but the first request after restart may be slow.
+
+**Workaround:** No action needed. The system re-authenticates automatically. If HubSpot operations fail after a restart, wait 30 seconds and retry.`
+          },
+          {
+            title: 'Bulk Operations Not Atomic',
+            content: `**Status:** Partially resolved
+**Severity:** Low
+**Affected:** Launch App bulk task operations
+
+Bulk task updates and deletes have no transaction support. If a bulk operation fails midway, some tasks may be updated while others are not.
+
+The previous all-or-nothing permission behavior for bulk delete has been resolved — the system now uses partial success, deleting tasks the user has access to and skipping unauthorized ones, with a summary returned in the response.
+
+**Workaround:** For large bulk updates (not deletes), consider doing them in smaller batches of 10–20 tasks to limit exposure if a mid-operation failure occurs.`
+          }
+        ]
+      },
+      'hidden-features': {
+        title: 'Hidden Features & Internal Notes',
+        description: 'Internal-only reference: undocumented behaviors, power-user features, and known issues',
+        icon: Icons.lock,
+        color: 'bg-gray-700',
+        visibleTo: ['super_admin', 'manager'],
+        portalSection: 'general',
+        articles: [
+          {
+            title: 'Multi-User Client Portals',
+            content: `Multiple users can share the same client portal (same URL slug and project access). When creating a client user in the Client Portal Admin Hub, use the **"Add to Existing Portal"** toggle to link a new login to an existing practice instead of creating a new one.
+
+The new user inherits the portal slug, assigned projects, logo, and HubSpot IDs from the primary account. Both users log in with their own credentials and see the same portal data.
+
+**Use case:** A practice has a lab director and an office manager who both need portal access.`
+          },
+          {
+            title: 'Old Portal URLs Auto-Redirect',
+            content: `When a client's practice name is changed, the system generates a new portal slug but preserves the old one in a \`previousSlugs\` list on the user record. Any request to an old portal URL (\`/portal/old-slug\`) is automatically redirected (302) to the current URL.
+
+This means shared links and bookmarks continue to work transparently across practice name changes. No manual outreach to clients is needed.`
+          },
+          {
+            title: 'Token Keys by Portal (localStorage)',
+            content: `Each portal stores its auth token under a different localStorage key. Useful when debugging login or session issues:
+
+| Portal | Token key | User key |
+|--------|-----------|----------|
+| Main app (Launch) | \`token\` | \`user\` |
+| Login hub | \`unified_token\` | \`unified_user\` |
+| Admin Hub | \`admin_token\` | \`admin_user\` |
+| Client Portal | \`portal_token\` | \`portal_user\` |
+
+The login hub sets all four simultaneously on login. Sign-out from any portal now clears all keys to prevent phantom sessions.`
+          },
+          {
+            title: 'Known Issue: Task ID Type Coercion',
+            content: `**Status:** Active (by design)
+**Severity:** Low
+**Affected:** Launch App task operations
+
+Tasks can have numeric OR string IDs depending on whether they were created from templates or via the UI. The server normalizes IDs in most operations using double comparison (\`t.id === parseInt(taskId) || String(t.id) === String(taskId)\`), but edge cases exist in CSV import and dependency linking.
+
+**If you see:** A task update that silently does nothing, or a dependency link that doesn't resolve — ID type mismatch is the likely cause. Report it so it can be patched.`
+          },
+          {
+            title: 'Known Issue: Activity Log Truncates at 500 Entries',
+            content: `**Status:** Active (by design)
+**Severity:** Low
+**Affected:** Admin Hub activity tracking
+
+The activity log permanently drops the oldest entries once it exceeds 500 records. The limit is configurable via the \`ACTIVITY_LOG_MAX_ENTRIES\` environment variable but defaults to 500.
+
+**Workaround:** If long-term audit trails are needed, export activity data periodically before the limit is hit. There is no built-in archive mechanism.`
+          },
+          {
+            title: 'Known Issue: HubSpot Token Lost on Server Restart',
+            content: `**Status:** Active (by design)
+**Severity:** Low
+**Affected:** HubSpot integration
+
+HubSpot OAuth tokens are cached in-memory with a 60-second refresh buffer. Tokens are lost on server restart and require a fresh handshake, meaning the first HubSpot operation after a restart may be slow.
+
+**Workaround:** No manual action needed — the system re-authenticates automatically. If HubSpot operations fail immediately after a restart, wait 30 seconds and retry.`
+          },
+          {
+            title: 'Known Issue: Bulk Operations Not Atomic',
+            content: `**Status:** Partially resolved
+**Severity:** Low
+**Affected:** Launch App bulk task operations
+
+Bulk task operations have no transaction support. If a bulk update fails midway, some tasks may be modified while others are not.
+
+Bulk delete now uses partial success — tasks the user can't delete are skipped and reported in the response rather than blocking the entire batch.
+
+**Workaround:** For large bulk updates, do them in smaller batches of 10–20 tasks to limit exposure to mid-operation failures.`
+          }
+        ]
+      },
+      'developer-docs': {
+        title: 'Developer Guide: Knowledge Hub',
+        description: 'How to add, edit, and manage Knowledge Hub content',
+        icon: Icons.code,
+        color: 'bg-slate-700',
+        visibleTo: ['super_admin'],
+        portalSection: 'general',
+        articles: [
+          {
+            title: 'Adding a New Guide Section',
+            content: `**How to add a new section to the Knowledge Hub via Admin Hub:**
+
+**STEP 1: Navigate to Knowledge Hub Management**
+1. Go to Admin Hub
+2. Click "Knowledge Hub" in the sidebar
+3. Click "New Guide" button
+
+**STEP 2: Fill in Guide Details**
+- **Key**: URL-safe identifier (e.g., "new-feature-docs"). Cannot be changed later.
+- **Title**: Display name shown in sidebar and header
+- **Description**: Brief summary shown below the title
+- **Portal Section**: Which portal this guide relates to (determines sidebar grouping)
+- **Visible To**: Select which user tiers can see this guide
+- **Color**: Badge color for the guide icon
+- **Is Known Issue**: Toggle if this is an internal-only known issues entry
+
+**STEP 3: Save and Add Articles**
+1. Save the guide first
+2. Then click into the guide to add articles
+3. Each article needs a title and content
+
+**Content Formatting Syntax:**
+- **Bold text**: Wrap in double asterisks: \`**bold text**\`
+- **Section headers**: Start a line with \`**HEADER TEXT:**\` (all caps with colon)
+- **Numbered lists**: Start lines with \`1.\`, \`2.\`, etc.
+- **Bullet points**: Start lines with \`-\` or a bullet character
+- **Checkboxes**: Start lines with \`- [ ]\` (unchecked) or \`- [x]\` (checked)
+
+**Structured Format (Optional):**
+Articles can use a structured format with 6 fields:
+- What It Is, Who Uses It, When to Use, How to Use, What Happens Next, Common Mistakes
+This renders as color-coded sections with distinct visual styling.`
+          },
+          {
+            title: 'Permission Tiers Reference',
+            content: `**The 5 user tiers and their Knowledge Hub access:**
+
+**1. Super Admin** (role = admin)
+- Sees everything including Known Issues, Technical Docs, and Developer Guide
+- Can manage all Knowledge Hub content via Admin Hub
+
+**2. Manager** (isManager = true)
+- Sees most internal content + Known Issues section
+- Sees Admin Hub, Service Portal, Client Portal Admin guides
+- Cannot see Technical Docs or Developer Guide
+
+**3. Team Member** (role = user, not manager)
+- Sees guides only for portals they have access to
+- Access is filtered by their permission flags:
+  - hasAdminHubAccess -> Admin Hub guides
+  - hasImplementationsAccess -> Launch App guides
+  - hasServicePortalAccess -> Service Portal guides
+  - hasClientPortalAdminAccess -> Client Portal Admin guides
+- Does NOT see client-facing Client Portal guides
+
+**4. Vendor Technician** (role = vendor)
+- Sees only Service Portal documentation
+- Plus the general Portal Hub guide
+
+**5. Client** (role = client)
+- Sees only Client Portal documentation
+- Inventory, Customer Support, Files & Documents
+- Plus the general Portal Hub guide`
+          },
+          {
+            title: 'API Endpoints for Knowledge Hub',
+            content: `**Backend API endpoints for programmatic access:**
+
+**Read Operations:**
+- \`GET /api/knowledge/guides\` - Fetch all visible guides (filtered by user permissions)
+- \`GET /api/knowledge/guides/:guideId\` - Fetch a single guide with articles
+
+**Write Operations (Admin only):**
+- \`POST /api/knowledge/guides\` - Create a new guide
+- \`PUT /api/knowledge/guides/:guideId\` - Update guide metadata
+- \`DELETE /api/knowledge/guides/:guideId\` - Delete a guide
+- \`POST /api/knowledge/guides/:guideId/articles\` - Add an article
+- \`PUT /api/knowledge/guides/:guideId/articles/:articleId\` - Update an article
+- \`DELETE /api/knowledge/guides/:guideId/articles/:articleId\` - Delete an article
+- \`PUT /api/knowledge/guides/:guideId/reorder\` - Reorder articles
+
+**Seeding:**
+- \`GET /api/knowledge/needs-seed\` - Check if database needs initial content
+- \`POST /api/knowledge/seed\` - Seed database from hardcoded content (one-time)
+
+**Guide Object Fields:**
+- key, title, description, icon, color
+- visibleTo: array of tier strings (empty = all users)
+- portalSection: which portal section this belongs to
+- isKnownIssue: boolean for Known Issues section
+- articles: array of { title, content, format }`
+          }
+        ]
       }
     };
 
-    // Helper function to render text with inline bold formatting
-    const renderTextWithBold = (text) => {
+    // ═══════════════════════════════════════════════════════
+    // V2 API HELPERS & SEED TRANSFORM
+    // ═══════════════════════════════════════════════════════
+
+    const V2_VISIBILITY = {
+      'portal-hub': ['public', 'superAdmin', 'manager', 'teamMember', 'vendor', 'client'],
+      'admin-hub': ['superAdmin', 'manager', 'teamMember'],
+      'launch-app': ['superAdmin', 'manager', 'teamMember'],
+      'service-portal': ['superAdmin', 'manager', 'teamMember', 'vendor'],
+      'client-portal': ['superAdmin', 'manager', 'teamMember'],
+      'inventory': ['superAdmin', 'manager', 'teamMember', 'client'],
+      'customer-support': ['public', 'superAdmin', 'manager', 'teamMember', 'vendor', 'client'],
+      'files': ['public', 'superAdmin', 'manager', 'teamMember', 'vendor', 'client'],
+      'technical-docs': ['superAdmin'],
+      'admin-guide': ['superAdmin']
+    };
+
+    const ICON_KEY_MAP = {
+      'portal-hub': 'hub', 'admin-hub': 'admin', 'launch-app': 'launch',
+      'service-portal': 'service', 'client-portal': 'client', 'inventory': 'inventory',
+      'customer-support': 'support', 'files': 'files', 'technical-docs': 'code', 'admin-guide': 'admin'
+    };
+
+    function transformGuidesToV2Seed(guidesObj) {
+      return Object.entries(guidesObj).map(([key, guide], idx) => ({
+        key,
+        title: guide.title,
+        description: guide.description,
+        icon: ICON_KEY_MAP[key] || 'book',
+        color: guide.color,
+        sortOrder: idx,
+        visibleTo: V2_VISIBILITY[key] || ['superAdmin'],
+        features: guide.articles.map((article, aIdx) => ({
+          title: article.title,
+          slug: article.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/,''),
+          sortOrder: aIdx,
+          visibleTo: V2_VISIBILITY[key] || ['superAdmin'],
+          tags: [key],
+          content: {
+            whatItIs: (article.content.split('\n').find(l => l.trim().length > 10) || '').replace(/\*\*/g, '').trim(),
+            howToUseIt: article.content
+          },
+          knownIssues: ''
+        }))
+      }));
+    }
+
+    async function seedV2IfNeeded(token, isAdmin) {
+      try {
+        const check = await fetch('/api/knowledge/v2/needs-seed', {
+          headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+        }).then(r => r.json());
+        if (check.needsSeed && isAdmin) {
+          const sections = transformGuidesToV2Seed(guides);
+          await fetch('/api/knowledge/v2/seed', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sections })
+          });
+        }
+      } catch (e) { console.warn('V2 seed check failed:', e); }
+    }
+
+    async function fetchV2Sections(token) {
+      try {
+        const res = await fetch('/api/knowledge/v2/sections', {
+          headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+        });
+        const data = await res.json();
+        return data.sections || [];
+      } catch (e) {
+        console.warn('V2 fetch failed, using local data:', e);
+        return [];
+      }
+    }
+
+    async function searchV2(token, query) {
+      if (!query || query.trim().length < 2) return [];
+      try {
+        const res = await fetch('/api/knowledge/v2/search?q=' + encodeURIComponent(query), {
+          headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+        });
+        const data = await res.json();
+        return data.results || [];
+      } catch (e) { return []; }
+    }
+
+    // ============== UTILITY COMPONENTS ==============
+
+    // Highlight search terms in text
+    const HighlightText = ({ text, searchTerm }) => {
+      if (!searchTerm || !searchTerm.trim() || typeof text !== 'string') return text;
+      const escapedTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`(${escapedTerm})`, 'gi');
+      const parts = text.split(regex);
+      return parts.map((part, i) =>
+        regex.test(part)
+          ? <mark key={i} className="bg-yellow-200 text-yellow-900 rounded px-0.5">{part}</mark>
+          : part
+      );
+    };
+
+    // Helper function to render text with inline bold formatting (with search highlighting)
+    const renderTextWithBold = (text, searchTerm) => {
       const parts = [];
       let remaining = text;
       let key = 0;
@@ -2574,148 +3207,490 @@ If you suspect unauthorized access:
         const boldStart = remaining.indexOf('**');
 
         if (boldStart === -1) {
-          // No more bold text, add the rest
-          parts.push(<span key={key++}>{remaining}</span>);
+          parts.push(<span key={key++}><HighlightText text={remaining} searchTerm={searchTerm} /></span>);
           break;
         }
 
-        // Add text before bold
         if (boldStart > 0) {
-          parts.push(<span key={key++}>{remaining.substring(0, boldStart)}</span>);
+          parts.push(<span key={key++}><HighlightText text={remaining.substring(0, boldStart)} searchTerm={searchTerm} /></span>);
         }
 
-        // Find the closing **
         const boldEnd = remaining.indexOf('**', boldStart + 2);
 
         if (boldEnd === -1) {
-          // No closing **, treat ** as regular text
-          parts.push(<span key={key++}>{remaining}</span>);
+          parts.push(<span key={key++}><HighlightText text={remaining} searchTerm={searchTerm} /></span>);
           break;
         }
 
-        // Add bold text
         const boldText = remaining.substring(boldStart + 2, boldEnd);
-        parts.push(<strong key={key++} className="font-semibold text-gray-900">{boldText}</strong>);
+        parts.push(<strong key={key++} className="font-semibold text-gray-900"><HighlightText text={boldText} searchTerm={searchTerm} /></strong>);
 
-        // Continue with remaining text
         remaining = remaining.substring(boldEnd + 2);
       }
 
       return parts;
     };
 
-    // Expandable Guide Section Component
-    const GuideSection = ({ guide, isAdmin }) => {
-      const [isOpen, setIsOpen] = useState(false);
-      const [openArticle, setOpenArticle] = useState(null);
+    // ============== CONTENT BLOCK RENDERER (shared helper) ==============
+    // Groups consecutive list items into proper <ol>/<ul> wrappers so numbering resets per section
+    const renderContentBlock = (content, searchTerm, options = {}) => {
+      if (!content) return null;
+      const { compact } = options;
+      const mlClass = compact ? 'ml-4' : 'ml-6';
+      const lines = content.split('\n');
+      const elements = [];
+      let i = 0;
+      let key = 0;
 
-      // Determine border styling based on access level
-      const getBorderClass = () => {
-        if (guide.ownerOnly) return 'border-amber-200 ring-1 ring-amber-100';
-        if (guide.adminOnly) return 'border-rose-200 ring-1 ring-rose-100';
-        return 'border-gray-100';
+      while (i < lines.length) {
+        const trimmed = lines[i].trim();
+
+        // Empty line spacer
+        if (trimmed === '') {
+          elements.push(<div key={key++} className={compact ? 'h-1' : 'h-2'} />);
+          i++;
+          continue;
+        }
+
+        // Section header (**BOLD UPPERCASE:** or **BOLD UPPERCASE**)
+        if (!compact && trimmed.match(/^\*\*[A-Z][^*]+:?\*\*$/)) {
+          const text = trimmed.replace(/\*\*/g, '');
+          elements.push(<h4 key={key++} className="font-bold text-gray-900 mt-6 mb-3 text-base"><HighlightText text={text} searchTerm={searchTerm} /></h4>);
+          i++;
+          continue;
+        }
+
+        // Step header (**STEP N: ...**)
+        if (!compact && trimmed.match(/^\*\*STEP \d+:/i)) {
+          const text = trimmed.replace(/\*\*/g, '');
+          elements.push(<h5 key={key++} className="font-bold text-gray-800 mt-4 mb-2"><HighlightText text={text} searchTerm={searchTerm} /></h5>);
+          i++;
+          continue;
+        }
+
+        // Checkboxes (must check before bullets since - [ ] starts with -)
+        if (trimmed.startsWith('- [ ]') || trimmed.startsWith('- [x]')) {
+          const checked = trimmed.includes('[x]');
+          const text = trimmed.substring(trimmed.indexOf(']') + 2);
+          elements.push(
+            <div key={key++} className="flex items-center gap-2 mb-1 ml-4">
+              <input type="checkbox" checked={checked} readOnly className="rounded" />
+              <span>{renderTextWithBold(text, searchTerm)}</span>
+            </div>
+          );
+          i++;
+          continue;
+        }
+
+        // Checkmark lines (✓) - group consecutive into a styled list
+        if (trimmed.startsWith('\u2713 ') || trimmed.startsWith('\u2714 ')) {
+          const items = [];
+          while (i < lines.length) {
+            const t = lines[i].trim();
+            if (t.startsWith('\u2713 ') || t.startsWith('\u2714 ')) {
+              items.push(t.substring(2));
+              i++;
+            } else break;
+          }
+          elements.push(
+            <div key={key++} className={`space-y-1 mb-2 ${mlClass}`}>
+              {items.map((item, j) => (
+                <div key={j} className="flex items-start gap-2">
+                  <svg className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                  <span>{renderTextWithBold(item, searchTerm)}</span>
+                </div>
+              ))}
+            </div>
+          );
+          continue;
+        }
+
+        // Consecutive bullet items → wrap in <ul>
+        if (trimmed.startsWith('• ') || (trimmed.startsWith('- ') && !trimmed.startsWith('- ['))) {
+          const items = [];
+          while (i < lines.length) {
+            const t = lines[i].trim();
+            if ((t.startsWith('• ') || (t.startsWith('- ') && !t.startsWith('- ['))) && t.length > 2) {
+              items.push(t.substring(2));
+              i++;
+            } else break;
+          }
+          elements.push(
+            <ul key={key++} className={`${mlClass} mb-2 list-disc space-y-1`}>
+              {items.map((item, j) => <li key={j}>{renderTextWithBold(item, searchTerm)}</li>)}
+            </ul>
+          );
+          continue;
+        }
+
+        // Consecutive numbered items → wrap in <ol> (resets numbering per group)
+        if (trimmed.match(/^\d+\.\s/)) {
+          const items = [];
+          while (i < lines.length) {
+            const t = lines[i].trim();
+            if (t.match(/^\d+\.\s/)) {
+              items.push(t.substring(t.indexOf('.') + 2));
+              i++;
+            } else break;
+          }
+          elements.push(
+            <ol key={key++} className={`${mlClass} mb-2 list-decimal space-y-1`}>
+              {items.map((item, j) => <li key={j}>{renderTextWithBold(item, searchTerm)}</li>)}
+            </ol>
+          );
+          continue;
+        }
+
+        // Default paragraph
+        elements.push(<p key={key++} className={`${compact ? 'mb-1' : 'mb-2'} leading-relaxed`}>{renderTextWithBold(compact ? trimmed : lines[i], searchTerm)}</p>);
+        i++;
+      }
+
+      return elements;
+    };
+
+    // ============== STRUCTURED ARTICLE RENDERER ==============
+    const StructuredArticleContent = ({ article, searchTerm }) => {
+      if (!article.format) return null;
+      const sections = [
+        { key: 'whatItIs', label: 'What It Is', borderColor: 'border-blue-500', textColor: 'text-blue-700' },
+        { key: 'whoUsesIt', label: 'Who Uses It', borderColor: 'border-purple-500', textColor: 'text-purple-700' },
+        { key: 'whenToUse', label: 'When to Use', borderColor: 'border-green-500', textColor: 'text-green-700' },
+        { key: 'howToUse', label: 'How to Use', borderColor: 'border-indigo-500', textColor: 'text-indigo-700' },
+        { key: 'whatHappensNext', label: 'What Happens Next', borderColor: 'border-teal-500', textColor: 'text-teal-700' },
+        { key: 'commonMistakes', label: 'Common Mistakes', borderColor: 'border-red-500', textColor: 'text-red-700' }
+      ];
+      return (
+        <div className="space-y-4 mt-4">
+          {sections.map(section => {
+            const value = article.format[section.key];
+            if (!value) return null;
+            return (
+              <div key={section.key} className={`border-l-4 ${section.borderColor} pl-4 py-2`}>
+                <h5 className={`font-semibold ${section.textColor} text-sm uppercase tracking-wide mb-1`}>{section.label}</h5>
+                <div className="text-gray-600 text-sm">
+                  {renderContentBlock(value, searchTerm, { compact: true })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    };
+
+    // Freeform article content renderer
+    const FreeformArticleContent = ({ content, searchTerm }) => {
+      if (!content) return null;
+      return (
+        <div className="prose prose-sm max-w-none mt-4 text-gray-600">
+          {renderContentBlock(content, searchTerm)}
+        </div>
+      );
+    };
+
+    // ============== FEATURE REFERENCE DATA ==============
+    const FEATURE_MAP = {
+      super_admin: [
+        { portal: 'Admin Hub', icon: Icons.admin, colorClass: 'bg-accent', features: [
+          'User account creation & permission management',
+          'Live dashboard stats (users, projects, reports, clients)',
+          'Inbox: password reset approvals & feedback review',
+          'Notifications management',
+          'Service portal administration'
+        ]},
+        { portal: 'Implementations', icon: Icons.launch, colorClass: 'bg-primary-500', features: [
+          '10-phase project lifecycle tracking',
+          'Create, clone & manage projects',
+          'Task & subtask management with dependencies',
+          'Bulk task operations (update & delete)',
+          'Template library (create, clone, import/export)',
+          'CSV import/export for tasks',
+          'HubSpot CRM sync',
+          'Client milestone visibility controls',
+          'Progress reporting dashboard'
+        ]},
+        { portal: 'Service Portal', icon: Icons.service, colorClass: 'bg-success-600', features: [
+          'Create & manage service reports',
+          'Assign service visits to vendors',
+          'Validation report management',
+          'PDF report generation',
+          'Full report history'
+        ]},
+        { portal: 'Client Portal Admin', icon: Icons.client, colorClass: 'bg-purple-600', features: [
+          'Publish announcements',
+          'Manage client documents',
+          'Inventory template & submissions review',
+          'Support ticket oversight',
+          'Custom domain configuration'
+        ]},
+        { portal: 'Knowledge Hub', icon: Icons.book, colorClass: 'bg-indigo-600', features: [
+          'All portal guides including internal docs',
+          'Known issues log',
+          'Admin-only technical documentation',
+          'Role-specific workflow walkthroughs'
+        ]}
+      ],
+      manager: [
+        { portal: 'Admin Hub', icon: Icons.admin, colorClass: 'bg-accent', features: [
+          'Dashboard stats overview',
+          'Service portal administration',
+          'View system activity'
+        ]},
+        { portal: 'Service Portal', icon: Icons.service, colorClass: 'bg-success-600', features: [
+          'Manage & assign service visits to vendors',
+          'Review submitted service reports',
+          'Validation report oversight',
+          'Full report history'
+        ]},
+        { portal: 'Client Portal Admin', icon: Icons.client, colorClass: 'bg-purple-600', features: [
+          'Publish announcements',
+          'Manage client documents',
+          'Inventory review',
+          'Support ticket oversight'
+        ]},
+        { portal: 'Knowledge Hub', icon: Icons.book, colorClass: 'bg-indigo-600', features: [
+          'All portal guides',
+          'Role-specific workflow walkthroughs',
+          'Internal documentation'
+        ]}
+      ],
+      vendor: [
+        { portal: 'Service Portal', icon: Icons.service, colorClass: 'bg-success-600', features: [
+          'Submit service reports',
+          'View assigned service visits',
+          'Complete validation reports',
+          'View your report history'
+        ]},
+        { portal: 'Knowledge Hub', icon: Icons.book, colorClass: 'bg-indigo-600', features: [
+          'Service portal guides',
+          'Role-specific workflow walkthroughs'
+        ]}
+      ],
+      client: [
+        { portal: 'My Portal', icon: Icons.hub, colorClass: 'bg-primary-500', features: [
+          'View implementation milestones & progress',
+          'Submit weekly inventory updates',
+          'View announcements from Thrive 365 Labs',
+          'Access shared documents & resources',
+          'Submit and track support tickets',
+          'View signed service report history'
+        ]},
+        { portal: 'Knowledge Hub', icon: Icons.book, colorClass: 'bg-indigo-600', features: [
+          'Client portal guides',
+          'Workflow walkthroughs'
+        ]}
+      ]
+    };
+
+    const getTeamMemberFeatures = (user) => {
+      const features = [];
+      if (user.hasImplementationsAccess || (user.assignedProjects && user.assignedProjects.length > 0)) {
+        features.push({ portal: 'Implementations', icon: Icons.launch, colorClass: 'bg-primary-500', features: [
+          'Track assigned project progress',
+          'Update task & subtask completion',
+          'Add notes and file attachments to tasks',
+          'View project phases & milestones',
+          'Client milestone visibility controls'
+        ]});
+      }
+      if (user.hasServicePortalAccess) {
+        features.push({ portal: 'Service Portal', icon: Icons.service, colorClass: 'bg-success-600', features: [
+          'Create & submit service reports',
+          'Complete assigned service visits',
+          'Submit validation reports',
+          'View your report history'
+        ]});
+      }
+      if (user.hasAdminHubAccess) {
+        features.push({ portal: 'Admin Hub', icon: Icons.admin, colorClass: 'bg-accent', features: [
+          'User account management',
+          'Dashboard stats overview',
+          'Process inbox requests'
+        ]});
+      }
+      if (user.hasClientPortalAdminAccess) {
+        features.push({ portal: 'Client Portal Admin', icon: Icons.client, colorClass: 'bg-purple-600', features: [
+          'Publish announcements',
+          'Manage client documents',
+          'Inventory review'
+        ]});
+      }
+      features.push({ portal: 'Knowledge Hub', icon: Icons.book, colorClass: 'bg-indigo-600', features: [
+        'Portal guides for your access areas',
+        'Role-specific workflow walkthroughs'
+      ]});
+      return features;
+    };
+
+    const ROLE_TABS = [
+      { key: 'super_admin', label: 'Super Admin' },
+      { key: 'manager', label: 'Manager' },
+      { key: 'team_member', label: 'Team Member' },
+      { key: 'vendor', label: 'Vendor' },
+      { key: 'client', label: 'Client' }
+    ];
+
+    // ============== FEATURE OVERVIEW COMPONENT ==============
+    const FeatureOverview = ({ userTier, user }) => {
+      const canSwitchRoles = userTier === 'super_admin' || userTier === 'manager';
+      const [activeTab, setActiveTab] = useState(userTier);
+
+      const getFeatures = (tier) => {
+        if (tier === 'team_member') return getTeamMemberFeatures(user);
+        return FEATURE_MAP[tier] || [];
+      };
+
+      const displayFeatures = getFeatures(activeTab);
+
+      const tierLabel = {
+        super_admin: 'Super Admin', manager: 'Manager',
+        team_member: 'Team Member', vendor: 'Vendor Technician', client: 'Client'
       };
 
       return (
-        <div className={`bg-white rounded-xl shadow-sm border overflow-hidden mb-4 ${getBorderClass()}`}>
+        <div id="section-feature-overview" className="mb-8">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <div className="flex items-center gap-3 mb-1">
+                <h2 className="text-2xl font-bold text-accent">Feature Reference</h2>
+                <span className="bg-primary-100 text-primary-700 text-xs font-semibold px-2.5 py-1 rounded-full uppercase tracking-wide">Quick Reference</span>
+              </div>
+              <p className="text-gray-500 text-sm">
+                {canSwitchRoles
+                  ? 'Overview of features available per role across the platform.'
+                  : `Features available for your ${tierLabel[userTier]} account.`}
+              </p>
+            </div>
+          </div>
+
+          {/* Role tabs (admin/manager only) */}
+          {canSwitchRoles && (
+            <div className="flex flex-wrap gap-2 mb-5">
+              {ROLE_TABS.map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    activeTab === tab.key
+                      ? 'bg-primary-500 text-white shadow-sm'
+                      : 'bg-white text-gray-600 border border-gray-200 hover:border-primary-300 hover:text-primary-600'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Team member note when viewing their own view */}
+          {userTier === 'team_member' && (
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-100 rounded-lg text-sm text-blue-700">
+              Showing features enabled for your account. Contact your admin to adjust access permissions.
+            </div>
+          )}
+
+          {/* Feature cards grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {displayFeatures.map((item, idx) => (
+              <div key={idx} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <div className="flex items-center gap-3 p-4 border-b border-gray-50">
+                  <div className={`${item.colorClass} text-white rounded-lg w-10 h-10 flex items-center justify-center flex-shrink-0`}>
+                    {item.icon}
+                  </div>
+                  <h3 className="font-semibold text-gray-800 text-sm">{item.portal}</h3>
+                </div>
+                <ul className="p-4 space-y-2">
+                  {item.features.map((f, fi) => (
+                    <li key={fi} className="flex items-start gap-2 text-sm text-gray-600">
+                      <svg className="w-4 h-4 text-primary-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/>
+                      </svg>
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    };
+
+    // ============== GUIDE SECTION COMPONENT ==============
+    const GuideSection = ({ guide, userTier, forceOpen, searchTerm }) => {
+      const [isOpen, setIsOpen] = useState(false);
+      const [openArticle, setOpenArticle] = useState(null);
+      const effectiveOpen = forceOpen || isOpen;
+
+      const getBorderClass = () => {
+        if (guide.isKnownIssue) return 'border-red-200 ring-1 ring-red-100';
+        if (guide.ownerOnly) return 'border-amber-200 ring-1 ring-amber-100';
+        if (guide.adminOnly) return 'border-rose-200 ring-1 ring-rose-100';
+        const vt = guide.visibleTo || [];
+        if (vt.length > 0 && vt.length <= 2) return 'border-amber-200 ring-1 ring-amber-100';
+        return 'border-gray-100';
+      };
+
+      const getAccessBadge = () => {
+        if (guide.isKnownIssue) return <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 text-xs font-medium rounded-full">{Icons.lock} Internal Only</span>;
+        if (guide.ownerOnly) return <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-medium rounded-full">{Icons.lock} Super Admin</span>;
+        if (guide.adminOnly) return <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-100 text-rose-700 text-xs font-medium rounded-full">{Icons.lock} Super Admin</span>;
+        const vt = guide.visibleTo || [];
+        if (vt.length === 1 && vt[0] === 'super_admin') return <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-medium rounded-full">{Icons.lock} Super Admin</span>;
+        if (vt.length > 0 && vt.length <= 2 && !vt.includes('team_member') && !vt.includes('vendor') && !vt.includes('client')) return <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-100 text-rose-700 text-xs font-medium rounded-full">{Icons.lock} Admin/Manager</span>;
+        return null;
+      };
+
+      return (
+        <div id={`section-${guide.key || ''}`} className={`bg-white rounded-xl shadow-sm border overflow-hidden mb-4 ${getBorderClass()}`}>
           <button
             onClick={() => setIsOpen(!isOpen)}
             className="w-full p-5 flex items-center justify-between hover:bg-gray-50 transition"
           >
             <div className="flex items-center gap-4">
-              <div className={`inline-flex items-center justify-center w-12 h-12 ${guide.color} text-white rounded-xl`}>
-                {guide.icon}
+              <div className={`inline-flex items-center justify-center w-12 h-12 ${guide.color || 'bg-gray-500'} text-white rounded-xl`}>
+                {guide.icon || Icons.book}
               </div>
               <div className="text-left">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-lg font-semibold text-accent">{guide.title}</h3>
-                  {guide.ownerOnly && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-medium rounded-full">
-                      {Icons.lock}
-                      Admin Only
-                    </span>
-                  )}
-                  {guide.adminOnly && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-100 text-rose-700 text-xs font-medium rounded-full">
-                      {Icons.lock}
-                      Super Admin
-                    </span>
-                  )}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-lg font-semibold text-accent">
+                    <HighlightText text={guide.title} searchTerm={searchTerm} />
+                  </h3>
+                  {getAccessBadge()}
                 </div>
-                <p className="text-gray-500 text-sm">{guide.description}</p>
+                <p className="text-gray-500 text-sm"><HighlightText text={guide.description} searchTerm={searchTerm} /></p>
               </div>
             </div>
-            <div className={`text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}>
+            <div className={`text-gray-400 transition-transform ${effectiveOpen ? 'rotate-180' : ''}`}>
               {Icons.chevronDown}
             </div>
           </button>
 
-          <div className={`guide-content ${isOpen ? 'open' : ''}`}>
+          <div className={`guide-content ${effectiveOpen ? 'open' : ''}`}>
             <div className="border-t border-gray-100 p-4 bg-gray-50">
-              <p className="text-sm text-gray-500 mb-3">{guide.articles.length} article{guide.articles.length !== 1 ? 's' : ''}</p>
+              <p className="text-sm text-gray-500 mb-3">{(guide.articles || []).length} article{(guide.articles || []).length !== 1 ? 's' : ''}</p>
               <div className="space-y-2">
-                {guide.articles.map((article, idx) => (
-                  <div key={idx} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                {(guide.articles || []).map((article, idx) => (
+                  <div key={article.id || idx} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
                     <button
                       onClick={() => setOpenArticle(openArticle === idx ? null : idx)}
                       className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition text-left"
                     >
-                      <span className="font-medium text-gray-800">{article.title}</span>
+                      <span className="font-medium text-gray-800">
+                        <HighlightText text={article.title} searchTerm={searchTerm} />
+                      </span>
                       <span className={`text-gray-400 transition-transform ${openArticle === idx ? 'rotate-90' : ''}`}>
                         {Icons.chevronRight}
                       </span>
                     </button>
-                    {openArticle === idx && (
+                    {(openArticle === idx || forceOpen) && (
                       <div className="px-4 pb-4 border-t border-gray-100 bg-gray-50">
-                        <div className="prose prose-sm max-w-none mt-4 text-gray-600">
-                          {article.content.split('\n').map((line, pIdx) => {
-                            const trimmed = line.trim();
-
-                            // Skip empty lines
-                            if (trimmed === '') {
-                              return <div key={pIdx} className="h-2" />;
-                            }
-
-                            // Handle section headers (lines starting and ending with **)
-                            if (trimmed.match(/^\*\*[A-Z][^*]+:?\*\*$/)) {
-                              const text = trimmed.replace(/\*\*/g, '');
-                              return <h4 key={pIdx} className="font-bold text-gray-900 mt-6 mb-3 text-base">{text}</h4>;
-                            }
-
-                            // Handle step headers like "**STEP 1:**"
-                            if (trimmed.match(/^\*\*STEP \d+:/)) {
-                              const text = trimmed.replace(/\*\*/g, '');
-                              return <h5 key={pIdx} className="font-bold text-gray-800 mt-4 mb-2">{text}</h5>;
-                            }
-
-                            // Handle bulleted lists
-                            if (trimmed.startsWith('• ') || trimmed.startsWith('- ')) {
-                              const text = trimmed.substring(2);
-                              return <li key={pIdx} className="ml-6 mb-1 list-disc">{renderTextWithBold(text)}</li>;
-                            }
-
-                            // Handle numbered lists
-                            if (trimmed.match(/^\d+\.\s/)) {
-                              const text = trimmed.substring(trimmed.indexOf('.') + 2);
-                              return <li key={pIdx} className="ml-6 mb-1 list-decimal">{renderTextWithBold(text)}</li>;
-                            }
-
-                            // Handle checkboxes
-                            if (trimmed.startsWith('- [ ]') || trimmed.startsWith('- [x]')) {
-                              const checked = trimmed.includes('[x]');
-                              const text = trimmed.substring(trimmed.indexOf(']') + 2);
-                              return (
-                                <div key={pIdx} className="flex items-center gap-2 mb-1 ml-4">
-                                  <input type="checkbox" checked={checked} readOnly className="rounded" />
-                                  <span>{renderTextWithBold(text)}</span>
-                                </div>
-                              );
-                            }
-
-                            // Regular paragraphs with inline bold support
-                            return <p key={pIdx} className="mb-2 leading-relaxed">{renderTextWithBold(line)}</p>;
-                          })}
-                        </div>
+                        {article.format ? (
+                          <StructuredArticleContent article={article} searchTerm={searchTerm} />
+                        ) : (
+                          <FreeformArticleContent content={article.content} searchTerm={searchTerm} />
+                        )}
                       </div>
                     )}
                   </div>
@@ -2727,42 +3702,294 @@ If you suspect unauthorized access:
       );
     };
 
+    // ============== SEARCH BAR COMPONENT ==============
+    const SearchBar = ({ searchTerm, onSearchChange, resultCount, currentMatchIndex, totalMatches, onPrevMatch, onNextMatch }) => {
+      const inputRef = useRef(null);
+      return (
+        <div className={`mb-6 ${searchTerm ? 'sticky top-0 z-40 pb-2 pt-2 -mx-4 px-4 lg:-mx-8 lg:px-8 bg-gray-50/95 backdrop-blur-sm shadow-sm' : ''}`}>
+          <div className="relative">
+            <input
+              ref={inputRef}
+              type="text"
+              value={searchTerm}
+              onChange={(e) => onSearchChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (!searchTerm || totalMatches === 0) return;
+                if (e.key === 'Enter') { e.shiftKey ? onPrevMatch() : onNextMatch(); e.preventDefault(); }
+              }}
+              placeholder="Search guides, articles, and documentation..."
+              className="w-full px-4 py-3 pl-12 bg-white border border-gray-200 rounded-xl shadow-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-gray-800 placeholder-gray-400 transition"
+            />
+            <svg className="absolute left-4 top-3.5 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            {searchTerm && (
+              <div className="flex items-center gap-2 absolute right-3 top-2">
+                {totalMatches > 0 && (
+                  <>
+                    <span className="text-xs text-gray-500 tabular-nums min-w-[4rem] text-center">{currentMatchIndex + 1} of {totalMatches}</span>
+                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
+                      <button
+                        onClick={onPrevMatch}
+                        title="Previous match (Shift+Enter)"
+                        className="p-1.5 text-gray-500 hover:text-primary-600 hover:bg-primary-50 transition border-r border-gray-200"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7"/></svg>
+                      </button>
+                      <button
+                        onClick={onNextMatch}
+                        title="Next match (Enter)"
+                        className="p-1.5 text-gray-500 hover:text-primary-600 hover:bg-primary-50 transition"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                      </button>
+                    </div>
+                  </>
+                )}
+                {totalMatches === 0 && <span className="text-xs text-gray-400">0 results</span>}
+                <button onClick={() => onSearchChange('')} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition ml-1">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    };
+
+    // ============== WORKFLOW WALKTHROUGH COMPONENT ==============
+    const WorkflowWalkthrough = ({ userTier, onNavigate }) => {
+      const walkthrough = WORKFLOW_WALKTHROUGHS[userTier];
+      if (!walkthrough) return null;
+      const [isExpanded, setIsExpanded] = useState(true);
+
+      return (
+        <div id="section-walkthroughs" className="mb-8">
+          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl overflow-hidden shadow-lg">
+            <button onClick={() => setIsExpanded(!isExpanded)} className="w-full p-6 text-left text-white">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.59 14.37a6 6 0 01-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 006.16-12.12A14.98 14.98 0 009.631 8.41m5.96 5.96a14.926 14.926 0 01-5.841 2.58m-.119-8.54a6 6 0 00-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 00-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 01-2.448-2.448 14.9 14.9 0 01.06-.312m-2.24 2.39a4.493 4.493 0 00-1.757 4.306 4.493 4.493 0 004.306-1.758M16.5 9a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z"/></svg>
+                    <span className="text-xs font-medium text-white/70 uppercase tracking-wider">Getting Started</span>
+                  </div>
+                  <h2 className="text-2xl font-bold">{walkthrough.title}</h2>
+                  <p className="text-white/80 mt-1">{walkthrough.subtitle}</p>
+                </div>
+                <span className={`text-white/60 transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                </span>
+              </div>
+            </button>
+            {isExpanded && (
+              <div className="px-6 pb-6">
+                <div className="grid gap-3">
+                  {walkthrough.steps.map((step) => (
+                    <div key={step.step}
+                      className="flex items-start gap-4 bg-white/10 rounded-xl p-4 hover:bg-white/15 transition cursor-pointer"
+                      onClick={() => onNavigate(step.link)}
+                    >
+                      <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                        {step.step}
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-white">{step.title}</h3>
+                        <p className="text-white/70 text-sm mt-0.5">{step.description}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    };
+
+    // ============== SIDEBAR COMPONENT ==============
+    const KnowledgeSidebar = ({ sections, activeSection, onNavigate, user, userTier, isMobileOpen, onClose, onSearchFocus }) => {
+      const groupedSections = useMemo(() => {
+        const groups = {};
+        (sections || []).forEach(([key, guide]) => {
+          const ps = guide.portalSection || 'general';
+          const label = PORTAL_SECTION_LABELS[ps] || 'General';
+          if (!groups[label]) groups[label] = [];
+          groups[label].push({ key, title: guide.title, isKnownIssue: guide.isKnownIssue });
+        });
+        return groups;
+      }, [sections]);
+
+      return (
+        <>
+          {isMobileOpen && (
+            <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40 lg:hidden" onClick={onClose}></div>
+          )}
+          <aside className={`w-72 bg-white/95 backdrop-blur-sm border-r border-gray-100 min-h-screen fixed left-0 top-0 z-50 transform transition-all duration-300 ease-out ${isMobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'} lg:translate-x-0 lg:shadow-none`}>
+            {/* Header */}
+            <div className="p-5 border-b border-gray-100 flex justify-between items-center">
+              <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-9" />
+              <button onClick={onClose} className="lg:hidden p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+              </button>
+            </div>
+
+            {/* Profile Card */}
+            <div className="mx-4 mt-4 p-4 rounded-xl bg-gradient-to-br from-primary-500/10 to-primary-700/5 border border-primary-100">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-xl gradient-header flex items-center justify-center text-white text-sm font-bold shadow-md">
+                  {(user?.name || 'U').charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-gray-900 truncate">{user?.name || 'User'}</p>
+                  <p className="text-xs text-primary-600 font-medium">{TIER_LABELS[userTier] || 'User'}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Search Shortcut */}
+            <div className="mx-4 mt-3">
+              <button
+                onClick={onSearchFocus}
+                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-left text-sm text-gray-400 hover:bg-gray-100 hover:border-gray-300 transition flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                Search docs...
+              </button>
+            </div>
+
+            {/* Navigation */}
+            <nav className="p-3 mt-2 overflow-y-auto" style={{maxHeight: 'calc(100vh - 320px)'}}>
+              {/* Getting Started */}
+              <p className="px-3 mb-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">Getting Started</p>
+              <button
+                onClick={() => { onNavigate('walkthroughs'); onClose(); }}
+                className={`w-full text-left px-4 py-2.5 mb-1 sidebar-link flex items-center gap-3 ${activeSection === 'walkthroughs' ? 'active' : 'text-gray-600 hover:text-gray-900'}`}
+              >
+                <span className={activeSection === 'walkthroughs' ? 'text-white' : 'text-primary-500'}>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.59 14.37a6 6 0 01-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 006.16-12.12A14.98 14.98 0 009.631 8.41m5.96 5.96a14.926 14.926 0 01-5.841 2.58m-.119-8.54a6 6 0 00-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 00-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 01-2.448-2.448 14.9 14.9 0 01.06-.312m-2.24 2.39a4.493 4.493 0 00-1.757 4.306 4.493 4.493 0 004.306-1.758M16.5 9a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z"/></svg>
+                </span>
+                <span className="font-medium text-sm">Your Workflow</span>
+              </button>
+              <button
+                onClick={() => { onNavigate('feature-overview'); onClose(); }}
+                className={`w-full text-left px-4 py-2.5 mb-1 sidebar-link flex items-center gap-3 ${activeSection === 'feature-overview' ? 'active' : 'text-gray-600 hover:text-gray-900'}`}
+              >
+                <span className={activeSection === 'feature-overview' ? 'text-white' : 'text-primary-500'}>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z"/></svg>
+                </span>
+                <span className="font-medium text-sm">Feature Reference</span>
+              </button>
+
+              {/* Portal Section Groups */}
+              {Object.entries(groupedSections).map(([groupLabel, groupGuides]) => {
+                const nonIssueGuides = groupGuides.filter(g => !g.isKnownIssue);
+                if (nonIssueGuides.length === 0) return null;
+                return (
+                  <div key={groupLabel}>
+                    <p className="px-3 mt-4 mb-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">{groupLabel}</p>
+                    {nonIssueGuides.map(guide => (
+                      <button
+                        key={guide.key}
+                        onClick={() => { onNavigate(guide.key); onClose(); }}
+                        className={`w-full text-left px-4 py-2.5 mb-1 sidebar-link flex items-center gap-3 ${activeSection === guide.key ? 'active' : 'text-gray-600 hover:text-gray-900'}`}
+                      >
+                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${activeSection === guide.key ? 'bg-white' : 'bg-primary-300'}`}></span>
+                        <span className="font-medium text-sm truncate">{guide.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })}
+
+              {/* Known Issues (internal only) */}
+              {(userTier === 'super_admin' || userTier === 'manager') && groupedSections['General']?.some(g => g.isKnownIssue) && (
+                <div>
+                  <p className="px-3 mt-4 mb-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">Internal</p>
+                  <button
+                    onClick={() => { onNavigate('known-issues'); onClose(); }}
+                    className={`w-full text-left px-4 py-2.5 mb-1 sidebar-link flex items-center gap-3 ${activeSection === 'known-issues' ? 'active' : 'text-red-600 hover:text-red-700'}`}
+                  >
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${activeSection === 'known-issues' ? 'bg-white' : 'bg-red-400'}`}></span>
+                    <span className="font-medium text-sm">Known Issues</span>
+                  </button>
+                </div>
+              )}
+            </nav>
+
+            {/* Footer */}
+            <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-100 bg-white/80 space-y-2">
+              <button
+                onClick={() => { window.location.href = '/login'; }}
+                className="w-full text-left px-4 py-2.5 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-xl flex items-center gap-3 transition font-medium text-sm"
+              >
+                {Icons.hub}
+                <span>Portal Hub</span>
+              </button>
+              <button
+                onClick={() => {
+                  localStorage.removeItem('unified_token');
+                  localStorage.removeItem('unified_user');
+                  localStorage.removeItem('admin_token');
+                  localStorage.removeItem('admin_user');
+                  localStorage.removeItem('token');
+                  localStorage.removeItem('user');
+                  localStorage.removeItem('portal_token');
+                  localStorage.removeItem('portal_user');
+                  localStorage.removeItem('service_token');
+                  localStorage.removeItem('service_user');
+                  window.location.href = '/login';
+                }}
+                className="w-full text-left px-4 py-2.5 text-red-600 hover:bg-red-50 rounded-xl flex items-center gap-3 transition font-medium text-sm"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9"/></svg>
+                <span>Sign Out</span>
+              </button>
+            </div>
+          </aside>
+        </>
+      );
+    };
+
+    // ============== MAIN APP ==============
     const App = () => {
-      // Check multiple token sources for authentication
+      // Authentication
       const [token, setToken] = useState(() => {
-        return localStorage.getItem('unified_token') || localStorage.getItem('admin_token') || localStorage.getItem('token');
+        return localStorage.getItem('unified_token') || localStorage.getItem('admin_token') || localStorage.getItem('token') || localStorage.getItem('portal_token') || localStorage.getItem('service_token');
       });
       const [user, setUser] = useState(() => {
         try {
-          const userData = localStorage.getItem('unified_user') || localStorage.getItem('admin_user') || localStorage.getItem('user');
+          const userData = localStorage.getItem('unified_user') || localStorage.getItem('admin_user') || localStorage.getItem('user') || localStorage.getItem('portal_user') || localStorage.getItem('service_user');
           return userData ? JSON.parse(userData) : null;
         } catch {
           return null;
         }
       });
 
-      // State for dynamic guides from API
+      // State
       const [apiGuides, setApiGuides] = useState([]);
       const [loading, setLoading] = useState(true);
+      const [searchTerm, setSearchTerm] = useState('');
+      const [activeSection, setActiveSection] = useState('walkthroughs');
+      const [isMobileOpen, setIsMobileOpen] = useState(false);
+      const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+      const [totalMatches, setTotalMatches] = useState(0);
+      const searchInputRef = useRef(null);
 
-      // Check if user is admin
-      const isAdmin = user?.role === 'admin' || user?.isAdmin === true;
+      // Compute user tier
+      const userTier = getUserTier(user);
+      const isAdmin = user?.role === 'admin';
 
-      // Check if user is the system owner (hidden failsafe)
-      const isOwner = user?.email?.toLowerCase() === 'bianca@thrive365labs.com';
-
-      // Fetch guides from API on mount
+      // Seed v2 data and fetch sections on mount
       useEffect(() => {
-        const fetchGuides = async () => {
-          if (!token) return;
+        const init = async () => {
           try {
-            // Check if database needs seeding
+            // Seed v2 data if needed
+            await seedV2IfNeeded(token, isAdmin);
+
+            // Seed v1 data if needed
             const seedCheck = await fetch('/api/knowledge/needs-seed', {
               headers: { 'Authorization': `Bearer ${token}` }
             }).then(r => r.json());
 
             if (seedCheck.needsSeed && isAdmin) {
-              // Seed the database with hardcoded guides
               const guidesArray = Object.entries(guides).map(([key, guide]) => ({
                 key,
                 title: guide.title,
@@ -2771,6 +3998,9 @@ If you suspect unauthorized access:
                 color: guide.color,
                 ownerOnly: guide.ownerOnly || false,
                 adminOnly: guide.adminOnly || false,
+                visibleTo: guide.visibleTo || [],
+                portalSection: guide.portalSection || 'general',
+                isKnownIssue: guide.isKnownIssue || false,
                 articles: guide.articles
               }));
               await fetch('/api/knowledge/seed', {
@@ -2783,7 +4013,6 @@ If you suspect unauthorized access:
               });
             }
 
-            // Fetch guides from API
             const response = await fetch('/api/knowledge/guides', {
               headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -2792,22 +4021,131 @@ If you suspect unauthorized access:
               setApiGuides(data);
             }
           } catch (error) {
-            console.error('Error fetching guides:', error);
+            console.error('Error loading knowledge hub:', error);
           } finally {
             setLoading(false);
           }
         };
-        fetchGuides();
+        init();
       }, [token, isAdmin]);
 
-      // Use API guides if available, otherwise fall back to hardcoded
-      const visibleGuides = apiGuides.length > 0
-        ? apiGuides.map(guide => [guide.key, { ...guide, icon: Icons[guide.icon] || Icons.book }])
-        : Object.entries(guides).filter(([key, guide]) => {
-            if (guide.ownerOnly) return isOwner;
-            if (guide.adminOnly) return isAdmin;
-            return true;
+      // Compute visible guides with 5-tier filtering
+      // Always use hardcoded visibleTo/portalSection as the authoritative source for
+      // access control — the DB copy may be stale (seeded before visibleTo arrays were set).
+      // Guide content (articles) still comes from the DB when available.
+      const visibleGuides = useMemo(() => {
+        if (apiGuides.length > 0) {
+          const dbKeys = new Set(apiGuides.map(g => g.key));
+
+          // DB guides: filter using hardcoded visibleTo (overrides potentially stale DB value)
+          const fromDb = apiGuides
+            .filter(guide => {
+              const hardcoded = guides[guide.key];
+              const effectiveVisibleTo = hardcoded ? (hardcoded.visibleTo || []) : (guide.visibleTo || []);
+              const effectiveSection = hardcoded ? (hardcoded.portalSection || guide.portalSection) : guide.portalSection;
+              return canUserSeeGuide(userTier, user, { ...guide, visibleTo: effectiveVisibleTo, portalSection: effectiveSection });
+            })
+            .map(guide => [guide.key, { ...guide, icon: Icons[guide.icon] || Icons.book }]);
+
+          // Hardcoded-only guides not yet in the DB (e.g. newly added guides)
+          const fromHardcoded = Object.entries(guides)
+            .filter(([key, guide]) => !dbKeys.has(key) && canUserSeeGuide(userTier, user, guide));
+
+          return [...fromDb, ...fromHardcoded];
+        }
+        return Object.entries(guides).filter(([key, guide]) => canUserSeeGuide(userTier, user, guide));
+      }, [apiGuides, userTier, user]);
+
+      // Search filtering
+      const filteredGuides = useMemo(() => {
+        if (!searchTerm.trim()) return visibleGuides;
+        const term = searchTerm.toLowerCase().trim();
+        return visibleGuides
+          .map(([key, guide]) => {
+            const guideTitleMatch = guide.title.toLowerCase().includes(term) || (guide.description || '').toLowerCase().includes(term);
+            const matchingArticles = (guide.articles || []).filter(article =>
+              article.title.toLowerCase().includes(term) || (article.content || '').toLowerCase().includes(term)
+            );
+            if (guideTitleMatch || matchingArticles.length > 0) {
+              return [key, { ...guide, articles: guideTitleMatch ? guide.articles : matchingArticles }];
+            }
+            return null;
+          })
+          .filter(Boolean);
+      }, [visibleGuides, searchTerm]);
+
+      const searchResultCount = useMemo(() =>
+        filteredGuides.reduce((count, [, guide]) => count + (guide.articles || []).length, 0),
+      [filteredGuides]);
+
+      // Count and track <mark> highlight elements for navigation
+      useEffect(() => {
+        if (!searchTerm) { setTotalMatches(0); setCurrentMatchIndex(0); return; }
+        // Short delay to let React render the <mark> elements first
+        const timer = setTimeout(() => {
+          const marks = document.querySelectorAll('main mark:not(.active-match)');
+          setTotalMatches(marks.length);
+          setCurrentMatchIndex(prev => prev >= marks.length ? 0 : prev);
+        }, 150);
+        return () => clearTimeout(timer);
+      }, [searchTerm, filteredGuides]);
+
+      // Navigate to a specific <mark> match by index
+      const navigateToMatch = useCallback((index) => {
+        const marks = document.querySelectorAll('main mark');
+        if (marks.length === 0) return;
+        // Wrap around
+        const targetIndex = ((index % marks.length) + marks.length) % marks.length;
+        // Remove active class from all marks
+        marks.forEach(m => m.classList.remove('active-match'));
+        // Activate target
+        const target = marks[targetIndex];
+        target.classList.add('active-match');
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setCurrentMatchIndex(targetIndex);
+      }, []);
+
+      const handleNextMatch = useCallback(() => {
+        navigateToMatch(currentMatchIndex + 1);
+      }, [currentMatchIndex, navigateToMatch]);
+
+      const handlePrevMatch = useCallback(() => {
+        navigateToMatch(currentMatchIndex - 1);
+      }, [currentMatchIndex, navigateToMatch]);
+
+      // Separate known issues from regular guides
+      const regularGuides = filteredGuides.filter(([key, guide]) => !guide.isKnownIssue);
+      const knownIssuesGuide = filteredGuides.find(([key, guide]) => guide.isKnownIssue);
+
+      // Scroll to section
+      const scrollToSection = useCallback((sectionKey) => {
+        const el = document.getElementById(`section-${sectionKey}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          setActiveSection(sectionKey);
+        }
+        setIsMobileOpen(false);
+      }, []);
+
+      // IntersectionObserver for active section tracking
+      useEffect(() => {
+        const observer = new IntersectionObserver((entries) => {
+          entries.forEach(entry => {
+            if (entry.isIntersecting) {
+              const sectionKey = entry.target.id.replace('section-', '');
+              setActiveSection(sectionKey);
+            }
           });
+        }, { rootMargin: '-20% 0px -70% 0px' });
+
+        const allKeys = ['walkthroughs', 'feature-overview', ...visibleGuides.map(([key]) => key)];
+        allKeys.forEach(key => {
+          const el = document.getElementById(`section-${key}`);
+          if (el) observer.observe(el);
+        });
+
+        return () => observer.disconnect();
+      }, [visibleGuides]);
 
       // Redirect to login if not authenticated
       if (!token || !user) {
@@ -2816,152 +4154,152 @@ If you suspect unauthorized access:
       }
 
       return (
-        <div className="min-h-screen">
-          {/* Header */}
-          <header className="bg-white/80 backdrop-blur-sm border-b border-gray-100 sticky top-0 z-10">
-            <div className="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
-              <div className="flex items-center gap-4">
-                <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-10" />
-                <div>
-                  <h1 className="text-xl font-bold text-accent">Knowledge Hub</h1>
-                  <p className="text-sm text-gray-500">Comprehensive guides and documentation for using the Thrive 365 Labs Portal Hub</p>
-                </div>
-              </div>
-              <a href="/login" className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition">
-                {Icons.back}
-                <span className="hidden sm:inline">Back to Hub</span>
-              </a>
+        <div className="min-h-screen bg-gray-50">
+          {/* Sidebar */}
+          <KnowledgeSidebar
+            sections={visibleGuides}
+            activeSection={activeSection}
+            onNavigate={scrollToSection}
+            user={user}
+            userTier={userTier}
+            isMobileOpen={isMobileOpen}
+            onClose={() => setIsMobileOpen(false)}
+            onSearchFocus={() => {
+              setIsMobileOpen(false);
+              setTimeout(() => {
+                const input = document.querySelector('input[placeholder*="Search"]');
+                if (input) input.focus();
+              }, 100);
+            }}
+          />
+
+          {/* Mobile Header */}
+          <div className="lg:hidden bg-white/95 backdrop-blur-sm border-b border-gray-100 p-4 flex items-center justify-between sticky top-0 z-30">
+            <button onClick={() => setIsMobileOpen(true)} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"/></svg>
+            </button>
+            <div className="flex items-center gap-2">
+              <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-8" />
+              <span className="font-semibold text-accent text-sm">Knowledge Hub</span>
             </div>
-          </header>
+            <div className="w-10"></div>
+          </div>
 
           {/* Main Content */}
-          <main className="max-w-6xl mx-auto px-4 py-8">
-            {/* Banner */}
-            <div className="relative rounded-2xl overflow-hidden shadow-lg mb-10" style={{minHeight: '160px', backgroundColor: '#4338ca'}}>
-              <div className="absolute inset-0 bg-gradient-to-r from-indigo-700/90 via-indigo-600/70 to-purple-600/50"></div>
-              <div className="relative p-8 flex items-center min-h-[160px]">
-                <div className="text-white flex items-center gap-4">
-                  <div className="p-3 bg-white/20 rounded-xl">
-                    {Icons.book}
-                  </div>
-                  <div>
-                    <h2 className="text-3xl font-bold drop-shadow-sm">Knowledge Hub</h2>
-                  </div>
-                </div>
+          <main className="lg:ml-72 p-4 lg:p-8">
+            {/* Search Bar */}
+            <SearchBar
+              searchTerm={searchTerm}
+              onSearchChange={(val) => { setSearchTerm(val); setCurrentMatchIndex(0); }}
+              resultCount={searchResultCount}
+              currentMatchIndex={currentMatchIndex}
+              totalMatches={totalMatches}
+              onPrevMatch={handlePrevMatch}
+              onNextMatch={handleNextMatch}
+            />
+
+            {/* Workflow Walkthrough (hidden when searching) */}
+            {!searchTerm && (
+              <WorkflowWalkthrough userTier={userTier} onNavigate={scrollToSection} />
+            )}
+
+            {/* Feature Reference (hidden when searching) */}
+            {!searchTerm && (
+              <FeatureOverview userTier={userTier} user={user} />
+            )}
+
+            {/* No Results */}
+            {searchTerm && filteredGuides.length === 0 && (
+              <div className="text-center py-16">
+                <svg className="mx-auto w-16 h-16 text-gray-300 mb-4" fill="none" stroke="currentColor" strokeWidth="1" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                <h3 className="text-lg font-semibold text-gray-600 mb-2">No results found</h3>
+                <p className="text-gray-500">No guides or articles match "<strong>{searchTerm}</strong>"</p>
+                <button onClick={() => setSearchTerm('')} className="mt-4 text-primary-600 hover:underline font-medium">
+                  Clear search
+                </button>
               </div>
-            </div>
+            )}
 
-            {/* Quick Links Section */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-8">
-              <h3 className="text-lg font-bold text-accent mb-4 flex items-center gap-2">
-                {Icons.link}
-                Quick Links
-              </h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <a href="/directory" className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg hover:bg-primary-50 hover:border-primary-200 border border-gray-200 transition group">
-                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600 group-hover:bg-primary-100 group-hover:text-primary-600">
-                    {Icons.link}
-                  </div>
-                  <div>
-                    <p className="font-medium text-gray-800">Link Directory</p>
-                    <p className="text-xs text-gray-500">All portal URLs</p>
-                  </div>
-                  <span className="ml-auto text-gray-400">{Icons.external}</span>
-                </a>
-                <a href="/changelog" className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg hover:bg-primary-50 hover:border-primary-200 border border-gray-200 transition group">
-                  <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center text-green-600 group-hover:bg-primary-100 group-hover:text-primary-600">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
-                  </div>
-                  <div>
-                    <p className="font-medium text-gray-800">App Changelog</p>
-                    <p className="text-xs text-gray-500">Version history</p>
-                  </div>
-                  <span className="ml-auto text-gray-400">{Icons.external}</span>
-                </a>
-                <a href="/admin" className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg hover:bg-primary-50 hover:border-primary-200 border border-gray-200 transition group">
-                  <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center text-purple-600 group-hover:bg-primary-100 group-hover:text-primary-600">
-                    {Icons.admin}
-                  </div>
-                  <div>
-                    <p className="font-medium text-gray-800">Admin Hub</p>
-                    <p className="text-xs text-gray-500">User management</p>
-                  </div>
-                  <span className="ml-auto text-gray-400">{Icons.external}</span>
-                </a>
-                <a href="/service-portal" className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg hover:bg-primary-50 hover:border-primary-200 border border-gray-200 transition group">
-                  <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center text-emerald-600 group-hover:bg-primary-100 group-hover:text-primary-600">
-                    {Icons.service}
-                  </div>
-                  <div>
-                    <p className="font-medium text-gray-800">Service Portal</p>
-                    <p className="text-xs text-gray-500">Service reports</p>
-                  </div>
-                  <span className="ml-auto text-gray-400">{Icons.external}</span>
-                </a>
-              </div>
-            </div>
-
-            {/* Guide Categories */}
-            <h3 className="text-xl font-bold text-accent mb-6">How-To Guides</h3>
-
-            {visibleGuides.map(([key, guide], idx) => (
-              <GuideSection key={key} guide={guide} isAdmin={isAdmin} />
+            {/* Guide Sections */}
+            {regularGuides.map(([key, guide]) => (
+              <GuideSection
+                key={key}
+                guide={{ ...guide, key }}
+                userTier={userTier}
+                forceOpen={!!searchTerm}
+                searchTerm={searchTerm}
+              />
             ))}
 
-            {/* Quick Tips Section */}
-            <div className="mt-10">
-              <h3 className="text-xl font-bold text-accent mb-6">Quick Tips</h3>
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-                <ul className="space-y-3 text-gray-600">
-                  <li className="flex items-start gap-3">
-                    <span className="inline-flex items-center justify-center w-6 h-6 bg-primary-100 text-primary-600 rounded-full text-sm font-bold flex-shrink-0">1</span>
-                    <span>Use the <strong>Portal Hub</strong> as your central navigation point - bookmark it for quick access each morning.</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <span className="inline-flex items-center justify-center w-6 h-6 bg-primary-100 text-primary-600 rounded-full text-sm font-bold flex-shrink-0">2</span>
-                    <span><strong>Service reports</strong> should be submitted within 24 hours of completing a service visit - use the draft feature to save progress.</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <span className="inline-flex items-center justify-center w-6 h-6 bg-primary-100 text-primary-600 rounded-full text-sm font-bold flex-shrink-0">3</span>
-                    <span>Update <strong>project task status</strong> daily to keep implementation teams and clients in sync with progress.</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <span className="inline-flex items-center justify-center w-6 h-6 bg-primary-100 text-primary-600 rounded-full text-sm font-bold flex-shrink-0">4</span>
-                    <span>Keep multiple <strong>browser tabs</strong> open for different portals - the system supports simultaneous access across services.</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <span className="inline-flex items-center justify-center w-6 h-6 bg-primary-100 text-primary-600 rounded-full text-sm font-bold flex-shrink-0">5</span>
-                    <span>Data syncs with <strong>HubSpot automatically</strong> - changes to projects, tasks, and reports update CRM records in real-time.</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <span className="inline-flex items-center justify-center w-6 h-6 bg-primary-100 text-primary-600 rounded-full text-sm font-bold flex-shrink-0">6</span>
-                    <span>Report <strong>bugs or issues</strong> immediately using Admin Hub → Bug Reports so technical issues can be addressed promptly.</span>
-                  </li>
-                </ul>
-              </div>
-            </div>
+            {/* Known Issues Section (at bottom, before tips) */}
+            {knownIssuesGuide && (
+              <GuideSection
+                key={knownIssuesGuide[0]}
+                guide={{ ...knownIssuesGuide[1], key: knownIssuesGuide[0] }}
+                userTier={userTier}
+                forceOpen={!!searchTerm}
+                searchTerm={searchTerm}
+              />
+            )}
 
-            {/* Need Help Section */}
-            <div className="mt-10 bg-gradient-to-r from-primary-500 to-primary-700 rounded-2xl p-8 text-white">
-              <h3 className="text-2xl font-bold mb-3">Need Additional Help?</h3>
-              <p className="text-white/80 mb-6">Can't find what you're looking for? Our support team is here to help.</p>
-              <div className="flex flex-wrap gap-4">
-                <a href="mailto:support@thrive365labs.com" className="bg-white text-primary-600 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition">
-                  Email Support
-                </a>
-                <a href="/login" className="bg-white/20 text-white px-6 py-3 rounded-lg font-semibold hover:bg-white/30 transition">
-                  Back to Portal Hub
-                </a>
+            {/* Quick Tips Section (hidden when searching) */}
+            {!searchTerm && (
+              <div className="mt-10">
+                <h3 className="text-xl font-bold text-accent mb-6">Quick Tips</h3>
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                  <ul className="space-y-3 text-gray-600">
+                    <li className="flex items-start gap-3">
+                      <span className="inline-flex items-center justify-center w-6 h-6 bg-primary-100 text-primary-600 rounded-full text-sm font-bold flex-shrink-0">1</span>
+                      <span>Use the <strong>Portal Hub</strong> as your central navigation point - bookmark it for quick access each morning.</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="inline-flex items-center justify-center w-6 h-6 bg-primary-100 text-primary-600 rounded-full text-sm font-bold flex-shrink-0">2</span>
+                      <span><strong>Service reports</strong> should be submitted within 24 hours of completing a service visit - use the draft feature to save progress.</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="inline-flex items-center justify-center w-6 h-6 bg-primary-100 text-primary-600 rounded-full text-sm font-bold flex-shrink-0">3</span>
+                      <span>Update <strong>project task status</strong> daily to keep implementation teams and clients in sync with progress.</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="inline-flex items-center justify-center w-6 h-6 bg-primary-100 text-primary-600 rounded-full text-sm font-bold flex-shrink-0">4</span>
+                      <span>Keep multiple <strong>browser tabs</strong> open for different portals - the system supports simultaneous access across services.</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="inline-flex items-center justify-center w-6 h-6 bg-primary-100 text-primary-600 rounded-full text-sm font-bold flex-shrink-0">5</span>
+                      <span>Data syncs with <strong>HubSpot automatically</strong> - changes to projects, tasks, and reports update CRM records in real-time.</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="inline-flex items-center justify-center w-6 h-6 bg-primary-100 text-primary-600 rounded-full text-sm font-bold flex-shrink-0">6</span>
+                      <span>Report <strong>bugs or issues</strong> immediately using Admin Hub > Bug Reports so technical issues can be addressed promptly.</span>
+                    </li>
+                  </ul>
+                </div>
               </div>
-            </div>
+            )}
+
+            {/* Need Help Section (hidden when searching) */}
+            {!searchTerm && (
+              <div className="mt-10 bg-gradient-to-r from-primary-500 to-primary-700 rounded-2xl p-8 text-white">
+                <h3 className="text-2xl font-bold mb-3">Need Additional Help?</h3>
+                <p className="text-white/80 mb-6">Can't find what you're looking for? Our support team is here to help.</p>
+                <div className="flex flex-wrap gap-4">
+                  <a href="mailto:support@thrive365labs.com" className="bg-white text-primary-600 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition">
+                    Email Support
+                  </a>
+                  <a href="/login" className="bg-white/20 text-white px-6 py-3 rounded-lg font-semibold hover:bg-white/30 transition">
+                    Back to Portal Hub
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {/* Footer */}
+            <footer className="mt-12 py-6 border-t border-gray-200">
+              <div className="text-center text-sm text-gray-500">
+                &copy; 2026 Thrive 365 Labs. All rights reserved.
+              </div>
+            </footer>
           </main>
-
-          {/* Footer */}
-          <footer className="mt-12 py-6 border-t border-gray-200 bg-white/50">
-            <div className="max-w-6xl mx-auto px-4 text-center text-sm text-gray-500">
-              &copy; 2026 Thrive 365 Labs. All rights reserved.
-            </div>
-          </footer>
         </div>
       );
     };

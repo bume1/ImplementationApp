@@ -308,7 +308,8 @@
       inbox: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 13.5h3.86a2.25 2.25 0 012.012 1.244l.256.512a2.25 2.25 0 002.013 1.244h3.218a2.25 2.25 0 002.013-1.244l.256-.512a2.25 2.25 0 012.013-1.244h3.859m-17.5 0a2.25 2.25 0 00-1.883 1.013A11.945 11.945 0 003 19.5h18c.844 0 1.654-.178 2.383-.5a2.25 2.25 0 00-1.883-1.013M2.25 13.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0115.686 0c1.1.128 1.907 1.077 1.907 2.185V13.5"/></svg>,
       bug: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 12.75c1.148 0 2.278.08 3.383.237 1.037.146 1.866.966 1.866 2.013 0 3.728-2.35 6.75-5.25 6.75S6.75 18.728 6.75 15c0-1.046.83-1.867 1.866-2.013A24.204 24.204 0 0112 12.75zm0 0c2.883 0 5.647.508 8.207 1.44a23.91 23.91 0 01-1.152 6.06M12 12.75c-2.883 0-5.647.508-8.208 1.44.125 2.104.52 4.136 1.153 6.06M12 12.75V8.25m0 0c1.086 0 2.152-.14 3.181-.406a1.128 1.128 0 01-.664-.814 2.999 2.999 0 00-5.034 0 1.128 1.128 0 01-.664.814A10.988 10.988 0 0012 8.25zM12 21c-.17.001-.34 0-.508-.004A23.91 23.91 0 015.793 14.69M12 21c.17.001.34 0 .508-.004a23.91 23.91 0 005.699-6.306M9 9.75h6m-3-6.75a2.25 2.25 0 012.25 2.25v.407a2.25 2.25 0 01-.664 1.591L15 9.75"/></svg>,
       download: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>,
-      document: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/></svg>
+      document: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/></svg>,
+      bell: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0"/></svg>
     };
 
     // Login Page - Modern sleek design
@@ -343,9 +344,9 @@
 
           <div className="relative w-full max-w-md">
             {/* Main card */}
-            <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-soft p-8 border border-white/50">
+            <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-soft p-5 sm:p-8 border border-white/50">
               {/* Logo and header */}
-              <div className="text-center mb-8">
+              <div className="text-center mb-6 sm:mb-8">
                 <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-12 mx-auto mb-4" />
                 <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Admin Hub</h1>
                 <p className="text-gray-500 mt-1 text-sm">Precision Diagnostics Administration</p>
@@ -367,7 +368,7 @@
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="input-modern w-full px-4 py-3 text-gray-900 placeholder-gray-400"
-                    placeholder="you@thrive365labs.com"
+                    placeholder="you@thrive365labs.live"
                     required
                   />
                 </div>
@@ -422,10 +423,10 @@
       // Managers can only see Dashboard and Service Portal (no Inbox or User Management)
       const allMenuItems = [
         { id: 'dashboard', label: 'Dashboard', icon: Icons.home, color: 'text-primary-500', superAdminOnly: false },
-        { id: 'inbox', label: 'Inbox', icon: Icons.inbox, color: 'text-orange-500', superAdminOnly: true },
+        { id: 'inbox', label: 'Inbox', icon: Icons.inbox, color: 'text-primary-500', superAdminOnly: true },
         { id: 'users', label: 'User Management', icon: Icons.users, color: 'text-primary-500', superAdminOnly: true },
-        { id: 'service_portal', label: 'Service Portal', icon: Icons.clipboard, color: 'text-success-500', superAdminOnly: false },
-        { id: 'knowledge_hub', label: 'Knowledge Hub', icon: Icons.document, color: 'text-teal-500', superAdminOnly: true },
+        { id: 'service_portal', label: 'Service Portal', icon: Icons.clipboard, color: 'text-primary-500', superAdminOnly: false },
+        { id: 'notifications', label: 'Notifications', icon: Icons.bell, color: 'text-primary-500', superAdminOnly: false },
       ];
 
       // Filter menu items: Super Admin sees all, Manager only sees non-superAdminOnly items
@@ -486,12 +487,12 @@
               <p className="px-4 py-2 mt-6 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">External Apps</p>
               <div className="space-y-1">
                 <button onClick={() => openExternalApp('/thrive365labslaunch')} className="w-full text-left px-4 py-3 rounded-xl sidebar-link flex items-center gap-3 text-gray-600 hover:text-gray-900 group">
-                  <span className="text-purple-500 group-hover:text-purple-600">{Icons.folder}</span>
+                  <span className="text-primary-500 group-hover:text-primary-600">{Icons.folder}</span>
                   <span className="font-medium text-sm">Implementations</span>
                   <span className="ml-auto opacity-0 group-hover:opacity-100 transition">{Icons.externalLink}</span>
                 </button>
                 <button onClick={() => openExternalApp('/portal')} className="w-full text-left px-4 py-3 rounded-xl sidebar-link flex items-center gap-3 text-gray-600 hover:text-gray-900 group">
-                  <span className="text-blue-500 group-hover:text-blue-600">{Icons.users}</span>
+                  <span className="text-primary-500 group-hover:text-primary-600">{Icons.users}</span>
                   <span className="font-medium text-sm">Client Portal</span>
                   <span className="ml-auto opacity-0 group-hover:opacity-100 transition">{Icons.externalLink}</span>
                 </button>
@@ -505,7 +506,7 @@
                 <span className="text-primary-500 group-hover:text-primary-600">{Icons.home}</span>
                 <span className="text-sm font-medium">Portal Hub</span>
               </button>
-              <button onClick={() => { localStorage.clear(); sessionStorage.clear(); window.location.href = '/launch/login'; }}
+              <button onClick={() => { localStorage.clear(); sessionStorage.clear(); window.location.href = '/login'; }}
                 className="w-full text-left px-4 py-2.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl flex items-center gap-3 transition group">
                 <span className="group-hover:text-red-500">{Icons.logout}</span>
                 <span className="text-sm font-medium">Sign Out</span>
@@ -557,11 +558,11 @@
           <div className="relative rounded-2xl overflow-hidden shadow-lg" style={{minHeight: '200px'}}>
             <div className="absolute inset-0 bg-cover bg-center" style={{backgroundImage: 'url(/banners/banner-admin.jpg)'}}></div>
             <div className="absolute inset-0 bg-gradient-to-r from-primary-700/90 via-primary-600/70 to-transparent"></div>
-            <div className="relative p-8 flex items-center min-h-[200px]">
+            <div className="relative p-5 sm:p-8 flex items-center min-h-[160px] sm:min-h-[200px]">
               <div className="text-white">
                 <div className="flex items-center gap-3 mb-2">
-                  <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center shadow-lg">{Icons.chart}</div>
-                  <h1 className="text-3xl font-bold tracking-tight drop-shadow-sm">Admin Hub Dashboard</h1>
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center shadow-lg">{Icons.chart}</div>
+                  <h1 className="text-xl sm:text-3xl font-bold tracking-tight drop-shadow-sm">Admin Hub Dashboard</h1>
                 </div>
                 <p className="text-white/90 text-sm max-w-xl mt-2">Central management console for Thrive 365 Labs diagnostic platforms and services.</p>
               </div>
@@ -571,11 +572,11 @@
           {/* Stats Grid */}
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
             {statCards.map((stat, i) => (
-              <div key={i} className={`stat-card bg-gradient-to-br ${stat.color} text-white p-6 rounded-2xl shadow-lg`}>
-                <div className="flex items-start justify-between mb-4">
-                  <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">{stat.icon}</div>
+              <div key={i} className={`stat-card bg-gradient-to-br ${stat.color} text-white p-4 sm:p-6 rounded-2xl shadow-lg`}>
+                <div className="flex items-start justify-between mb-3 sm:mb-4">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 flex items-center justify-center">{stat.icon}</div>
                 </div>
-                <p className="text-3xl font-bold mb-1">{stat.value}</p>
+                <p className="text-2xl sm:text-3xl font-bold mb-1">{stat.value}</p>
                 <p className="text-sm text-white/80">{stat.label}</p>
               </div>
             ))}
@@ -884,7 +885,7 @@
       const logoInputRef = useRef(null);
 
       const defaultFormData = {
-        name: '', email: '', password: '', role: 'user',
+        name: '', email: '', password: '', phone: '', role: 'user',
         isManager: false, // Manager flag - limited admin access (no inbox/user management)
         hasServicePortalAccess: false, hasAdminHubAccess: false,
         hasImplementationsAccess: false, hasClientPortalAdminAccess: false,
@@ -952,6 +953,7 @@
           name: user.name || '',
           email: user.email || '',
           password: '',
+          phone: user.phone || '',
           role: user.role || 'user',
           isManager: user.isManager || false,
           hasServicePortalAccess: user.hasServicePortalAccess || false,
@@ -980,7 +982,20 @@
       };
 
       const toggleServiceAccess = async (user) => {
-        await api.updateUser(token, user.id, { hasServicePortalAccess: !user.hasServicePortalAccess });
+        const result = await api.updateUser(token, user.id, { hasServicePortalAccess: !user.hasServicePortalAccess });
+        if (result.error) { setMessage(`Error: ${result.error}`); return; }
+        loadData();
+      };
+
+      const toggleAccountStatus = async (user) => {
+        if (user.role === 'admin') return;
+        const currentlyActive = user.accountStatus !== 'inactive';
+        const action = currentlyActive ? 'deactivate' : 'reactivate';
+        if (!confirm(`Are you sure you want to ${action} ${user.name}'s account?${currentlyActive ? '\n\nThey will be unable to log in until reactivated.' : ''}`)) return;
+        const newStatus = currentlyActive ? 'inactive' : 'active';
+        const result = await api.updateUser(token, user.id, { accountStatus: newStatus });
+        if (result.error) { setMessage(`Error: ${result.error}`); return; }
+        setMessage(`Account ${currentlyActive ? 'deactivated' : 'reactivated'} successfully.`);
         loadData();
       };
 
@@ -1238,6 +1253,12 @@
                       <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
                       <input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                         className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" required />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Phone (optional)</label>
+                      <input type="tel" value={formData.phone || ''} onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                        placeholder="(555) 123-4567"
+                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Password {editingUser ? '(leave blank to keep)' : '*'}</label>
@@ -1605,13 +1626,14 @@
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Role</th>
                         <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Portal Access</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Details</th>
+                        <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Status</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Created</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
                       {filteredUsers.map(user => (
-                        <tr key={user.id} className="hover:bg-gray-50">
+                        <tr key={user.id} className={`hover:bg-gray-50 ${user.accountStatus === 'inactive' ? 'opacity-60' : ''}`}>
                           <td className="px-4 py-4">
                             <div className="flex items-center gap-3">
                               {user.logo && <img src={user.logo} alt="" className="h-8 w-8 rounded object-contain bg-gray-100" />}
@@ -1648,6 +1670,12 @@
                             {user.practiceName && <div><span className="font-medium">Practice:</span> {user.practiceName}</div>}
                             {user.slug && <div><span className="font-medium">Slug:</span> {user.slug}</div>}
                             {user.assignedProjects?.length > 0 && <div><span className="font-medium">Projects:</span> {user.assignedProjects.length}</div>}
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            <button onClick={() => toggleAccountStatus(user)}
+                              disabled={user.role === 'admin'}
+                              className={`px-2.5 py-1 text-xs rounded-full font-medium transition ${user.accountStatus === 'inactive' ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-green-100 text-green-700 hover:bg-green-200'} ${user.role === 'admin' ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}
+                              title={user.role === 'admin' ? 'Admin accounts cannot be deactivated' : `Click to ${user.accountStatus === 'inactive' ? 'reactivate' : 'deactivate'}`}>{user.accountStatus === 'inactive' ? 'Inactive' : 'Active'}</button>
                           </td>
                           <td className="px-4 py-4 text-sm text-gray-500">{new Date(user.createdAt).toLocaleDateString()}</td>
                           <td className="px-4 py-4">
@@ -2908,8 +2936,25 @@
       const [showGuideForm, setShowGuideForm] = useState(false);
       const [showArticleForm, setShowArticleForm] = useState(false);
       const [saving, setSaving] = useState(false);
-      const [guideForm, setGuideForm] = useState({ key: '', title: '', description: '', color: 'bg-gray-500', ownerOnly: false, adminOnly: false });
+      const [guideForm, setGuideForm] = useState({ key: '', title: '', description: '', color: 'bg-gray-500', ownerOnly: false, adminOnly: false, visibleTo: [], portalSection: 'general', isKnownIssue: false });
       const [articleForm, setArticleForm] = useState({ title: '', content: '' });
+
+      const tierOptions = [
+        { value: 'super_admin', label: 'Super Admin' },
+        { value: 'manager', label: 'Manager' },
+        { value: 'team_member', label: 'Team Member' },
+        { value: 'vendor', label: 'Vendor Technician' },
+        { value: 'client', label: 'Client' }
+      ];
+
+      const portalSectionOptions = [
+        { value: 'general', label: 'General' },
+        { value: 'admin_hub', label: 'Admin Hub' },
+        { value: 'launch_portal', label: 'Implementations' },
+        { value: 'service_portal', label: 'Service Portal' },
+        { value: 'client_portal', label: 'Client Portal' },
+        { value: 'client_portal_admin', label: 'Client Portal Admin' }
+      ];
 
       const colorOptions = [
         { value: 'bg-primary-500', label: 'Blue' },
@@ -2952,7 +2997,7 @@
           loadGuides();
           setShowGuideForm(false);
           setSelectedGuide(null);
-          setGuideForm({ key: '', title: '', description: '', color: 'bg-gray-500', ownerOnly: false, adminOnly: false });
+          setGuideForm({ key: '', title: '', description: '', color: 'bg-gray-500', ownerOnly: false, adminOnly: false, visibleTo: [], portalSection: 'general', isKnownIssue: false });
         } catch (error) {
           console.error('Error saving guide:', error);
         }
@@ -3009,7 +3054,10 @@
           description: guide.description || '',
           color: guide.color || 'bg-gray-500',
           ownerOnly: guide.ownerOnly || false,
-          adminOnly: guide.adminOnly || false
+          adminOnly: guide.adminOnly || false,
+          visibleTo: guide.visibleTo || [],
+          portalSection: guide.portalSection || 'general',
+          isKnownIssue: guide.isKnownIssue || false
         });
         setSelectedGuide(guide);
         setShowGuideForm(true);
@@ -3058,9 +3106,11 @@
                         <p className="font-medium text-gray-800 truncate">{guide.title}</p>
                         <p className="text-xs text-gray-500">{guide.articles?.length || 0} articles</p>
                       </div>
-                      <div className="flex gap-1">
+                      <div className="flex gap-1 flex-wrap">
+                        {guide.isKnownIssue && <span className="px-1.5 py-0.5 bg-red-100 text-red-600 text-xs rounded">Issues</span>}
                         {guide.ownerOnly && <span className="px-1.5 py-0.5 bg-red-100 text-red-600 text-xs rounded">Owner</span>}
                         {guide.adminOnly && <span className="px-1.5 py-0.5 bg-purple-100 text-purple-600 text-xs rounded">Admin</span>}
+                        {guide.portalSection && guide.portalSection !== 'general' && <span className="px-1.5 py-0.5 bg-blue-100 text-blue-600 text-xs rounded">{guide.portalSection.replace(/_/g, ' ')}</span>}
                       </div>
                     </div>
                   </div>
@@ -3152,14 +3202,37 @@
                       {colorOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                     </select>
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Portal Section</label>
+                    <select value={guideForm.portalSection} onChange={(e) => setGuideForm({...guideForm, portalSection: e.target.value})}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500">
+                      {portalSectionOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Visible To (leave all unchecked for everyone)</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {tierOptions.map(tier => (
+                        <label key={tier.value} className="flex items-center gap-2">
+                          <input type="checkbox"
+                            checked={(guideForm.visibleTo || []).includes(tier.value)}
+                            onChange={(e) => {
+                              const current = guideForm.visibleTo || [];
+                              setGuideForm({...guideForm, visibleTo: e.target.checked ? [...current, tier.value] : current.filter(t => t !== tier.value)});
+                            }} className="rounded" />
+                          <span className="text-sm">{tier.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
                   <div className="flex gap-4">
                     <label className="flex items-center gap-2">
-                      <input type="checkbox" checked={guideForm.adminOnly} onChange={(e) => setGuideForm({...guideForm, adminOnly: e.target.checked})} className="rounded" />
-                      <span className="text-sm">Admin Only</span>
+                      <input type="checkbox" checked={guideForm.isKnownIssue} onChange={(e) => setGuideForm({...guideForm, isKnownIssue: e.target.checked})} className="rounded" />
+                      <span className="text-sm">Known Issue (internal only)</span>
                     </label>
                     <label className="flex items-center gap-2">
-                      <input type="checkbox" checked={guideForm.ownerOnly} onChange={(e) => setGuideForm({...guideForm, ownerOnly: e.target.checked})} className="rounded" />
-                      <span className="text-sm">Owner Only</span>
+                      <input type="checkbox" checked={guideForm.adminOnly} onChange={(e) => setGuideForm({...guideForm, adminOnly: e.target.checked})} className="rounded" />
+                      <span className="text-sm text-gray-500">Legacy: Admin Only</span>
                     </label>
                   </div>
                   <div className="flex gap-3 pt-2">
@@ -3201,6 +3274,585 @@
                     </button>
                   </div>
                 </form>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    // ===== NOTIFICATIONS PAGE =====
+    const NotificationsPage = ({ token }) => {
+      const [stats, setStats] = useState(null);
+      const [queue, setQueue] = useState([]);
+      const [log, setLog] = useState([]);
+      const [activeTab, setActiveTab] = useState('overview');
+      const [notifSettings, setNotifSettings] = useState(null);
+      const [reminderSettings, setReminderSettings] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [selectedIds, setSelectedIds] = useState(new Set());
+
+      // Email template state
+      const [emailTemplates, setEmailTemplates] = useState([]);
+      const [editingTemplate, setEditingTemplate] = useState(null);
+      const [editForm, setEditForm] = useState({ subject: '', body: '', htmlBody: '' });
+      const [templatePreview, setTemplatePreview] = useState(null);
+      const [templateSaving, setTemplateSaving] = useState(false);
+      const [templateTestSending, setTemplateTestSending] = useState(false);
+      const [collapsedPools, setCollapsedPools] = useState({});
+
+      const togglePoolCollapse = (poolName) => {
+        setCollapsedPools(prev => ({ ...prev, [poolName]: !prev[poolName] }));
+      };
+
+      const API_URL = window.location.origin;
+      const apiFetch = (url, opts = {}) =>
+        fetch(`${API_URL}${url}`, { ...opts, headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', ...opts.headers } }).then(r => r.json());
+
+      const loadData = async () => {
+        setLoading(true);
+        try {
+          const results = await Promise.allSettled([
+            apiFetch('/api/admin/notifications/stats'),
+            apiFetch('/api/admin/notifications/queue'),
+            apiFetch('/api/admin/notifications/log?limit=50'),
+            apiFetch('/api/admin/notification-settings'),
+            apiFetch('/api/admin/reminder-settings'),
+            apiFetch('/api/admin/email-templates'),
+          ]);
+          const val = (i) => results[i].status === 'fulfilled' ? results[i].value : null;
+          const s = val(0), q = val(1), l = val(2), ns = val(3), rs = val(4), et = val(5);
+          if (s && !s.error) setStats(s);
+          if (Array.isArray(q)) setQueue(q);
+          if (Array.isArray(l)) setLog(l);
+          if (ns && !ns.error) setNotifSettings(ns);
+          if (rs && !rs.error) setReminderSettings(rs);
+          if (Array.isArray(et)) setEmailTemplates(et);
+        } catch (e) { console.error('Load notifications error:', e); }
+        setLoading(false);
+      };
+
+      React.useEffect(() => { loadData(); }, []);
+
+      const handleCancel = async (id) => {
+        await apiFetch(`/api/admin/notifications/cancel/${id}`, { method: 'POST' });
+        loadData();
+      };
+      const handleRetry = async (id) => {
+        await apiFetch(`/api/admin/notifications/retry/${id}`, { method: 'POST' });
+        loadData();
+      };
+      const handleProcessQueue = async () => {
+        await apiFetch('/api/admin/notifications/process', { method: 'POST' });
+        loadData();
+      };
+      const handleTriggerScan = async () => {
+        await apiFetch('/api/admin/reminders/trigger', { method: 'POST' });
+        loadData();
+      };
+      const handleToggleNotifications = async (enabled) => {
+        await apiFetch('/api/admin/notification-settings', { method: 'PUT', body: JSON.stringify({ enabled }) });
+        loadData();
+      };
+      const handleToggleReminders = async (enabled) => {
+        await apiFetch('/api/admin/reminder-settings', { method: 'PUT', body: JSON.stringify({ enabled }) });
+        loadData();
+      };
+      const handleToggleScenario = async (scenario, enabled) => {
+        const scenarios = { ...(reminderSettings?.scenarios || {}), [scenario]: { ...(reminderSettings?.scenarios?.[scenario] || {}), enabled } };
+        await apiFetch('/api/admin/reminder-settings', { method: 'PUT', body: JSON.stringify({ scenarios }) });
+        loadData();
+      };
+      const toggleSelect = (id) => {
+        setSelectedIds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+      };
+      const toggleSelectAll = () => {
+        const queueIds = queue.map(n => n.id);
+        setSelectedIds(prev => prev.size === queueIds.length ? new Set() : new Set(queueIds));
+      };
+      const handleBulkDelete = async () => {
+        if (selectedIds.size === 0) return;
+        if (!confirm(`Remove ${selectedIds.size} notification(s) from the queue? This cannot be undone.`)) return;
+        await apiFetch('/api/admin/notifications/bulk-delete', { method: 'POST', body: JSON.stringify({ ids: [...selectedIds] }) });
+        setSelectedIds(new Set());
+        loadData();
+      };
+
+      // Email template handlers
+      const handleEditTemplate = (template) => {
+        setEditingTemplate(template);
+        setEditForm({ subject: template.subject, body: template.body, htmlBody: template.htmlBody || '' });
+        setTemplatePreview(null);
+        setCollapsedPools({});
+      };
+
+      const handleCancelEdit = () => {
+        setEditingTemplate(null);
+        setEditForm({ subject: '', body: '', htmlBody: '' });
+        setTemplatePreview(null);
+        setCollapsedPools({});
+      };
+
+      const handleSaveTemplate = async () => {
+        if (!editingTemplate) return;
+        setTemplateSaving(true);
+        try {
+          const result = await apiFetch(`/api/admin/email-templates/${editingTemplate.id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ subject: editForm.subject, body: editForm.body, htmlBody: editForm.htmlBody || null })
+          });
+          if (result.error) { alert(result.error); return; }
+          setEditingTemplate(null);
+          setEditForm({ subject: '', body: '', htmlBody: '' });
+          setTemplatePreview(null);
+          loadData();
+        } catch (e) { alert('Failed to save template'); }
+        setTemplateSaving(false);
+      };
+
+      const handleResetTemplate = async (templateId) => {
+        if (!confirm('Reset this template to its default? Your customizations will be lost.')) return;
+        const result = await apiFetch(`/api/admin/email-templates/${templateId}/reset`, { method: 'POST' });
+        if (result.error) { alert(result.error); return; }
+        if (editingTemplate && editingTemplate.id === templateId) {
+          setEditingTemplate(result);
+          setEditForm({ subject: result.subject, body: result.body, htmlBody: result.htmlBody || '' });
+        }
+        loadData();
+      };
+
+      const handlePreviewTemplate = async () => {
+        if (!editingTemplate) return;
+        // Client-side preview using example data
+        const vars = {};
+        (editingTemplate.variables || []).forEach(v => { vars[v.key] = v.example || `[${v.label}]`; });
+        const preview = {
+          subject: editForm.subject.replace(/\{\{(\w+)\}\}/g, (m, k) => vars[k] !== undefined ? vars[k] : m),
+          body: editForm.body.replace(/\{\{(\w+)\}\}/g, (m, k) => vars[k] !== undefined ? vars[k] : m),
+        };
+        // Fetch server-rendered HTML preview (save first so preview reflects current edits)
+        try {
+          await apiFetch(`/api/admin/email-templates/${editingTemplate.id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ subject: editForm.subject, body: editForm.body, htmlBody: editForm.htmlBody || null })
+          });
+          const serverPreview = await apiFetch(`/api/admin/email-templates/${editingTemplate.id}/preview`, {
+            method: 'POST', body: JSON.stringify({ variables: {} })
+          });
+          if (serverPreview && serverPreview.html) preview.html = serverPreview.html;
+        } catch (e) {
+          console.error('Failed to fetch HTML preview:', e);
+        }
+        setTemplatePreview(preview);
+      };
+
+      const handleTestSendTemplate = async () => {
+        if (!editingTemplate) return;
+        setTemplateTestSending(true);
+        try {
+          // Save first so the test uses latest content
+          await apiFetch(`/api/admin/email-templates/${editingTemplate.id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ subject: editForm.subject, body: editForm.body, htmlBody: editForm.htmlBody || null })
+          });
+          const result = await apiFetch(`/api/admin/email-templates/${editingTemplate.id}/test-send`, { method: 'POST' });
+          if (result.error) alert(result.error);
+          else alert(result.message || 'Test email sent!');
+        } catch (e) { alert('Failed to send test email'); }
+        setTemplateTestSending(false);
+      };
+
+      const handleInsertVariable = (varKey, field) => {
+        const tag = `{{${varKey}}}`;
+        setEditForm(prev => ({ ...prev, [field]: prev[field] + tag }));
+      };
+
+      const typeLabels = {
+        service_report_signature: 'Service Report Signature',
+        service_report_review: 'Service Report Review',
+        task_deadline: 'Task Deadline',
+        task_overdue: 'Task Overdue',
+        inventory_reminder: 'Inventory Reminder',
+        milestone_reached: 'Milestone Reached',
+        milestone_reminder: 'Go-Live Reminder',
+        custom_email: 'Custom Email',
+        announcement_nudge: 'Announcement'
+      };
+      const statusColors = {
+        pending: 'bg-yellow-100 text-yellow-800',
+        sent: 'bg-green-100 text-green-800',
+        failed: 'bg-red-100 text-red-800',
+        cancelled: 'bg-gray-100 text-gray-600'
+      };
+
+      if (loading) return <div className="flex justify-center py-12"><div className="w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div></div>;
+
+      return (
+        <div className="space-y-6">
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-2xl font-bold text-accent mb-1">Notification Center</h1>
+              <p className="text-gray-500 text-sm">Email queue, delivery history, and automated reminder settings</p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={handleTriggerScan} className="px-3 py-1.5 text-sm bg-amber-500 text-white rounded-lg hover:bg-amber-600">Run Scan</button>
+              <button onClick={handleProcessQueue} className="px-3 py-1.5 text-sm bg-primary-500 text-white rounded-lg hover:bg-primary-700">Process Queue</button>
+            </div>
+          </div>
+
+          {/* Stats Cards */}
+          {stats && (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-yellow-400">
+                <p className="text-2xl font-bold">{stats.pending}</p><p className="text-sm text-gray-500">Pending</p>
+              </div>
+              <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-green-400">
+                <p className="text-2xl font-bold">{stats.sentToday}</p><p className="text-sm text-gray-500">Sent Today</p>
+              </div>
+              <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-red-400">
+                <p className="text-2xl font-bold">{stats.failedToday}</p><p className="text-sm text-gray-500">Failed Today</p>
+              </div>
+              <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-blue-400">
+                <p className="text-2xl font-bold">{stats.failureRate}%</p><p className="text-sm text-gray-500">Failure Rate</p>
+              </div>
+            </div>
+          )}
+
+          {/* Tabs */}
+          <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit flex-wrap">
+            {['overview', 'queue', 'history', 'templates', 'settings'].map(tab => (
+              <button key={tab} onClick={() => setActiveTab(tab)}
+                className={`px-4 py-2 text-sm rounded-md capitalize ${activeTab === tab ? 'bg-white shadow-sm font-medium' : 'text-gray-600 hover:text-gray-900'}`}>{tab}</button>
+            ))}
+          </div>
+
+          {/* Overview Tab */}
+          {activeTab === 'overview' && stats && (
+            <div className="bg-white rounded-xl shadow-sm p-6">
+              <h3 className="font-semibold mb-4">Pending by Type</h3>
+              {Object.keys(stats.pendingByType || {}).length > 0 ? (
+                <div className="space-y-2">
+                  {Object.entries(stats.pendingByType).map(([type, count]) => (
+                    <div key={type} className="flex justify-between items-center py-2 border-b">
+                      <span className="text-sm">{typeLabels[type] || type}</span>
+                      <span className="text-sm font-medium bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">{count}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="text-gray-400 text-sm">No pending notifications</p>}
+              <div className="mt-4 pt-4 border-t text-sm text-gray-500">
+                <p>Total sent (all time): {stats.totalSent} | Total failed: {stats.totalFailed} | Log size: {stats.logSize}</p>
+                <p>Daily send limit: {stats.dailyLimit} | Used today: {stats.sentToday}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Queue Tab */}
+          {activeTab === 'queue' && (
+            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+              <div className="p-4 border-b flex items-center justify-between">
+                <h3 className="font-semibold">Pending Queue ({queue.filter(n => n.status === 'pending').length})</h3>
+                {queue.length > 0 && (
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
+                      <input type="checkbox" checked={selectedIds.size === queue.length && queue.length > 0} onChange={toggleSelectAll} className="rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+                      Select all
+                    </label>
+                    {selectedIds.size > 0 && (
+                      <button onClick={handleBulkDelete} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                        Delete {selectedIds.size} selected
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+              {queue.length > 0 ? (
+                <div className="divide-y">
+                  {queue.map(n => (
+                    <div key={n.id} className={`p-4 flex items-start gap-3 ${selectedIds.has(n.id) ? 'bg-blue-50' : 'hover:bg-gray-50'} transition`}>
+                      <input type="checkbox" checked={selectedIds.has(n.id)} onChange={() => toggleSelect(n.id)} className="mt-1 rounded border-gray-300 text-primary-600 focus:ring-primary-500 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`text-xs px-2 py-0.5 rounded font-medium ${statusColors[n.status]}`}>{n.status}</span>
+                          <span className="text-xs text-gray-400">{typeLabels[n.type] || n.type}</span>
+                        </div>
+                        <p className="text-sm font-medium truncate">{n.templateData?.subject}</p>
+                        <p className="text-xs text-gray-500">To: {n.recipientEmail} | Trigger: {new Date(n.triggerDate).toLocaleString()}</p>
+                      </div>
+                      {n.status === 'pending' && (
+                        <button onClick={() => handleCancel(n.id)} className="text-xs text-red-600 hover:underline flex-shrink-0">Cancel</button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="p-4 text-gray-400 text-sm">Queue is empty</p>}
+            </div>
+          )}
+
+          {/* History Tab */}
+          {activeTab === 'history' && (
+            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+              <div className="p-4 border-b"><h3 className="font-semibold">Delivery History (last 50)</h3></div>
+              {log.length > 0 ? (
+                <div className="divide-y">
+                  {log.slice(0, 50).map(n => (
+                    <div key={n.id} className="p-4 flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`text-xs px-2 py-0.5 rounded font-medium ${statusColors[n.status]}`}>{n.status}</span>
+                          <span className="text-xs text-gray-400">{typeLabels[n.type] || n.type}</span>
+                        </div>
+                        <p className="text-sm font-medium truncate">{n.templateData?.subject}</p>
+                        <p className="text-xs text-gray-500">To: {n.recipientEmail} | {n.sentAt ? `Sent: ${new Date(n.sentAt).toLocaleString()}` : `Failed: ${n.failureReason || 'Unknown'}`}</p>
+                      </div>
+                      {n.status === 'failed' && (
+                        <button onClick={() => handleRetry(n.id)} className="text-xs text-blue-600 hover:underline">Retry</button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="p-4 text-gray-400 text-sm">No delivery history yet</p>}
+            </div>
+          )}
+
+          {/* Templates Tab */}
+          {activeTab === 'templates' && (
+            <div className="space-y-6">
+              {editingTemplate ? (
+                /* Template Editor */
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-semibold text-lg">{editingTemplate.name}</h3>
+                      <span className={`text-xs px-2 py-0.5 rounded font-medium ${editingTemplate.category === 'announcement' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>
+                        {editingTemplate.category === 'announcement' ? 'Announcement' : 'Automated'}
+                      </span>
+                    </div>
+                    <button onClick={handleCancelEdit} className="text-sm text-gray-500 hover:text-gray-700">Back to list</button>
+                  </div>
+
+                  <div className="grid lg:grid-cols-3 gap-4">
+                    {/* Editor Panel */}
+                    <div className="lg:col-span-2 space-y-4">
+                      <div className="bg-white rounded-xl shadow-sm p-5">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Subject Line</label>
+                        <input type="text" value={editForm.subject} onChange={e => setEditForm(prev => ({ ...prev, subject: e.target.value }))}
+                          className="w-full input-modern px-3 py-2 text-sm font-mono" placeholder="Email subject..." />
+                      </div>
+
+                      <div className="bg-white rounded-xl shadow-sm p-5">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Body (Plain Text)</label>
+                        <textarea value={editForm.body} onChange={e => setEditForm(prev => ({ ...prev, body: e.target.value }))}
+                          rows={8} className="w-full input-modern px-3 py-2 text-sm font-mono resize-y" placeholder="Email body text..." />
+                        {editingTemplate.id === 'announcement' && !editForm.body.includes('{{content}}') && (
+                          <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+                            <span className="text-amber-600 mt-0.5">&#9888;</span>
+                            <p className="text-xs text-amber-800">
+                              <strong>Missing {'{{content}}'} variable.</strong> The full announcement text will still be appended automatically, but including {'{{content}}'} gives you control over where it appears.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      {editingTemplate.category === 'announcement' && (
+                        <div className="bg-white rounded-xl shadow-sm p-5">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">HTML Body <span className="text-gray-400 font-normal">(optional — overrides base wrapper)</span></label>
+                          <textarea value={editForm.htmlBody} onChange={e => setEditForm(prev => ({ ...prev, htmlBody: e.target.value }))}
+                            rows={10} className="w-full input-modern px-3 py-2 text-sm font-mono resize-y" placeholder="Custom HTML email body..." />
+                        </div>
+                      )}
+
+                      {/* Action Buttons */}
+                      <div className="flex items-center gap-3">
+                        <button onClick={handleSaveTemplate} disabled={templateSaving}
+                          className="btn-primary text-white px-5 py-2 rounded-lg text-sm font-medium disabled:opacity-50">
+                          {templateSaving ? 'Saving...' : 'Save Template'}
+                        </button>
+                        <button onClick={handlePreviewTemplate}
+                          className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 font-medium">
+                          Preview
+                        </button>
+                        <button onClick={handleTestSendTemplate} disabled={templateTestSending}
+                          className="px-4 py-2 text-sm border border-primary-500 text-primary-500 rounded-lg hover:bg-primary-50 font-medium disabled:opacity-50">
+                          {templateTestSending ? 'Sending...' : 'Send Test Email'}
+                        </button>
+                        <button onClick={() => handleResetTemplate(editingTemplate.id)}
+                          className="px-4 py-2 text-sm text-red-600 hover:text-red-800 font-medium ml-auto">
+                          Reset to Default
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Variables Sidebar — grouped by pool */}
+                    <div className="space-y-4">
+                      <div className="bg-white rounded-xl shadow-sm p-5">
+                        <h4 className="font-semibold text-sm mb-1">Available Variables</h4>
+                        <p className="text-xs text-gray-400 mb-3">Click to insert into subject or body</p>
+                        <div className="space-y-3">
+                          {(editingTemplate.poolGroups && editingTemplate.poolGroups.length > 0) ? (
+                            editingTemplate.poolGroups.map(group => (
+                              <div key={group.pool} className="border border-gray-100 rounded-lg overflow-hidden">
+                                <button
+                                  onClick={() => togglePoolCollapse(group.pool)}
+                                  className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+                                >
+                                  <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">{group.label}</span>
+                                  <span className="text-gray-400 text-xs">{collapsedPools[group.pool] ? '+' : '\u2212'}</span>
+                                </button>
+                                {!collapsedPools[group.pool] && (
+                                  <div className="px-3 py-2 space-y-2">
+                                    {group.variables.map(v => (
+                                      <div key={v.key} className="group">
+                                        <div className="flex items-center gap-1.5">
+                                          <button onClick={() => handleInsertVariable(v.key, 'body')}
+                                            className="text-xs font-mono bg-blue-50 text-blue-700 px-2 py-1 rounded hover:bg-blue-100 transition-colors"
+                                            title={`Insert {{${v.key}}} into body`}>
+                                            {`{{${v.key}}}`}
+                                          </button>
+                                          <button onClick={() => handleInsertVariable(v.key, 'subject')}
+                                            className="text-xs text-gray-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity" title="Insert into subject">
+                                            +subj
+                                          </button>
+                                        </div>
+                                        <p className="text-xs text-gray-500 mt-0.5 ml-1">{v.label}: <span className="italic text-gray-400">{v.example}</span></p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            ))
+                          ) : (
+                            /* Fallback: flat list for templates without pool groups */
+                            (editingTemplate.variables || []).map(v => (
+                              <div key={v.key} className="group">
+                                <div className="flex items-center gap-1.5">
+                                  <button onClick={() => handleInsertVariable(v.key, 'body')}
+                                    className="text-xs font-mono bg-blue-50 text-blue-700 px-2 py-1 rounded hover:bg-blue-100 transition-colors"
+                                    title={`Insert {{${v.key}}} into body`}>
+                                    {`{{${v.key}}}`}
+                                  </button>
+                                  <button onClick={() => handleInsertVariable(v.key, 'subject')}
+                                    className="text-xs text-gray-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity" title="Insert into subject">
+                                    +subj
+                                  </button>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-0.5 ml-1">{v.label}: <span className="italic text-gray-400">{v.example}</span></p>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Live Preview Card */}
+                      {templatePreview && (
+                        <div className="bg-white rounded-xl shadow-sm p-5">
+                          <h4 className="font-semibold text-sm mb-3">Preview</h4>
+                          <div className="border rounded-lg p-3 bg-gray-50 space-y-2">
+                            <p className="text-xs text-gray-500">Subject:</p>
+                            <p className="text-sm font-medium">{templatePreview.subject}</p>
+                            <hr className="border-gray-200" />
+                            <p className="text-xs text-gray-500">Body:</p>
+                            <p className="text-sm text-gray-700 whitespace-pre-wrap">{templatePreview.body}</p>
+                          </div>
+                          {templatePreview.html && (
+                            <div className="mt-3">
+                              <p className="text-xs text-gray-500 mb-1">HTML Preview:</p>
+                              <div className="border rounded-lg overflow-hidden bg-white" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                                <iframe srcDoc={templatePreview.html} style={{ width: '100%', height: '350px', border: 'none' }} title="Email preview" />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Template List */
+                <div>
+                  <div className="mb-4">
+                    <h3 className="font-semibold text-lg">Email Templates</h3>
+                    <p className="text-sm text-gray-500">Customize the content of automated email notifications. Use {"{{variable}}"} placeholders for dynamic data.</p>
+                  </div>
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {emailTemplates.map(t => (
+                      <div key={t.id} className="bg-white rounded-xl shadow-sm p-5 hover:shadow-md transition-shadow border border-transparent hover:border-primary-100">
+                        <div className="flex items-start justify-between mb-2">
+                          <span className={`text-xs px-2 py-0.5 rounded font-medium ${t.category === 'announcement' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>
+                            {t.category === 'announcement' ? 'Announcement' : 'Automated'}
+                          </span>
+                          {t.isDefault ? (
+                            <span className="text-xs text-gray-400">Default</span>
+                          ) : (
+                            <span className="text-xs text-green-600 font-medium">Customized</span>
+                          )}
+                        </div>
+                        <h4 className="font-medium text-sm mb-1">{t.name}</h4>
+                        <p className="text-xs text-gray-500 truncate font-mono mb-3">{t.subject}</p>
+                        {t.updatedAt && !t.isDefault && (
+                          <p className="text-xs text-gray-400 mb-3">Edited {new Date(t.updatedAt).toLocaleDateString()} by {t.updatedBy}</p>
+                        )}
+                        <button onClick={() => handleEditTemplate(t)}
+                          className="text-sm text-primary-500 hover:text-primary-700 font-medium">
+                          Edit Template
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Settings Tab */}
+          {activeTab === 'settings' && (
+            <div className="space-y-6">
+              {/* Notification Queue Settings */}
+              <div className="bg-white rounded-xl shadow-sm p-6">
+                <h3 className="font-semibold mb-4">Queue Settings</h3>
+                <div className="flex items-center justify-between py-3 border-b">
+                  <div>
+                    <p className="font-medium text-sm">Email Notifications</p>
+                    <p className="text-xs text-gray-500">Master toggle for all email delivery</p>
+                  </div>
+                  <button onClick={() => handleToggleNotifications(!notifSettings?.enabled)}
+                    className={`px-3 py-1.5 rounded text-sm font-medium ${notifSettings?.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+                    {notifSettings?.enabled ? 'Enabled' : 'Disabled'}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mt-3">Queue processes every {notifSettings?.checkIntervalMinutes || 15} minutes | Max retries: {notifSettings?.maxRetriesDefault || 3} | Daily limit: {notifSettings?.dailySendLimit || 500}</p>
+              </div>
+
+              {/* Automated Reminder Settings */}
+              <div className="bg-white rounded-xl shadow-sm p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold">Automated Reminders</h3>
+                  <button onClick={() => handleToggleReminders(!reminderSettings?.enabled)}
+                    className={`px-3 py-1.5 rounded text-sm font-medium ${reminderSettings?.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+                    {reminderSettings?.enabled ? 'Enabled' : 'Disabled'}
+                  </button>
+                </div>
+                <div className="space-y-3">
+                  {[
+                    { key: 'serviceReportFollowups', label: 'Service Report Follow-Ups', desc: 'Notify clients for missing signatures, admins for pending reviews' },
+                    { key: 'taskDeadlines', label: 'Task Deadline Alerts', desc: 'Warn owners at 7/3/1 days before due, escalate when overdue' },
+                    { key: 'clientActivityNudges', label: 'Client Activity Nudges', desc: 'Remind clients to submit inventory when overdue' },
+                    { key: 'milestoneReminders', label: 'Milestone Reminders', desc: 'Notify at 25/50/75/100% completion and approaching go-live' },
+                  ].map(scenario => (
+                    <div key={scenario.key} className="flex items-center justify-between py-3 border-b last:border-0">
+                      <div>
+                        <p className="font-medium text-sm">{scenario.label}</p>
+                        <p className="text-xs text-gray-500">{scenario.desc}</p>
+                      </div>
+                      <button onClick={() => handleToggleScenario(scenario.key, !(reminderSettings?.scenarios?.[scenario.key]?.enabled !== false))}
+                        className={`px-3 py-1.5 rounded text-xs font-medium ${reminderSettings?.scenarios?.[scenario.key]?.enabled !== false ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+                        {reminderSettings?.scenarios?.[scenario.key]?.enabled !== false ? 'On' : 'Off'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-400 mt-3">Scanner runs every {reminderSettings?.scanIntervalMinutes || 30} minutes</p>
               </div>
             </div>
           )}
@@ -3279,7 +3931,7 @@
           case 'inbox': return <InboxPage token={token} />;
           case 'users': return <UsersPage token={token} />;
           case 'service_portal': return <ServicePortalPage token={token} user={user} />;
-          case 'knowledge_hub': return <KnowledgeHubPage token={token} />;
+          case 'notifications': return <NotificationsPage token={token} />;
           default: return <DashboardPage token={token} onNavigate={handleNavigation} user={user} />;
         }
       };
