@@ -395,6 +395,226 @@ function buildHtmlEmail(body, htmlBody, ctaUrl, ctaLabel) {
   return renderTemplate(BASE_HTML_EMAIL_WRAPPER, { content: body, ctaBlock });
 }
 
+// ============================================================
+// VARIABLE POOLS — Grouped sets of template variables by domain
+// ============================================================
+
+const VARIABLE_POOLS = {
+  service_report: {
+    label: 'Service Report',
+    variables: [
+      { key: 'facilityName', label: 'Facility Name', example: 'Valley Medical' },
+      { key: 'technicianName', label: 'Technician Name', example: 'John Smith' },
+      { key: 'reportDate', label: 'Report Date', example: '02/17/2026' },
+      { key: 'serviceType', label: 'Service Type', example: 'Installation' },
+      { key: 'reportStatus', label: 'Report Status', example: 'signature_needed' },
+      { key: 'reportAge', label: 'Days Since Created', example: '5' },
+      { key: 'reportLink', label: 'Direct Report Link', example: 'https://app.thrive365labs.live/service-portal?report=abc-123' },
+      { key: 'portalLink', label: 'Client Portal Link', example: 'https://app.thrive365labs.live/portal/valley-medical' }
+    ]
+  },
+  task: {
+    label: 'Task',
+    variables: [
+      { key: 'taskTitle', label: 'Task Title', example: 'Install AU480 Analyzer' },
+      { key: 'phase', label: 'Phase', example: 'Phase 2' },
+      { key: 'dueDate', label: 'Due Date', example: '03/15/2026' },
+      { key: 'timeframe', label: 'Timeframe', example: 'in 3 days' },
+      { key: 'daysOverdue', label: 'Days Overdue', example: '5' },
+      { key: 'ownerName', label: 'Task Owner', example: 'Jane Doe' },
+      { key: 'taskLink', label: 'Direct Task Link', example: 'https://app.thrive365labs.live/launch/valley-medical?task=42' }
+    ]
+  },
+  project: {
+    label: 'Project',
+    variables: [
+      { key: 'projectName', label: 'Project Name', example: 'Valley Medical Launch' },
+      { key: 'goLiveDate', label: 'Go-Live Date', example: '04/01/2026' },
+      { key: 'daysUntil', label: 'Days Until Go-Live', example: '7' },
+      { key: 'percentage', label: 'Completion %', example: '75' },
+      { key: 'completedTasks', label: 'Completed Tasks', example: '76' },
+      { key: 'totalTasks', label: 'Total Tasks', example: '102' },
+      { key: 'projectLink', label: 'Project Link', example: 'https://app.thrive365labs.live/launch/valley-medical' }
+    ]
+  },
+  inventory: {
+    label: 'Inventory',
+    variables: [
+      { key: 'practiceName', label: 'Practice Name', example: 'Valley Medical' },
+      { key: 'daysSince', label: 'Days Since Last Submission', example: '10' },
+      { key: 'inventoryLink', label: 'Inventory Portal Link', example: 'https://app.thrive365labs.live/portal/valley-medical' }
+    ]
+  },
+  announcement: {
+    label: 'Announcement',
+    variables: [
+      { key: 'title', label: 'Announcement Title', example: 'System Maintenance Scheduled' },
+      { key: 'content', label: 'Announcement Content', example: 'We will be performing system maintenance this weekend.' },
+      { key: 'priorityTag', label: 'Priority Tag', example: '[PRIORITY] ' },
+      { key: 'priorityBanner', label: 'Priority Banner HTML', example: '' },
+      { key: 'attachmentUrl', label: 'Attachment URL', example: '' },
+      { key: 'attachmentName', label: 'Attachment Name', example: '' },
+      { key: 'attachmentLine', label: 'Attachment Text Line', example: '' },
+      { key: 'attachmentBlock', label: 'Attachment HTML Block', example: '' }
+    ]
+  },
+  recipient: {
+    label: 'Recipient',
+    variables: [
+      { key: 'recipientName', label: 'Recipient Name', example: 'Jane Doe' },
+      { key: 'recipientEmail', label: 'Recipient Email', example: 'jane@valleymedical.com' }
+    ]
+  },
+  system: {
+    label: 'System',
+    variables: [
+      { key: 'appUrl', label: 'App Base URL', example: 'https://app.thrive365labs.live' },
+      { key: 'currentDate', label: 'Current Date', example: '02/17/2026' },
+      { key: 'companyName', label: 'Company Name', example: 'Thrive 365 Labs' }
+    ]
+  }
+};
+
+// Maps each template ID to the pools whose variables it can use
+const TEMPLATE_POOL_MAPPING = {
+  service_report_signature: ['service_report', 'recipient', 'system'],
+  service_report_review:    ['service_report', 'recipient', 'system'],
+  task_deadline:            ['task', 'project', 'recipient', 'system'],
+  task_overdue:             ['task', 'project', 'recipient', 'system'],
+  task_overdue_escalation:  ['task', 'project', 'recipient', 'system'],
+  inventory_reminder:       ['inventory', 'recipient', 'system'],
+  milestone_reached:        ['project', 'recipient', 'system'],
+  golive_reminder:          ['project', 'recipient', 'system'],
+  announcement:             ['announcement', 'recipient', 'system']
+};
+
+// Compute the merged variables array for a template from its pools
+function getPoolVariablesForTemplate(templateId) {
+  const poolNames = TEMPLATE_POOL_MAPPING[templateId] || [];
+  const vars = [];
+  const seen = new Set();
+  for (const poolName of poolNames) {
+    const pool = VARIABLE_POOLS[poolName];
+    if (!pool) continue;
+    for (const v of pool.variables) {
+      if (!seen.has(v.key)) {
+        vars.push({ ...v, pool: poolName });
+        seen.add(v.key);
+      }
+    }
+  }
+  return vars;
+}
+
+// Compute pool groupings (with labels) for a template — used by the admin UI
+function getPoolGroupsForTemplate(templateId) {
+  const poolNames = TEMPLATE_POOL_MAPPING[templateId] || [];
+  return poolNames
+    .filter(name => VARIABLE_POOLS[name])
+    .map(name => ({
+      pool: name,
+      label: VARIABLE_POOLS[name].label,
+      variables: VARIABLE_POOLS[name].variables.map(v => ({ ...v }))
+    }));
+}
+
+// ============================================================
+// POOL RESOLVER FUNCTIONS — Build variable values from entity data
+// ============================================================
+
+async function getAppBaseUrl() {
+  const domain = await db.get('client_portal_domain');
+  if (domain) return `https://${domain}`;
+  return process.env.REPLIT_DEV_DOMAIN
+    ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+    : `http://localhost:${config.PORT}`;
+}
+
+function resolveSystemVars(appBaseUrl) {
+  return {
+    appUrl: appBaseUrl,
+    currentDate: new Date().toLocaleDateString(),
+    companyName: 'Thrive 365 Labs'
+  };
+}
+
+function resolveRecipientVars(user) {
+  return {
+    recipientName: user.name || '',
+    recipientEmail: user.email || ''
+  };
+}
+
+function resolveServiceReportVars(report, appBaseUrl) {
+  return {
+    facilityName: report.clientFacilityName || 'your facility',
+    technicianName: report.technicianName || 'your technician',
+    reportDate: new Date(report.createdAt).toLocaleDateString(),
+    serviceType: report.serviceType || '',
+    reportStatus: report.status || '',
+    reportLink: `${appBaseUrl}/service-portal?report=${report.id}`,
+    portalLink: report.clientSlug ? `${appBaseUrl}/portal/${report.clientSlug}` : appBaseUrl
+  };
+}
+
+function resolveTaskVars(task, project, appBaseUrl) {
+  const dueDate = task.dueDate ? new Date(task.dueDate) : null;
+  const now = new Date();
+  const daysUntilDue = dueDate ? Math.floor((dueDate - now) / (1000 * 60 * 60 * 24)) : null;
+  const owner = task.owner || '';
+  return {
+    taskTitle: task.taskTitle || '',
+    phase: task.phase || '',
+    dueDate: dueDate ? dueDate.toLocaleDateString() : '',
+    timeframe: daysUntilDue !== null
+      ? (daysUntilDue === 0 ? 'today' : daysUntilDue === 1 ? 'tomorrow' : daysUntilDue > 0 ? `in ${daysUntilDue} days` : `${Math.abs(daysUntilDue)} days ago`)
+      : '',
+    daysOverdue: (daysUntilDue !== null && daysUntilDue < 0) ? String(Math.abs(daysUntilDue)) : '0',
+    ownerName: owner,
+    taskLink: project && project.clientLinkSlug
+      ? `${appBaseUrl}/launch/${project.clientLinkSlug}?task=${task.id}`
+      : appBaseUrl
+  };
+}
+
+function resolveProjectVars(project, tasks, appBaseUrl) {
+  const completedCount = tasks ? tasks.filter(t => t.completed).length : 0;
+  const totalCount = tasks ? tasks.length : 0;
+  const pct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+  const goLive = project.goLiveDate ? new Date(project.goLiveDate) : null;
+  const daysUntil = goLive ? Math.floor((goLive - new Date()) / (1000 * 60 * 60 * 24)) : null;
+  return {
+    projectName: project.name || '',
+    goLiveDate: goLive ? goLive.toLocaleDateString() : '',
+    daysUntil: daysUntil !== null ? String(daysUntil) : '',
+    percentage: String(pct),
+    completedTasks: String(completedCount),
+    totalTasks: String(totalCount),
+    projectLink: project.clientLinkSlug
+      ? `${appBaseUrl}/launch/${project.clientLinkSlug}`
+      : appBaseUrl
+  };
+}
+
+function resolveInventoryVars(client, daysSince, appBaseUrl) {
+  return {
+    practiceName: client.practiceName || 'Your Practice',
+    daysSince: String(daysSince),
+    inventoryLink: client.slug ? `${appBaseUrl}/portal/${client.slug}` : appBaseUrl
+  };
+}
+
+// Build a full variable map for a template from its pools and entity data
+function buildTemplateVars(pools, recipientUser, appBaseUrl) {
+  let vars = {};
+  for (const [poolName, poolVars] of Object.entries(pools)) {
+    vars = { ...vars, ...poolVars };
+  }
+  if (recipientUser) vars = { ...vars, ...resolveRecipientVars(recipientUser) };
+  vars = { ...vars, ...resolveSystemVars(appBaseUrl) };
+  return vars;
+}
+
 // Default email templates — seeded on first access, admin can edit via UI
 const DEFAULT_EMAIL_TEMPLATES = [
   {
@@ -566,6 +786,13 @@ async function getEmailTemplates() {
     }
   }
   if (added) await db.set('email_templates', templates);
+
+  // Enrich each template with pool-derived variables and pool groups
+  for (const t of templates) {
+    t.variables = getPoolVariablesForTemplate(t.id);
+    t.poolGroups = getPoolGroupsForTemplate(t.id);
+    t.pools = TEMPLATE_POOL_MAPPING[t.id] || [];
+  }
   return templates;
 }
 
@@ -585,10 +812,29 @@ const scanAndQueueNotifications = async () => {
     const scenarios = reminderSettings.scenarios || {};
     const users = await getUsers();
     const now = new Date();
+    const appBaseUrl = await getAppBaseUrl();
 
     // Load editable email templates
     const emailTemplates = await getEmailTemplates();
     const tpl = (id) => getTemplateById(emailTemplates, id);
+
+    // Helper: render a template with pool-resolved vars and queue the notification
+    const renderAndQueue = async (templateId, recipientUser, allVars, ctaLabel, ctaUrl, entityId, entityType) => {
+      const t = tpl(templateId);
+      const renderedSubject = renderTemplate(t.subject, allVars);
+      const renderedBody = renderTemplate(t.body, allVars);
+      const renderedHtml = buildHtmlEmail(
+        renderedBody,
+        t.htmlBody ? renderTemplate(t.htmlBody, allVars) : null,
+        ctaUrl, ctaLabel
+      );
+      await queueNotification(
+        templateId,
+        recipientUser.id, recipientUser.email, recipientUser.name,
+        { subject: renderedSubject, body: renderedBody, htmlBody: renderedHtml, ctaUrl, ctaLabel },
+        { relatedEntityId: entityId, relatedEntityType: entityType, createdBy: 'system' }
+      );
+    };
 
     // --- Scenario A: Service Report Follow-Ups ---
     if (!scenarios.serviceReportFollowups || scenarios.serviceReportFollowups.enabled !== false) {
@@ -598,51 +844,27 @@ const scanAndQueueNotifications = async () => {
         const reportAge = Math.floor((now - new Date(report.createdAt)) / (1000 * 60 * 60 * 24));
         if (reportAge < followupDays) continue;
 
+        const srVars = resolveServiceReportVars(report, appBaseUrl);
+        // Also include reportAge for review templates
+        srVars.reportAge = String(reportAge);
+
         // Missing client signature
         if (report.status === 'signature_needed' || (!report.customerSignature && report.status !== 'submitted')) {
-          const sigTpl = tpl('service_report_signature');
-          const sigVars = {
-            facilityName: report.clientFacilityName || 'your facility',
-            technicianName: report.technicianName || 'your technician',
-            reportDate: new Date(report.createdAt).toLocaleDateString()
-          };
           const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT && u.slug === report.clientSlug && u.email && u.accountStatus !== 'inactive');
           for (const client of clientUsers) {
-            await queueNotification(
-              'service_report_signature',
-              client.id, client.email, client.name,
-              {
-                subject: renderTemplate(sigTpl.subject, sigVars),
-                body: renderTemplate(sigTpl.body, sigVars),
-                htmlBody: buildHtmlEmail(renderTemplate(sigTpl.body, sigVars), sigTpl.htmlBody ? renderTemplate(sigTpl.htmlBody, sigVars) : null),
-                ctaLabel: 'Review & Sign'
-              },
-              { relatedEntityId: report.id, relatedEntityType: 'service_report' }
-            );
+            const allVars = buildTemplateVars({ service_report: srVars }, client, appBaseUrl);
+            const ctaUrl = srVars.portalLink;
+            await renderAndQueue('service_report_signature', client, allVars, 'Review & Sign', ctaUrl, report.id, 'service_report');
           }
         }
 
         // Not reviewed by admin
         if (report.status && report.status !== 'submitted' && !report.adminReviewedAt) {
-          const revTpl = tpl('service_report_review');
-          const revVars = {
-            facilityName: report.clientFacilityName || 'Unknown facility',
-            technicianName: report.technicianName || 'a technician',
-            reportAge: String(reportAge)
-          };
           const admins = users.filter(u => u.role === config.ROLES.ADMIN && u.email && u.accountStatus !== 'inactive');
           for (const admin of admins) {
-            await queueNotification(
-              'service_report_review',
-              admin.id, admin.email, admin.name,
-              {
-                subject: renderTemplate(revTpl.subject, revVars),
-                body: renderTemplate(revTpl.body, revVars),
-                htmlBody: buildHtmlEmail(renderTemplate(revTpl.body, revVars), revTpl.htmlBody ? renderTemplate(revTpl.htmlBody, revVars) : null),
-                ctaLabel: 'Review Report'
-              },
-              { relatedEntityId: report.id, relatedEntityType: 'service_report' }
-            );
+            const allVars = buildTemplateVars({ service_report: srVars }, admin, appBaseUrl);
+            const ctaUrl = srVars.reportLink;
+            await renderAndQueue('service_report_review', admin, allVars, 'Review Report', ctaUrl, report.id, 'service_report');
           }
         }
       }
@@ -657,85 +879,37 @@ const scanAndQueueNotifications = async () => {
 
       for (const project of activeProjects) {
         const tasks = await getTasks(project.id);
+        const projVars = resolveProjectVars(project, tasks, appBaseUrl);
+
         for (const task of tasks) {
           if (task.completed || !task.dueDate || !task.owner) continue;
           const dueDate = new Date(task.dueDate);
           const daysUntilDue = Math.floor((dueDate - now) / (1000 * 60 * 60 * 24));
 
-          // Find owner by email
           const owner = users.find(u => u.email === task.owner);
           if (!owner) continue;
 
+          const taskVars = resolveTaskVars(task, project, appBaseUrl);
+          const ctaUrl = taskVars.taskLink;
+
           // Approaching deadline
           if (daysUntilDue >= 0 && daysBefore.includes(daysUntilDue)) {
-            const severity = daysUntilDue <= 1 ? 'high' : daysUntilDue <= 3 ? 'medium' : 'low';
-            const dlTpl = tpl('task_deadline');
-            const dlVars = {
-              taskTitle: task.taskTitle,
-              projectName: project.name,
-              phase: task.phase,
-              dueDate: dueDate.toLocaleDateString(),
-              timeframe: daysUntilDue === 0 ? 'today' : daysUntilDue === 1 ? 'tomorrow' : `in ${daysUntilDue} days`
-            };
-            await queueNotification(
-              'task_deadline',
-              owner.id, owner.email, owner.name,
-              {
-                subject: renderTemplate(dlTpl.subject, dlVars),
-                body: renderTemplate(dlTpl.body, dlVars),
-                htmlBody: buildHtmlEmail(renderTemplate(dlTpl.body, dlVars), dlTpl.htmlBody ? renderTemplate(dlTpl.htmlBody, dlVars) : null),
-                ctaLabel: 'View Task'
-              },
-              { relatedEntityId: task.id?.toString(), relatedEntityType: 'task', createdBy: 'system' }
-            );
+            const allVars = buildTemplateVars({ task: taskVars, project: projVars }, owner, appBaseUrl);
+            await renderAndQueue('task_deadline', owner, allVars, 'View Task', ctaUrl, task.id?.toString(), 'task');
           }
 
           // Overdue
           if (daysUntilDue < 0) {
-            const daysOverdue = Math.abs(daysUntilDue);
-            const ovTpl = tpl('task_overdue');
-            const ovVars = {
-              taskTitle: task.taskTitle,
-              projectName: project.name,
-              phase: task.phase,
-              dueDate: dueDate.toLocaleDateString(),
-              daysOverdue: String(daysOverdue)
-            };
-            await queueNotification(
-              'task_overdue',
-              owner.id, owner.email, owner.name,
-              {
-                subject: renderTemplate(ovTpl.subject, ovVars),
-                body: renderTemplate(ovTpl.body, ovVars),
-                htmlBody: buildHtmlEmail(renderTemplate(ovTpl.body, ovVars), ovTpl.htmlBody ? renderTemplate(ovTpl.htmlBody, ovVars) : null),
-                ctaLabel: 'View Task'
-              },
-              { relatedEntityId: task.id?.toString(), relatedEntityType: 'task', createdBy: 'system' }
-            );
+            const allVars = buildTemplateVars({ task: taskVars, project: projVars }, owner, appBaseUrl);
+            await renderAndQueue('task_overdue', owner, allVars, 'View Task', ctaUrl, task.id?.toString(), 'task');
 
             // Escalate to admin after threshold
+            const daysOverdue = Math.abs(daysUntilDue);
             if (daysOverdue >= escalationDays) {
-              const escTpl = tpl('task_overdue_escalation');
-              const escVars = {
-                taskTitle: task.taskTitle,
-                projectName: project.name,
-                ownerName: owner.name,
-                dueDate: dueDate.toLocaleDateString(),
-                daysOverdue: String(daysOverdue)
-              };
               const admins = users.filter(u => u.role === config.ROLES.ADMIN && u.email && u.accountStatus !== 'inactive');
               for (const admin of admins) {
-                await queueNotification(
-                  'task_overdue',
-                  admin.id, admin.email, admin.name,
-                  {
-                    subject: renderTemplate(escTpl.subject, escVars),
-                    body: renderTemplate(escTpl.body, escVars),
-                    htmlBody: buildHtmlEmail(renderTemplate(escTpl.body, escVars), escTpl.htmlBody ? renderTemplate(escTpl.htmlBody, escVars) : null),
-                    ctaLabel: 'View Project'
-                  },
-                  { relatedEntityId: task.id?.toString(), relatedEntityType: 'task', createdBy: 'system' }
-                );
+                const escVars = buildTemplateVars({ task: { ...taskVars, ownerName: owner.name }, project: projVars }, admin, appBaseUrl);
+                await renderAndQueue('task_overdue_escalation', admin, escVars, 'View Project', projVars.projectLink, task.id?.toString(), 'task');
               }
             }
           }
@@ -763,21 +937,12 @@ const scanAndQueueNotifications = async () => {
         const daysSince = Math.floor((now - lastDate) / (1000 * 60 * 60 * 24));
 
         if (daysSince >= inventoryDays) {
-          const invTpl = tpl('inventory_reminder');
           const portalClients = clientUsers.filter(u => u.slug === client.slug);
           for (const pc of portalClients) {
-            const invVars = { practiceName: pc.practiceName || 'Your Practice', daysSince: String(daysSince) };
-            await queueNotification(
-              'inventory_reminder',
-              pc.id, pc.email, pc.name,
-              {
-                subject: renderTemplate(invTpl.subject, invVars),
-                body: renderTemplate(invTpl.body, invVars),
-                htmlBody: buildHtmlEmail(renderTemplate(invTpl.body, invVars), invTpl.htmlBody ? renderTemplate(invTpl.htmlBody, invVars) : null),
-                ctaLabel: 'Submit Inventory'
-              },
-              { relatedEntityId: pc.slug, relatedEntityType: 'inventory', createdBy: 'system' }
-            );
+            const invVars = resolveInventoryVars(pc, daysSince, appBaseUrl);
+            const allVars = buildTemplateVars({ inventory: invVars }, pc, appBaseUrl);
+            const ctaUrl = invVars.inventoryLink;
+            await renderAndQueue('inventory_reminder', pc, allVars, 'Submit Inventory', ctaUrl, pc.slug, 'inventory');
           }
         }
       }
@@ -793,6 +958,7 @@ const scanAndQueueNotifications = async () => {
         const tasks = await getTasks(project.id);
         if (tasks.length === 0) continue;
 
+        const projVars = resolveProjectVars(project, tasks, appBaseUrl);
         const completedCount = tasks.filter(t => t.completed).length;
         const pct = Math.round((completedCount / tasks.length) * 100);
         const lastNotified = project.lastMilestoneNotified || 0;
@@ -800,25 +966,13 @@ const scanAndQueueNotifications = async () => {
         // Check if we've crossed a new threshold
         for (const threshold of thresholds) {
           if (pct >= threshold && lastNotified < threshold) {
-            // Notify client users tied to this project
             const projectClients = users.filter(u =>
               u.role === config.ROLES.CLIENT && u.email && u.accountStatus !== 'inactive' &&
               (u.assignedProjects || []).includes(project.id)
             );
-            const msTpl = tpl('milestone_reached');
-            const msVars = { projectName: project.name, percentage: String(pct), completedTasks: String(completedCount), totalTasks: String(tasks.length) };
             for (const client of projectClients) {
-              await queueNotification(
-                'milestone_reached',
-                client.id, client.email, client.name,
-                {
-                  subject: renderTemplate(msTpl.subject, msVars),
-                  body: renderTemplate(msTpl.body, msVars),
-                  htmlBody: buildHtmlEmail(renderTemplate(msTpl.body, msVars), msTpl.htmlBody ? renderTemplate(msTpl.htmlBody, msVars) : null),
-                  ctaLabel: 'View Progress'
-                },
-                { relatedEntityId: project.id, relatedEntityType: 'project', createdBy: 'system' }
-              );
+              const allVars = buildTemplateVars({ project: projVars }, client, appBaseUrl);
+              await renderAndQueue('milestone_reached', client, allVars, 'View Progress', projVars.projectLink, project.id, 'project');
             }
 
             // Update project milestone tracker
@@ -845,20 +999,9 @@ const scanAndQueueNotifications = async () => {
               (u.role === config.ROLES.USER || u.role === config.ROLES.ADMIN) && u.email && u.accountStatus !== 'inactive' &&
               (u.assignedProjects || []).includes(project.id)
             );
-            const glTpl = tpl('golive_reminder');
-            const glVars = { projectName: project.name, goLiveDate: goLive.toLocaleDateString(), daysUntil: String(daysUntilGoLive), percentage: String(pct) };
             for (const user of [...projectClients, ...teamMembers]) {
-              await queueNotification(
-                'milestone_reminder',
-                user.id, user.email, user.name,
-                {
-                  subject: renderTemplate(glTpl.subject, glVars),
-                  body: renderTemplate(glTpl.body, glVars),
-                  htmlBody: buildHtmlEmail(renderTemplate(glTpl.body, glVars), glTpl.htmlBody ? renderTemplate(glTpl.htmlBody, glVars) : null),
-                  ctaLabel: 'View Project'
-                },
-                { relatedEntityId: project.id, relatedEntityType: 'project', createdBy: 'system' }
-              );
+              const allVars = buildTemplateVars({ project: projVars }, user, appBaseUrl);
+              await renderAndQueue('milestone_reminder', user, allVars, 'View Project', projVars.projectLink, project.id, 'project');
             }
           }
         }
@@ -10840,6 +10983,16 @@ app.get('/api/admin/email-templates', authenticateToken, requireAdmin, async (re
   }
 });
 
+// Get all variable pool definitions (for admin reference / future custom templates)
+app.get('/api/admin/email-templates/pools', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    res.json({ pools: VARIABLE_POOLS, templateMapping: TEMPLATE_POOL_MAPPING });
+  } catch (error) {
+    console.error('Get variable pools error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Get a single email template by ID
 app.get('/api/admin/email-templates/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -10868,7 +11021,12 @@ app.put('/api/admin/email-templates/:id', authenticateToken, requireAdmin, async
     templates[idx].updatedAt = new Date().toISOString();
     templates[idx].updatedBy = req.user.name;
 
-    await db.set('email_templates', templates);
+    // Strip computed pool fields before persisting
+    const toSave = templates.map(t => {
+      const { variables, poolGroups, pools, ...rest } = t;
+      return rest;
+    });
+    await db.set('email_templates', toSave);
     await logActivity(req.user.id, req.user.name, 'updated', 'email_template', req.params.id, { templateName: templates[idx].name });
     res.json(templates[idx]);
   } catch (error) {
@@ -10888,7 +11046,16 @@ app.post('/api/admin/email-templates/:id/reset', authenticateToken, requireAdmin
     if (!defaultTpl) return res.status(404).json({ error: 'No default found for this template' });
 
     templates[idx] = { ...defaultTpl, updatedAt: new Date().toISOString(), updatedBy: req.user.name };
-    await db.set('email_templates', templates);
+    // Strip computed pool fields before persisting
+    const toSave = templates.map(t => {
+      const { variables, poolGroups, pools, ...rest } = t;
+      return rest;
+    });
+    await db.set('email_templates', toSave);
+    // Re-enrich for response
+    templates[idx].variables = getPoolVariablesForTemplate(req.params.id);
+    templates[idx].poolGroups = getPoolGroupsForTemplate(req.params.id);
+    templates[idx].pools = TEMPLATE_POOL_MAPPING[req.params.id] || [];
     await logActivity(req.user.id, req.user.name, 'reset', 'email_template', req.params.id, { templateName: templates[idx].name });
     res.json(templates[idx]);
   } catch (error) {
