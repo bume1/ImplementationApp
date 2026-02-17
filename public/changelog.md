@@ -4,6 +4,23 @@
 
 ---
 
+### Version 3.1.0 - February 17, 2026
+
+#### New Features
+- Add safeguard: announcement emails always include full content text
+- Add dynamic email template system with admin editor UI
+- Add implementation plan for dynamic email templates
+- Add bulk select and delete for notification queue
+- Bump to v3.0.0, add search navigation arrows, and enable Knowledge Hub for all user roles
+
+#### Bug Fixes
+- Fix Knowledge Hub content formatting: proper list numbering and styled checkmarks
+
+#### Changes
+- Remove start date display from client portal milestones
+- Align client portal milestones with internal launch board view
+
+
 ### Version 3.0.0 - February 17, 2026
 
 #### Major Release - Platform Evolution
