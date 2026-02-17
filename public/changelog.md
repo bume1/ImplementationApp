@@ -4,6 +4,44 @@
 
 ---
 
+### Version 3.0.0 - February 17, 2026
+
+#### Major Release - Platform Evolution
+
+**Knowledge Hub v2**
+- Complete Knowledge Hub rebuild with 5-tier permission system (Super Admin, Manager, Team Member, Vendor, Client)
+- Sticky sidebar navigation organized by portal section
+- Full-text search with keyword highlighting and result-to-result navigation arrows
+- Role-specific workflow walkthroughs for all 5 user roles
+- 50+ documentation articles covering all 5 portal sections
+- Internal-only Known Issues section for admin/manager visibility
+- Developer Guide with API reference and content management docs
+- V2 backend API with full CRUD, search, and one-time seed endpoints
+
+**Notification System**
+- Queue-based notification architecture (Features 1 & 2)
+- Automated reminder triggers for overdue tasks and milestones
+- Manager access to Notifications tab
+
+**Email Integration**
+- Resend email module for system notifications
+- Announcement email delivery with read/delivery stats tracking
+
+**Account & Security**
+- Active/inactive account status to control portal access and notification delivery
+- Locked inactive accounts blocked from all portals
+- Security vulnerability fixes and HubSpot integration cleanup
+
+**Service Portal**
+- Full report view for customer signing workflow
+- Simplified service report submission flow
+- Enhanced activity tracking
+
+**Mobile & UI**
+- Cross-portal mobile visibility optimizations
+- Responsive improvements across all portal files
+
+
 ### Version 2.16.2 - February 10, 2026
 
 #### Improvements

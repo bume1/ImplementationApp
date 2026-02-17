@@ -37,6 +37,9 @@
     .search-dropdown { max-height: 400px; overflow-y: auto; }
     .search-item { transition: background 0.15s ease; }
     .search-item:hover { background: #f0f7ff; }
+    mark.active-match { background: #f97316; color: white; box-shadow: 0 0 0 2px #f97316, 0 0 8px rgba(249,115,22,0.4); border-radius: 2px; }
+    @keyframes match-pulse { 0%,100% { box-shadow: 0 0 0 2px #f97316, 0 0 8px rgba(249,115,22,0.4); } 50% { box-shadow: 0 0 0 4px #f97316, 0 0 16px rgba(249,115,22,0.6); } }
+    mark.active-match { animation: match-pulse 1s ease-in-out; }
   </style>
 </head>
 <body>
@@ -3172,7 +3175,7 @@ This renders as color-coded sections with distinct visual styling.`
     };
 
     // ============== SEARCH BAR COMPONENT ==============
-    const SearchBar = ({ searchTerm, onSearchChange, resultCount }) => {
+    const SearchBar = ({ searchTerm, onSearchChange, resultCount, currentMatchIndex, totalMatches, onPrevMatch, onNextMatch }) => {
       const inputRef = useRef(null);
       return (
         <div className="mb-6">
@@ -3182,15 +3185,40 @@ This renders as color-coded sections with distinct visual styling.`
               type="text"
               value={searchTerm}
               onChange={(e) => onSearchChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (!searchTerm || totalMatches === 0) return;
+                if (e.key === 'Enter') { e.shiftKey ? onPrevMatch() : onNextMatch(); e.preventDefault(); }
+              }}
               placeholder="Search guides, articles, and documentation..."
               className="w-full px-4 py-3 pl-12 bg-white border border-gray-200 rounded-xl shadow-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-gray-800 placeholder-gray-400 transition"
             />
             <svg className="absolute left-4 top-3.5 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
             {searchTerm && (
-              <div className="flex items-center gap-3 absolute right-3 top-2.5">
-                <span className="text-sm text-gray-500">{resultCount} result{resultCount !== 1 ? 's' : ''}</span>
-                <button onClick={() => onSearchChange('')} className="p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+              <div className="flex items-center gap-2 absolute right-3 top-2">
+                {totalMatches > 0 && (
+                  <>
+                    <span className="text-xs text-gray-500 tabular-nums min-w-[4rem] text-center">{currentMatchIndex + 1} of {totalMatches}</span>
+                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
+                      <button
+                        onClick={onPrevMatch}
+                        title="Previous match (Shift+Enter)"
+                        className="p-1.5 text-gray-500 hover:text-primary-600 hover:bg-primary-50 transition border-r border-gray-200"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7"/></svg>
+                      </button>
+                      <button
+                        onClick={onNextMatch}
+                        title="Next match (Enter)"
+                        className="p-1.5 text-gray-500 hover:text-primary-600 hover:bg-primary-50 transition"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                      </button>
+                    </div>
+                  </>
+                )}
+                {totalMatches === 0 && <span className="text-xs text-gray-400">0 results</span>}
+                <button onClick={() => onSearchChange('')} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition ml-1">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
                 </button>
               </div>
             )}
@@ -3387,11 +3415,11 @@ This renders as color-coded sections with distinct visual styling.`
     const App = () => {
       // Authentication
       const [token, setToken] = useState(() => {
-        return localStorage.getItem('unified_token') || localStorage.getItem('admin_token') || localStorage.getItem('token');
+        return localStorage.getItem('unified_token') || localStorage.getItem('admin_token') || localStorage.getItem('token') || localStorage.getItem('portal_token') || localStorage.getItem('service_token');
       });
       const [user, setUser] = useState(() => {
         try {
-          const userData = localStorage.getItem('unified_user') || localStorage.getItem('admin_user') || localStorage.getItem('user');
+          const userData = localStorage.getItem('unified_user') || localStorage.getItem('admin_user') || localStorage.getItem('user') || localStorage.getItem('portal_user') || localStorage.getItem('service_user');
           return userData ? JSON.parse(userData) : null;
         } catch {
           return null;
@@ -3404,6 +3432,8 @@ This renders as color-coded sections with distinct visual styling.`
       const [searchTerm, setSearchTerm] = useState('');
       const [activeSection, setActiveSection] = useState('walkthroughs');
       const [isMobileOpen, setIsMobileOpen] = useState(false);
+      const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+      const [totalMatches, setTotalMatches] = useState(0);
       const searchInputRef = useRef(null);
 
       // Compute user tier
@@ -3492,6 +3522,41 @@ This renders as color-coded sections with distinct visual styling.`
         filteredGuides.reduce((count, [, guide]) => count + (guide.articles || []).length, 0),
       [filteredGuides]);
 
+      // Count and track <mark> highlight elements for navigation
+      useEffect(() => {
+        if (!searchTerm) { setTotalMatches(0); setCurrentMatchIndex(0); return; }
+        // Short delay to let React render the <mark> elements first
+        const timer = setTimeout(() => {
+          const marks = document.querySelectorAll('main mark:not(.active-match)');
+          setTotalMatches(marks.length);
+          setCurrentMatchIndex(prev => prev >= marks.length ? 0 : prev);
+        }, 150);
+        return () => clearTimeout(timer);
+      }, [searchTerm, filteredGuides]);
+
+      // Navigate to a specific <mark> match by index
+      const navigateToMatch = useCallback((index) => {
+        const marks = document.querySelectorAll('main mark');
+        if (marks.length === 0) return;
+        // Wrap around
+        const targetIndex = ((index % marks.length) + marks.length) % marks.length;
+        // Remove active class from all marks
+        marks.forEach(m => m.classList.remove('active-match'));
+        // Activate target
+        const target = marks[targetIndex];
+        target.classList.add('active-match');
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setCurrentMatchIndex(targetIndex);
+      }, []);
+
+      const handleNextMatch = useCallback(() => {
+        navigateToMatch(currentMatchIndex + 1);
+      }, [currentMatchIndex, navigateToMatch]);
+
+      const handlePrevMatch = useCallback(() => {
+        navigateToMatch(currentMatchIndex - 1);
+      }, [currentMatchIndex, navigateToMatch]);
+
       // Separate known issues from regular guides
       const regularGuides = filteredGuides.filter(([key, guide]) => !guide.isKnownIssue);
       const knownIssuesGuide = filteredGuides.find(([key, guide]) => guide.isKnownIssue);
@@ -3569,8 +3634,12 @@ This renders as color-coded sections with distinct visual styling.`
             {/* Search Bar */}
             <SearchBar
               searchTerm={searchTerm}
-              onSearchChange={setSearchTerm}
+              onSearchChange={(val) => { setSearchTerm(val); setCurrentMatchIndex(0); }}
               resultCount={searchResultCount}
+              currentMatchIndex={currentMatchIndex}
+              totalMatches={totalMatches}
+              onPrevMatch={handlePrevMatch}
+              onNextMatch={handleNextMatch}
             />
 
             {/* Workflow Walkthrough (hidden when searching) */}
