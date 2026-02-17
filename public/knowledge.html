@@ -3260,7 +3260,7 @@ This renders as color-coded sections with distinct visual styling.`
     const SearchBar = ({ searchTerm, onSearchChange, resultCount, currentMatchIndex, totalMatches, onPrevMatch, onNextMatch }) => {
       const inputRef = useRef(null);
       return (
-        <div className="mb-6">
+        <div className={`mb-6 ${searchTerm ? 'sticky top-0 z-40 pb-2 pt-2 -mx-4 px-4 lg:-mx-8 lg:px-8 bg-gray-50/95 backdrop-blur-sm shadow-sm' : ''}`}>
           <div className="relative">
             <input
               ref={inputRef}
