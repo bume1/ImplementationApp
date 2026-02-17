@@ -13,6 +13,7 @@ const googledrive = require('./googledrive');
 const pdfGenerator = require('./pdf-generator');
 const changelogGenerator = require('./changelog-generator');
 const config = require('./config');
+const { sendEmail } = require('./email');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -3101,6 +3102,49 @@ app.post('/api/announcements', authenticateToken, requireClientPortalAdmin, asyn
     if (announcements.length > 50) announcements.length = 50;
     await db.set('announcements', announcements);
     res.json(newAnnouncement);
+
+    // Send email notifications to targeted client users (async, non-blocking)
+    try {
+      const users = await getUsers();
+      const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT && u.email);
+      let recipients;
+      if (newAnnouncement.targetAll) {
+        recipients = clientUsers;
+      } else {
+        const targetSlugs = new Set(newAnnouncement.targetClients);
+        recipients = clientUsers.filter(u => u.slug && targetSlugs.has(u.slug));
+      }
+      if (recipients.length > 0) {
+        const priorityTag = newAnnouncement.priority ? '[PRIORITY] ' : '';
+        const subject = `${priorityTag}New Announcement: ${newAnnouncement.title}`;
+        const htmlBody = `
+          <div style="font-family: Inter, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: #045E9F; padding: 24px; border-radius: 8px 8px 0 0;">
+              <h1 style="color: #ffffff; margin: 0; font-size: 20px;">Thrive 365 Labs</h1>
+            </div>
+            <div style="background: #ffffff; padding: 24px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+              ${newAnnouncement.priority ? '<p style="color: #dc2626; font-weight: 600; margin-bottom: 8px;">⚠️ This is a priority announcement</p>' : ''}
+              <h2 style="color: #00205A; margin-top: 0;">${newAnnouncement.title}</h2>
+              <div style="color: #374151; line-height: 1.6; white-space: pre-wrap;">${newAnnouncement.content}</div>
+              ${newAnnouncement.attachmentUrl ? `<p style="margin-top: 16px;"><a href="${newAnnouncement.attachmentUrl}" style="color: #045E9F; font-weight: 500;">📎 ${newAnnouncement.attachmentName || 'View Attachment'}</a></p>` : ''}
+              <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
+              <p style="color: #9ca3af; font-size: 12px; margin: 0;">You are receiving this because you have a client portal account with Thrive 365 Labs.</p>
+            </div>
+          </div>`;
+        const textBody = `${priorityTag}${newAnnouncement.title}\n\n${newAnnouncement.content}${newAnnouncement.attachmentUrl ? '\n\nAttachment: ' + newAnnouncement.attachmentUrl : ''}`;
+        const emailPromises = recipients.map(user =>
+          sendEmail(user.email, subject, textBody, { htmlBody }).catch(err => {
+            console.error(`Announcement email failed for ${user.email}:`, err.message);
+          })
+        );
+        Promise.all(emailPromises).then(results => {
+          const sent = results.filter(r => r && r.success).length;
+          console.log(`[ANNOUNCEMENTS] Emailed ${sent}/${recipients.length} clients for announcement: ${newAnnouncement.title}`);
+        });
+      }
+    } catch (emailError) {
+      console.error('Announcement email notification error:', emailError);
+    }
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }
@@ -9497,7 +9541,6 @@ app.post('/api/admin/reset-user-password/:userId', authenticateToken, requireAdm
 // Test email endpoint (admin only) - remove after validating Resend setup
 app.post('/api/admin/test-email', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { sendEmail } = require('./email');
     const { to, subject, body } = req.body;
     const result = await sendEmail(
       to || req.user.email,
