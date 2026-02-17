@@ -3133,13 +3133,41 @@ app.post('/api/announcements', authenticateToken, requireClientPortalAdmin, asyn
           </div>`;
         const textBody = `${priorityTag}${newAnnouncement.title}\n\n${newAnnouncement.content}${newAnnouncement.attachmentUrl ? '\n\nAttachment: ' + newAnnouncement.attachmentUrl : ''}`;
         const emailPromises = recipients.map(user =>
-          sendEmail(user.email, subject, textBody, { htmlBody }).catch(err => {
+          sendEmail(user.email, subject, textBody, { htmlBody }).then(result => ({
+            email: user.email, ...result
+          })).catch(err => {
             console.error(`Announcement email failed for ${user.email}:`, err.message);
+            return { email: user.email, success: false, error: err.message };
           })
         );
-        Promise.all(emailPromises).then(results => {
-          const sent = results.filter(r => r && r.success).length;
+        Promise.all(emailPromises).then(async (results) => {
+          const sent = results.filter(r => r.success).length;
+          const failed = results.filter(r => !r.success);
           console.log(`[ANNOUNCEMENTS] Emailed ${sent}/${recipients.length} clients for announcement: ${newAnnouncement.title}`);
+
+          // Save delivery stats on the announcement record
+          try {
+            const current = (await db.get('announcements')) || [];
+            const idx = current.findIndex(a => a.id === newAnnouncement.id);
+            if (idx !== -1) {
+              current[idx].emailDelivery = {
+                sent,
+                failed: failed.length,
+                total: recipients.length,
+                failedRecipients: failed.map(f => f.email),
+                deliveredAt: new Date().toISOString()
+              };
+              await db.set('announcements', current);
+            }
+          } catch (dbErr) {
+            console.error('Failed to save email delivery stats:', dbErr);
+          }
+
+          // Log to activity feed
+          await logActivity(
+            req.user.id, req.user.name, 'announcement_emailed', 'announcement', newAnnouncement.id,
+            { title: newAnnouncement.title, emailsSent: sent, emailsFailed: failed.length, totalRecipients: recipients.length }
+          );
         });
       }
     } catch (emailError) {
