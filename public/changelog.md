@@ -4,6 +4,13 @@
 
 ---
 
+### Version 3.3.1 - February 17, 2026
+
+#### Bug Fixes
+- Fix client portal sign-out leaving admin session active
+- Fix Knowledge Hub guide visibility for client and vendor roles
+
+
 ### Version 3.3.0 - February 17, 2026
 
 #### New Features
