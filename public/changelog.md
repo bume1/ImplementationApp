@@ -4,6 +4,20 @@
 
 ---
 
+### Version 3.2.0 - February 17, 2026
+
+#### New Features
+- Add variable pools system for email templates
+
+#### Bug Fixes
+- Remove Knowledge Hub from admin sidebar menu, fix sign-out redirect
+
+#### Changes
+- Make notification page data loading resilient to partial failures
+- Grant Managers access to all notification endpoints
+- Make Knowledge Hub search bar sticky when actively searching
+
+
 ### Version 3.1.0 - February 17, 2026
 
 #### New Features
