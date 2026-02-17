@@ -1651,6 +1651,10 @@ app.post('/api/auth/login', async (req, res) => {
       console.log('Login failed: Password mismatch for:', email);
       return res.status(400).json({ error: 'Invalid credentials' });
     }
+    // Block inactive accounts from logging in
+    if (user.accountStatus === 'inactive') {
+      return res.status(403).json({ error: 'Account is inactive. Please contact an administrator.' });
+    }
     const token = jwt.sign(
       { id: user.id, email: user.email, name: user.name, role: user.role },
       JWT_SECRET,
@@ -1718,6 +1722,10 @@ app.post('/api/auth/client-login', async (req, res) => {
     const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase() && (u.role === config.ROLES.CLIENT || u.role === config.ROLES.ADMIN || u.isManager));
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(400).json({ error: 'Invalid credentials' });
+    }
+    // Block inactive accounts from logging in
+    if (user.accountStatus === 'inactive') {
+      return res.status(403).json({ error: 'Account is inactive. Please contact an administrator.' });
     }
     // For clients, optionally verify slug matches if provided
     if (user.role === config.ROLES.CLIENT && slug && user.slug !== slug) {
@@ -7312,6 +7320,11 @@ app.post('/api/auth/service-login', async (req, res) => {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
 
+    // Block inactive accounts from logging in
+    if (user.accountStatus === 'inactive') {
+      return res.status(403).json({ error: 'Account is inactive. Please contact an administrator.' });
+    }
+
     // Check if user has service portal access
     if (user.role !== config.ROLES.ADMIN && !user.hasServicePortalAccess) {
       return res.status(403).json({ error: 'Access denied. You do not have Service Portal access. Please contact an administrator.' });
@@ -10362,6 +10375,11 @@ app.post('/api/auth/admin-login', async (req, res) => {
     const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase() && (u.role === config.ROLES.ADMIN || u.hasAdminHubAccess));
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(400).json({ error: 'Invalid credentials' });
+    }
+
+    // Block inactive accounts from logging in
+    if (user.accountStatus === 'inactive') {
+      return res.status(403).json({ error: 'Account is inactive. Please contact an administrator.' });
     }
 
     const token = jwt.sign(
