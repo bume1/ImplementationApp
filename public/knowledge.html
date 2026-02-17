@@ -114,6 +114,7 @@
     }
 
     function canUserSeeGuide(userTier, user, guide) {
+      if (guide.hidden) return false;
       const visibleTo = guide.visibleTo || [];
       if (visibleTo.length === 0) return true;
       if (!visibleTo.includes(userTier)) return false;
@@ -2851,6 +2852,7 @@ If you suspect unauthorized access:
         icon: Icons.lock,
         color: 'bg-red-600',
         isKnownIssue: true,
+        hidden: true,
         visibleTo: ['super_admin', 'manager'],
         portalSection: 'general',
         articles: [
