@@ -138,9 +138,25 @@ const NO_CACHE_HEADERS = Object.freeze({
   'Surrogate-Control': 'no-store'
 });
 
+// ---- Notification Queue (Feature 1) ----
+const NOTIFICATION_CHECK_INTERVAL_MINUTES = parseInt(process.env.NOTIFICATION_CHECK_INTERVAL_MINUTES || '15', 10);
+const NOTIFICATION_LOG_MAX_ENTRIES = parseInt(process.env.NOTIFICATION_LOG_MAX_ENTRIES || '2000', 10);
+const NOTIFICATION_MAX_RETRIES = parseInt(process.env.NOTIFICATION_MAX_RETRIES || '3', 10);
+const NOTIFICATION_DAILY_SEND_LIMIT = parseInt(process.env.NOTIFICATION_DAILY_SEND_LIMIT || '500', 10);
+const EMAIL_FROM_ADDRESS = process.env.EMAIL_FROM_ADDRESS || 'no-reply@thrive365labs.live';
+
+// ---- Automated Reminders (Feature 2) ----
+const NOTIFICATION_SCAN_INTERVAL_MINUTES = parseInt(process.env.NOTIFICATION_SCAN_INTERVAL_MINUTES || '30', 10);
+const TASK_DEADLINE_DAYS_BEFORE = (process.env.TASK_DEADLINE_DAYS_BEFORE || '1,3,7').split(',').map(Number);
+const TASK_OVERDUE_ESCALATION_DAYS = parseInt(process.env.TASK_OVERDUE_ESCALATION_DAYS || '7', 10);
+const INVENTORY_REMINDER_DAYS = parseInt(process.env.INVENTORY_REMINDER_DAYS || '7', 10);
+const SERVICE_REPORT_FOLLOWUP_DAYS = parseInt(process.env.SERVICE_REPORT_FOLLOWUP_DAYS || '3', 10);
+const MILESTONE_THRESHOLDS = (process.env.MILESTONE_THRESHOLDS || '25,50,75,100').split(',').map(Number);
+const GOLIVE_REMINDER_DAYS_BEFORE = (process.env.GOLIVE_REMINDER_DAYS_BEFORE || '7,14,30').split(',').map(Number);
+
 // ---- Default Admin (initial setup only) ----
 const DEFAULT_ADMIN = Object.freeze({
-  EMAIL: process.env.DEFAULT_ADMIN_EMAIL || 'bianca@thrive365labs.com',
+  EMAIL: process.env.DEFAULT_ADMIN_EMAIL || 'bianca@thrive365labs.live',
   NAME: process.env.DEFAULT_ADMIN_NAME || 'Bianca Ume',
   PASSWORD: process.env.DEFAULT_ADMIN_PASSWORD || 'Thrive2025!'
 });
@@ -205,6 +221,20 @@ module.exports = {
   NO_CACHE_HEADERS,
   // Admin
   DEFAULT_ADMIN,
+  // Notification Queue (Feature 1)
+  NOTIFICATION_CHECK_INTERVAL_MINUTES,
+  NOTIFICATION_LOG_MAX_ENTRIES,
+  NOTIFICATION_MAX_RETRIES,
+  NOTIFICATION_DAILY_SEND_LIMIT,
+  EMAIL_FROM_ADDRESS,
+  // Automated Reminders (Feature 2)
+  NOTIFICATION_SCAN_INTERVAL_MINUTES,
+  TASK_DEADLINE_DAYS_BEFORE,
+  TASK_OVERDUE_ESCALATION_DAYS,
+  INVENTORY_REMINDER_DAYS,
+  SERVICE_REPORT_FOLLOWUP_DAYS,
+  MILESTONE_THRESHOLDS,
+  GOLIVE_REMINDER_DAYS_BEFORE,
   // Public config
   getPublicConfig
 };
