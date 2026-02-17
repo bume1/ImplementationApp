@@ -1237,7 +1237,7 @@
           const normalized = {};
           Object.entries(latestData.data || {}).forEach(([key, value]) => {
             if (value.batches) { normalized[key] = value; }
-            else { normalized[key] = { batches: [value] }; }
+            else { normalized[key] = { batches: [value || {}] }; }
           });
           setInventoryData(normalized);
           setLastSubmitted(latestData.submittedAt);
@@ -1295,12 +1295,17 @@
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ slug, data: inventoryData })
           });
+          if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            setMessage(errData.error || 'Failed to submit inventory');
+            return;
+          }
           const result = await response.json();
           if (result.success) {
             setMessage('Inventory submitted successfully!');
             setLastSubmitted(new Date().toISOString());
             setTimeout(() => setMessage(''), 5000);
-          } else { setMessage('Failed to submit inventory'); }
+          } else { setMessage(result.error || 'Failed to submit inventory'); }
         } catch (err) { setMessage('Error submitting inventory'); }
         finally { setSaving(false); }
       };
@@ -3053,13 +3058,14 @@
                     <div
                       className="hs-form-frame"
                       data-region="na1"
-                      data-form-id="089d904f-4acb-4ff7-8c61-53ee99e12345"
-                      data-portal-id="49020024"
+                      data-form-id={settings?.supportFormId || '089d904f-4acb-4ff7-8c61-53ee99e12345'}
+                      data-portal-id={settings?.hubspotPortalId || '49020024'}
                       ref={(el) => {
                         if (el && !document.getElementById('hs-form-script')) {
+                          const portalId = settings?.hubspotPortalId || '49020024';
                           const script = document.createElement('script');
                           script.id = 'hs-form-script';
-                          script.src = 'https://js.hsforms.net/forms/embed/49020024.js';
+                          script.src = `https://js.hsforms.net/forms/embed/${portalId}.js`;
                           script.defer = true;
                           document.body.appendChild(script);
                         }
@@ -3594,7 +3600,9 @@
     const AdminSettingsPage = ({ token, settings, onSettingsChange }) => {
       const [formData, setFormData] = useState({
         filesFormEmbed: settings?.filesFormEmbed || '',
-        supportUrl: settings?.supportUrl || ''
+        supportUrl: settings?.supportUrl || '',
+        supportFormId: settings?.supportFormId || '',
+        hubspotPortalId: settings?.hubspotPortalId || ''
       });
       const [saving, setSaving] = useState(false);
       const [message, setMessage] = useState('');
@@ -3656,7 +3664,31 @@
                 placeholder="https://support.example.com"
               />
             </div>
-            
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">HubSpot Portal ID</label>
+              <input
+                type="text"
+                value={formData.hubspotPortalId}
+                onChange={(e) => setFormData({ ...formData, hubspotPortalId: e.target.value })}
+                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
+                placeholder="49020024"
+              />
+              <p className="text-xs text-gray-400 mt-1">Used for the HubSpot support form embed on the Support page</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">HubSpot Support Form ID</label>
+              <input
+                type="text"
+                value={formData.supportFormId}
+                onChange={(e) => setFormData({ ...formData, supportFormId: e.target.value })}
+                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
+                placeholder="089d904f-4acb-4ff7-8c61-53ee99e12345"
+              />
+              <p className="text-xs text-gray-400 mt-1">The form ID from your HubSpot support ticket form</p>
+            </div>
+
             <button
               onClick={handleSave}
               disabled={saving}

@@ -441,44 +441,8 @@ async function pollHubSpotTickets() {
         continue;
       }
 
-      // Map HubSpot owner to internal user (same logic as webhook handler)
-      let assignedToId = null;
-      let assignedToName = null;
-
-      if (ticket.ownerId) {
-        try {
-          const owners = await hubspot.getOwners();
-          const hubspotOwner = owners.find(o => String(o.id) === String(ticket.ownerId));
-
-          if (hubspotOwner) {
-            // Try email match first
-            if (hubspotOwner.email) {
-              const userByEmail = users.find(u =>
-                u.email && u.email.toLowerCase() === hubspotOwner.email.toLowerCase() &&
-                (u.role === config.ROLES.VENDOR || u.role === config.ROLES.ADMIN || u.hasServicePortalAccess)
-              );
-              if (userByEmail) {
-                assignedToId = userByEmail.id;
-                assignedToName = userByEmail.name;
-              }
-            }
-            // Fall back to name match
-            if (!assignedToId && hubspotOwner.firstName && hubspotOwner.lastName) {
-              const fullName = `${hubspotOwner.firstName} ${hubspotOwner.lastName}`;
-              const userByName = users.find(u =>
-                u.name && u.name.toLowerCase() === fullName.toLowerCase() &&
-                (u.role === config.ROLES.VENDOR || u.role === config.ROLES.ADMIN || u.hasServicePortalAccess)
-              );
-              if (userByName) {
-                assignedToId = userByName.id;
-                assignedToName = userByName.name;
-              }
-            }
-          }
-        } catch (ownerErr) {
-          console.log(`[HubSpot Poll] Could not match owner for ticket ${ticketId}:`, ownerErr.message);
-        }
-      }
+      // Map HubSpot owner to internal user
+      const { id: assignedToId, name: assignedToName } = await resolveHubSpotOwnerToUser(ticket.ownerId, users);
 
       if (!assignedToId) {
         console.log(`[HubSpot Poll] No internal user match for ticket ${ticketId} (owner ${ticket.ownerId}). Skipping.`);
@@ -490,69 +454,9 @@ async function pollHubSpotTickets() {
       const issueCategoryLower = (ticket.issueCategory || '').toLowerCase();
       const serviceType = config.SERVICE_TYPE_MAP[issueCategoryLower] || '';
 
-      // Build manager notes from ticket description and notes
-      let managerNotes = '';
-      if (ticket.description) {
-        managerNotes += `**Ticket Description:**\n${ticket.description}\n\n`;
-      }
-      if (ticket.notes && ticket.notes.length > 0) {
-        managerNotes += `**Ticket Notes:**\n`;
-        ticket.notes.forEach((note) => {
-          const timestamp = note.timestamp ? new Date(parseInt(note.timestamp)).toLocaleString() : '';
-          managerNotes += `\n[${timestamp}]\n${note.body}\n`;
-          if (note.attachmentIds) {
-            managerNotes += `(Attachments: ${note.attachmentIds})\n`;
-          }
-        });
-      }
-
       // Create the service report
       const clientSlugResolved = await resolveClientSlug(ticket.companyName, ticket.companyId);
-      const newReport = {
-        id: uuidv4(),
-        status: 'assigned',
-        assignedToId,
-        assignedToName,
-        assignedById: 'system',
-        assignedByName: 'HubSpot Polling',
-        assignedAt: new Date().toISOString(),
-        clientFacilityName: ticket.companyName || '',
-        clientSlug: clientSlugResolved,
-        customerName: ticket.submittedBy || '',
-        serviceProviderName: assignedToName,
-        address: '',
-        serviceType,
-        analyzerModel: '',
-        analyzerSerialNumber: ticket.serialNumber || '',
-        hubspotTicketNumber: String(ticket.id),
-        hubspotCompanyId: ticket.companyId || '',
-        hubspotDealId: '',
-        serviceCompletionDate: new Date().toISOString().split('T')[0],
-        managerNotes: managerNotes.trim(),
-        photos: [],
-        clientFiles: [],
-        technicianId: null,
-        technicianName: null,
-        descriptionOfWork: '',
-        materialsUsed: '',
-        solution: '',
-        outstandingIssues: '',
-        validationResults: '',
-        validationStartDate: '',
-        validationEndDate: '',
-        trainingProvided: '',
-        testProcedures: '',
-        recommendations: '',
-        analyzersValidated: [],
-        customerSignature: null,
-        customerSignatureDate: null,
-        technicianSignature: null,
-        technicianSignatureDate: null,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        createdViaWebhook: true,
-        createdViaPolling: true
-      };
+      const newReport = buildServiceReportFromTicket(ticket, assignedToId, assignedToName, serviceType, clientSlugResolved, 'polling');
 
       serviceReports.push(newReport);
       existingTicketIds.add(ticketId);
@@ -1002,6 +906,106 @@ const resolveClientSlug = async (clientFacilityName, hubspotCompanyId, existingU
 
   return '';
 };
+
+// Map a HubSpot owner ID to an internal user with service portal access
+async function resolveHubSpotOwnerToUser(ownerId, users) {
+  if (!ownerId) return { id: null, name: null };
+
+  try {
+    const owners = await hubspot.getOwners();
+    const hubspotOwner = owners.find(o => String(o.id) === String(ownerId));
+
+    if (!hubspotOwner) return { id: null, name: null };
+
+    // Try email match first
+    if (hubspotOwner.email) {
+      const userByEmail = users.find(u =>
+        u.email && u.email.toLowerCase() === hubspotOwner.email.toLowerCase() &&
+        (u.role === config.ROLES.VENDOR || u.role === config.ROLES.ADMIN || u.hasServicePortalAccess)
+      );
+      if (userByEmail) return { id: userByEmail.id, name: userByEmail.name };
+    }
+
+    // Fall back to name match
+    if (hubspotOwner.firstName && hubspotOwner.lastName) {
+      const fullName = `${hubspotOwner.firstName} ${hubspotOwner.lastName}`;
+      const userByName = users.find(u =>
+        u.name && u.name.toLowerCase() === fullName.toLowerCase() &&
+        (u.role === config.ROLES.VENDOR || u.role === config.ROLES.ADMIN || u.hasServicePortalAccess)
+      );
+      if (userByName) return { id: userByName.id, name: userByName.name };
+    }
+  } catch (err) {
+    console.log(`Could not match HubSpot owner ${ownerId}:`, err.message);
+  }
+
+  return { id: null, name: null };
+}
+
+// Build a service report object from a HubSpot ticket
+// Used by both the polling engine and webhook handler
+function buildServiceReportFromTicket(ticket, assignedToId, assignedToName, serviceType, clientSlug, source) {
+  let managerNotes = '';
+  if (ticket.description) {
+    managerNotes += `**Ticket Description:**\n${ticket.description}\n\n`;
+  }
+  if (ticket.notes && ticket.notes.length > 0) {
+    managerNotes += `**Ticket Notes:**\n`;
+    ticket.notes.forEach((note) => {
+      const timestamp = note.timestamp ? new Date(parseInt(note.timestamp)).toLocaleString() : '';
+      managerNotes += `\n[${timestamp}]\n${note.body}\n`;
+      if (note.attachmentIds) {
+        managerNotes += `(Attachments: ${note.attachmentIds})\n`;
+      }
+    });
+  }
+
+  return {
+    id: uuidv4(),
+    status: 'assigned',
+    assignedToId,
+    assignedToName,
+    assignedById: 'system',
+    assignedByName: source === 'polling' ? 'HubSpot Polling' : 'HubSpot Automation',
+    assignedAt: new Date().toISOString(),
+    clientFacilityName: ticket.companyName || '',
+    clientSlug: clientSlug,
+    customerName: ticket.submittedBy || '',
+    serviceProviderName: assignedToName,
+    address: '',
+    serviceType,
+    analyzerModel: '',
+    analyzerSerialNumber: ticket.serialNumber || '',
+    hubspotTicketNumber: String(ticket.id),
+    hubspotCompanyId: ticket.companyId || '',
+    hubspotDealId: '',
+    serviceCompletionDate: new Date().toISOString().split('T')[0],
+    managerNotes: managerNotes.trim(),
+    photos: [],
+    clientFiles: [],
+    technicianId: null,
+    technicianName: null,
+    descriptionOfWork: '',
+    materialsUsed: '',
+    solution: '',
+    outstandingIssues: '',
+    validationResults: '',
+    validationStartDate: '',
+    validationEndDate: '',
+    trainingProvided: '',
+    testProcedures: '',
+    recommendations: '',
+    analyzersValidated: [],
+    customerSignature: null,
+    customerSignatureDate: null,
+    technicianSignature: null,
+    technicianSignatureDate: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    createdViaWebhook: true,
+    ...(source === 'polling' ? { createdViaPolling: true } : {})
+  };
+}
 
 // Super Admin access - full system access (role === 'admin')
 const requireAdmin = (req, res, next) => {
@@ -3275,7 +3279,9 @@ app.get('/api/portal-settings', async (req, res) => {
     const settings = (await db.get('portal_settings')) || {
       inventoryFormEmbed: '',
       filesFormEmbed: '',
-      supportUrl: 'https://thrive365labs-49020024.hs-sites.com/support'
+      supportUrl: 'https://thrive365labs-49020024.hs-sites.com/support',
+      supportFormId: '089d904f-4acb-4ff7-8c61-53ee99e12345',
+      hubspotPortalId: '49020024'
     };
     res.json(settings);
   } catch (error) {
@@ -3286,11 +3292,13 @@ app.get('/api/portal-settings', async (req, res) => {
 // Update portal settings (admin only)
 app.put('/api/portal-settings', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { inventoryFormEmbed, filesFormEmbed, supportUrl } = req.body;
+    const { inventoryFormEmbed, filesFormEmbed, supportUrl, supportFormId, hubspotPortalId } = req.body;
     const settings = {
       inventoryFormEmbed: inventoryFormEmbed || '',
       filesFormEmbed: filesFormEmbed || '',
       supportUrl: supportUrl || 'https://thrive365labs-49020024.hs-sites.com/support',
+      supportFormId: supportFormId || '089d904f-4acb-4ff7-8c61-53ee99e12345',
+      hubspotPortalId: hubspotPortalId || '49020024',
       updatedAt: new Date().toISOString(),
       updatedBy: req.user.name
     };
@@ -3744,9 +3752,28 @@ app.post('/api/client/hubspot/upload', authenticateToken, uploadLimiter, upload.
 
 // ============== CLIENT HUBSPOT TICKETS ==============
 
+// HubSpot webhook validation middleware
+const HUBSPOT_WEBHOOK_SECRET = process.env.HUBSPOT_WEBHOOK_SECRET;
+
+if (!HUBSPOT_WEBHOOK_SECRET) {
+  console.warn('⚠️  WARNING: HUBSPOT_WEBHOOK_SECRET not set. Webhook endpoints will accept ALL requests without validation.');
+  console.warn('   Set HUBSPOT_WEBHOOK_SECRET to enable webhook authentication.');
+}
+
+function validateHubSpotWebhook(req, res, next) {
+  if (HUBSPOT_WEBHOOK_SECRET) {
+    const providedSecret = req.headers['x-hubspot-webhook-secret'] || req.query.secret;
+    if (providedSecret !== HUBSPOT_WEBHOOK_SECRET) {
+      console.warn('HubSpot webhook rejected: invalid secret');
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+  }
+  next();
+}
+
 // Webhook endpoint for HubSpot to register portal-created tickets
 // HubSpot workflow should call this when a ticket is created from the portal form
-app.post('/api/webhook/hubspot/ticket-created', async (req, res) => {
+app.post('/api/webhook/hubspot/ticket-created', validateHubSpotWebhook, async (req, res) => {
   try {
     const { ticketId, contactEmail, companyId, subject } = req.body;
 
@@ -3786,7 +3813,7 @@ app.post('/api/webhook/hubspot/ticket-created', async (req, res) => {
 
 // Webhook endpoint for HubSpot ticket stage changes
 // HubSpot workflow should trigger this when ticket moves to "Assigned" or "Vendor Escalation" stage
-app.post('/api/webhook/hubspot/ticket-stage-change', async (req, res) => {
+app.post('/api/webhook/hubspot/ticket-stage-change', validateHubSpotWebhook, async (req, res) => {
   try {
     const { ticketId, stageId, stageName } = req.body;
 
@@ -3838,45 +3865,8 @@ app.post('/api/webhook/hubspot/ticket-stage-change', async (req, res) => {
     }
 
     // Map HubSpot owner ID to internal user
-    let assignedToId = null;
-    let assignedToName = null;
     const users = (await db.get('users')) || [];
-
-    if (ticket.ownerId) {
-      try {
-        const owners = await hubspot.getOwners();
-        const hubspotOwner = owners.find(o => String(o.id) === String(ticket.ownerId));
-
-        if (hubspotOwner) {
-          // Try to match by email first
-          if (hubspotOwner.email) {
-            const userByEmail = users.find(u =>
-              u.email && u.email.toLowerCase() === hubspotOwner.email.toLowerCase() &&
-              (u.role === config.ROLES.VENDOR || u.role === config.ROLES.ADMIN || u.hasServicePortalAccess)
-            );
-            if (userByEmail) {
-              assignedToId = userByEmail.id;
-              assignedToName = userByEmail.name;
-            }
-          }
-
-          // If no match by email, try by name
-          if (!assignedToId && hubspotOwner.firstName && hubspotOwner.lastName) {
-            const fullName = `${hubspotOwner.firstName} ${hubspotOwner.lastName}`;
-            const userByName = users.find(u =>
-              u.name && u.name.toLowerCase() === fullName.toLowerCase() &&
-              (u.role === config.ROLES.VENDOR || u.role === config.ROLES.ADMIN || u.hasServicePortalAccess)
-            );
-            if (userByName) {
-              assignedToId = userByName.id;
-              assignedToName = userByName.name;
-            }
-          }
-        }
-      } catch (ownerErr) {
-        console.log('Could not match HubSpot owner to internal user:', ownerErr.message);
-      }
-    }
+    const { id: assignedToId, name: assignedToName } = await resolveHubSpotOwnerToUser(ticket.ownerId, users);
 
     // If no assignee found, we cannot auto-create the service report
     if (!assignedToId) {
@@ -3893,73 +3883,9 @@ app.post('/api/webhook/hubspot/ticket-stage-change', async (req, res) => {
     const issueCategoryLower = (ticket.issueCategory || '').toLowerCase();
     const serviceType = config.SERVICE_TYPE_MAP[issueCategoryLower] || '';
 
-    // Combine ticket description and notes into manager notes
-    let managerNotes = '';
-    if (ticket.description) {
-      managerNotes += `**Ticket Description:**\n${ticket.description}\n\n`;
-    }
-    if (ticket.notes && ticket.notes.length > 0) {
-      managerNotes += `**Ticket Notes:**\n`;
-      ticket.notes.forEach((note, index) => {
-        const timestamp = note.timestamp ? new Date(parseInt(note.timestamp)).toLocaleString() : '';
-        managerNotes += `\n[${timestamp}]\n${note.body}\n`;
-        if (note.attachmentIds) {
-          managerNotes += `(Attachments: ${note.attachmentIds})\n`;
-        }
-      });
-    }
-
     // Create the service report
     const webhookClientSlug = await resolveClientSlug(ticket.companyName, ticket.companyId);
-    const newReport = {
-      id: uuidv4(),
-      // Assignment info
-      status: 'assigned',
-      assignedToId,
-      assignedToName,
-      assignedById: 'system', // System-generated from webhook
-      assignedByName: 'HubSpot Automation',
-      assignedAt: new Date().toISOString(),
-      // Pre-filled info from HubSpot ticket
-      clientFacilityName: ticket.companyName || '',
-      clientSlug: webhookClientSlug,
-      customerName: ticket.submittedBy || '',
-      serviceProviderName: assignedToName,
-      address: '',
-      serviceType: serviceType,
-      analyzerModel: '',
-      analyzerSerialNumber: ticket.serialNumber || '',
-      hubspotTicketNumber: String(ticket.id),
-      hubspotCompanyId: ticket.companyId || '',
-      hubspotDealId: '',
-      serviceCompletionDate: new Date().toISOString().split('T')[0],
-      // Manager-only fields
-      managerNotes: managerNotes.trim(),
-      photos: [],
-      clientFiles: [],
-      // Technician fields (to be filled when completing)
-      technicianId: null,
-      technicianName: null,
-      descriptionOfWork: '',
-      materialsUsed: '',
-      solution: '',
-      outstandingIssues: '',
-      validationResults: '',
-      validationStartDate: '',
-      validationEndDate: '',
-      trainingProvided: '',
-      testProcedures: '',
-      recommendations: '',
-      analyzersValidated: [],
-      customerSignature: null,
-      customerSignatureDate: null,
-      technicianSignature: null,
-      technicianSignatureDate: null,
-      // Metadata
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      createdViaWebhook: true
-    };
+    const newReport = buildServiceReportFromTicket(ticket, assignedToId, assignedToName, serviceType, webhookClientSlug, 'webhook');
 
     serviceReports.push(newReport);
     await db.set('service_reports', serviceReports);
@@ -4739,26 +4665,9 @@ app.get('/api/client/hubspot/file/:fileId', authenticateToken, async (req, res) 
 });
 
 // ============== HUBSPOT WEBHOOKS ==============
-const HUBSPOT_WEBHOOK_SECRET = process.env.HUBSPOT_WEBHOOK_SECRET;
 
-// Startup warning for missing webhook secret (Gotcha #18)
-if (!HUBSPOT_WEBHOOK_SECRET) {
-  console.warn('⚠️  WARNING: HUBSPOT_WEBHOOK_SECRET not set. Webhook endpoint will accept ALL requests without validation.');
-  console.warn('   Set HUBSPOT_WEBHOOK_SECRET to enable webhook authentication.');
-}
-
-app.post('/api/webhooks/hubspot', async (req, res) => {
+app.post('/api/webhooks/hubspot', validateHubSpotWebhook, async (req, res) => {
   try {
-    if (HUBSPOT_WEBHOOK_SECRET) {
-      const providedSecret = req.headers['x-hubspot-webhook-secret'] || req.query.secret;
-      if (providedSecret !== HUBSPOT_WEBHOOK_SECRET) {
-        console.warn('HubSpot webhook rejected: invalid secret');
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
-    } else {
-      console.warn('HubSpot webhook secret not configured - consider setting HUBSPOT_WEBHOOK_SECRET');
-    }
-    
     const payload = req.body;
     console.log('HubSpot webhook received');
     
@@ -7535,65 +7444,15 @@ app.get('/api/hubspot/ticket/:ticketId/map-to-service-report', authenticateToken
     const ticket = await hubspot.getTicketById(ticketId);
 
     // Map HubSpot owner ID to internal user
-    let assignedToId = null;
-    let assignedToName = null;
-    if (ticket.ownerId) {
-      const users = (await db.get('users')) || [];
-
-      // Try to find user by matching HubSpot owner ID
-      // First, get the HubSpot owner details
-      try {
-        const owners = await hubspot.getOwners();
-        const hubspotOwner = owners.find(o => String(o.id) === String(ticket.ownerId));
-
-        if (hubspotOwner) {
-          // Try to match by email first
-          if (hubspotOwner.email) {
-            const userByEmail = users.find(u =>
-              u.email && u.email.toLowerCase() === hubspotOwner.email.toLowerCase()
-            );
-            if (userByEmail) {
-              assignedToId = userByEmail.id;
-              assignedToName = userByEmail.name;
-            }
-          }
-
-          // If no match by email, try by name
-          if (!assignedToId && hubspotOwner.firstName && hubspotOwner.lastName) {
-            const fullName = `${hubspotOwner.firstName} ${hubspotOwner.lastName}`;
-            const userByName = users.find(u =>
-              u.name && u.name.toLowerCase() === fullName.toLowerCase()
-            );
-            if (userByName) {
-              assignedToId = userByName.id;
-              assignedToName = userByName.name;
-            }
-          }
-        }
-      } catch (ownerErr) {
-        console.log('Could not match HubSpot owner to internal user:', ownerErr.message);
-      }
-    }
+    const users = (await db.get('users')) || [];
+    const { id: assignedToId, name: assignedToName } = await resolveHubSpotOwnerToUser(ticket.ownerId, users);
 
     // Map Service Type from Issue Category
     const issueCategoryLower = (ticket.issueCategory || '').toLowerCase();
     const serviceType = config.SERVICE_TYPE_MAP[issueCategoryLower] || '';
 
-    // Combine ticket description and notes into manager notes
-    let managerNotes = '';
-    if (ticket.description) {
-      managerNotes += `**Ticket Description:**\n${ticket.description}\n\n`;
-    }
-    if (ticket.notes && ticket.notes.length > 0) {
-      managerNotes += `**Ticket Notes:**\n`;
-      ticket.notes.forEach((note, index) => {
-        const timestamp = note.timestamp ? new Date(parseInt(note.timestamp)).toLocaleString() : '';
-        managerNotes += `\n[${timestamp}]\n${note.body}\n`;
-        if (note.attachmentIds) {
-          managerNotes += `(Attachments: ${note.attachmentIds})\n`;
-        }
-      });
-    }
+    // Build a temporary report to extract managerNotes
+    const tempReport = buildServiceReportFromTicket(ticket, assignedToId, assignedToName, serviceType, '', 'webhook');
 
     // Build the mapped service report data
     const mappedData = {
@@ -7611,7 +7470,7 @@ app.get('/api/hubspot/ticket/:ticketId/map-to-service-report', authenticateToken
       analyzerSerialNumber: ticket.serialNumber || '',
       hubspotTicketNumber: ticket.id,
       hubspotCompanyId: ticket.companyId || '',
-      managerNotes: managerNotes.trim(),
+      managerNotes: tempReport.managerNotes,
       serviceCompletionDate: new Date().toISOString().split('T')[0], // Today's date
 
       // Additional info
