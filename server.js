@@ -10723,7 +10723,7 @@ app.post('/api/admin/test-email', authenticateToken, requireAdmin, async (req, r
 // ============================================================
 
 // View pending notifications queue
-app.get('/api/admin/notifications/queue', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin/notifications/queue', authenticateToken, requireAdminHubAccess, async (req, res) => {
   try {
     const queue = (await db.get('pending_notifications')) || [];
     const { type, status } = req.query;
@@ -10739,7 +10739,7 @@ app.get('/api/admin/notifications/queue', authenticateToken, requireAdmin, async
 });
 
 // View sent/failed notification history (log archive)
-app.get('/api/admin/notifications/log', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin/notifications/log', authenticateToken, requireAdminHubAccess, async (req, res) => {
   try {
     const log = (await db.get('notification_log')) || [];
     const { type, status, limit } = req.query;
@@ -10755,7 +10755,7 @@ app.get('/api/admin/notifications/log', authenticateToken, requireAdmin, async (
 });
 
 // Cancel a pending notification
-app.post('/api/admin/notifications/cancel/:id', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/admin/notifications/cancel/:id', authenticateToken, requireAdminHubAccess, async (req, res) => {
   try {
     const queue = (await db.get('pending_notifications')) || [];
     const idx = queue.findIndex(n => n.id === req.params.id);
@@ -10771,7 +10771,7 @@ app.post('/api/admin/notifications/cancel/:id', authenticateToken, requireAdmin,
 });
 
 // Retry a failed notification (move from log back to queue)
-app.post('/api/admin/notifications/retry/:id', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/admin/notifications/retry/:id', authenticateToken, requireAdminHubAccess, async (req, res) => {
   try {
     const log = (await db.get('notification_log')) || [];
     const idx = log.findIndex(n => n.id === req.params.id);
@@ -10797,7 +10797,7 @@ app.post('/api/admin/notifications/retry/:id', authenticateToken, requireAdmin, 
 });
 
 // Queue stats — pending count, sent today, failure rate
-app.get('/api/admin/notifications/stats', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin/notifications/stats', authenticateToken, requireAdminHubAccess, async (req, res) => {
   try {
     const queue = (await db.get('pending_notifications')) || [];
     const log = (await db.get('notification_log')) || [];
@@ -10941,7 +10941,7 @@ app.get('/api/email/history', authenticateToken, requireAdmin, async (req, res) 
 // ============================================================
 
 // Get notification settings
-app.get('/api/admin/notification-settings', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin/notification-settings', authenticateToken, requireAdminHubAccess, async (req, res) => {
   try {
     const settings = (await db.get('notification_settings')) || {
       enabled: true,
@@ -10957,7 +10957,7 @@ app.get('/api/admin/notification-settings', authenticateToken, requireAdmin, asy
 });
 
 // Update notification settings
-app.put('/api/admin/notification-settings', authenticateToken, requireAdmin, async (req, res) => {
+app.put('/api/admin/notification-settings', authenticateToken, requireAdminHubAccess, async (req, res) => {
   try {
     const current = (await db.get('notification_settings')) || {};
     const updated = { ...current, ...req.body, updatedAt: new Date().toISOString(), updatedBy: req.user.name };
@@ -10973,7 +10973,7 @@ app.put('/api/admin/notification-settings', authenticateToken, requireAdmin, asy
 // ============================================================
 
 // List all email templates
-app.get('/api/admin/email-templates', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin/email-templates', authenticateToken, requireAdminHubAccess, async (req, res) => {
   try {
     const templates = await getEmailTemplates();
     res.json(templates);
@@ -10984,7 +10984,7 @@ app.get('/api/admin/email-templates', authenticateToken, requireAdmin, async (re
 });
 
 // Get all variable pool definitions (for admin reference / future custom templates)
-app.get('/api/admin/email-templates/pools', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin/email-templates/pools', authenticateToken, requireAdminHubAccess, async (req, res) => {
   try {
     res.json({ pools: VARIABLE_POOLS, templateMapping: TEMPLATE_POOL_MAPPING });
   } catch (error) {
@@ -10994,7 +10994,7 @@ app.get('/api/admin/email-templates/pools', authenticateToken, requireAdmin, asy
 });
 
 // Get a single email template by ID
-app.get('/api/admin/email-templates/:id', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin/email-templates/:id', authenticateToken, requireAdminHubAccess, async (req, res) => {
   try {
     const templates = await getEmailTemplates();
     const template = templates.find(t => t.id === req.params.id);
@@ -11007,7 +11007,7 @@ app.get('/api/admin/email-templates/:id', authenticateToken, requireAdmin, async
 });
 
 // Update an email template (subject, body, htmlBody)
-app.put('/api/admin/email-templates/:id', authenticateToken, requireAdmin, async (req, res) => {
+app.put('/api/admin/email-templates/:id', authenticateToken, requireAdminHubAccess, async (req, res) => {
   try {
     const templates = await getEmailTemplates();
     const idx = templates.findIndex(t => t.id === req.params.id);
@@ -11036,7 +11036,7 @@ app.put('/api/admin/email-templates/:id', authenticateToken, requireAdmin, async
 });
 
 // Reset an email template to its shipped default
-app.post('/api/admin/email-templates/:id/reset', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/admin/email-templates/:id/reset', authenticateToken, requireAdminHubAccess, async (req, res) => {
   try {
     const templates = await getEmailTemplates();
     const idx = templates.findIndex(t => t.id === req.params.id);
@@ -11065,7 +11065,7 @@ app.post('/api/admin/email-templates/:id/reset', authenticateToken, requireAdmin
 });
 
 // Preview an email template rendered with example data
-app.post('/api/admin/email-templates/:id/preview', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/admin/email-templates/:id/preview', authenticateToken, requireAdminHubAccess, async (req, res) => {
   try {
     const templates = await getEmailTemplates();
     const template = templates.find(t => t.id === req.params.id);
@@ -11091,7 +11091,7 @@ app.post('/api/admin/email-templates/:id/preview', authenticateToken, requireAdm
 });
 
 // Send a test email using a template (to the admin's own email)
-app.post('/api/admin/email-templates/:id/test-send', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/admin/email-templates/:id/test-send', authenticateToken, requireAdminHubAccess, async (req, res) => {
   try {
     const templates = await getEmailTemplates();
     const template = templates.find(t => t.id === req.params.id);
@@ -11130,7 +11130,7 @@ app.post('/api/admin/email-templates/:id/test-send', authenticateToken, requireA
 // ============================================================
 
 // Get reminder settings
-app.get('/api/admin/reminder-settings', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin/reminder-settings', authenticateToken, requireAdminHubAccess, async (req, res) => {
   try {
     const settings = (await db.get('reminder_settings')) || {
       enabled: true,
@@ -11149,7 +11149,7 @@ app.get('/api/admin/reminder-settings', authenticateToken, requireAdmin, async (
 });
 
 // Update reminder settings
-app.put('/api/admin/reminder-settings', authenticateToken, requireAdmin, async (req, res) => {
+app.put('/api/admin/reminder-settings', authenticateToken, requireAdminHubAccess, async (req, res) => {
   try {
     const current = (await db.get('reminder_settings')) || {};
     const updated = { ...current, ...req.body, updatedAt: new Date().toISOString(), updatedBy: req.user.name };
@@ -11161,7 +11161,7 @@ app.put('/api/admin/reminder-settings', authenticateToken, requireAdmin, async (
 });
 
 // Manually trigger a notification scan (admin)
-app.post('/api/admin/reminders/trigger', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/admin/reminders/trigger', authenticateToken, requireAdminHubAccess, async (req, res) => {
   try {
     await scanAndQueueNotifications();
     const queue = (await db.get('pending_notifications')) || [];
@@ -11174,7 +11174,7 @@ app.post('/api/admin/reminders/trigger', authenticateToken, requireAdmin, async 
 });
 
 // Manually trigger queue processing (admin)
-app.post('/api/admin/notifications/process', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/admin/notifications/process', authenticateToken, requireAdminHubAccess, async (req, res) => {
   try {
     await processNotificationQueue();
     const queue = (await db.get('pending_notifications')) || [];
