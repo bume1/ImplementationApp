@@ -2910,6 +2910,85 @@ The previous all-or-nothing permission behavior for bulk delete has been resolve
           }
         ]
       },
+      'hidden-features': {
+        title: 'Hidden Features & Internal Notes',
+        description: 'Internal-only reference: undocumented behaviors, power-user features, and known issues',
+        icon: Icons.lock,
+        color: 'bg-gray-700',
+        visibleTo: ['super_admin', 'manager'],
+        portalSection: 'general',
+        articles: [
+          {
+            title: 'Multi-User Client Portals',
+            content: `Multiple users can share the same client portal (same URL slug and project access). When creating a client user in the Client Portal Admin Hub, use the **"Add to Existing Portal"** toggle to link a new login to an existing practice instead of creating a new one.
+
+The new user inherits the portal slug, assigned projects, logo, and HubSpot IDs from the primary account. Both users log in with their own credentials and see the same portal data.
+
+**Use case:** A practice has a lab director and an office manager who both need portal access.`
+          },
+          {
+            title: 'Old Portal URLs Auto-Redirect',
+            content: `When a client's practice name is changed, the system generates a new portal slug but preserves the old one in a \`previousSlugs\` list on the user record. Any request to an old portal URL (\`/portal/old-slug\`) is automatically redirected (302) to the current URL.
+
+This means shared links and bookmarks continue to work transparently across practice name changes. No manual outreach to clients is needed.`
+          },
+          {
+            title: 'Token Keys by Portal (localStorage)',
+            content: `Each portal stores its auth token under a different localStorage key. Useful when debugging login or session issues:
+
+| Portal | Token key | User key |
+|--------|-----------|----------|
+| Main app (Launch) | \`token\` | \`user\` |
+| Login hub | \`unified_token\` | \`unified_user\` |
+| Admin Hub | \`admin_token\` | \`admin_user\` |
+| Client Portal | \`portal_token\` | \`portal_user\` |
+
+The login hub sets all four simultaneously on login. Sign-out from any portal now clears all keys to prevent phantom sessions.`
+          },
+          {
+            title: 'Known Issue: Task ID Type Coercion',
+            content: `**Status:** Active (by design)
+**Severity:** Low
+**Affected:** Launch App task operations
+
+Tasks can have numeric OR string IDs depending on whether they were created from templates or via the UI. The server normalizes IDs in most operations using double comparison (\`t.id === parseInt(taskId) || String(t.id) === String(taskId)\`), but edge cases exist in CSV import and dependency linking.
+
+**If you see:** A task update that silently does nothing, or a dependency link that doesn't resolve — ID type mismatch is the likely cause. Report it so it can be patched.`
+          },
+          {
+            title: 'Known Issue: Activity Log Truncates at 500 Entries',
+            content: `**Status:** Active (by design)
+**Severity:** Low
+**Affected:** Admin Hub activity tracking
+
+The activity log permanently drops the oldest entries once it exceeds 500 records. The limit is configurable via the \`ACTIVITY_LOG_MAX_ENTRIES\` environment variable but defaults to 500.
+
+**Workaround:** If long-term audit trails are needed, export activity data periodically before the limit is hit. There is no built-in archive mechanism.`
+          },
+          {
+            title: 'Known Issue: HubSpot Token Lost on Server Restart',
+            content: `**Status:** Active (by design)
+**Severity:** Low
+**Affected:** HubSpot integration
+
+HubSpot OAuth tokens are cached in-memory with a 60-second refresh buffer. Tokens are lost on server restart and require a fresh handshake, meaning the first HubSpot operation after a restart may be slow.
+
+**Workaround:** No manual action needed — the system re-authenticates automatically. If HubSpot operations fail immediately after a restart, wait 30 seconds and retry.`
+          },
+          {
+            title: 'Known Issue: Bulk Operations Not Atomic',
+            content: `**Status:** Partially resolved
+**Severity:** Low
+**Affected:** Launch App bulk task operations
+
+Bulk task operations have no transaction support. If a bulk update fails midway, some tasks may be modified while others are not.
+
+Bulk delete now uses partial success — tasks the user can't delete are skipped and reported in the response rather than blocking the entire batch.
+
+**Workaround:** For large bulk updates, do them in smaller batches of 10–20 tasks to limit exposure to mid-operation failures.`
+          }
+        ]
+      },
       'developer-docs': {
         title: 'Developer Guide: Knowledge Hub',
         description: 'How to add, edit, and manage Knowledge Hub content',
