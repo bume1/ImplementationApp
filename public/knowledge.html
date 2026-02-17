@@ -3947,9 +3947,28 @@ This renders as color-coded sections with distinct visual styling.`
       }, [token, isAdmin]);
 
       // Compute visible guides with 5-tier filtering
+      // Always use hardcoded visibleTo/portalSection as the authoritative source for
+      // access control — the DB copy may be stale (seeded before visibleTo arrays were set).
+      // Guide content (articles) still comes from the DB when available.
       const visibleGuides = useMemo(() => {
         if (apiGuides.length > 0) {
-          return apiGuides.map(guide => [guide.key, { ...guide, icon: Icons[guide.icon] || Icons.book }]);
+          const dbKeys = new Set(apiGuides.map(g => g.key));
+
+          // DB guides: filter using hardcoded visibleTo (overrides potentially stale DB value)
+          const fromDb = apiGuides
+            .filter(guide => {
+              const hardcoded = guides[guide.key];
+              const effectiveVisibleTo = hardcoded ? (hardcoded.visibleTo || []) : (guide.visibleTo || []);
+              const effectiveSection = hardcoded ? (hardcoded.portalSection || guide.portalSection) : guide.portalSection;
+              return canUserSeeGuide(userTier, user, { ...guide, visibleTo: effectiveVisibleTo, portalSection: effectiveSection });
+            })
+            .map(guide => [guide.key, { ...guide, icon: Icons[guide.icon] || Icons.book }]);
+
+          // Hardcoded-only guides not yet in the DB (e.g. newly added guides)
+          const fromHardcoded = Object.entries(guides)
+            .filter(([key, guide]) => !dbKeys.has(key) && canUserSeeGuide(userTier, user, guide));
+
+          return [...fromDb, ...fromHardcoded];
         }
         return Object.entries(guides).filter(([key, guide]) => canUserSeeGuide(userTier, user, guide));
       }, [apiGuides, userTier, user]);
