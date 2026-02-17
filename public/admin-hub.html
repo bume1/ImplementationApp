@@ -423,10 +423,10 @@
       // Managers can only see Dashboard and Service Portal (no Inbox or User Management)
       const allMenuItems = [
         { id: 'dashboard', label: 'Dashboard', icon: Icons.home, color: 'text-primary-500', superAdminOnly: false },
-        { id: 'inbox', label: 'Inbox', icon: Icons.inbox, color: 'text-orange-500', superAdminOnly: true },
+        { id: 'inbox', label: 'Inbox', icon: Icons.inbox, color: 'text-primary-500', superAdminOnly: true },
         { id: 'users', label: 'User Management', icon: Icons.users, color: 'text-primary-500', superAdminOnly: true },
-        { id: 'service_portal', label: 'Service Portal', icon: Icons.clipboard, color: 'text-success-500', superAdminOnly: false },
-        { id: 'notifications', label: 'Notifications', icon: Icons.bell, color: 'text-red-500', superAdminOnly: false },
+        { id: 'service_portal', label: 'Service Portal', icon: Icons.clipboard, color: 'text-primary-500', superAdminOnly: false },
+        { id: 'notifications', label: 'Notifications', icon: Icons.bell, color: 'text-primary-500', superAdminOnly: false },
       ];
 
       // Filter menu items: Super Admin sees all, Manager only sees non-superAdminOnly items
@@ -487,12 +487,12 @@
               <p className="px-4 py-2 mt-6 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">External Apps</p>
               <div className="space-y-1">
                 <button onClick={() => openExternalApp('/thrive365labslaunch')} className="w-full text-left px-4 py-3 rounded-xl sidebar-link flex items-center gap-3 text-gray-600 hover:text-gray-900 group">
-                  <span className="text-purple-500 group-hover:text-purple-600">{Icons.folder}</span>
+                  <span className="text-primary-500 group-hover:text-primary-600">{Icons.folder}</span>
                   <span className="font-medium text-sm">Implementations</span>
                   <span className="ml-auto opacity-0 group-hover:opacity-100 transition">{Icons.externalLink}</span>
                 </button>
                 <button onClick={() => openExternalApp('/portal')} className="w-full text-left px-4 py-3 rounded-xl sidebar-link flex items-center gap-3 text-gray-600 hover:text-gray-900 group">
-                  <span className="text-blue-500 group-hover:text-blue-600">{Icons.users}</span>
+                  <span className="text-primary-500 group-hover:text-primary-600">{Icons.users}</span>
                   <span className="font-medium text-sm">Client Portal</span>
                   <span className="ml-auto opacity-0 group-hover:opacity-100 transition">{Icons.externalLink}</span>
                 </button>

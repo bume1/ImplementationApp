@@ -3171,6 +3171,235 @@ This renders as color-coded sections with distinct visual styling.`
       );
     };
 
+    // ============== FEATURE REFERENCE DATA ==============
+    const FEATURE_MAP = {
+      super_admin: [
+        { portal: 'Admin Hub', icon: Icons.admin, colorClass: 'bg-accent', features: [
+          'User account creation & permission management',
+          'Live dashboard stats (users, projects, reports, clients)',
+          'Inbox: password reset approvals & feedback review',
+          'Notifications management',
+          'Service portal administration'
+        ]},
+        { portal: 'Implementations', icon: Icons.launch, colorClass: 'bg-primary-500', features: [
+          '10-phase project lifecycle tracking',
+          'Create, clone & manage projects',
+          'Task & subtask management with dependencies',
+          'Bulk task operations (update & delete)',
+          'Template library (create, clone, import/export)',
+          'CSV import/export for tasks',
+          'HubSpot CRM sync',
+          'Client milestone visibility controls',
+          'Progress reporting dashboard'
+        ]},
+        { portal: 'Service Portal', icon: Icons.service, colorClass: 'bg-success-600', features: [
+          'Create & manage service reports',
+          'Assign service visits to vendors',
+          'Validation report management',
+          'PDF report generation',
+          'Full report history'
+        ]},
+        { portal: 'Client Portal Admin', icon: Icons.client, colorClass: 'bg-purple-600', features: [
+          'Publish announcements',
+          'Manage client documents',
+          'Inventory template & submissions review',
+          'Support ticket oversight',
+          'Custom domain configuration'
+        ]},
+        { portal: 'Knowledge Hub', icon: Icons.book, colorClass: 'bg-indigo-600', features: [
+          'All portal guides including internal docs',
+          'Known issues log',
+          'Admin-only technical documentation',
+          'Role-specific workflow walkthroughs'
+        ]}
+      ],
+      manager: [
+        { portal: 'Admin Hub', icon: Icons.admin, colorClass: 'bg-accent', features: [
+          'Dashboard stats overview',
+          'Service portal administration',
+          'View system activity'
+        ]},
+        { portal: 'Service Portal', icon: Icons.service, colorClass: 'bg-success-600', features: [
+          'Manage & assign service visits to vendors',
+          'Review submitted service reports',
+          'Validation report oversight',
+          'Full report history'
+        ]},
+        { portal: 'Client Portal Admin', icon: Icons.client, colorClass: 'bg-purple-600', features: [
+          'Publish announcements',
+          'Manage client documents',
+          'Inventory review',
+          'Support ticket oversight'
+        ]},
+        { portal: 'Knowledge Hub', icon: Icons.book, colorClass: 'bg-indigo-600', features: [
+          'All portal guides',
+          'Role-specific workflow walkthroughs',
+          'Internal documentation'
+        ]}
+      ],
+      vendor: [
+        { portal: 'Service Portal', icon: Icons.service, colorClass: 'bg-success-600', features: [
+          'Submit service reports',
+          'View assigned service visits',
+          'Complete validation reports',
+          'View your report history'
+        ]},
+        { portal: 'Knowledge Hub', icon: Icons.book, colorClass: 'bg-indigo-600', features: [
+          'Service portal guides',
+          'Role-specific workflow walkthroughs'
+        ]}
+      ],
+      client: [
+        { portal: 'My Portal', icon: Icons.hub, colorClass: 'bg-primary-500', features: [
+          'View implementation milestones & progress',
+          'Submit weekly inventory updates',
+          'View announcements from Thrive 365 Labs',
+          'Access shared documents & resources',
+          'Submit and track support tickets',
+          'View signed service report history'
+        ]},
+        { portal: 'Knowledge Hub', icon: Icons.book, colorClass: 'bg-indigo-600', features: [
+          'Client portal guides',
+          'Workflow walkthroughs'
+        ]}
+      ]
+    };
+
+    const getTeamMemberFeatures = (user) => {
+      const features = [];
+      if (user.hasImplementationsAccess || (user.assignedProjects && user.assignedProjects.length > 0)) {
+        features.push({ portal: 'Implementations', icon: Icons.launch, colorClass: 'bg-primary-500', features: [
+          'Track assigned project progress',
+          'Update task & subtask completion',
+          'Add notes and file attachments to tasks',
+          'View project phases & milestones',
+          'Client milestone visibility controls'
+        ]});
+      }
+      if (user.hasServicePortalAccess) {
+        features.push({ portal: 'Service Portal', icon: Icons.service, colorClass: 'bg-success-600', features: [
+          'Create & submit service reports',
+          'Complete assigned service visits',
+          'Submit validation reports',
+          'View your report history'
+        ]});
+      }
+      if (user.hasAdminHubAccess) {
+        features.push({ portal: 'Admin Hub', icon: Icons.admin, colorClass: 'bg-accent', features: [
+          'User account management',
+          'Dashboard stats overview',
+          'Process inbox requests'
+        ]});
+      }
+      if (user.hasClientPortalAdminAccess) {
+        features.push({ portal: 'Client Portal Admin', icon: Icons.client, colorClass: 'bg-purple-600', features: [
+          'Publish announcements',
+          'Manage client documents',
+          'Inventory review'
+        ]});
+      }
+      features.push({ portal: 'Knowledge Hub', icon: Icons.book, colorClass: 'bg-indigo-600', features: [
+        'Portal guides for your access areas',
+        'Role-specific workflow walkthroughs'
+      ]});
+      return features;
+    };
+
+    const ROLE_TABS = [
+      { key: 'super_admin', label: 'Super Admin' },
+      { key: 'manager', label: 'Manager' },
+      { key: 'team_member', label: 'Team Member' },
+      { key: 'vendor', label: 'Vendor' },
+      { key: 'client', label: 'Client' }
+    ];
+
+    // ============== FEATURE OVERVIEW COMPONENT ==============
+    const FeatureOverview = ({ userTier, user }) => {
+      const canSwitchRoles = userTier === 'super_admin' || userTier === 'manager';
+      const [activeTab, setActiveTab] = useState(userTier);
+
+      const getFeatures = (tier) => {
+        if (tier === 'team_member') return getTeamMemberFeatures(user);
+        return FEATURE_MAP[tier] || [];
+      };
+
+      const displayFeatures = getFeatures(activeTab);
+
+      const tierLabel = {
+        super_admin: 'Super Admin', manager: 'Manager',
+        team_member: 'Team Member', vendor: 'Vendor Technician', client: 'Client'
+      };
+
+      return (
+        <div id="section-feature-overview" className="mb-8">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <div className="flex items-center gap-3 mb-1">
+                <h2 className="text-2xl font-bold text-accent">Feature Reference</h2>
+                <span className="bg-primary-100 text-primary-700 text-xs font-semibold px-2.5 py-1 rounded-full uppercase tracking-wide">Quick Reference</span>
+              </div>
+              <p className="text-gray-500 text-sm">
+                {canSwitchRoles
+                  ? 'Overview of features available per role across the platform.'
+                  : `Features available for your ${tierLabel[userTier]} account.`}
+              </p>
+            </div>
+          </div>
+
+          {/* Role tabs (admin/manager only) */}
+          {canSwitchRoles && (
+            <div className="flex flex-wrap gap-2 mb-5">
+              {ROLE_TABS.map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    activeTab === tab.key
+                      ? 'bg-primary-500 text-white shadow-sm'
+                      : 'bg-white text-gray-600 border border-gray-200 hover:border-primary-300 hover:text-primary-600'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Team member note when viewing their own view */}
+          {userTier === 'team_member' && (
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-100 rounded-lg text-sm text-blue-700">
+              Showing features enabled for your account. Contact your admin to adjust access permissions.
+            </div>
+          )}
+
+          {/* Feature cards grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {displayFeatures.map((item, idx) => (
+              <div key={idx} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <div className="flex items-center gap-3 p-4 border-b border-gray-50">
+                  <div className={`${item.colorClass} text-white rounded-lg w-10 h-10 flex items-center justify-center flex-shrink-0`}>
+                    {item.icon}
+                  </div>
+                  <h3 className="font-semibold text-gray-800 text-sm">{item.portal}</h3>
+                </div>
+                <ul className="p-4 space-y-2">
+                  {item.features.map((f, fi) => (
+                    <li key={fi} className="flex items-start gap-2 text-sm text-gray-600">
+                      <svg className="w-4 h-4 text-primary-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/>
+                      </svg>
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    };
+
     // ============== GUIDE SECTION COMPONENT ==============
     const GuideSection = ({ guide, userTier, forceOpen, searchTerm }) => {
       const [isOpen, setIsOpen] = useState(false);
@@ -3422,6 +3651,15 @@ This renders as color-coded sections with distinct visual styling.`
                 </span>
                 <span className="font-medium text-sm">Your Workflow</span>
               </button>
+              <button
+                onClick={() => { onNavigate('feature-overview'); onClose(); }}
+                className={`w-full text-left px-4 py-2.5 mb-1 sidebar-link flex items-center gap-3 ${activeSection === 'feature-overview' ? 'active' : 'text-gray-600 hover:text-gray-900'}`}
+              >
+                <span className={activeSection === 'feature-overview' ? 'text-white' : 'text-primary-500'}>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z"/></svg>
+                </span>
+                <span className="font-medium text-sm">Feature Reference</span>
+              </button>
 
               {/* Portal Section Groups */}
               {Object.entries(groupedSections).map(([groupLabel, groupGuides]) => {
@@ -3664,7 +3902,7 @@ This renders as color-coded sections with distinct visual styling.`
           });
         }, { rootMargin: '-20% 0px -70% 0px' });
 
-        const allKeys = ['walkthroughs', ...visibleGuides.map(([key]) => key)];
+        const allKeys = ['walkthroughs', 'feature-overview', ...visibleGuides.map(([key]) => key)];
         allKeys.forEach(key => {
           const el = document.getElementById(`section-${key}`);
           if (el) observer.observe(el);
@@ -3727,6 +3965,11 @@ This renders as color-coded sections with distinct visual styling.`
             {/* Workflow Walkthrough (hidden when searching) */}
             {!searchTerm && (
               <WorkflowWalkthrough userTier={userTier} onNavigate={scrollToSection} />
+            )}
+
+            {/* Feature Reference (hidden when searching) */}
+            {!searchTerm && (
+              <FeatureOverview userTier={userTier} user={user} />
             )}
 
             {/* No Results */}
