@@ -4445,11 +4445,13 @@
       const [saving, setSaving] = useState(false);
       const [message, setMessage] = useState(null);
       const [showCreateForm, setShowCreateForm] = useState(false);
+      const [addToExisting, setAddToExisting] = useState(false);
       const [createForm, setCreateForm] = useState({
         email: '',
         name: '',
         password: '',
         practiceName: '',
+        existingPortalSlug: '',
         logo: '',
         hubspotCompanyId: '',
         hubspotDealId: '',
@@ -4550,8 +4552,18 @@
         setMessage(null);
 
         // Validate required fields
-        if (!createForm.email || !createForm.name || !createForm.password || !createForm.practiceName) {
-          setMessage({ type: 'error', text: 'Email, name, password, and practice name are required' });
+        if (!createForm.email || !createForm.name || !createForm.password) {
+          setMessage({ type: 'error', text: 'Email, name, and password are required' });
+          setSaving(false);
+          return;
+        }
+        if (addToExisting && !createForm.existingPortalSlug) {
+          setMessage({ type: 'error', text: 'Please select an existing portal' });
+          setSaving(false);
+          return;
+        }
+        if (!addToExisting && !createForm.practiceName) {
+          setMessage({ type: 'error', text: 'Practice name is required for new portals' });
           setSaving(false);
           return;
         }
@@ -4575,11 +4587,13 @@
             await loadClients();
             // Reset and close form
             setShowCreateForm(false);
+            setAddToExisting(false);
             setCreateForm({
               email: '',
               name: '',
               password: '',
               practiceName: '',
+              existingPortalSlug: '',
               logo: '',
               hubspotCompanyId: '',
               hubspotDealId: '',
@@ -4700,9 +4714,48 @@
               <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
                 <div className="p-6 border-b">
                   <h2 className="text-xl font-bold text-accent">Add New Client User</h2>
-                  <p className="text-sm text-gray-500 mt-1">Create a new client portal account (syncs with Admin Hub)</p>
+                  <p className="text-sm text-gray-500 mt-1">Create a new account or add a user to an existing portal</p>
                 </div>
                 <div className="p-6 space-y-4">
+                  {/* Portal mode toggle */}
+                  <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm font-medium">
+                    <button
+                      type="button"
+                      onClick={() => { setAddToExisting(false); setCreateForm(f => ({...f, existingPortalSlug: ''})); }}
+                      className={`flex-1 py-2 transition-colors ${!addToExisting ? 'bg-primary text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                    >
+                      New Portal
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAddToExisting(true)}
+                      className={`flex-1 py-2 transition-colors ${addToExisting ? 'bg-primary text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                    >
+                      Add to Existing Portal
+                    </button>
+                  </div>
+
+                  {/* Portal picker (existing mode only) */}
+                  {addToExisting && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Select Portal <span className="text-red-500">*</span></label>
+                      <select
+                        value={createForm.existingPortalSlug}
+                        onChange={(e) => setCreateForm({...createForm, existingPortalSlug: e.target.value})}
+                        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      >
+                        <option value="">-- Select a portal --</option>
+                        {clients.reduce((acc, c) => {
+                          if (c.slug && !acc.find(p => p.slug === c.slug)) acc.push(c);
+                          return acc;
+                        }, []).map(p => (
+                          <option key={p.slug} value={p.slug}>{p.practiceName || p.slug} — /portal/{p.slug}</option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-400 mt-1">The new user will share access to this portal and inherit its settings</p>
+                    </div>
+                  )}
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Email <span className="text-red-500">*</span></label>
                     <input
@@ -4737,76 +4790,84 @@
                     />
                     <p className="text-xs text-gray-400 mt-1">User will be required to change password on first login</p>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Practice Name <span className="text-red-500">*</span></label>
-                    <input
-                      type="text"
-                      value={createForm.practiceName}
-                      onChange={(e) => setCreateForm({...createForm, practiceName: e.target.value})}
-                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                      placeholder="e.g., ABC Medical Labs"
-                      required
-                    />
-                    <p className="text-xs text-gray-400 mt-1">Will auto-generate portal URL slug</p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Practice Logo</label>
-                    <div className="flex items-center gap-4">
-                      {createForm.logo && <img src={createForm.logo} alt="Logo" className="h-16 w-16 object-contain border rounded" />}
-                      <input type="file" ref={createLogoInputRef} accept="image/png,image/jpeg" onChange={(e) => handleLogoUpload(e, 'create')} className="hidden" />
-                      <button type="button" onClick={() => createLogoInputRef.current?.click()}
-                        className="px-4 py-2 border border-primary text-primary rounded-lg hover:bg-primary hover:text-white transition flex items-center gap-2 text-sm font-medium">
-                        {Icons.upload} Upload Logo
-                      </button>
-                      {createForm.logo && <button type="button" onClick={() => setCreateForm({...createForm, logo: ''})} className="text-red-600 text-sm hover:text-red-800">Remove</button>}
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">Max 2MB, PNG or JPEG</p>
-                  </div>
-                  <div className="border-t pt-4">
-                    <p className="text-sm font-medium text-gray-700 mb-3">HubSpot Integration IDs (Optional)</p>
-                    <div className="space-y-3">
+
+                  {/* New portal fields (hidden when adding to existing) */}
+                  {!addToExisting && (
+                    <>
                       <div>
-                        <label className="block text-xs text-gray-500 mb-1">Company ID</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Practice Name <span className="text-red-500">*</span></label>
                         <input
                           type="text"
-                          value={createForm.hubspotCompanyId}
-                          onChange={(e) => setCreateForm({...createForm, hubspotCompanyId: e.target.value})}
-                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
-                          placeholder="e.g., 12345678"
+                          value={createForm.practiceName}
+                          onChange={(e) => setCreateForm({...createForm, practiceName: e.target.value})}
+                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                          placeholder="e.g., ABC Medical Labs"
+                          required
                         />
+                        <p className="text-xs text-gray-400 mt-1">Will auto-generate portal URL slug</p>
                       </div>
                       <div>
-                        <label className="block text-xs text-gray-500 mb-1">Deal ID</label>
-                        <input
-                          type="text"
-                          value={createForm.hubspotDealId}
-                          onChange={(e) => setCreateForm({...createForm, hubspotDealId: e.target.value})}
-                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
-                          placeholder="e.g., 87654321"
-                        />
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Practice Logo</label>
+                        <div className="flex items-center gap-4">
+                          {createForm.logo && <img src={createForm.logo} alt="Logo" className="h-16 w-16 object-contain border rounded" />}
+                          <input type="file" ref={createLogoInputRef} accept="image/png,image/jpeg" onChange={(e) => handleLogoUpload(e, 'create')} className="hidden" />
+                          <button type="button" onClick={() => createLogoInputRef.current?.click()}
+                            className="px-4 py-2 border border-primary text-primary rounded-lg hover:bg-primary hover:text-white transition flex items-center gap-2 text-sm font-medium">
+                            {Icons.upload} Upload Logo
+                          </button>
+                          {createForm.logo && <button type="button" onClick={() => setCreateForm({...createForm, logo: ''})} className="text-red-600 text-sm hover:text-red-800">Remove</button>}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">Max 2MB, PNG or JPEG</p>
                       </div>
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Contact ID</label>
-                        <input
-                          type="text"
-                          value={createForm.hubspotContactId}
-                          onChange={(e) => setCreateForm({...createForm, hubspotContactId: e.target.value})}
-                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
-                          placeholder="e.g., 11223344"
-                        />
+                      <div className="border-t pt-4">
+                        <p className="text-sm font-medium text-gray-700 mb-3">HubSpot Integration IDs (Optional)</p>
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Company ID</label>
+                            <input
+                              type="text"
+                              value={createForm.hubspotCompanyId}
+                              onChange={(e) => setCreateForm({...createForm, hubspotCompanyId: e.target.value})}
+                              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                              placeholder="e.g., 12345678"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Deal ID</label>
+                            <input
+                              type="text"
+                              value={createForm.hubspotDealId}
+                              onChange={(e) => setCreateForm({...createForm, hubspotDealId: e.target.value})}
+                              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                              placeholder="e.g., 87654321"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Contact ID</label>
+                            <input
+                              type="text"
+                              value={createForm.hubspotContactId}
+                              onChange={(e) => setCreateForm({...createForm, hubspotContactId: e.target.value})}
+                              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                              placeholder="e.g., 11223344"
+                            />
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
+                    </>
+                  )}
                 </div>
                 <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
                   <button
                     onClick={() => {
                       setShowCreateForm(false);
+                      setAddToExisting(false);
                       setCreateForm({
                         email: '',
                         name: '',
                         password: '',
                         practiceName: '',
+                        existingPortalSlug: '',
                         logo: '',
                         hubspotCompanyId: '',
                         hubspotDealId: '',
