@@ -4,6 +4,32 @@
 
 ---
 
+### Version 2.20.0 - February 17, 2026
+
+#### New Features
+- Implement Knowledge Hub v2 with sidebar, search, 5-tier permissions, and workflow walkthroughs
+- Add Knowledge Hub v2 backend API endpoints
+- Add active/inactive account status to control notification delivery
+- Implement Features 1 & 2: Notification queue system and automated reminder triggers
+- Add email notifications for announcements and prep for thrive365labs.com domain
+- Add full report view for signing, expand activity tracking (rebased on main)
+
+#### Bug Fixes
+- Fix security vulnerabilities and edge cases in portal and server
+- Clean up HubSpot integrations and fix client portal bugs
+
+#### Improvements
+- Upgrade Knowledge Hub with 5-tier permissions, sidebar navigation, and full v1 API enhancements
+- Update email domain to thrive365labs.live and enhance Knowledge Hub with v2 API
+
+#### Changes
+- Remove debug console.log statements from assigned reports endpoint
+- Grant managers access to Notifications tab and lock inactive accounts out of all portals
+- Track announcement email delivery stats and log to activity feed
+- Optimize mobile visibility across all portal files
+- Optimize mobile visibility for app.js task views and layout
+
+
 ### Version 2.18.0 - February 16, 2026
 
 #### New Features
