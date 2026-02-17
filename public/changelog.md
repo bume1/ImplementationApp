@@ -109,6 +109,13 @@
 - Responsive improvements across all portal files
 
 
+### Version 2.19.0 - February 16, 2026
+
+#### New Features
+- Add test email endpoint for validating Resend setup
+- Add Resend email module for notification system
+
+
 ### Version 2.18.0 - February 16, 2026
 
 #### New Features
