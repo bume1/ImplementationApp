@@ -627,7 +627,92 @@ const api = {
     fetch(`${API_URL}/api/projects/${projectId}/tasks/${taskId}/files/${fileId}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json())
+    }).then(r => r.json()),
+
+  // Notification queue endpoints
+  getNotificationQueue: (token) =>
+    fetch(`${API_URL}/api/admin/notifications/queue`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  getNotificationLog: (token, limit) =>
+    fetch(`${API_URL}/api/admin/notifications/log?limit=${limit || 50}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  getNotificationStats: (token) =>
+    fetch(`${API_URL}/api/admin/notifications/stats`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  cancelNotification: (token, id) =>
+    fetch(`${API_URL}/api/admin/notifications/cancel/${id}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  retryNotification: (token, id) =>
+    fetch(`${API_URL}/api/admin/notifications/retry/${id}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  processNotificationQueue: (token) =>
+    fetch(`${API_URL}/api/admin/notifications/process`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  triggerNotificationScan: (token) =>
+    fetch(`${API_URL}/api/admin/reminders/trigger`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  // Email sending
+  sendEmail: (token, data) =>
+    fetch(`${API_URL}/api/email/send`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  sendProgressUpdate: (token, projectId, data) =>
+    fetch(`${API_URL}/api/email/send-progress-update/${projectId}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(data || {})
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  getEmailHistory: (token, projectId) =>
+    fetch(`${API_URL}/api/email/history${projectId ? '?projectId=' + projectId : ''}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  // Notification/Reminder settings
+  getNotificationSettings: (token) =>
+    fetch(`${API_URL}/api/admin/notification-settings`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  updateNotificationSettings: (token, data) =>
+    fetch(`${API_URL}/api/admin/notification-settings`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  getReminderSettings: (token) =>
+    fetch(`${API_URL}/api/admin/reminder-settings`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  updateReminderSettings: (token, data) =>
+    fetch(`${API_URL}/api/admin/reminder-settings`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' }))
 };
 
 // ============== SHARED HEADER COMPONENT ==============
@@ -3252,6 +3337,11 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
   const [showEditProject, setShowEditProject] = useState(false);
   const [collapsedPhases, setCollapsedPhases] = useState([]);
   const [activeValidations, setActiveValidations] = useState([]);
+  const [showEmailComposer, setShowEmailComposer] = useState(false);
+  const [emailForm, setEmailForm] = useState({ to: [], subject: '', message: '' });
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailHistory, setEmailHistory] = useState([]);
+  const [showEmailHistory, setShowEmailHistory] = useState(false);
 
   const isAdmin = user.role === 'admin';
   const userAccessLevel = isAdmin ? 'edit' : ((user.projectAccessLevels || {})[project.id] || 'edit');
@@ -4425,6 +4515,28 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                     className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded hover:bg-gray-200"
                   >
                     Edit Project Settings
+                  </button>
+                )}
+                {isAdmin && (
+                  <button
+                    onClick={() => setShowEmailComposer(true)}
+                    className="px-2 py-1 bg-[#045E9F] text-white text-xs rounded hover:bg-[#00205A]"
+                  >
+                    Send Email
+                  </button>
+                )}
+                {isAdmin && (
+                  <button
+                    onClick={async () => {
+                      if (confirm('Send a progress update email to all client users for this project?')) {
+                        const result = await api.sendProgressUpdate(token, project.id);
+                        if (result.error) { alert(result.error); return; }
+                        alert(`Progress update queued for ${result.queued} recipient(s)`);
+                      }
+                    }}
+                    className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
+                  >
+                    Send Progress Update
                   </button>
                 )}
               </div>
@@ -5967,6 +6079,77 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
         )}
 
         {/* Edit Project Modal */}
+        {/* Email Composer Modal */}
+        {showEmailComposer && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold">Send Email</h2>
+                <button onClick={() => setShowEmailComposer(false)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Recipients (comma-separated emails)</label>
+                  <input
+                    value={emailForm.to.join(', ')}
+                    onChange={(e) => setEmailForm({...emailForm, to: e.target.value.split(',').map(s => s.trim()).filter(Boolean)})}
+                    placeholder="email@example.com, another@example.com"
+                    className="w-full px-3 py-2 border rounded-md text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Subject</label>
+                  <input
+                    value={emailForm.subject}
+                    onChange={(e) => setEmailForm({...emailForm, subject: e.target.value})}
+                    placeholder="Email subject"
+                    className="w-full px-3 py-2 border rounded-md text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Message</label>
+                  <textarea
+                    value={emailForm.message}
+                    onChange={(e) => setEmailForm({...emailForm, message: e.target.value})}
+                    placeholder="Email body..."
+                    rows={6}
+                    className="w-full px-3 py-2 border rounded-md text-sm"
+                  />
+                </div>
+                <div className="flex gap-3 justify-end">
+                  <button
+                    onClick={() => setShowEmailComposer(false)}
+                    className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!emailForm.to.length || !emailForm.subject || !emailForm.message) { alert('Please fill in all fields'); return; }
+                      setEmailSending(true);
+                      const result = await api.sendEmail(token, {
+                        to: emailForm.to,
+                        subject: emailForm.subject,
+                        message: emailForm.message,
+                        projectId: project.id
+                      });
+                      setEmailSending(false);
+                      if (result.error) { alert(result.error); return; }
+                      alert(`${result.queued} email(s) queued for delivery`);
+                      setShowEmailComposer(false);
+                      setEmailForm({ to: [], subject: '', message: '' });
+                    }}
+                    disabled={emailSending}
+                    className="px-4 py-2 text-sm text-white bg-[#045E9F] rounded-md hover:bg-[#00205A] disabled:opacity-50"
+                  >
+                    {emailSending ? 'Sending...' : 'Queue Email'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {showEditProject && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-lg shadow-xl max-w-lg w-full p-6">

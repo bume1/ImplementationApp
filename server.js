@@ -13,7 +13,7 @@ const googledrive = require('./googledrive');
 const pdfGenerator = require('./pdf-generator');
 const changelogGenerator = require('./changelog-generator');
 const config = require('./config');
-const { sendEmail } = require('./email');
+const { sendEmail, sendBulkEmail } = require('./email');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -233,6 +233,373 @@ const logActivity = async (userId, userName, action, entityType, entityId, detai
     await db.set('activity_log', activities);
   } catch (err) {
     console.error('Failed to log activity:', err);
+  }
+};
+
+// ============================================================
+// NOTIFICATION QUEUE SYSTEM (Feature 1)
+// ============================================================
+
+// Create a notification queue entry
+const queueNotification = async (type, recipientUserId, recipientEmail, recipientName, templateData, options = {}) => {
+  try {
+    const queue = (await db.get('pending_notifications')) || [];
+    // Dedup: skip if identical pending notification exists
+    const isDuplicate = queue.some(n =>
+      n.type === type &&
+      n.recipientEmail === recipientEmail &&
+      n.relatedEntityId === (options.relatedEntityId || null) &&
+      n.status === 'pending'
+    );
+    if (isDuplicate) return null;
+
+    const notification = {
+      id: uuidv4(),
+      type,
+      recipientUserId,
+      recipientEmail,
+      recipientName,
+      channel: 'email',
+      triggerDate: options.triggerDate || new Date().toISOString(),
+      status: 'pending',
+      retryCount: 0,
+      maxRetries: config.NOTIFICATION_MAX_RETRIES,
+      relatedEntityId: options.relatedEntityId || null,
+      relatedEntityType: options.relatedEntityType || null,
+      templateData: {
+        subject: templateData.subject,
+        body: templateData.body,
+        htmlBody: templateData.htmlBody || null,
+        ctaUrl: templateData.ctaUrl || null,
+        ctaLabel: templateData.ctaLabel || null
+      },
+      sentAt: null,
+      failedAt: null,
+      failureReason: null,
+      createdAt: new Date().toISOString(),
+      createdBy: options.createdBy || 'system'
+    };
+    queue.push(notification);
+    await db.set('pending_notifications', queue);
+    return notification;
+  } catch (err) {
+    console.error('Failed to queue notification:', err);
+    return null;
+  }
+};
+
+// Process the notification queue — sends pending notifications whose triggerDate has passed
+const processNotificationQueue = async () => {
+  try {
+    const settings = (await db.get('notification_settings')) || { enabled: true };
+    if (!settings.enabled) return;
+
+    const queue = (await db.get('pending_notifications')) || [];
+    const now = new Date();
+    const pending = queue.filter(n => n.status === 'pending' && new Date(n.triggerDate) <= now);
+
+    if (pending.length === 0) return;
+
+    // Daily send limit check
+    const log = (await db.get('notification_log')) || [];
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    const sentToday = log.filter(n => n.sentAt && n.sentAt >= todayStart).length;
+    const remainingBudget = config.NOTIFICATION_DAILY_SEND_LIMIT - sentToday;
+    if (remainingBudget <= 0) {
+      console.warn('[QUEUE] Daily send limit reached, skipping processing');
+      return;
+    }
+
+    const toProcess = pending.slice(0, Math.min(pending.length, remainingBudget));
+    let sentCount = 0;
+    let failCount = 0;
+
+    for (const notification of toProcess) {
+      const idx = queue.findIndex(n => n.id === notification.id);
+      if (idx === -1) continue;
+
+      const result = await sendEmail(
+        notification.recipientEmail,
+        notification.templateData.subject,
+        notification.templateData.body,
+        { htmlBody: notification.templateData.htmlBody }
+      );
+
+      if (result.success) {
+        queue[idx].status = 'sent';
+        queue[idx].sentAt = new Date().toISOString();
+        sentCount++;
+      } else {
+        queue[idx].retryCount = (queue[idx].retryCount || 0) + 1;
+        queue[idx].failedAt = new Date().toISOString();
+        queue[idx].failureReason = result.error;
+        if (queue[idx].retryCount >= queue[idx].maxRetries) {
+          queue[idx].status = 'failed';
+        }
+        failCount++;
+      }
+    }
+
+    // Move sent/failed notifications to log archive
+    const completed = queue.filter(n => n.status === 'sent' || n.status === 'failed');
+    const remaining = queue.filter(n => n.status === 'pending' || n.status === 'cancelled');
+    if (completed.length > 0) {
+      log.unshift(...completed);
+      if (log.length > config.NOTIFICATION_LOG_MAX_ENTRIES) {
+        log.length = config.NOTIFICATION_LOG_MAX_ENTRIES;
+      }
+      await db.set('notification_log', log);
+    }
+    await db.set('pending_notifications', remaining);
+
+    if (sentCount > 0 || failCount > 0) {
+      console.log(`[QUEUE] Processed: ${sentCount} sent, ${failCount} failed, ${remaining.length} remaining`);
+    }
+  } catch (err) {
+    console.error('[QUEUE] Processing error:', err);
+  }
+};
+
+// ============================================================
+// NOTIFICATION TRIGGER SCANNER (Feature 2)
+// ============================================================
+
+const scanAndQueueNotifications = async () => {
+  try {
+    const reminderSettings = (await db.get('reminder_settings')) || { enabled: true, scenarios: {} };
+    if (!reminderSettings.enabled) return;
+    const scenarios = reminderSettings.scenarios || {};
+    const users = await getUsers();
+    const now = new Date();
+
+    // --- Scenario A: Service Report Follow-Ups ---
+    if (!scenarios.serviceReportFollowups || scenarios.serviceReportFollowups.enabled !== false) {
+      const followupDays = (scenarios.serviceReportFollowups && scenarios.serviceReportFollowups.reminderAfterDays) || config.SERVICE_REPORT_FOLLOWUP_DAYS;
+      const serviceReports = (await db.get('service_reports')) || [];
+      for (const report of serviceReports) {
+        const reportAge = Math.floor((now - new Date(report.createdAt)) / (1000 * 60 * 60 * 24));
+        if (reportAge < followupDays) continue;
+
+        // Missing client signature
+        if (report.status === 'signature_needed' || (!report.customerSignature && report.status !== 'submitted')) {
+          const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT && u.slug === report.clientSlug && u.email);
+          for (const client of clientUsers) {
+            await queueNotification(
+              'service_report_signature',
+              client.id, client.email, client.name,
+              {
+                subject: `Action needed: Service report for ${report.clientFacilityName || 'your facility'} awaits your signature`,
+                body: `A service report from ${report.technicianName || 'your technician'} on ${new Date(report.createdAt).toLocaleDateString()} requires your signature. Please review and sign at your earliest convenience.`,
+                ctaLabel: 'Review & Sign'
+              },
+              { relatedEntityId: report.id, relatedEntityType: 'service_report' }
+            );
+          }
+        }
+
+        // Not reviewed by admin
+        if (report.status && report.status !== 'submitted' && !report.adminReviewedAt) {
+          const admins = users.filter(u => u.role === config.ROLES.ADMIN && u.email);
+          for (const admin of admins) {
+            await queueNotification(
+              'service_report_review',
+              admin.id, admin.email, admin.name,
+              {
+                subject: `Service report pending review: ${report.clientFacilityName || 'Unknown facility'}`,
+                body: `A service report from ${report.technicianName || 'a technician'} for ${report.clientFacilityName || 'a client'} has been pending review for ${reportAge} days.`,
+                ctaLabel: 'Review Report'
+              },
+              { relatedEntityId: report.id, relatedEntityType: 'service_report' }
+            );
+          }
+        }
+      }
+    }
+
+    // --- Scenario B: Task Deadline Notifications ---
+    if (!scenarios.taskDeadlines || scenarios.taskDeadlines.enabled !== false) {
+      const daysBefore = (scenarios.taskDeadlines && scenarios.taskDeadlines.daysBefore) || config.TASK_DEADLINE_DAYS_BEFORE;
+      const escalationDays = (scenarios.taskDeadlines && scenarios.taskDeadlines.overdueEscalationDays) || config.TASK_OVERDUE_ESCALATION_DAYS;
+      const projects = await getProjects();
+      const activeProjects = projects.filter(p => p.status === 'active');
+
+      for (const project of activeProjects) {
+        const tasks = await getTasks(project.id);
+        for (const task of tasks) {
+          if (task.completed || !task.dueDate || !task.owner) continue;
+          const dueDate = new Date(task.dueDate);
+          const daysUntilDue = Math.floor((dueDate - now) / (1000 * 60 * 60 * 24));
+
+          // Find owner by email
+          const owner = users.find(u => u.email === task.owner);
+          if (!owner) continue;
+
+          // Approaching deadline
+          if (daysUntilDue >= 0 && daysBefore.includes(daysUntilDue)) {
+            const severity = daysUntilDue <= 1 ? 'high' : daysUntilDue <= 3 ? 'medium' : 'low';
+            await queueNotification(
+              'task_deadline',
+              owner.id, owner.email, owner.name,
+              {
+                subject: `Task due ${daysUntilDue === 0 ? 'today' : daysUntilDue === 1 ? 'tomorrow' : `in ${daysUntilDue} days`}: ${task.taskTitle} — ${project.name}`,
+                body: `"${task.taskTitle}" in ${task.phase} is due ${dueDate.toLocaleDateString()}. Project: ${project.name}.`,
+                ctaLabel: 'View Task'
+              },
+              { relatedEntityId: task.id?.toString(), relatedEntityType: 'task', createdBy: 'system' }
+            );
+          }
+
+          // Overdue
+          if (daysUntilDue < 0) {
+            const daysOverdue = Math.abs(daysUntilDue);
+            await queueNotification(
+              'task_overdue',
+              owner.id, owner.email, owner.name,
+              {
+                subject: `OVERDUE (${daysOverdue}d): ${task.taskTitle} — ${project.name}`,
+                body: `"${task.taskTitle}" in ${task.phase} was due ${dueDate.toLocaleDateString()} and is now ${daysOverdue} day(s) overdue. Project: ${project.name}.`,
+                ctaLabel: 'View Task'
+              },
+              { relatedEntityId: task.id?.toString(), relatedEntityType: 'task', createdBy: 'system' }
+            );
+
+            // Escalate to admin after threshold
+            if (daysOverdue >= escalationDays) {
+              const admins = users.filter(u => u.role === config.ROLES.ADMIN && u.email);
+              for (const admin of admins) {
+                await queueNotification(
+                  'task_overdue',
+                  admin.id, admin.email, admin.name,
+                  {
+                    subject: `ESCALATION: Task ${daysOverdue}d overdue — ${task.taskTitle} (${project.name})`,
+                    body: `"${task.taskTitle}" assigned to ${owner.name} in project "${project.name}" is ${daysOverdue} days overdue. Due date: ${dueDate.toLocaleDateString()}.`,
+                    ctaLabel: 'View Project'
+                  },
+                  { relatedEntityId: task.id?.toString(), relatedEntityType: 'task', createdBy: 'system' }
+                );
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // --- Scenario C: Client Portal Activity Nudges ---
+    if (!scenarios.clientActivityNudges || scenarios.clientActivityNudges.enabled !== false) {
+      const inventoryDays = (scenarios.clientActivityNudges && scenarios.clientActivityNudges.inventoryReminderDays) || config.INVENTORY_REMINDER_DAYS;
+      const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT && u.slug && u.email);
+      const slugsSeen = new Set();
+
+      for (const client of clientUsers) {
+        if (slugsSeen.has(client.slug)) continue;
+        slugsSeen.add(client.slug);
+
+        // Check notification preferences
+        if (client.notificationPreferences && client.notificationPreferences.inventoryReminders === false) continue;
+
+        const submissions = (await db.get(`inventory_submissions_${client.slug}`)) || [];
+        if (submissions.length === 0) continue; // No submissions ever, likely not onboarded yet
+        const lastSubmission = submissions.sort((a, b) => new Date(b.submittedAt || b.createdAt) - new Date(a.submittedAt || a.createdAt))[0];
+        const lastDate = new Date(lastSubmission.submittedAt || lastSubmission.createdAt);
+        const daysSince = Math.floor((now - lastDate) / (1000 * 60 * 60 * 24));
+
+        if (daysSince >= inventoryDays) {
+          const portalClients = clientUsers.filter(u => u.slug === client.slug);
+          for (const pc of portalClients) {
+            await queueNotification(
+              'inventory_reminder',
+              pc.id, pc.email, pc.name,
+              {
+                subject: `Reminder: Your weekly inventory update is due — ${pc.practiceName || 'Your Practice'}`,
+                body: `Your last inventory submission was ${daysSince} days ago. Please submit your weekly update to keep your lab supplies on track.`,
+                ctaLabel: 'Submit Inventory'
+              },
+              { relatedEntityId: pc.slug, relatedEntityType: 'inventory', createdBy: 'system' }
+            );
+          }
+        }
+      }
+    }
+
+    // --- Scenario D: Implementation Milestone Reminders ---
+    if (!scenarios.milestoneReminders || scenarios.milestoneReminders.enabled !== false) {
+      const thresholds = (scenarios.milestoneReminders && scenarios.milestoneReminders.milestoneThresholds) || config.MILESTONE_THRESHOLDS;
+      const goLiveDaysBefore = (scenarios.milestoneReminders && scenarios.milestoneReminders.goLiveDaysBefore) || config.GOLIVE_REMINDER_DAYS_BEFORE;
+      const projects = await getProjects();
+
+      for (const project of projects.filter(p => p.status === 'active')) {
+        const tasks = await getTasks(project.id);
+        if (tasks.length === 0) continue;
+
+        const completedCount = tasks.filter(t => t.completed).length;
+        const pct = Math.round((completedCount / tasks.length) * 100);
+        const lastNotified = project.lastMilestoneNotified || 0;
+
+        // Check if we've crossed a new threshold
+        for (const threshold of thresholds) {
+          if (pct >= threshold && lastNotified < threshold) {
+            // Notify client users tied to this project
+            const projectClients = users.filter(u =>
+              u.role === config.ROLES.CLIENT && u.email &&
+              (u.assignedProjects || []).includes(project.id)
+            );
+            for (const client of projectClients) {
+              await queueNotification(
+                'milestone_reached',
+                client.id, client.email, client.name,
+                {
+                  subject: `Milestone reached: ${project.name} is ${pct}% complete!`,
+                  body: `Great progress! ${project.name} has reached ${pct}% completion. ${completedCount} of ${tasks.length} tasks are done.`,
+                  ctaLabel: 'View Progress'
+                },
+                { relatedEntityId: project.id, relatedEntityType: 'project', createdBy: 'system' }
+              );
+            }
+
+            // Update project milestone tracker
+            const allProjects = await getProjects();
+            const pIdx = allProjects.findIndex(p => p.id === project.id);
+            if (pIdx !== -1) {
+              allProjects[pIdx].lastMilestoneNotified = threshold;
+              await db.set('projects', allProjects);
+            }
+            break; // Only notify for the highest crossed threshold
+          }
+        }
+
+        // Go-live date reminders
+        if (project.goLiveDate) {
+          const goLive = new Date(project.goLiveDate);
+          const daysUntilGoLive = Math.floor((goLive - now) / (1000 * 60 * 60 * 24));
+          if (daysUntilGoLive >= 0 && goLiveDaysBefore.includes(daysUntilGoLive)) {
+            const projectClients = users.filter(u =>
+              u.role === config.ROLES.CLIENT && u.email &&
+              (u.assignedProjects || []).includes(project.id)
+            );
+            const teamMembers = users.filter(u =>
+              (u.role === config.ROLES.USER || u.role === config.ROLES.ADMIN) && u.email &&
+              (u.assignedProjects || []).includes(project.id)
+            );
+            for (const user of [...projectClients, ...teamMembers]) {
+              await queueNotification(
+                'milestone_reminder',
+                user.id, user.email, user.name,
+                {
+                  subject: `Go-live in ${daysUntilGoLive} days: ${project.name}`,
+                  body: `${project.name} is scheduled to go live on ${goLive.toLocaleDateString()}. That's ${daysUntilGoLive} days from now. Current progress: ${pct}% complete.`,
+                  ctaLabel: 'View Project'
+                },
+                { relatedEntityId: project.id, relatedEntityType: 'project', createdBy: 'system' }
+              );
+            }
+          }
+        }
+      }
+    }
+
+    console.log('[SCANNER] Notification trigger scan completed');
+  } catch (err) {
+    console.error('[SCANNER] Error scanning for notifications:', err);
   }
 };
 
@@ -1109,7 +1476,7 @@ app.post('/api/users', authenticateToken, async (req, res) => {
       email, password, name, role, practiceName, isNewClient, assignedProjects, logo,
       hasServicePortalAccess, hasAdminHubAccess, hasImplementationsAccess, hasClientPortalAdminAccess,
       isManager, assignedClients, hubspotCompanyId, hubspotDealId, hubspotContactId, projectAccessLevels,
-      existingPortalSlug
+      existingPortalSlug, phone
     } = req.body;
 
     // Managers can only create client users
@@ -1139,6 +1506,15 @@ app.post('/api/users', authenticateToken, async (req, res) => {
       hasImplementationsAccess: hasImplementationsAccess || false,
       hasClientPortalAdminAccess: hasClientPortalAdminAccess || false,
       createdAt: new Date().toISOString(),
+      // Contact
+      phone: phone || '',
+      // Notification preferences
+      notificationPreferences: {
+        emailReminders: true,
+        overdueReminders: true,
+        inventoryReminders: true,
+        milestoneNotifications: true
+      },
       // Force new users to change their password on first login
       requirePasswordChange: true,
       lastPasswordReset: new Date().toISOString()
@@ -1590,11 +1966,13 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
       name, email, role, password, assignedProjects, projectAccessLevels,
       practiceName, isNewClient, logo, hubspotCompanyId, hubspotDealId, hubspotContactId,
       hasServicePortalAccess, hasAdminHubAccess, hasImplementationsAccess, hasClientPortalAdminAccess,
-      isManager, assignedClients
+      isManager, assignedClients, phone
     } = req.body;
     const users = await getUsers();
     const idx = users.findIndex(u => u.id === userId);
     if (idx === -1) return res.status(404).json({ error: 'User not found' });
+
+    if (phone !== undefined) users[idx].phone = phone;
 
     // Capture old values before update for cascade propagation
     const oldName = users[idx].name;
@@ -9582,6 +9960,341 @@ app.post('/api/admin/test-email', authenticateToken, requireAdmin, async (req, r
   }
 });
 
+// ============================================================
+// NOTIFICATION QUEUE MANAGEMENT ENDPOINTS (Feature 1)
+// ============================================================
+
+// View pending notifications queue
+app.get('/api/admin/notifications/queue', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const queue = (await db.get('pending_notifications')) || [];
+    const { type, status } = req.query;
+    let filtered = queue;
+    if (type) filtered = filtered.filter(n => n.type === type);
+    if (status) filtered = filtered.filter(n => n.status === status);
+    filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    res.json(filtered);
+  } catch (error) {
+    console.error('Get notification queue error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// View sent/failed notification history (log archive)
+app.get('/api/admin/notifications/log', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const log = (await db.get('notification_log')) || [];
+    const { type, status, limit } = req.query;
+    let filtered = log;
+    if (type) filtered = filtered.filter(n => n.type === type);
+    if (status) filtered = filtered.filter(n => n.status === status);
+    if (limit) filtered = filtered.slice(0, parseInt(limit));
+    res.json(filtered);
+  } catch (error) {
+    console.error('Get notification log error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Cancel a pending notification
+app.post('/api/admin/notifications/cancel/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const queue = (await db.get('pending_notifications')) || [];
+    const idx = queue.findIndex(n => n.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Notification not found' });
+    if (queue[idx].status !== 'pending') return res.status(400).json({ error: 'Only pending notifications can be cancelled' });
+    queue[idx].status = 'cancelled';
+    await db.set('pending_notifications', queue);
+    res.json({ message: 'Notification cancelled' });
+  } catch (error) {
+    console.error('Cancel notification error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Retry a failed notification (move from log back to queue)
+app.post('/api/admin/notifications/retry/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const log = (await db.get('notification_log')) || [];
+    const idx = log.findIndex(n => n.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Notification not found in log' });
+    if (log[idx].status !== 'failed') return res.status(400).json({ error: 'Only failed notifications can be retried' });
+
+    const notification = log.splice(idx, 1)[0];
+    notification.status = 'pending';
+    notification.retryCount = 0;
+    notification.failedAt = null;
+    notification.failureReason = null;
+    notification.triggerDate = new Date().toISOString();
+
+    const queue = (await db.get('pending_notifications')) || [];
+    queue.push(notification);
+    await db.set('pending_notifications', queue);
+    await db.set('notification_log', log);
+    res.json({ message: 'Notification re-queued for retry' });
+  } catch (error) {
+    console.error('Retry notification error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Queue stats — pending count, sent today, failure rate
+app.get('/api/admin/notifications/stats', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const queue = (await db.get('pending_notifications')) || [];
+    const log = (await db.get('notification_log')) || [];
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    const sentToday = log.filter(n => n.status === 'sent' && n.sentAt >= todayStart).length;
+    const failedToday = log.filter(n => n.status === 'failed' && n.failedAt >= todayStart).length;
+    const pendingCount = queue.filter(n => n.status === 'pending').length;
+    const totalSent = log.filter(n => n.status === 'sent').length;
+    const totalFailed = log.filter(n => n.status === 'failed').length;
+    const failureRate = (totalSent + totalFailed) > 0 ? Math.round((totalFailed / (totalSent + totalFailed)) * 100) : 0;
+
+    // Group pending by type
+    const pendingByType = {};
+    queue.filter(n => n.status === 'pending').forEach(n => {
+      pendingByType[n.type] = (pendingByType[n.type] || 0) + 1;
+    });
+
+    res.json({
+      pending: pendingCount,
+      pendingByType,
+      sentToday,
+      failedToday,
+      dailyLimit: config.NOTIFICATION_DAILY_SEND_LIMIT,
+      totalSent,
+      totalFailed,
+      failureRate,
+      logSize: log.length
+    });
+  } catch (error) {
+    console.error('Notification stats error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============================================================
+// AD-HOC EMAIL ENDPOINTS (Feature 1)
+// ============================================================
+
+// Queue an ad-hoc email to selected users
+app.post('/api/email/send', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { to, subject, message, projectId } = req.body;
+    if (!to || !Array.isArray(to) || to.length === 0) return res.status(400).json({ error: 'Recipients (to) array is required' });
+    if (!subject || !message) return res.status(400).json({ error: 'Subject and message are required' });
+
+    const users = await getUsers();
+    const queued = [];
+    for (const email of to) {
+      const user = users.find(u => u.email === email);
+      const notification = await queueNotification(
+        'custom_email',
+        user ? user.id : null,
+        email,
+        user ? user.name : email,
+        { subject, body: message },
+        { relatedEntityId: projectId || null, relatedEntityType: projectId ? 'project' : null, createdBy: req.user.id }
+      );
+      if (notification) queued.push(notification.id);
+    }
+
+    await logActivity(req.user.id, req.user.name, 'email_queued', 'email', null, {
+      recipientCount: queued.length, subject
+    });
+
+    res.json({ message: `${queued.length} email(s) queued for delivery`, queued: queued.length });
+  } catch (error) {
+    console.error('Send email error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Queue a project progress summary email
+app.post('/api/email/send-progress-update/:projectId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const projects = await getProjects();
+    const project = projects.find(p => p.id === req.params.projectId);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const tasks = await getTasks(project.id);
+    const totalTasks = tasks.length;
+    const completedTasks = tasks.filter(t => t.completed).length;
+    const pct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+    // Find phases with completion stats
+    const phaseStats = {};
+    tasks.forEach(t => {
+      if (!phaseStats[t.phase]) phaseStats[t.phase] = { total: 0, done: 0 };
+      phaseStats[t.phase].total++;
+      if (t.completed) phaseStats[t.phase].done++;
+    });
+    const phaseBreakdown = Object.entries(phaseStats)
+      .map(([phase, s]) => `  ${phase}: ${s.done}/${s.total} tasks complete`)
+      .join('\n');
+
+    const subject = `Progress Update: ${project.name} — ${pct}% Complete`;
+    const body = `Project: ${project.name}\nOverall Progress: ${completedTasks}/${totalTasks} tasks complete (${pct}%)\n\nPhase Breakdown:\n${phaseBreakdown}\n\n${project.goLiveDate ? `Go-Live Date: ${new Date(project.goLiveDate).toLocaleDateString()}` : ''}`;
+
+    // Find client users for this project
+    const users = await getUsers();
+    const recipients = req.body.to || users
+      .filter(u => u.role === config.ROLES.CLIENT && (u.assignedProjects || []).includes(project.id) && u.email)
+      .map(u => u.email);
+
+    const queued = [];
+    for (const email of recipients) {
+      const user = users.find(u => u.email === email);
+      const notification = await queueNotification(
+        'custom_email',
+        user ? user.id : null, email, user ? user.name : email,
+        { subject, body },
+        { relatedEntityId: project.id, relatedEntityType: 'project', createdBy: req.user.id }
+      );
+      if (notification) queued.push(notification.id);
+    }
+
+    res.json({ message: `Progress update queued for ${queued.length} recipient(s)`, queued: queued.length, progress: { pct, completedTasks, totalTasks } });
+  } catch (error) {
+    console.error('Send progress update error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// View sent email history (filtered from notification log)
+app.get('/api/email/history', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const log = (await db.get('notification_log')) || [];
+    const { projectId, limit } = req.query;
+    let emails = log.filter(n => n.status === 'sent');
+    if (projectId) emails = emails.filter(n => n.relatedEntityId === projectId);
+    if (limit) emails = emails.slice(0, parseInt(limit));
+    res.json(emails);
+  } catch (error) {
+    console.error('Email history error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============================================================
+// NOTIFICATION SETTINGS ENDPOINTS (Feature 1)
+// ============================================================
+
+// Get notification settings
+app.get('/api/admin/notification-settings', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const settings = (await db.get('notification_settings')) || {
+      enabled: true,
+      checkIntervalMinutes: config.NOTIFICATION_CHECK_INTERVAL_MINUTES,
+      maxRetriesDefault: config.NOTIFICATION_MAX_RETRIES,
+      dailySendLimit: config.NOTIFICATION_DAILY_SEND_LIMIT,
+      enabledChannels: ['email']
+    };
+    res.json(settings);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update notification settings
+app.put('/api/admin/notification-settings', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const current = (await db.get('notification_settings')) || {};
+    const updated = { ...current, ...req.body, updatedAt: new Date().toISOString(), updatedBy: req.user.name };
+    await db.set('notification_settings', updated);
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============================================================
+// REMINDER SETTINGS & TRIGGER ENDPOINTS (Feature 2)
+// ============================================================
+
+// Get reminder settings
+app.get('/api/admin/reminder-settings', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const settings = (await db.get('reminder_settings')) || {
+      enabled: true,
+      scanIntervalMinutes: config.NOTIFICATION_SCAN_INTERVAL_MINUTES,
+      scenarios: {
+        serviceReportFollowups: { enabled: true, reminderAfterDays: config.SERVICE_REPORT_FOLLOWUP_DAYS },
+        taskDeadlines: { enabled: true, daysBefore: config.TASK_DEADLINE_DAYS_BEFORE, overdueEscalationDays: config.TASK_OVERDUE_ESCALATION_DAYS },
+        clientActivityNudges: { enabled: true, inventoryReminderDays: config.INVENTORY_REMINDER_DAYS },
+        milestoneReminders: { enabled: true, milestoneThresholds: config.MILESTONE_THRESHOLDS, goLiveDaysBefore: config.GOLIVE_REMINDER_DAYS_BEFORE }
+      }
+    };
+    res.json(settings);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update reminder settings
+app.put('/api/admin/reminder-settings', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const current = (await db.get('reminder_settings')) || {};
+    const updated = { ...current, ...req.body, updatedAt: new Date().toISOString(), updatedBy: req.user.name };
+    await db.set('reminder_settings', updated);
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Manually trigger a notification scan (admin)
+app.post('/api/admin/reminders/trigger', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await scanAndQueueNotifications();
+    const queue = (await db.get('pending_notifications')) || [];
+    const pendingCount = queue.filter(n => n.status === 'pending').length;
+    res.json({ message: 'Notification scan completed', pendingNotifications: pendingCount });
+  } catch (error) {
+    console.error('Manual scan trigger error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Manually trigger queue processing (admin)
+app.post('/api/admin/notifications/process', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await processNotificationQueue();
+    const queue = (await db.get('pending_notifications')) || [];
+    const pendingCount = queue.filter(n => n.status === 'pending').length;
+    res.json({ message: 'Queue processing completed', remainingPending: pendingCount });
+  } catch (error) {
+    console.error('Manual queue process error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update user notification preferences
+app.put('/api/users/:userId/notification-preferences', authenticateToken, async (req, res) => {
+  try {
+    // Users can update their own prefs, admins can update anyone's
+    if (req.user.id !== req.params.userId && req.user.role !== config.ROLES.ADMIN) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    const users = await getUsers();
+    const idx = users.findIndex(u => u.id === req.params.userId);
+    if (idx === -1) return res.status(404).json({ error: 'User not found' });
+
+    users[idx].notificationPreferences = {
+      ...(users[idx].notificationPreferences || {}),
+      ...req.body
+    };
+    await db.set('users', users);
+    invalidateUsersCache();
+    res.json({ message: 'Notification preferences updated', notificationPreferences: users[idx].notificationPreferences });
+  } catch (error) {
+    console.error('Update notification preferences error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Change password (authenticated user)
 app.post('/api/auth/change-password', authenticateToken, async (req, res) => {
   try {
@@ -9829,6 +10542,16 @@ app.listen(PORT, () => {
 
   // Start HubSpot ticket polling (webhook workaround)
   initializeTicketPolling();
+
+  // Start notification queue processor (Feature 1)
+  const queueInterval = config.NOTIFICATION_CHECK_INTERVAL_MINUTES * 60 * 1000;
+  setInterval(processNotificationQueue, queueInterval);
+  console.log(`📧 Notification queue processor started (every ${config.NOTIFICATION_CHECK_INTERVAL_MINUTES}m)`);
+
+  // Start notification trigger scanner (Feature 2)
+  const scanInterval = config.NOTIFICATION_SCAN_INTERVAL_MINUTES * 60 * 1000;
+  setInterval(scanAndQueueNotifications, scanInterval);
+  console.log(`🔍 Notification trigger scanner started (every ${config.NOTIFICATION_SCAN_INTERVAL_MINUTES}m)`);
 
   // One-time migrations for service reports
   (async () => {
