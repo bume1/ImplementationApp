@@ -1990,7 +1990,13 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
     if (idx === -1) return res.status(404).json({ error: 'User not found' });
 
     if (phone !== undefined) users[idx].phone = phone;
-    if (accountStatus !== undefined) users[idx].accountStatus = accountStatus;
+    if (accountStatus !== undefined) {
+      // Prevent deactivating admin accounts (super admin lockout protection)
+      if (accountStatus === 'inactive' && users[idx].role === 'admin') {
+        return res.status(403).json({ error: 'Admin accounts cannot be deactivated. Remove admin role first if you need to deactivate this account.' });
+      }
+      users[idx].accountStatus = accountStatus;
+    }
 
     // Capture old values before update for cascade propagation
     const oldName = users[idx].name;
@@ -10876,6 +10882,27 @@ process.on('unhandledRejection', (reason, promise) => {
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
   console.log(`🔐 Admin login: bianca@thrive365labs.live / Thrive2025!`);
+
+  // Safety net: reactivate any admin accounts that are inactive (prevent lockout)
+  (async () => {
+    try {
+      const users = await getUsers();
+      let reactivated = false;
+      users.forEach(u => {
+        if (u.role === 'admin' && u.accountStatus === 'inactive') {
+          u.accountStatus = 'active';
+          reactivated = true;
+          console.log(`🔓 Reactivated locked-out admin account: ${u.email}`);
+        }
+      });
+      if (reactivated) {
+        await db.set('users', users);
+        invalidateUsersCache();
+      }
+    } catch (err) {
+      console.error('Admin lockout recovery failed:', err.message);
+    }
+  })();
 
   // Start HubSpot ticket polling (webhook workaround)
   initializeTicketPolling();
