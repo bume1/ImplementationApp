@@ -33,6 +33,10 @@
     .sidebar-link:hover { background: linear-gradient(135deg, rgba(4, 94, 159, 0.08) 0%, rgba(4, 94, 159, 0.12) 100%); }
     .sidebar-link.active { background: linear-gradient(135deg, #045E9F 0%, #0353a4 100%); color: white; box-shadow: 0 4px 14px -3px rgba(4, 94, 159, 0.4); }
     .gradient-header { background: linear-gradient(135deg, #045E9F 0%, #00205A 100%); }
+    .search-input:focus { box-shadow: 0 0 0 3px rgba(4,94,159,0.15); outline: none; }
+    .search-dropdown { max-height: 400px; overflow-y: auto; }
+    .search-item { transition: background 0.15s ease; }
+    .search-item:hover { background: #f0f7ff; }
   </style>
 </head>
 <body>
@@ -2871,6 +2875,93 @@ This renders as color-coded sections with distinct visual styling.`
       }
     };
 
+    // ═══════════════════════════════════════════════════════
+    // V2 API HELPERS & SEED TRANSFORM
+    // ═══════════════════════════════════════════════════════
+
+    const V2_VISIBILITY = {
+      'portal-hub': ['public', 'superAdmin', 'manager', 'teamMember', 'vendor', 'client'],
+      'admin-hub': ['superAdmin', 'manager', 'teamMember'],
+      'launch-app': ['superAdmin', 'manager', 'teamMember'],
+      'service-portal': ['superAdmin', 'manager', 'teamMember', 'vendor'],
+      'client-portal': ['superAdmin', 'manager', 'teamMember'],
+      'inventory': ['superAdmin', 'manager', 'teamMember', 'client'],
+      'customer-support': ['public', 'superAdmin', 'manager', 'teamMember', 'vendor', 'client'],
+      'files': ['public', 'superAdmin', 'manager', 'teamMember', 'vendor', 'client'],
+      'technical-docs': ['superAdmin'],
+      'admin-guide': ['superAdmin']
+    };
+
+    const ICON_KEY_MAP = {
+      'portal-hub': 'hub', 'admin-hub': 'admin', 'launch-app': 'launch',
+      'service-portal': 'service', 'client-portal': 'client', 'inventory': 'inventory',
+      'customer-support': 'support', 'files': 'files', 'technical-docs': 'code', 'admin-guide': 'admin'
+    };
+
+    function transformGuidesToV2Seed(guidesObj) {
+      return Object.entries(guidesObj).map(([key, guide], idx) => ({
+        key,
+        title: guide.title,
+        description: guide.description,
+        icon: ICON_KEY_MAP[key] || 'book',
+        color: guide.color,
+        sortOrder: idx,
+        visibleTo: V2_VISIBILITY[key] || ['superAdmin'],
+        features: guide.articles.map((article, aIdx) => ({
+          title: article.title,
+          slug: article.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/,''),
+          sortOrder: aIdx,
+          visibleTo: V2_VISIBILITY[key] || ['superAdmin'],
+          tags: [key],
+          content: {
+            whatItIs: (article.content.split('\n').find(l => l.trim().length > 10) || '').replace(/\*\*/g, '').trim(),
+            howToUseIt: article.content
+          },
+          knownIssues: ''
+        }))
+      }));
+    }
+
+    async function seedV2IfNeeded(token, isAdmin) {
+      try {
+        const check = await fetch('/api/knowledge/v2/needs-seed', {
+          headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+        }).then(r => r.json());
+        if (check.needsSeed && isAdmin) {
+          const sections = transformGuidesToV2Seed(guides);
+          await fetch('/api/knowledge/v2/seed', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sections })
+          });
+        }
+      } catch (e) { console.warn('V2 seed check failed:', e); }
+    }
+
+    async function fetchV2Sections(token) {
+      try {
+        const res = await fetch('/api/knowledge/v2/sections', {
+          headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+        });
+        const data = await res.json();
+        return data.sections || [];
+      } catch (e) {
+        console.warn('V2 fetch failed, using local data:', e);
+        return [];
+      }
+    }
+
+    async function searchV2(token, query) {
+      if (!query || query.trim().length < 2) return [];
+      try {
+        const res = await fetch('/api/knowledge/v2/search?q=' + encodeURIComponent(query), {
+          headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+        });
+        const data = await res.json();
+        return data.results || [];
+      } catch (e) { return []; }
+    }
+
     // ============== UTILITY COMPONENTS ==============
 
     // Highlight search terms in text
@@ -3319,11 +3410,14 @@ This renders as color-coded sections with distinct visual styling.`
       const userTier = getUserTier(user);
       const isAdmin = user?.role === 'admin';
 
-      // Fetch guides from API on mount
+      // Seed v2 data and fetch sections on mount
       useEffect(() => {
-        const fetchGuides = async () => {
-          if (!token) return;
+        const init = async () => {
           try {
+            // Seed v2 data if needed
+            await seedV2IfNeeded(token, isAdmin);
+
+            // Seed v1 data if needed
             const seedCheck = await fetch('/api/knowledge/needs-seed', {
               headers: { 'Authorization': `Bearer ${token}` }
             }).then(r => r.json());
@@ -3360,12 +3454,12 @@ This renders as color-coded sections with distinct visual styling.`
               setApiGuides(data);
             }
           } catch (error) {
-            console.error('Error fetching guides:', error);
+            console.error('Error loading knowledge hub:', error);
           } finally {
             setLoading(false);
           }
         };
-        fetchGuides();
+        init();
       }, [token, isAdmin]);
 
       // Compute visible guides with 5-tier filtering

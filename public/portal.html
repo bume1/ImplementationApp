@@ -3071,8 +3071,8 @@
                     <h2 className="text-4xl font-bold text-gray-800 mb-6">Submit a Ticket</h2>
                     <p className="text-gray-500 text-lg">
                       <span className="italic">or</span> email us at{' '}
-                      <a href="mailto:support@thrive365labs.com" className="text-primary hover:text-accent font-semibold">
-                        support@thrive365labs.com
+                      <a href="mailto:support@thrive365labs.live" className="text-primary hover:text-accent font-semibold">
+                        support@thrive365labs.live
                       </a>
                     </p>
                   </div>
@@ -4554,6 +4554,7 @@
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Practice Name</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Portal URL</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">HubSpot IDs</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Status</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                     </tr>
                   </thead>
@@ -4581,6 +4582,23 @@
                           ) : (
                             <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded">Not linked</span>
                           )}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <button
+                            onClick={async () => {
+                              const newStatus = c.accountStatus === 'inactive' ? 'active' : 'inactive';
+                              try {
+                                await fetch(`${API_URL}/api/client-portal/clients/${c.id}`, {
+                                  method: 'PUT',
+                                  headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ accountStatus: newStatus })
+                                });
+                                loadClients();
+                              } catch (err) { console.error('Toggle status error:', err); }
+                            }}
+                            className={`px-2.5 py-1 text-xs rounded-full font-medium ${c.accountStatus === 'inactive' ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}
+                            title="Click to toggle active/inactive"
+                          >{c.accountStatus === 'inactive' ? 'Inactive' : 'Active'}</button>
                         </td>
                         <td className="px-4 py-3 text-sm">
                           <button

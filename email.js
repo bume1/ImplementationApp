@@ -2,7 +2,7 @@ const { Resend } = require('resend');
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-const FROM_EMAIL = process.env.EMAIL_FROM_ADDRESS || 'onboarding@resend.dev';
+const FROM_EMAIL = process.env.EMAIL_FROM_ADDRESS || 'no-reply@thrive365labs.live';
 const FROM_NAME = 'Thrive 365 Labs';
 
 async function sendEmail(to, subject, body, options = {}) {
@@ -27,4 +27,21 @@ async function sendEmail(to, subject, body, options = {}) {
   }
 }
 
-module.exports = { sendEmail };
+async function sendBulkEmail(recipients, subject, body, options = {}) {
+  const results = [];
+  for (const recipient of recipients) {
+    const to = typeof recipient === 'string' ? recipient : recipient.email;
+    const result = await sendEmail(to, subject, body, options);
+    results.push({ email: to, ...result });
+    // Small delay between sends to avoid rate limits
+    if (recipients.length > 5) {
+      await new Promise(r => setTimeout(r, 100));
+    }
+  }
+  const sent = results.filter(r => r.success).length;
+  const failed = results.filter(r => !r.success);
+  console.log(`[BULK EMAIL] Sent ${sent}/${recipients.length}, ${failed.length} failed`);
+  return { sent, failed: failed.length, total: recipients.length, results };
+}
+
+module.exports = { sendEmail, sendBulkEmail };
