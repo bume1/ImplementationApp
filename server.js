@@ -9079,16 +9079,52 @@ app.get('/knowledge', (req, res) => {
 
 // ============== KNOWLEDGE HUB API ==============
 
+// 5-tier permission system for Knowledge Hub content
+function getKnowledgeTier(user) {
+  if (user.role === config.ROLES.ADMIN) return 'super_admin';
+  if (user.isManager) return 'manager';
+  if (user.role === config.ROLES.VENDOR) return 'vendor';
+  if (user.role === config.ROLES.CLIENT) return 'client';
+  return 'team_member';
+}
+
+function canUserSeeKnowledgeGuide(user, guide) {
+  const tier = getKnowledgeTier(user);
+
+  // Backward compat: convert old flags to visibleTo if missing
+  let visibleTo = guide.visibleTo;
+  if (!visibleTo) {
+    if (guide.ownerOnly) visibleTo = ['super_admin'];
+    else if (guide.adminOnly) visibleTo = ['super_admin', 'manager'];
+    else visibleTo = [];
+  }
+
+  // Empty visibleTo means visible to all authenticated users
+  if (visibleTo.length === 0) return true;
+
+  // Check tier membership
+  if (!visibleTo.includes(tier)) return false;
+
+  // For team members, also check portal-section-specific permission flags
+  if (tier === 'team_member' && guide.portalSection) {
+    switch (guide.portalSection) {
+      case 'admin_hub': return !!user.hasAdminHubAccess;
+      case 'launch_portal': return !!user.hasImplementationsAccess || (user.assignedProjects && user.assignedProjects.length > 0);
+      case 'service_portal': return !!user.hasServicePortalAccess;
+      case 'client_portal_admin': return !!user.hasClientPortalAdminAccess;
+      case 'client_portal': return false;
+      default: return true;
+    }
+  }
+
+  return true;
+}
+
 // Get all guides (authenticated users)
 app.get('/api/knowledge/guides', authenticateToken, async (req, res) => {
   try {
     const guides = (await db.get('knowledge_guides')) || [];
-    // Filter based on user permissions
-    const filteredGuides = guides.filter(guide => {
-      if (guide.ownerOnly && req.user.email !== 'bianca@thrive365labs.com') return false;
-      if (guide.adminOnly && req.user.role !== config.ROLES.ADMIN) return false;
-      return true;
-    });
+    const filteredGuides = guides.filter(guide => canUserSeeKnowledgeGuide(req.user, guide));
     res.json(filteredGuides);
   } catch (error) {
     console.error('Get guides error:', error);
@@ -9104,11 +9140,8 @@ app.get('/api/knowledge/guides/:guideId', authenticateToken, async (req, res) =>
     if (!guide) {
       return res.status(404).json({ error: 'Guide not found' });
     }
-    // Check permissions
-    if (guide.ownerOnly && req.user.email !== 'bianca@thrive365labs.com') {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-    if (guide.adminOnly && req.user.role !== config.ROLES.ADMIN) {
+    // Check permissions using 5-tier system
+    if (!canUserSeeKnowledgeGuide(req.user, guide)) {
       return res.status(403).json({ error: 'Access denied' });
     }
     res.json(guide);
@@ -9121,7 +9154,7 @@ app.get('/api/knowledge/guides/:guideId', authenticateToken, async (req, res) =>
 // Create a new guide (admin only)
 app.post('/api/knowledge/guides', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { key, title, description, icon, color, ownerOnly, adminOnly, articles } = req.body;
+    const { key, title, description, icon, color, ownerOnly, adminOnly, visibleTo, portalSection, isKnownIssue, articles } = req.body;
     if (!key || !title) {
       return res.status(400).json({ error: 'Key and title are required' });
     }
@@ -9139,10 +9172,14 @@ app.post('/api/knowledge/guides', authenticateToken, requireAdmin, async (req, r
       color: color || 'bg-gray-500',
       ownerOnly: ownerOnly || false,
       adminOnly: adminOnly || false,
+      visibleTo: Array.isArray(visibleTo) ? visibleTo : [],
+      portalSection: portalSection || 'general',
+      isKnownIssue: isKnownIssue || false,
       articles: (articles || []).map(a => ({
         id: uuidv4(),
         title: a.title,
         content: a.content,
+        format: a.format || null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       })),
@@ -9161,7 +9198,7 @@ app.post('/api/knowledge/guides', authenticateToken, requireAdmin, async (req, r
 // Update a guide (admin only)
 app.put('/api/knowledge/guides/:guideId', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { title, description, icon, color, ownerOnly, adminOnly } = req.body;
+    const { title, description, icon, color, ownerOnly, adminOnly, visibleTo, portalSection, isKnownIssue } = req.body;
     const guides = (await db.get('knowledge_guides')) || [];
     const idx = guides.findIndex(g => g.id === req.params.guideId);
     if (idx === -1) {
@@ -9173,6 +9210,9 @@ app.put('/api/knowledge/guides/:guideId', authenticateToken, requireAdmin, async
     if (color !== undefined) guides[idx].color = color;
     if (ownerOnly !== undefined) guides[idx].ownerOnly = ownerOnly;
     if (adminOnly !== undefined) guides[idx].adminOnly = adminOnly;
+    if (visibleTo !== undefined) guides[idx].visibleTo = Array.isArray(visibleTo) ? visibleTo : [];
+    if (portalSection !== undefined) guides[idx].portalSection = portalSection;
+    if (isKnownIssue !== undefined) guides[idx].isKnownIssue = isKnownIssue;
     guides[idx].updatedAt = new Date().toISOString();
     await db.set('knowledge_guides', guides);
     res.json(guides[idx]);
@@ -9201,9 +9241,9 @@ app.delete('/api/knowledge/guides/:guideId', authenticateToken, requireAdmin, as
 // Add an article to a guide (admin only)
 app.post('/api/knowledge/guides/:guideId/articles', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { title, content } = req.body;
-    if (!title || !content) {
-      return res.status(400).json({ error: 'Title and content are required' });
+    const { title, content, format } = req.body;
+    if (!title || (!content && !format)) {
+      return res.status(400).json({ error: 'Title and content (or format) are required' });
     }
     const guides = (await db.get('knowledge_guides')) || [];
     const idx = guides.findIndex(g => g.id === req.params.guideId);
@@ -9213,7 +9253,8 @@ app.post('/api/knowledge/guides/:guideId/articles', authenticateToken, requireAd
     const newArticle = {
       id: uuidv4(),
       title,
-      content,
+      content: content || '',
+      format: format || null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -9231,7 +9272,7 @@ app.post('/api/knowledge/guides/:guideId/articles', authenticateToken, requireAd
 // Update an article (admin only)
 app.put('/api/knowledge/guides/:guideId/articles/:articleId', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { title, content } = req.body;
+    const { title, content, format } = req.body;
     const guides = (await db.get('knowledge_guides')) || [];
     const guideIdx = guides.findIndex(g => g.id === req.params.guideId);
     if (guideIdx === -1) {
@@ -9243,6 +9284,7 @@ app.put('/api/knowledge/guides/:guideId/articles/:articleId', authenticateToken,
     }
     if (title !== undefined) guides[guideIdx].articles[articleIdx].title = title;
     if (content !== undefined) guides[guideIdx].articles[articleIdx].content = content;
+    if (format !== undefined) guides[guideIdx].articles[articleIdx].format = format;
     guides[guideIdx].articles[articleIdx].updatedAt = new Date().toISOString();
     guides[guideIdx].updatedAt = new Date().toISOString();
     await db.set('knowledge_guides', guides);
@@ -9333,10 +9375,14 @@ app.post('/api/knowledge/seed', authenticateToken, requireAdmin, async (req, res
       color: guide.color || 'bg-gray-500',
       ownerOnly: guide.ownerOnly || false,
       adminOnly: guide.adminOnly || false,
+      visibleTo: Array.isArray(guide.visibleTo) ? guide.visibleTo : [],
+      portalSection: guide.portalSection || 'general',
+      isKnownIssue: guide.isKnownIssue || false,
       articles: (guide.articles || []).map(article => ({
         id: uuidv4(),
         title: article.title,
-        content: article.content,
+        content: article.content || '',
+        format: article.format || null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       })),
