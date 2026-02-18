@@ -1337,6 +1337,40 @@ async function searchTicketsByStage(stageIds, modifiedAfter = null, additionalPr
   }
 }
 
+// Create a plain support ticket (no file attachment).
+// Sets internal_vs_external_ticket = 'External' so the ticket is visible
+// through the client portal filter (GET /api/client/hubspot/tickets).
+async function createTicket(ticketData, companyId = null) {
+  const privateAppToken = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
+  if (!privateAppToken) throw new Error('HubSpot Private App token not configured');
+
+  const priorityMap = { 'Low': 'LOW', 'Medium': 'MEDIUM', 'High': 'HIGH' };
+  const ticketInput = {
+    properties: {
+      subject: ticketData.subject || 'Support Request',
+      content: ticketData.description || '',
+      hs_pipeline: '0',
+      hs_pipeline_stage: '1',
+      hs_ticket_priority: priorityMap[ticketData.priority] || 'LOW',
+      internal_vs_external_ticket: 'External'
+    }
+  };
+
+  if (companyId && isValidRecordId(companyId)) {
+    ticketInput.associations = [{
+      to: { id: companyId },
+      types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: ASSOCIATION_TYPES.TICKET_TO_COMPANY }]
+    }];
+  }
+
+  const response = await axios.post(
+    'https://api.hubapi.com/crm/v3/objects/tickets',
+    ticketInput,
+    { headers: { 'Authorization': `Bearer ${privateAppToken}`, 'Content-Type': 'application/json' } }
+  );
+  return { ticketId: response.data.id };
+}
+
 module.exports = {
   getHubSpotClient,
   getPipelines,
@@ -1355,6 +1389,7 @@ module.exports = {
   getTicketsForCompany,
   getTicketsForContact,
   getTicketsForDeal,
+  createTicket,
   createTicketWithFile,
   getTicketById,
   searchTicketsByStage

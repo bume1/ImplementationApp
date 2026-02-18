@@ -1050,7 +1050,7 @@ const StatusBadge = ({ status }) => {
 };
 
 // ============== PROJECT LIST COMPONENT ==============
-const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates, onManageHubSpot, onViewReporting }) => {
+const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates, onManageHubSpot, onManagePortalTickets, onViewReporting }) => {
   const [projects, setProjects] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -1318,6 +1318,14 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
                     className="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 text-sm"
                   >
                     HubSpot Settings
+                  </button>
+                )}
+                {onManagePortalTickets && (
+                  <button
+                    onClick={() => { onManagePortalTickets(); setShowSettingsMenu(false); }}
+                    className="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-700 text-sm"
+                  >
+                    Portal Tickets
                   </button>
                 )}
                 <a
@@ -6902,6 +6910,274 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
   );
 };
 
+// ============== PORTAL TICKETS MANAGER (Admin Only) ==============
+const PortalTicketsManager = ({ token, user, onBack, onLogout }) => {
+  const [clients, setClients] = useState([]);
+  const [selectedClient, setSelectedClient] = useState(null);
+  const [hubspotTickets, setHubspotTickets] = useState([]);
+  const [releasedTickets, setReleasedTickets] = useState([]);
+  const [submittedTickets, setSubmittedTickets] = useState([]);
+  const [loadingClients, setLoadingClients] = useState(true);
+  const [loadingTickets, setLoadingTickets] = useState(false);
+  const [releasing, setReleasing] = useState(null);
+  const [removing, setRemoving] = useState(null);
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    loadClients();
+  }, []);
+
+  const loadClients = async () => {
+    setLoadingClients(true);
+    try {
+      const data = await api.getUsers(token);
+      setClients((data || []).filter(u => u.role === 'client').sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)));
+    } catch (err) {
+      console.error('Failed to load clients', err);
+    } finally {
+      setLoadingClients(false);
+    }
+  };
+
+  const loadTicketsForClient = async (client) => {
+    setSelectedClient(client);
+    setHubspotTickets([]);
+    setReleasedTickets([]);
+    setSubmittedTickets([]);
+    setMessage('');
+    if (!client) return;
+    setLoadingTickets(true);
+    try {
+      // Fetch admin-released tickets for this client
+      const relRes = await fetch(`${API_URL}/api/admin/released-portal-tickets?clientSlug=${encodeURIComponent(client.slug || '')}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const relData = await relRes.json();
+      setReleasedTickets(relData.tickets || []);
+
+      // Fetch client-submitted tickets (all, filter locally)
+      const subRes = await fetch(`${API_URL}/api/admin/portal-submitted-tickets?clientSlug=${encodeURIComponent(client.slug || '')}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (subRes.ok) {
+        const subData = await subRes.json();
+        setSubmittedTickets(subData.tickets || []);
+      }
+
+      // Fetch HubSpot tickets for this client's company (if configured)
+      if (client.hubspotCompanyId) {
+        const hsRes = await fetch(`${API_URL}/api/admin/client-hubspot-tickets/${encodeURIComponent(client.id)}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (hsRes.ok) {
+          const hsData = await hsRes.json();
+          setHubspotTickets(hsData.tickets || []);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load tickets for client', err);
+    } finally {
+      setLoadingTickets(false);
+    }
+  };
+
+  const handleRelease = async (ticket) => {
+    if (!selectedClient) return;
+    setReleasing(ticket.id);
+    setMessage('');
+    try {
+      const res = await fetch(`${API_URL}/api/admin/released-portal-tickets`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          hubspotTicketId: ticket.id,
+          clientSlug: selectedClient.slug,
+          subject: ticket.subject,
+          description: ticket.description || ticket.content || '',
+          priority: ticket.priority || 'Low',
+          status: ticket.status || 'Open'
+        })
+      });
+      const data = await res.json();
+      if (data.error) {
+        setMessage(`Error: ${data.error}`);
+      } else {
+        setReleasedTickets(prev => [data.ticket, ...prev]);
+        setMessage(`"${ticket.subject}" released to ${selectedClient.name || selectedClient.email}`);
+      }
+    } catch (err) {
+      setMessage('Failed to release ticket');
+    } finally {
+      setReleasing(null);
+    }
+  };
+
+  const handleRemove = async (releasedId, subject) => {
+    setRemoving(releasedId);
+    setMessage('');
+    try {
+      const res = await fetch(`${API_URL}/api/admin/released-portal-tickets/${releasedId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.error) {
+        setMessage(`Error: ${data.error}`);
+      } else {
+        setReleasedTickets(prev => prev.filter(t => t.id !== releasedId));
+        setMessage(`"${subject}" removed from portal`);
+      }
+    } catch (err) {
+      setMessage('Failed to remove ticket');
+    } finally {
+      setRemoving(null);
+    }
+  };
+
+  const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-';
+
+  const releasedHsIds = new Set(releasedTickets.map(t => String(t.hubspotTicketId)));
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <AppHeader user={user} onLogout={onLogout}>
+        <button onClick={onBack} className="text-gray-700 hover:text-primary font-medium text-sm uppercase tracking-wide">
+          ← Back
+        </button>
+      </AppHeader>
+      <div className="max-w-5xl mx-auto p-6">
+        <h1 className="text-2xl font-bold text-gray-800 mb-1">Portal Tickets Manager</h1>
+        <p className="text-gray-500 text-sm mb-6">Release HubSpot tickets to client portal views, or review client-submitted tickets.</p>
+
+        {message && (
+          <div className={`mb-4 p-3 rounded-lg text-sm ${message.startsWith('Error') ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'}`}>
+            {message}
+          </div>
+        )}
+
+        <div className="grid md:grid-cols-3 gap-6">
+          {/* Client selector */}
+          <div className="bg-white rounded-xl border shadow-sm p-4">
+            <h2 className="font-semibold text-gray-700 mb-3 text-sm uppercase tracking-wide">Clients</h2>
+            {loadingClients ? (
+              <p className="text-sm text-gray-400">Loading…</p>
+            ) : clients.length === 0 ? (
+              <p className="text-sm text-gray-400">No clients found</p>
+            ) : (
+              <ul className="space-y-1">
+                {clients.map(c => (
+                  <li key={c.id}>
+                    <button
+                      onClick={() => loadTicketsForClient(c)}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition ${selectedClient?.id === c.id ? 'bg-primary text-white' : 'hover:bg-gray-100 text-gray-700'}`}
+                    >
+                      <div className="font-medium truncate">{c.name || c.email}</div>
+                      {c.practiceName && <div className={`text-xs truncate ${selectedClient?.id === c.id ? 'text-blue-100' : 'text-gray-400'}`}>{c.practiceName}</div>}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Ticket panels */}
+          <div className="md:col-span-2 space-y-4">
+            {!selectedClient ? (
+              <div className="bg-white rounded-xl border shadow-sm p-8 text-center text-gray-400 text-sm">Select a client to manage their portal tickets</div>
+            ) : loadingTickets ? (
+              <div className="bg-white rounded-xl border shadow-sm p-8 text-center text-gray-400 text-sm">Loading tickets…</div>
+            ) : (
+              <>
+                {/* Released tickets */}
+                <div className="bg-white rounded-xl border shadow-sm p-4">
+                  <h2 className="font-semibold text-gray-700 mb-3 text-sm">Released to Portal ({releasedTickets.length})</h2>
+                  {releasedTickets.length === 0 ? (
+                    <p className="text-sm text-gray-400">No tickets released yet</p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {releasedTickets.map(t => (
+                        <li key={t.id} className="flex items-center justify-between gap-3 p-3 border rounded-lg bg-green-50">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm text-gray-800 truncate">{t.subject}</p>
+                            <p className="text-xs text-gray-500 mt-0.5">Released {formatDate(t.releasedAt)} by {t.releasedBy}</p>
+                          </div>
+                          <button
+                            onClick={() => handleRemove(t.id, t.subject)}
+                            disabled={removing === t.id}
+                            className="text-xs px-3 py-1 bg-red-100 text-red-600 border border-red-200 rounded-lg hover:bg-red-200 transition disabled:opacity-50 whitespace-nowrap"
+                          >
+                            {removing === t.id ? '…' : 'Remove'}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                {/* Client-submitted tickets */}
+                {submittedTickets.length > 0 && (
+                  <div className="bg-white rounded-xl border shadow-sm p-4">
+                    <h2 className="font-semibold text-gray-700 mb-3 text-sm">Client-Submitted ({submittedTickets.length})</h2>
+                    <ul className="space-y-2">
+                      {submittedTickets.map(t => (
+                        <li key={t.id} className="flex items-center justify-between gap-3 p-3 border rounded-lg bg-blue-50">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm text-gray-800 truncate">{t.subject}</p>
+                            <p className="text-xs text-gray-500 mt-0.5">{formatDate(t.submittedAt)} · {t.priority} · {t.status}</p>
+                          </div>
+                          <span className="text-xs bg-blue-100 text-blue-600 border border-blue-200 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">Submitted</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* HubSpot tickets available to release */}
+                {hubspotTickets.length > 0 && (
+                  <div className="bg-white rounded-xl border shadow-sm p-4">
+                    <h2 className="font-semibold text-gray-700 mb-1 text-sm">HubSpot Tickets — Release to Portal</h2>
+                    <p className="text-xs text-gray-400 mb-3">Tickets not already tagged External in HubSpot. Release makes them visible in the client's Support Tickets tab.</p>
+                    <ul className="space-y-2">
+                      {hubspotTickets.map(t => {
+                        const alreadyReleased = releasedHsIds.has(String(t.id));
+                        return (
+                          <li key={t.id} className="flex items-center justify-between gap-3 p-3 border rounded-lg">
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-sm text-gray-800 truncate">{t.subject}</p>
+                              <p className="text-xs text-gray-500 mt-0.5">{formatDate(t.createdAt)} · {t.priority || 'Low'} · {t.status || 'Open'}</p>
+                            </div>
+                            {alreadyReleased ? (
+                              <span className="text-xs bg-green-100 text-green-600 px-2 py-0.5 rounded-full border border-green-200 font-medium whitespace-nowrap">Released</span>
+                            ) : (
+                              <button
+                                onClick={() => handleRelease(t)}
+                                disabled={releasing === t.id}
+                                className="text-xs px-3 py-1 bg-primary text-white rounded-lg hover:bg-accent transition disabled:opacity-50 whitespace-nowrap"
+                              >
+                                {releasing === t.id ? '…' : 'Release to Portal'}
+                              </button>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
+
+                {hubspotTickets.length === 0 && submittedTickets.length === 0 && (
+                  <div className="bg-white rounded-xl border shadow-sm p-6 text-center text-gray-400 text-sm">
+                    {selectedClient.hubspotCompanyId ? 'No HubSpot tickets found for this client.' : 'This client has no HubSpot Company ID configured — HubSpot tickets cannot be fetched.'}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ============== HUBSPOT SETTINGS COMPONENT (Admin Only) ==============
 const HubSpotSettings = ({ token, user, onBack, onLogout }) => {
   const [connectionStatus, setConnectionStatus] = useState(null);
@@ -8135,6 +8411,17 @@ const App = () => {
     );
   }
 
+  if (view === 'portalTickets' && user.role === 'admin') {
+    return (
+      <PortalTicketsManager
+        token={token}
+        user={user}
+        onBack={handleBackToList}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
   if (view === 'reporting') {
     return (
       <Reporting
@@ -8154,6 +8441,7 @@ const App = () => {
       onLogout={handleLogout}
       onManageTemplates={() => setView('templates')}
       onManageHubSpot={() => setView('hubspot')}
+      onManagePortalTickets={() => setView('portalTickets')}
       onViewReporting={() => setView('reporting')}
     />
   );
