@@ -2926,9 +2926,9 @@
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ subject: formSubject.trim(), description: formDescription.trim(), priority: formPriority })
           });
-          const data = await response.json();
-          if (data.error) {
-            setFormMessage({ type: 'error', text: data.error });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok || data.error) {
+            setFormMessage({ type: 'error', text: data.error || 'Failed to submit ticket. Please try again.' });
           } else {
             setFormMessage({ type: 'success', text: 'Your ticket has been submitted! Our team will respond within 24-48 hours.' });
             setFormSubject('');
@@ -3200,8 +3200,8 @@
                     <h2 className="text-2xl sm:text-4xl font-bold text-gray-800 mb-4 sm:mb-6">Submit a Ticket</h2>
                     <p className="text-gray-500 text-lg">
                       <span className="italic">or</span> email us at{' '}
-                      <a href="mailto:support@thrive365labs.live" className="text-primary hover:text-accent font-semibold">
-                        support@thrive365labs.live
+                      <a href="mailto:support@thrive365labs.com" className="text-primary hover:text-accent font-semibold">
+                        support@thrive365labs.com
                       </a>
                     </p>
                   </div>
