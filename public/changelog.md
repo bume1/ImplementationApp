@@ -4,6 +4,12 @@
 
 ---
 
+### Version 3.8.0 - February 18, 2026
+
+#### New Features
+- Add automated welcome emails for new users and fix syntax errors
+
+
 ### Version 3.7.0 - February 18, 2026
 
 #### New Features
