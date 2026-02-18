@@ -4,6 +4,15 @@
 
 ---
 
+### Version 3.6.0 - February 18, 2026
+
+#### New Features
+- Add client-specific Quick Tips to Knowledge Hub
+
+#### Changes
+- Show 'View & Download' for cloud-linked documents in client portal
+
+
 ### Version 3.5.0 - February 17, 2026
 
 #### New Features
