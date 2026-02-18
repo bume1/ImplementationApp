@@ -9,7 +9,7 @@
 
 **Thrive 365 Labs Web App** is a full-stack clinical laboratory project management platform built for managing complex equipment installations (Biolis AU480 CLIA labs). It features a multi-portal architecture with role-based access, HubSpot CRM integration, Google Drive connectivity, and a 102-task template system.
 
-**Current version**: 2.7.0
+**Current version**: 3.0.0
 **License**: Proprietary - Thrive 365 Labs
 
 ---
