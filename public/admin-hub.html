@@ -882,15 +882,19 @@
       const [bulkResetResults, setBulkResetResults] = useState(null);
       const [bulkResetLoading, setBulkResetLoading] = useState(false);
       const logoInputRef = useRef(null);
+      const [welcomeTpl, setWelcomeTpl] = useState(null);
+      const [welcomeTplSaving, setWelcomeTplSaving] = useState(false);
+      const [welcomeTplMsg, setWelcomeTplMsg] = useState('');
 
       const defaultFormData = {
-        name: '', email: '', password: '', role: 'user',
+        name: '', email: '', password: '', phone: '', role: 'user',
         isManager: false, // Manager flag - limited admin access (no inbox/user management)
         hasServicePortalAccess: false, hasAdminHubAccess: false,
         hasImplementationsAccess: false, hasClientPortalAdminAccess: false,
         practiceName: '', isNewClient: false, existingPortalSlug: '',
         logo: '', hubspotCompanyId: '', hubspotDealId: '', hubspotContactId: '',
-        assignedProjects: [], projectAccessLevels: {}, assignedClients: []
+        assignedProjects: [], projectAccessLevels: {}, assignedClients: [],
+        sendWelcomeEmail: true
       };
       const [formData, setFormData] = useState(defaultFormData);
 
@@ -910,6 +914,9 @@
         if (!resetsRes.error) setPasswordResets(resetsRes);
         if (Array.isArray(clientsRes)) setClients(clientsRes);
         if (Array.isArray(portalsRes)) setClientPortals(portalsRes);
+        // Load welcome email template
+        fetch('/api/admin/welcome-email-template', { headers: { 'Authorization': `Bearer ${token}` } })
+          .then(r => r.json()).then(tpl => { if (!tpl.error) setWelcomeTpl(tpl); }).catch(() => {});
         setLoading(false);
       };
 
@@ -1161,6 +1168,9 @@
               <button onClick={() => setActiveTab('resets')} className={`px-4 py-2 font-medium ${activeTab === 'resets' ? 'border-b-2 border-primary text-primary' : 'text-gray-500'}`}>
                 Password Resets {passwordResets.length > 0 && <span className="ml-1 bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">{passwordResets.length}</span>}
               </button>
+              <button onClick={() => setActiveTab('welcomeEmail')} className={`px-4 py-2 font-medium ${activeTab === 'welcomeEmail' ? 'border-b-2 border-primary text-primary' : 'text-gray-500'}`}>
+                Welcome Email
+              </button>
             </div>
 
             {message && <div className={`mt-4 p-3 rounded-lg ${message.includes('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{message}</div>}
@@ -1206,6 +1216,88 @@
                 </div>
               ) : (
                 <p className="text-gray-500 text-center py-8">No pending password reset requests</p>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'welcomeEmail' && (
+            <div className="bg-white rounded-xl shadow-sm p-6 space-y-6">
+              <div>
+                <h2 className="text-lg font-bold text-accent mb-1">Welcome Email Template</h2>
+                <p className="text-sm text-gray-500">This email is automatically sent when a new user is created (if the option is checked). It includes their login credentials.</p>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+                <p className="font-medium mb-1">Available variables:</p>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {['{{recipientName}}','{{recipientEmail}}','{{temporaryPassword}}','{{loginUrl}}','{{appUrl}}'].map(v => (
+                    <code key={v} className="bg-blue-100 px-2 py-0.5 rounded text-xs font-mono">{v}</code>
+                  ))}
+                </div>
+              </div>
+
+              {welcomeTpl ? (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+                    <input
+                      type="text"
+                      value={welcomeTpl.subject}
+                      onChange={(e) => setWelcomeTpl({...welcomeTpl, subject: e.target.value})}
+                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Body (plain text)</label>
+                    <textarea
+                      value={welcomeTpl.body}
+                      onChange={(e) => setWelcomeTpl({...welcomeTpl, body: e.target.value})}
+                      rows={10}
+                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary text-sm font-mono"
+                    />
+                    <p className="text-xs text-gray-400 mt-1">The HTML version of the email uses a branded template automatically — this body is used as the plain-text fallback.</p>
+                  </div>
+                  {welcomeTplMsg && (
+                    <div className={`p-3 rounded-lg text-sm ${welcomeTplMsg.includes('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{welcomeTplMsg}</div>
+                  )}
+                  <div className="flex gap-3 justify-between pt-2 border-t">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!confirm('Reset the welcome email template to the default?')) return;
+                        const r = await fetch('/api/admin/welcome-email-template/reset', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }).then(x => x.json());
+                        if (r.error) { setWelcomeTplMsg('Error: ' + r.error); return; }
+                        setWelcomeTpl(r.template);
+                        setWelcomeTplMsg('Template reset to default.');
+                      }}
+                      className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+                    >
+                      Reset to Default
+                    </button>
+                    <button
+                      type="button"
+                      disabled={welcomeTplSaving}
+                      onClick={async () => {
+                        setWelcomeTplSaving(true);
+                        setWelcomeTplMsg('');
+                        const r = await fetch('/api/admin/welcome-email-template', {
+                          method: 'PUT',
+                          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ subject: welcomeTpl.subject, body: welcomeTpl.body })
+                        }).then(x => x.json());
+                        setWelcomeTplSaving(false);
+                        if (r.error) { setWelcomeTplMsg('Error: ' + r.error); return; }
+                        setWelcomeTplMsg('Template saved successfully.');
+                      }}
+                      className="px-6 py-2 text-sm text-white rounded-lg font-medium disabled:opacity-50"
+                      style={{backgroundColor: '#045E9F'}}
+                    >
+                      {welcomeTplSaving ? 'Saving...' : 'Save Template'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-10 text-gray-400">Loading template...</div>
               )}
             </div>
           )}
@@ -1468,6 +1560,22 @@
                           );
                         })}
                       </div>
+                    </div>
+                  )}
+
+                  {/* Welcome email option — only shown when creating a new user */}
+                  {!editingUser && (
+                    <div className="flex items-start gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <input
+                        type="checkbox"
+                        id="sendWelcomeEmail"
+                        checked={formData.sendWelcomeEmail !== false}
+                        onChange={(e) => setFormData({...formData, sendWelcomeEmail: e.target.checked})}
+                        className="mt-0.5 h-4 w-4 rounded border-gray-300 accent-[#045E9F]"
+                      />
+                      <label htmlFor="sendWelcomeEmail" className="text-sm text-blue-800 cursor-pointer">
+                        <span className="font-medium">Send welcome email</span> — automatically email the new user their username and temporary password with a login link
+                      </label>
                     </div>
                   )}
 

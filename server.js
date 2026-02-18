@@ -12,6 +12,7 @@ const hubspot = require('./hubspot');
 const googledrive = require('./googledrive');
 const pdfGenerator = require('./pdf-generator');
 const changelogGenerator = require('./changelog-generator');
+const { sendEmail } = require('./email');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -722,6 +723,91 @@ const generateClientUserSlug = async (practiceName) => {
   return generateClientSlug(practiceName, existingSlugs);
 };
 
+// ============================================================
+// WELCOME EMAIL SYSTEM
+// ============================================================
+
+// Base HTML wrapper for welcome emails
+const WELCOME_HTML_WRAPPER = `<div style="font-family: Inter, -apple-system, sans-serif; max-width: 600px; margin: 0 auto; background: #f8fafc;">
+  <div style="background-color: #ffffff; padding: 24px 28px 20px; border-radius: 8px 8px 0 0; text-align: center; border-bottom: 3px solid #045E9F;">
+    <img src="https://app.thrive365labs.live/thrive365-logo.webp" alt="Thrive 365 Labs" style="height: 44px; max-width: 220px; display: block; margin: 0 auto;" />
+  </div>
+  <div style="background: #ffffff; padding: 32px 28px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+    <h2 style="color: #00205A; margin-top: 0; font-size: 20px;">Welcome to Thrive 365 Labs, {{recipientName}}!</h2>
+    <p style="color: #374151; line-height: 1.7; font-size: 15px;">Your account has been created. Use the credentials below to log in for the first time. You will be prompted to set a new password after your first login.</p>
+    <div style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; padding: 20px 24px; margin: 24px 0;">
+      <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+        <tr>
+          <td style="color: #64748b; padding: 6px 0; width: 140px; font-weight: 500;">Username / Email</td>
+          <td style="color: #0f172a; padding: 6px 0; font-weight: 600;">{{recipientEmail}}</td>
+        </tr>
+        <tr>
+          <td style="color: #64748b; padding: 6px 0; font-weight: 500;">Temporary Password</td>
+          <td style="color: #0f172a; padding: 6px 0; font-weight: 600; font-family: monospace; letter-spacing: 0.05em;">{{temporaryPassword}}</td>
+        </tr>
+      </table>
+    </div>
+    <p style="margin-top: 20px;">
+      <a href="{{loginUrl}}" style="display: inline-block; background: #045E9F; color: #ffffff; padding: 12px 28px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 14px;">Log In Now</a>
+    </p>
+    <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 28px 0 16px;" />
+    <p style="color: #9ca3af; font-size: 12px; margin: 0;">If you did not expect this email, please contact your Thrive 365 Labs administrator.</p>
+  </div>
+</div>`;
+
+// Default welcome email template — stored in DB under 'welcome_email_template' for admin editing
+const DEFAULT_WELCOME_TEMPLATE = {
+  subject: 'Welcome to Thrive 365 Labs — Your Account is Ready',
+  body: 'Welcome, {{recipientName}}!\n\nYour account has been created.\n\nUsername / Email: {{recipientEmail}}\nTemporary Password: {{temporaryPassword}}\n\nLog in here: {{loginUrl}}\n\nYou will be asked to set a new password after your first login.\n\nThrive 365 Labs'
+};
+
+async function getWelcomeTemplate() {
+  const stored = await db.get('welcome_email_template');
+  return stored || DEFAULT_WELCOME_TEMPLATE;
+}
+
+function renderWelcomeTemplate(str, vars) {
+  return str.replace(/\{\{(\w+)\}\}/g, (m, k) => vars[k] !== undefined ? String(vars[k]) : m);
+}
+
+async function getAppBaseUrl() {
+  const domain = await db.get('client_portal_domain');
+  if (domain) return `https://${domain}`;
+  return process.env.REPLIT_DEV_DOMAIN
+    ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+    : `http://localhost:${PORT}`;
+}
+
+function getLoginUrlForRole(role, slug, appBaseUrl) {
+  if (role === 'client' && slug) return `${appBaseUrl}/portal/${slug}`;
+  if (role === 'admin') return `${appBaseUrl}/admin`;
+  return `${appBaseUrl}/login`;
+}
+
+async function sendWelcomeEmail(user, plainPassword) {
+  try {
+    const appBaseUrl = await getAppBaseUrl();
+    const loginUrl = getLoginUrlForRole(user.role, user.slug, appBaseUrl);
+    const tpl = await getWelcomeTemplate();
+    const vars = {
+      recipientName: user.name,
+      recipientEmail: user.email,
+      temporaryPassword: plainPassword,
+      loginUrl,
+      appUrl: appBaseUrl
+    };
+    const subject = renderWelcomeTemplate(tpl.subject, vars);
+    const body = renderWelcomeTemplate(tpl.body, vars);
+    const htmlBody = renderWelcomeTemplate(WELCOME_HTML_WRAPPER, vars);
+    const result = await sendEmail(user.email, subject, body, { htmlBody });
+    if (!result.success) console.error('Welcome email failed for', user.email, ':', result.error);
+    return result;
+  } catch (err) {
+    console.error('sendWelcomeEmail error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
 // Super Admin access - full system access (role === 'admin')
 const requireAdmin = (req, res, next) => {
   if (req.user.role !== 'admin') {
@@ -827,7 +913,7 @@ app.post('/api/users', authenticateToken, async (req, res) => {
       email, password, name, role, practiceName, isNewClient, assignedProjects, logo,
       hasServicePortalAccess, hasAdminHubAccess, hasImplementationsAccess, hasClientPortalAdminAccess,
       isManager, assignedClients, hubspotCompanyId, hubspotDealId, hubspotContactId, projectAccessLevels,
-      existingPortalSlug
+      existingPortalSlug, sendWelcomeEmail: shouldSendWelcome = true
     } = req.body;
 
     // Managers can only create client users
@@ -911,6 +997,14 @@ app.post('/api/users', authenticateToken, async (req, res) => {
     users.push(newUser);
     await db.set('users', users);
     invalidateUsersCache();
+
+    // Send welcome email with login credentials (fire-and-forget, non-blocking)
+    if (shouldSendWelcome !== false) {
+      sendWelcomeEmail(newUser, password).catch(err =>
+        console.error('Welcome email error (non-fatal):', err)
+      );
+    }
+
     res.json({
       id: newUser.id,
       email: newUser.email,
@@ -8301,6 +8395,46 @@ const refreshProjectSlugCache = async () => {
   }
   _projectSlugCache = { slugs, previousSlugs: previousSlugsMap, lastRefresh: now };
 };
+
+// ============================================================
+// WELCOME EMAIL TEMPLATE MANAGEMENT
+// ============================================================
+
+// GET: retrieve the current welcome email template
+app.get('/api/admin/welcome-email-template', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const tpl = await getWelcomeTemplate();
+    res.json({ ...tpl, variables: ['recipientName', 'recipientEmail', 'temporaryPassword', 'loginUrl', 'appUrl'] });
+  } catch (error) {
+    console.error('Get welcome template error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT: update the welcome email template subject/body
+app.put('/api/admin/welcome-email-template', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { subject, body } = req.body;
+    if (!subject || !body) return res.status(400).json({ error: 'subject and body are required' });
+    const updated = { subject, body, updatedAt: new Date().toISOString(), updatedBy: req.user.name };
+    await db.set('welcome_email_template', updated);
+    res.json({ message: 'Welcome email template updated', template: updated });
+  } catch (error) {
+    console.error('Update welcome template error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST: reset the welcome email template to the default
+app.post('/api/admin/welcome-email-template/reset', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await db.set('welcome_email_template', null);
+    res.json({ message: 'Welcome email template reset to default', template: DEFAULT_WELCOME_TEMPLATE });
+  } catch (error) {
+    console.error('Reset welcome template error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 
 // Legacy root-level route - redirect old project slugs to /launch
 app.get('/:slug', async (req, res, next) => {
