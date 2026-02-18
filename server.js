@@ -2822,6 +2822,15 @@ app.put('/api/projects/:projectId/tasks/bulk-update', authenticateToken, async (
     }
     
     await db.set(`tasks_${projectId}`, tasks);
+
+    // Fire-and-forget HubSpot sync for each newly completed task (mirrors single-task endpoint)
+    if (completed) {
+      for (const task of updatedTasks) {
+        createHubSpotTask(projectId, task, req.user.name);
+        checkPhaseCompletion(projectId, tasks, task);
+      }
+    }
+
     const response = { message: `${updatedTasks.length} tasks updated`, updatedTasks };
     if (skippedTasks.length > 0) {
       response.skipped = skippedTasks;
@@ -3712,9 +3721,9 @@ app.put('/api/projects/:projectId/tasks/:taskId', authenticateToken, async (req,
       
       // Create HubSpot task instead of logging an activity note
       createHubSpotTask(projectId, completedTask, req.user.name);
-      
-      // Check for stage completion and phase completion
-      checkStageAndPhaseCompletion(projectId, tasks, completedTask);
+
+      // Check for phase completion
+      checkPhaseCompletion(projectId, tasks, completedTask);
     }
     
     res.json(tasks[idx]);
@@ -6927,7 +6936,7 @@ async function createHubSpotTask(projectId, task, completedByName) {
   }
 }
 
-async function checkStageAndPhaseCompletion(projectId, tasks, completedTask) {
+async function checkPhaseCompletion(projectId, tasks, completedTask) {
   try {
     const projects = await getProjects();
     const project = projects.find(p => p.id === projectId);
@@ -6937,90 +6946,65 @@ async function checkStageAndPhaseCompletion(projectId, tasks, completedTask) {
     }
 
     const phase = completedTask.phase;
-    const stage = completedTask.stage;
-    
-    // Check if stage is completed (all tasks in this phase+stage are done)
-    if (stage) {
-      const stageTasks = tasks.filter(t => t.phase === phase && t.stage === stage);
-      const stageCompleted = stageTasks.every(t => t.completed);
-      
-      if (stageCompleted && stageTasks.length > 0) {
-        // Build comprehensive stage completion note with dates, times, and notes
-        let stageDetails = `Stage "${stage}" in ${phase} is now complete!`;
-        stageDetails += `\n\nTasks completed in this stage (${stageTasks.length} total):`;
-        
-        stageTasks.forEach(task => {
-          stageDetails += `\n\n- ${task.taskTitle}`;
-          if (task.owner) stageDetails += `\n  Owner: ${task.owner}`;
-          if (task.dateCompleted) {
-            const completedDate = new Date(task.dateCompleted);
-            stageDetails += `\n  Completed: ${completedDate.toLocaleDateString()} at ${completedDate.toLocaleTimeString()}`;
-          }
-          
-          // Include all notes for each task
-          if (task.notes && task.notes.length > 0) {
-            stageDetails += `\n  Notes:`;
-            task.notes.forEach(note => {
-              const noteDate = new Date(note.createdAt);
-              stageDetails += `\n    - [${note.author} - ${noteDate.toLocaleDateString()} ${noteDate.toLocaleTimeString()}]: ${note.content}`;
-            });
-          }
-        });
-        
-        console.log(`📤 Stage completed: ${phase} / ${stage}`);
-        await hubspot.logRecordActivity(project.hubspotRecordId, 'Stage Completed', stageDetails);
-      }
-    }
-    
-    // Check if entire phase is completed (move deal stage)
+
+    // Check if entire phase is completed
     const phaseTasks = tasks.filter(t => t.phase === phase);
     const phaseCompleted = phaseTasks.length > 0 && phaseTasks.every(t => t.completed);
-    
+
     if (phaseCompleted) {
-      const mapping = await db.get('hubspot_stage_mapping');
-      if (!mapping || !mapping.phases) {
-        console.log('📋 Phase completed but no stage mapping configured');
-        return;
+      console.log(`📤 ${phase} completed - Building HubSpot notification`);
+
+      // Build phase completion note reflecting this board's actual task organization.
+      // Tasks with a non-empty clientName act as section headers; tasks following them
+      // with an empty clientName fall under that section. This mirrors each board's
+      // unique phase/task structure rather than any hardcoded grouping.
+      let phaseDetails = `${phase} is now complete! ✓`;
+      phaseDetails += `\n\nAll ${phaseTasks.length} tasks completed.`;
+
+      for (const task of phaseTasks) {
+        if (task.clientName && task.clientName.trim()) {
+          // Section header — starts a named group
+          phaseDetails += `\n\n━━ ${task.clientName.trim()} ━━`;
+        }
+
+        phaseDetails += `\n  ✓ ${task.taskTitle}`;
+        if (task.owner) phaseDetails += `\n    Owner: ${task.owner}`;
+        if (task.dateCompleted) {
+          const d = new Date(task.dateCompleted);
+          phaseDetails += `\n    Completed: ${d.toLocaleDateString()} at ${d.toLocaleTimeString()}`;
+        }
+        if (task.notes && task.notes.length > 0) {
+          task.notes.forEach(note => {
+            const nd = new Date(note.createdAt);
+            const noteText = note.text || note.content || note.body || '';
+            phaseDetails += `\n    ↳ [${note.author || note.createdBy || 'Unknown'} - ${nd.toLocaleDateString()}]: ${noteText}`;
+          });
+        }
       }
-      
-      if (mapping.phases[phase]) {
+
+      await hubspot.logRecordActivity(project.hubspotRecordId, `${phase} Completed`, phaseDetails);
+
+      // Update deal pipeline stage if a mapping is configured for this phase
+      const mapping = await db.get('hubspot_stage_mapping');
+      if (mapping && mapping.phases && mapping.phases[phase]) {
         const stageId = mapping.phases[phase];
-        console.log(`📤 Phase ${phase} completed - Syncing to HubSpot stage: ${stageId}`);
-        
-        // Log phase completion with stage-by-stage breakdown only (no individual tasks)
-        let phaseDetails = `${phase} is now complete!`;
-        phaseDetails += `\n\nAll ${phaseTasks.length} tasks in this phase have been completed.`;
-        
-        // Group by stage for summary count only
-        const stageGroups = {};
-        phaseTasks.forEach(task => {
-          const taskStage = task.stage || 'General';
-          if (!stageGroups[taskStage]) stageGroups[taskStage] = 0;
-          stageGroups[taskStage]++;
-        });
-        
-        phaseDetails += `\n\n--- Stage Summary ---`;
-        Object.keys(stageGroups).forEach(stageName => {
-          phaseDetails += `\n${stageName}: ${stageGroups[stageName]} tasks completed`;
-        });
-        
-        await hubspot.logRecordActivity(project.hubspotRecordId, 'Phase Completed', phaseDetails);
-        
-        // Update deal stage
+        console.log(`📤 ${phase} completed - Syncing to HubSpot pipeline stage: ${stageId}`);
         await hubspot.updateRecordStage(project.hubspotRecordId, stageId, mapping.pipelineId);
-        
+
         const idx = projects.findIndex(p => p.id === projectId);
         if (idx !== -1) {
           projects[idx].hubspotDealStage = stageId;
           projects[idx].lastHubSpotSync = new Date().toISOString();
           await db.set('projects', projects);
         }
-        
-        console.log(`✅ HubSpot record ${project.hubspotRecordId} moved to stage for ${phase}`);
+
+        console.log(`✅ HubSpot record ${project.hubspotRecordId} moved to pipeline stage for ${phase}`);
+      } else {
+        console.log(`📋 ${phase} completed - no pipeline stage mapping configured`);
       }
     }
   } catch (error) {
-    console.error('Error in stage/phase completion check:', error.message);
+    console.error('Error in phase completion check:', error.message);
   }
 }
 
@@ -7106,11 +7090,11 @@ async function autoUpdatePhase8Tasks(reportData, eventType, technicianName) {
 
       console.log(`✅ Phase 8 auto-update: ${tasksUpdated} tasks marked complete in project "${project.name}" (${eventType})`);
 
-      // Trigger stage/phase completion check for HubSpot sync
+      // Trigger phase completion check for HubSpot sync
       const updatedTasks = await getTasks(project.id);
       const lastCompleted = updatedTasks.find(t => t.phase === 'Phase 8' && t.completed);
       if (lastCompleted) {
-        await checkStageAndPhaseCompletion(project.id, updatedTasks, lastCompleted);
+        await checkPhaseCompletion(project.id, updatedTasks, lastCompleted);
       }
     }
 
