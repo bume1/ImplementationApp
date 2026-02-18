@@ -4,6 +4,21 @@
 
 ---
 
+### Version 3.7.0 - February 18, 2026
+
+#### New Features
+- Add automated welcome email on new user creation
+- sync HubSpot deal stage on project creation
+
+#### Bug Fixes
+- Fix admin hub crash: remove duplicate NotificationsPage and case
+- show External tickets in client portal, replace HubSpot form with native form
+
+#### Changes
+- Move welcome email into full 10-template Notifications system
+- chore: remove admin release ticket feature (not needed)
+
+
 ### Version 3.6.0 - February 18, 2026
 
 #### New Features
