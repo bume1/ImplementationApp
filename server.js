@@ -1658,6 +1658,341 @@ const generateClientUserSlug = async (practiceName) => {
   return generateClientSlug(practiceName, existingSlugs);
 };
 
+// ============================================================
+// EMAIL TEMPLATE SYSTEM
+// ============================================================
+
+// Base HTML wrapper — used when a template has no custom htmlBody
+const BASE_HTML_EMAIL_WRAPPER = `<div style="font-family: Inter, -apple-system, sans-serif; max-width: 600px; margin: 0 auto; background: #f8fafc;">
+  <div style="background-color: #ffffff; padding: 24px 28px 20px; border-radius: 8px 8px 0 0; text-align: center; border-bottom: 3px solid #045E9F;">
+    <img src="https://app.thrive365labs.live/thrive365-logo.webp" alt="Thrive 365 Labs" style="height: 44px; max-width: 220px; display: block; margin: 0 auto;" />
+  </div>
+  <div style="background: #ffffff; padding: 28px 24px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+    <div style="color: #374151; line-height: 1.7; font-size: 15px; white-space: pre-wrap;">{{content}}</div>
+    {{ctaBlock}}
+    <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 28px 0 16px;" />
+    <p style="color: #9ca3af; font-size: 12px; margin: 0;">You are receiving this because you have an account with Thrive 365 Labs.</p>
+  </div>
+</div>`;
+
+// Branded HTML for the welcome email (has credential table — not a standard wrapper)
+const WELCOME_HTML_BODY = `<div style="font-family: Inter, -apple-system, sans-serif; max-width: 600px; margin: 0 auto; background: #f8fafc;">
+  <div style="background-color: #ffffff; padding: 24px 28px 20px; border-radius: 8px 8px 0 0; text-align: center; border-bottom: 3px solid #045E9F;">
+    <img src="https://app.thrive365labs.live/thrive365-logo.webp" alt="Thrive 365 Labs" style="height: 44px; max-width: 220px; display: block; margin: 0 auto;" />
+  </div>
+  <div style="background: #ffffff; padding: 32px 28px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+    <h2 style="color: #00205A; margin-top: 0; font-size: 20px;">Welcome to Thrive 365 Labs, {{recipientName}}!</h2>
+    <p style="color: #374151; line-height: 1.7; font-size: 15px;">Your account has been created. Use the credentials below to log in for the first time. You will be prompted to set a new password after your first login.</p>
+    <div style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; padding: 20px 24px; margin: 24px 0;">
+      <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+        <tr>
+          <td style="color: #64748b; padding: 6px 0; width: 140px; font-weight: 500;">Username / Email</td>
+          <td style="color: #0f172a; padding: 6px 0; font-weight: 600;">{{recipientEmail}}</td>
+        </tr>
+        <tr>
+          <td style="color: #64748b; padding: 6px 0; font-weight: 500;">Temporary Password</td>
+          <td style="color: #0f172a; padding: 6px 0; font-weight: 600; font-family: monospace; letter-spacing: 0.05em;">{{temporaryPassword}}</td>
+        </tr>
+      </table>
+    </div>
+    <p style="margin-top: 20px;">
+      <a href="{{loginUrl}}" style="display: inline-block; background: #045E9F; color: #ffffff; padding: 12px 28px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 14px;">Log In Now</a>
+    </p>
+    <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 28px 0 16px;" />
+    <p style="color: #9ca3af; font-size: 12px; margin: 0;">If you did not expect this email, please contact your Thrive 365 Labs administrator.</p>
+  </div>
+</div>`;
+
+function renderTemplate(str, vars) {
+  if (!str) return '';
+  return str.replace(/\{\{(\w+)\}\}/g, (m, k) => vars[k] !== undefined ? String(vars[k]) : m);
+}
+
+function buildHtmlEmail(body, htmlBody, ctaUrl, ctaLabel) {
+  if (htmlBody) return htmlBody;
+  const ctaBlock = (ctaUrl && ctaLabel)
+    ? `<p style="margin-top: 20px;"><a href="${ctaUrl}" style="display: inline-block; background: #045E9F; color: #ffffff; padding: 10px 24px; border-radius: 6px; text-decoration: none; font-weight: 500; font-size: 14px;">${ctaLabel}</a></p>`
+    : '';
+  return renderTemplate(BASE_HTML_EMAIL_WRAPPER, { content: body, ctaBlock });
+}
+
+// Variable pools by domain
+const VARIABLE_POOLS = {
+  account: {
+    label: 'Account',
+    variables: [
+      { key: 'temporaryPassword', label: 'Temporary Password', example: 'Welcome2026!' },
+      { key: 'loginUrl', label: 'Login URL', example: 'https://app.thrive365labs.live/login' }
+    ]
+  },
+  service_report: {
+    label: 'Service Report',
+    variables: [
+      { key: 'facilityName', label: 'Facility Name', example: 'Valley Medical' },
+      { key: 'technicianName', label: 'Technician Name', example: 'John Smith' },
+      { key: 'reportDate', label: 'Report Date', example: '02/17/2026' },
+      { key: 'serviceType', label: 'Service Type', example: 'Installation' },
+      { key: 'reportStatus', label: 'Report Status', example: 'signature_needed' },
+      { key: 'reportAge', label: 'Days Since Created', example: '5' },
+      { key: 'reportLink', label: 'Direct Report Link', example: 'https://app.thrive365labs.live/service-portal?report=abc-123' },
+      { key: 'portalLink', label: 'Client Portal Link', example: 'https://app.thrive365labs.live/portal/valley-medical' }
+    ]
+  },
+  task: {
+    label: 'Task',
+    variables: [
+      { key: 'taskTitle', label: 'Task Title', example: 'Install AU480 Analyzer' },
+      { key: 'phase', label: 'Phase', example: 'Phase 2' },
+      { key: 'dueDate', label: 'Due Date', example: '03/15/2026' },
+      { key: 'timeframe', label: 'Timeframe', example: 'in 3 days' },
+      { key: 'daysOverdue', label: 'Days Overdue', example: '5' },
+      { key: 'ownerName', label: 'Task Owner', example: 'Jane Doe' },
+      { key: 'taskLink', label: 'Direct Task Link', example: 'https://app.thrive365labs.live/launch/valley-medical?task=42' }
+    ]
+  },
+  project: {
+    label: 'Project',
+    variables: [
+      { key: 'projectName', label: 'Project Name', example: 'Valley Medical Launch' },
+      { key: 'goLiveDate', label: 'Go-Live Date', example: '04/01/2026' },
+      { key: 'daysUntil', label: 'Days Until Go-Live', example: '7' },
+      { key: 'percentage', label: 'Completion %', example: '75' },
+      { key: 'completedTasks', label: 'Completed Tasks', example: '76' },
+      { key: 'totalTasks', label: 'Total Tasks', example: '102' },
+      { key: 'projectLink', label: 'Project Link', example: 'https://app.thrive365labs.live/launch/valley-medical' }
+    ]
+  },
+  inventory: {
+    label: 'Inventory',
+    variables: [
+      { key: 'practiceName', label: 'Practice Name', example: 'Valley Medical' },
+      { key: 'daysSince', label: 'Days Since Last Submission', example: '10' },
+      { key: 'inventoryLink', label: 'Inventory Portal Link', example: 'https://app.thrive365labs.live/portal/valley-medical' }
+    ]
+  },
+  announcement: {
+    label: 'Announcement',
+    variables: [
+      { key: 'title', label: 'Announcement Title', example: 'System Maintenance Scheduled' },
+      { key: 'content', label: 'Announcement Content', example: 'We will be performing system maintenance this weekend.' },
+      { key: 'priorityTag', label: 'Priority Tag', example: '[PRIORITY] ' }
+    ]
+  },
+  recipient: {
+    label: 'Recipient',
+    variables: [
+      { key: 'recipientName', label: 'Recipient Name', example: 'Jane Doe' },
+      { key: 'recipientEmail', label: 'Recipient Email', example: 'jane@valleymedical.com' }
+    ]
+  },
+  system: {
+    label: 'System',
+    variables: [
+      { key: 'appUrl', label: 'App Base URL', example: 'https://app.thrive365labs.live' },
+      { key: 'currentDate', label: 'Current Date', example: '02/17/2026' },
+      { key: 'companyName', label: 'Company Name', example: 'Thrive 365 Labs' }
+    ]
+  }
+};
+
+const TEMPLATE_POOL_MAPPING = {
+  service_report_signature: ['service_report', 'recipient', 'system'],
+  service_report_review:    ['service_report', 'recipient', 'system'],
+  task_deadline:            ['task', 'project', 'recipient', 'system'],
+  task_overdue:             ['task', 'project', 'recipient', 'system'],
+  task_overdue_escalation:  ['task', 'project', 'recipient', 'system'],
+  inventory_reminder:       ['inventory', 'recipient', 'system'],
+  milestone_reached:        ['project', 'recipient', 'system'],
+  golive_reminder:          ['project', 'recipient', 'system'],
+  announcement:             ['announcement', 'recipient', 'system'],
+  welcome_email:            ['account', 'recipient', 'system']
+};
+
+function getPoolGroupsForTemplate(templateId) {
+  const poolNames = TEMPLATE_POOL_MAPPING[templateId] || [];
+  return poolNames
+    .filter(name => VARIABLE_POOLS[name])
+    .map(name => ({
+      pool: name,
+      label: VARIABLE_POOLS[name].label,
+      variables: VARIABLE_POOLS[name].variables.map(v => ({ ...v }))
+    }));
+}
+
+function getPoolVariablesForTemplate(templateId) {
+  const poolNames = TEMPLATE_POOL_MAPPING[templateId] || [];
+  const vars = [];
+  const seen = new Set();
+  for (const poolName of poolNames) {
+    const pool = VARIABLE_POOLS[poolName];
+    if (!pool) continue;
+    for (const v of pool.variables) {
+      if (!seen.has(v.key)) { vars.push({ ...v, pool: poolName }); seen.add(v.key); }
+    }
+  }
+  return vars;
+}
+
+// 10 default templates (admin-editable, stored in DB under 'email_templates')
+const DEFAULT_EMAIL_TEMPLATES = [
+  {
+    id: 'service_report_signature',
+    name: 'Service Report — Signature Request',
+    category: 'automated',
+    subject: 'Action needed: Service report for {{facilityName}} awaits your signature',
+    body: 'A service report from {{technicianName}} on {{reportDate}} requires your signature. Please review and sign at your earliest convenience.',
+    htmlBody: null,
+    isDefault: true, updatedAt: null, updatedBy: null
+  },
+  {
+    id: 'service_report_review',
+    name: 'Service Report — Admin Review',
+    category: 'automated',
+    subject: 'Service report pending review: {{facilityName}}',
+    body: 'A service report from {{technicianName}} for {{facilityName}} has been pending review for {{reportAge}} days.',
+    htmlBody: null,
+    isDefault: true, updatedAt: null, updatedBy: null
+  },
+  {
+    id: 'task_deadline',
+    name: 'Task Deadline Warning',
+    category: 'automated',
+    subject: 'Task due {{timeframe}}: {{taskTitle}} — {{projectName}}',
+    body: '"{{taskTitle}}" in {{phase}} is due {{dueDate}}. Project: {{projectName}}.',
+    htmlBody: null,
+    isDefault: true, updatedAt: null, updatedBy: null
+  },
+  {
+    id: 'task_overdue',
+    name: 'Task Overdue — Owner',
+    category: 'automated',
+    subject: 'OVERDUE ({{daysOverdue}}d): {{taskTitle}} — {{projectName}}',
+    body: '"{{taskTitle}}" in {{phase}} was due {{dueDate}} and is now {{daysOverdue}} day(s) overdue. Project: {{projectName}}.',
+    htmlBody: null,
+    isDefault: true, updatedAt: null, updatedBy: null
+  },
+  {
+    id: 'task_overdue_escalation',
+    name: 'Task Overdue — Admin Escalation',
+    category: 'automated',
+    subject: 'ESCALATION: Task {{daysOverdue}}d overdue — {{taskTitle}} ({{projectName}})',
+    body: '"{{taskTitle}}" assigned to {{ownerName}} in project "{{projectName}}" is {{daysOverdue}} days overdue. Due date: {{dueDate}}.',
+    htmlBody: null,
+    isDefault: true, updatedAt: null, updatedBy: null
+  },
+  {
+    id: 'inventory_reminder',
+    name: 'Inventory Reminder',
+    category: 'automated',
+    subject: 'Reminder: Your weekly inventory update is due — {{practiceName}}',
+    body: 'Your last inventory submission was {{daysSince}} days ago. Please submit your weekly update to keep your lab supplies on track.',
+    htmlBody: null,
+    isDefault: true, updatedAt: null, updatedBy: null
+  },
+  {
+    id: 'milestone_reached',
+    name: 'Milestone Reached',
+    category: 'automated',
+    subject: 'Milestone reached: {{projectName}} is {{percentage}}% complete!',
+    body: 'Great progress! {{projectName}} has reached {{percentage}}% completion. {{completedTasks}} of {{totalTasks}} tasks are done.',
+    htmlBody: null,
+    isDefault: true, updatedAt: null, updatedBy: null
+  },
+  {
+    id: 'golive_reminder',
+    name: 'Go-Live Reminder',
+    category: 'automated',
+    subject: 'Go-live in {{daysUntil}} days: {{projectName}}',
+    body: '{{projectName}} is scheduled to go live on {{goLiveDate}}. That\'s {{daysUntil}} days from now. Current progress: {{percentage}}% complete.',
+    htmlBody: null,
+    isDefault: true, updatedAt: null, updatedBy: null
+  },
+  {
+    id: 'announcement',
+    name: 'New Announcement',
+    category: 'announcement',
+    subject: '{{priorityTag}}New Announcement: {{title}}',
+    body: '{{priorityTag}}{{title}}\n\n{{content}}',
+    htmlBody: null,
+    isDefault: true, updatedAt: null, updatedBy: null
+  },
+  {
+    id: 'welcome_email',
+    name: 'Welcome Email — New User',
+    category: 'automated',
+    subject: 'Welcome to Thrive 365 Labs — Your Account is Ready',
+    body: 'Welcome, {{recipientName}}!\n\nYour account has been created. Use the details below to log in for the first time. You will be prompted to set a new password after your first login.\n\nUsername / Email: {{recipientEmail}}\nTemporary Password: {{temporaryPassword}}\n\nLog in here: {{loginUrl}}\n\nThrive 365 Labs',
+    htmlBody: null,
+    isDefault: true, updatedAt: null, updatedBy: null
+  }
+];
+
+async function getEmailTemplates() {
+  let templates = await db.get('email_templates');
+  if (!templates || !Array.isArray(templates) || templates.length === 0) {
+    templates = DEFAULT_EMAIL_TEMPLATES.map(t => ({ ...t }));
+    await db.set('email_templates', templates);
+    return templates;
+  }
+  // Seed any new defaults missing from the stored list
+  let added = false;
+  for (const def of DEFAULT_EMAIL_TEMPLATES) {
+    if (!templates.find(t => t.id === def.id)) {
+      templates.push({ ...def });
+      added = true;
+    }
+  }
+  if (added) await db.set('email_templates', templates);
+  return templates;
+}
+
+function getTemplateById(templates, id) {
+  return templates.find(t => t.id === id) || DEFAULT_EMAIL_TEMPLATES.find(t => t.id === id);
+}
+
+async function getAppBaseUrl() {
+  const domain = await db.get('client_portal_domain');
+  if (domain) return `https://${domain}`;
+  return process.env.REPLIT_DEV_DOMAIN
+    ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+    : `http://localhost:${PORT}`;
+}
+
+function getLoginUrlForRole(role, slug, appBaseUrl) {
+  if (role === 'client' && slug) return `${appBaseUrl}/portal/${slug}`;
+  if (role === 'admin') return `${appBaseUrl}/admin`;
+  return `${appBaseUrl}/login`;
+}
+
+async function sendWelcomeEmail(user, plainPassword) {
+  try {
+    const appBaseUrl = await getAppBaseUrl();
+    const loginUrl = getLoginUrlForRole(user.role, user.slug, appBaseUrl);
+    const templates = await getEmailTemplates();
+    const tpl = getTemplateById(templates, 'welcome_email');
+    const vars = {
+      recipientName: user.name,
+      recipientEmail: user.email,
+      temporaryPassword: plainPassword,
+      loginUrl,
+      appUrl: appBaseUrl,
+      currentDate: new Date().toLocaleDateString(),
+      companyName: 'Thrive 365 Labs'
+    };
+    const subject = renderTemplate(tpl.subject, vars);
+    const body = renderTemplate(tpl.body, vars);
+    // Use the stored htmlBody if customised, otherwise use the branded welcome HTML
+    const htmlBody = tpl.htmlBody
+      ? renderTemplate(tpl.htmlBody, vars)
+      : renderTemplate(WELCOME_HTML_BODY, vars);
+    const result = await sendEmail(user.email, subject, body, { htmlBody });
+    if (!result.success) console.error('Welcome email failed for', user.email, ':', result.error);
+    return result;
+  } catch (err) {
+    console.error('sendWelcomeEmail error:', err);
+    return { success: false, error: err.message };
+  }
+
 // Resolve a clientFacilityName to its matching client slug
 // Uses bidirectional matching to handle name variations
 const resolveClientSlug = async (clientFacilityName, hubspotCompanyId, existingUsers) => {
@@ -1893,7 +2228,7 @@ app.post('/api/users', authenticateToken, async (req, res) => {
       email, password, name, role, practiceName, isNewClient, assignedProjects, logo,
       hasServicePortalAccess, hasAdminHubAccess, hasImplementationsAccess, hasClientPortalAdminAccess,
       isManager, assignedClients, hubspotCompanyId, hubspotDealId, hubspotContactId, projectAccessLevels,
-      existingPortalSlug, phone
+      existingPortalSlug, phone, sendWelcomeEmail: shouldSendWelcome = true
     } = req.body;
 
     // Managers can only create client users
@@ -1988,6 +2323,14 @@ app.post('/api/users', authenticateToken, async (req, res) => {
     users.push(newUser);
     await db.set('users', users);
     invalidateUsersCache();
+
+    // Send welcome email with login credentials (fire-and-forget, non-blocking)
+    if (shouldSendWelcome !== false) {
+      sendWelcomeEmail(newUser, password).catch(err =>
+        console.error('Welcome email error (non-fatal):', err)
+      );
+    }
+
     res.json({
       id: newUser.id,
       email: newUser.email,
@@ -11557,6 +11900,126 @@ const refreshProjectSlugCache = async () => {
   }
   _projectSlugCache = { slugs, previousSlugs: previousSlugsMap, lastRefresh: now };
 };
+
+// ============================================================
+// EMAIL TEMPLATE MANAGEMENT ENDPOINTS
+// ============================================================
+
+// List all templates (enriched with pool groups and variables)
+app.get('/api/admin/email-templates', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const templates = await getEmailTemplates();
+    const enriched = templates.map(t => ({
+      ...t,
+      poolGroups: getPoolGroupsForTemplate(t.id),
+      variables: getPoolVariablesForTemplate(t.id)
+    }));
+    res.json(enriched);
+  } catch (error) {
+    console.error('Get email templates error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get a single template by ID
+app.get('/api/admin/email-templates/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const templates = await getEmailTemplates();
+    const tpl = getTemplateById(templates, req.params.id);
+    if (!tpl) return res.status(404).json({ error: 'Template not found' });
+    res.json({ ...tpl, poolGroups: getPoolGroupsForTemplate(tpl.id), variables: getPoolVariablesForTemplate(tpl.id) });
+  } catch (error) {
+    console.error('Get email template error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update a template's subject/body/htmlBody
+app.put('/api/admin/email-templates/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const templates = await getEmailTemplates();
+    const idx = templates.findIndex(t => t.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Template not found' });
+    const { subject, body, htmlBody } = req.body;
+    if (!subject || !body) return res.status(400).json({ error: 'subject and body are required' });
+    templates[idx] = {
+      ...templates[idx],
+      subject,
+      body,
+      htmlBody: htmlBody || null,
+      isDefault: false,
+      updatedAt: new Date().toISOString(),
+      updatedBy: req.user.name
+    };
+    await db.set('email_templates', templates);
+    res.json(templates[idx]);
+  } catch (error) {
+    console.error('Update email template error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Reset a template to its default
+app.post('/api/admin/email-templates/:id/reset', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const def = DEFAULT_EMAIL_TEMPLATES.find(t => t.id === req.params.id);
+    if (!def) return res.status(404).json({ error: 'Template not found' });
+    const templates = await getEmailTemplates();
+    const idx = templates.findIndex(t => t.id === req.params.id);
+    const reset = { ...def, updatedAt: null, updatedBy: null, isDefault: true };
+    if (idx !== -1) templates[idx] = reset; else templates.push(reset);
+    await db.set('email_templates', templates);
+    res.json({ ...reset, poolGroups: getPoolGroupsForTemplate(reset.id), variables: getPoolVariablesForTemplate(reset.id) });
+  } catch (error) {
+    console.error('Reset email template error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Preview a template with example variable values
+app.post('/api/admin/email-templates/:id/preview', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const templates = await getEmailTemplates();
+    const tpl = getTemplateById(templates, req.params.id);
+    if (!tpl) return res.status(404).json({ error: 'Template not found' });
+    // Build example vars from pool definitions
+    const vars = {};
+    getPoolVariablesForTemplate(tpl.id).forEach(v => { vars[v.key] = v.example || `[${v.label}]`; });
+    const subject = renderTemplate(tpl.subject, vars);
+    const body = renderTemplate(tpl.body, vars);
+    const htmlSrc = tpl.id === 'welcome_email'
+      ? renderTemplate(WELCOME_HTML_BODY, vars)
+      : buildHtmlEmail(body, tpl.htmlBody ? renderTemplate(tpl.htmlBody, vars) : null);
+    res.json({ subject, body, html: htmlSrc });
+  } catch (error) {
+    console.error('Preview email template error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Send a test email to the requesting admin
+app.post('/api/admin/email-templates/:id/test-send', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const templates = await getEmailTemplates();
+    const tpl = getTemplateById(templates, req.params.id);
+    if (!tpl) return res.status(404).json({ error: 'Template not found' });
+    const vars = {};
+    getPoolVariablesForTemplate(tpl.id).forEach(v => { vars[v.key] = v.example || `[${v.label}]`; });
+    vars.recipientName = req.user.name;
+    vars.recipientEmail = req.user.email;
+    const subject = `[TEST] ${renderTemplate(tpl.subject, vars)}`;
+    const body = renderTemplate(tpl.body, vars);
+    const htmlSrc = tpl.id === 'welcome_email'
+      ? renderTemplate(WELCOME_HTML_BODY, vars)
+      : buildHtmlEmail(body, tpl.htmlBody ? renderTemplate(tpl.htmlBody, vars) : null);
+    const result = await sendEmail(req.user.email, subject, body, { htmlBody: htmlSrc });
+    if (!result.success) return res.status(500).json({ error: result.error || 'Send failed' });
+    res.json({ message: `Test email sent to ${req.user.email}` });
+  } catch (error) {
+    console.error('Test send email template error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 
 // Legacy root-level route - redirect old project slugs to /launch
 app.get('/:slug', async (req, res, next) => {
