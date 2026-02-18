@@ -5172,23 +5172,15 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
     const hubspotContactId = clientUser.hubspotContactId || '';
     const hubspotDealId = clientUser.hubspotDealId || '';
 
-    // Collect deal IDs from the client's assigned projects.
-    // Deal-scoped tickets are precise to one project, unlike company-scoped which
-    // returns all tickets across the entire company and can bleed across practices.
+    // Fetch assigned projects — used for the retroactive cutoff date fallback.
     const allProjects = await getProjects();
     const assignedProjects = allProjects.filter(p =>
       (clientUser.assignedProjects || []).includes(p.id)
     );
-    const projectDealIds = assignedProjects
-      .filter(p => p.hubspotRecordId && p.hubspotRecordType === 'deals')
-      .map(p => p.hubspotRecordId);
-
-    // Build the full set of deal IDs: user-level + all assigned project deals (deduplicated)
-    const allDealIds = [...new Set([hubspotDealId, ...projectDealIds].filter(Boolean))];
 
     // Determine the cutoff date to prevent retroactive ticket display.
     // Tickets created before this date are hidden.
-    // Priority: hubspotLinkedAt > earliest assigned project createdAt > no cutoff
+    // Priority: hubspotLinkedAt (set when IDs were first linked) > earliest assigned project createdAt > no cutoff
     let ticketCutoffDate = clientUser.hubspotLinkedAt ? new Date(clientUser.hubspotLinkedAt) : null;
     if (!ticketCutoffDate && assignedProjects.length > 0) {
       ticketCutoffDate = assignedProjects.reduce((earliest, p) => {
@@ -5200,33 +5192,42 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
     console.log(`🎫 Ticket fetch for user ${clientUser.username || clientUser.email}:`);
     console.log(`   - Company ID: "${hubspotCompanyId}"`);
     console.log(`   - Contact ID: "${hubspotContactId}"`);
-    console.log(`   - Deal IDs (user + projects): [${allDealIds.join(', ')}]`);
+    console.log(`   - Deal ID: "${hubspotDealId}"`);
     console.log(`   - Cutoff date: ${ticketCutoffDate ? ticketCutoffDate.toISOString() : 'none (show all)'}`);
 
-    if (!hubspotCompanyId && !hubspotContactId && allDealIds.length === 0) {
+    if (!hubspotCompanyId && !hubspotContactId && !hubspotDealId) {
       console.log(`🎫 No HubSpot IDs configured for ${clientUser.username || clientUser.email}`);
       return res.json({ tickets: [], message: 'No HubSpot account linked' });
     }
 
     let tickets = [];
 
-    // 1. Fetch by deal IDs first — most precise, scoped to a specific project/practice.
-    //    Includes both the user-level hubspotDealId and all assigned project deal IDs.
-    if (hubspot.getTicketsForDeal) {
-      for (const dealId of allDealIds) {
-        try {
-          const dealTickets = await hubspot.getTicketsForDeal(dealId);
-          const existingIds = new Set(tickets.map(t => t.id));
-          const newTickets = dealTickets.filter(t => !existingIds.has(t.id));
-          tickets = [...tickets, ...newTickets];
-          console.log(`📋 Fetched ${dealTickets.length} tickets for deal ${dealId} (${newTickets.length} new)`);
-        } catch (err) {
-          console.error(`Error fetching deal tickets for ${dealId}:`, err.message);
-        }
+    // 1. Fetch by company ID — primary source. Each practice should have its own
+    //    HubSpot company record so this scopes correctly to that practice's tickets.
+    if (hubspotCompanyId) {
+      try {
+        const companyTickets = await hubspot.getTicketsForCompany(hubspotCompanyId);
+        tickets = [...companyTickets];
+        console.log(`📋 Fetched ${companyTickets.length} tickets for company ${hubspotCompanyId}`);
+      } catch (err) {
+        console.error('Error fetching company tickets:', err.message);
       }
     }
 
-    // 2. Fetch by contact ID — precise to a single contact, merge and deduplicate.
+    // 2. Fetch by deal ID and merge (deduplicated).
+    if (hubspotDealId && hubspot.getTicketsForDeal) {
+      try {
+        const dealTickets = await hubspot.getTicketsForDeal(hubspotDealId);
+        const existingIds = new Set(tickets.map(t => t.id));
+        const newTickets = dealTickets.filter(t => !existingIds.has(t.id));
+        tickets = [...tickets, ...newTickets];
+        console.log(`📋 Fetched ${dealTickets.length} tickets for deal ${hubspotDealId} (${newTickets.length} new)`);
+      } catch (err) {
+        console.error('Error fetching deal tickets:', err.message);
+      }
+    }
+
+    // 3. Fetch by contact ID and merge (deduplicated).
     if (hubspotContactId) {
       try {
         const contactTickets = await hubspot.getTicketsForContact(hubspotContactId);
