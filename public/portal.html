@@ -1090,6 +1090,9 @@
       const [showAddItem, setShowAddItem] = useState(false);
       const [newItemCategory, setNewItemCategory] = useState('');
       const [newItemName, setNewItemName] = useState('');
+      const [showImport, setShowImport] = useState(false);
+      const [importMessage, setImportMessage] = useState('');
+      const [importing, setImporting] = useState(false);
 
       useEffect(() => { loadInventory(); }, []);
 
@@ -1189,6 +1192,90 @@
         } catch (err) { console.error('Failed to add custom item:', err); }
       };
 
+      const handleImportCSV = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        setImporting(true);
+        setImportMessage('');
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          try {
+            const text = evt.target.result;
+            const lines = text.split(/\r?\n/).filter(l => l.trim());
+            if (lines.length < 2) { setImportMessage('File is empty or missing data rows.'); setImporting(false); return; }
+            // Parse header row (case-insensitive)
+            const rawHeaders = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim().toLowerCase());
+            const colIdx = {
+              category: rawHeaders.findIndex(h => h.includes('category')),
+              itemName: rawHeaders.findIndex(h => h.includes('item')),
+              lotNumber: rawHeaders.findIndex(h => h.includes('lot')),
+              expiry: rawHeaders.findIndex(h => h.includes('expiry') || h.includes('expiration')),
+              openQty: rawHeaders.findIndex(h => h.includes('open qty') || h.includes('open_qty') || (h.includes('open') && h.includes('qty'))),
+              openDate: rawHeaders.findIndex(h => h.includes('open date') || h.includes('open_date')),
+              closedQty: rawHeaders.findIndex(h => h.includes('closed qty') || h.includes('closed_qty') || (h.includes('closed') && h.includes('qty'))),
+              notes: rawHeaders.findIndex(h => h.includes('notes')),
+            };
+            if (colIdx.category === -1 || colIdx.itemName === -1) {
+              setImportMessage('Missing required columns: "Category" and "Item Name" must be present.');
+              setImporting(false); return;
+            }
+            // CSV field parser (handles quoted fields)
+            const parseRow = (line) => {
+              const fields = [];
+              let cur = '', inQ = false;
+              for (let i = 0; i < line.length; i++) {
+                const ch = line[i];
+                if (ch === '"') { inQ = !inQ; }
+                else if (ch === ',' && !inQ) { fields.push(cur.trim()); cur = ''; }
+                else { cur += ch; }
+              }
+              fields.push(cur.trim());
+              return fields;
+            };
+            const get = (fields, idx) => idx >= 0 && idx < fields.length ? fields[idx].replace(/^"|"$/g, '').trim() : '';
+            let imported = 0, skipped = 0;
+            const newData = {};
+            for (let i = 1; i < lines.length; i++) {
+              const fields = parseRow(lines[i]);
+              const category = get(fields, colIdx.category);
+              const itemName = get(fields, colIdx.itemName);
+              if (!category || !itemName) { skipped++; continue; }
+              const key = `${category}|${itemName}`;
+              const batch = {
+                lotNumber: get(fields, colIdx.lotNumber),
+                expiry: get(fields, colIdx.expiry),
+                openQty: get(fields, colIdx.openQty),
+                openDate: get(fields, colIdx.openDate),
+                closedQty: get(fields, colIdx.closedQty),
+                notes: get(fields, colIdx.notes),
+              };
+              if (!newData[key]) { newData[key] = { batches: [] }; }
+              newData[key].batches.push(batch);
+              imported++;
+            }
+            setInventoryData(prev => {
+              const merged = { ...prev };
+              Object.entries(newData).forEach(([key, val]) => {
+                if (merged[key]) {
+                  merged[key] = { batches: [...(merged[key].batches || []), ...val.batches] };
+                } else {
+                  merged[key] = val;
+                }
+              });
+              return merged;
+            });
+            setImportMessage(`Imported ${imported} row${imported !== 1 ? 's' : ''}${skipped ? `, skipped ${skipped} empty` : ''}. Review and submit when ready.`);
+            setShowImport(false);
+          } catch (err) {
+            setImportMessage('Failed to parse file. Please use the provided template.');
+          } finally {
+            setImporting(false);
+            e.target.value = '';
+          }
+        };
+        reader.readAsText(file);
+      };
+
       const toggleCategory = (category) => {
         setExpandedCategories(prev => ({ ...prev, [category]: !prev[category] }));
       };
@@ -1238,8 +1325,15 @@
                 <p className="text-gray-600 mt-1">Update your weekly inventory counts</p>
                 {lastSubmitted && <p className="text-sm text-gray-500 mt-2">Last submitted: {new Date(lastSubmitted).toLocaleString()}</p>}
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2 items-center">
                 <button onClick={() => setShowAddItem(true)} className="px-4 py-2 border border-primary text-primary rounded-lg font-medium hover:bg-primary hover:text-white transition">+ Add Item</button>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setShowImport(true)} className="px-4 py-2 border border-gray-400 text-gray-700 rounded-lg font-medium hover:bg-gray-100 transition flex items-center gap-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.75"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 12v9m0-9l-3 3m3-3l3 3M12 3v9" /></svg>
+                    Import Items
+                  </button>
+                  <a href={`${API_URL}/api/inventory/import-template`} download="inventory_import_template.csv" className="text-xs text-primary underline hover:text-accent whitespace-nowrap" title="Download Excel/CSV template">Template</a>
+                </div>
                 <button onClick={handleSubmit} disabled={saving} className="px-6 py-2 bg-primary text-white rounded-lg font-medium hover:bg-accent transition disabled:opacity-50">{saving ? 'Saving...' : 'Submit Inventory'}</button>
               </div>
             </div>
@@ -1268,6 +1362,60 @@
                 </div>
               </div>
             </div>
+          )}
+
+          {showImport && (
+            <div className="bg-white p-6 rounded-xl shadow-sm border-2 border-gray-300">
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <h3 className="font-bold text-lg">Import Inventory from CSV</h3>
+                  <p className="text-sm text-gray-500 mt-1">Upload a CSV file matching the required column format. Imported rows will be merged into the current inventory for review before submission.</p>
+                </div>
+                <button onClick={() => { setShowImport(false); setImportMessage(''); }} className="text-gray-400 hover:text-gray-600 ml-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.75"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-4 mb-4 text-sm">
+                <p className="font-medium text-gray-700 mb-2">Required CSV columns (in order):</p>
+                <div className="overflow-x-auto">
+                  <table className="text-xs border-collapse w-full">
+                    <thead>
+                      <tr className="bg-gray-200">
+                        {['Category','Item Name','Lot Number','Expiry Date (YYYY-MM-DD)','Open Qty','Open Date (YYYY-MM-DD)','Closed Qty','Notes'].map(h => (
+                          <th key={h} className="border border-gray-300 px-2 py-1 text-left font-semibold text-gray-700">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="bg-white">
+                        {['Reagent','Glucose - R1','LOT12345','2026-12-31','10','2026-01-15','2','Example notes'].map((v, i) => (
+                          <td key={i} className="border border-gray-300 px-2 py-1 text-gray-500 italic">{v}</td>
+                        ))}
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p className="mt-2 text-gray-500">Each row represents one lot/batch. Multiple rows with the same Category + Item Name will be added as separate batch lots.</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <label className={`flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg font-medium cursor-pointer hover:bg-accent transition ${importing ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.75"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 12v9m0-9l-3 3m3-3l3 3M12 3v9" /></svg>
+                  {importing ? 'Importing...' : 'Choose CSV File'}
+                  <input type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportCSV} disabled={importing} />
+                </label>
+                <a href={`${API_URL}/api/inventory/import-template`} download="inventory_import_template.csv" className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-1">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.75"><path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V19a2 2 0 002 2h14a2 2 0 002-2v-2M16 6l-4-4-4 4" /></svg>
+                  Download Template
+                </a>
+              </div>
+              {importMessage && (
+                <div className={`mt-3 p-3 rounded-lg text-sm ${importMessage.includes('Imported') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{importMessage}</div>
+              )}
+            </div>
+          )}
+
+          {importMessage && !showImport && (
+            <div className="bg-green-50 border border-green-200 p-3 rounded-lg text-sm text-green-700">{importMessage}</div>
           )}
 
           {allCategories.map(cat => {

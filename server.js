@@ -4271,6 +4271,40 @@ app.get('/api/inventory/export/:slug', authenticateToken, async (req, res) => {
   }
 });
 
+// Download inventory import CSV template
+app.get('/api/inventory/import-template', async (req, res) => {
+  try {
+    const template = (await db.get('inventory_template')) || DEFAULT_INVENTORY_ITEMS;
+
+    const headers = ['Category', 'Item Name', 'Lot Number', 'Expiry Date (YYYY-MM-DD)', 'Open Qty', 'Open Date (YYYY-MM-DD)', 'Closed Qty', 'Notes'];
+    let csv = headers.join(',') + '\n';
+
+    // Add one example row per category with first item as a guide
+    template.forEach(cat => {
+      if (cat.items && cat.items.length > 0) {
+        const row = [
+          `"${cat.category}"`,
+          `"${cat.items[0]}"`,
+          '"LOT12345"',
+          '"2026-12-31"',
+          '10',
+          '"2026-01-15"',
+          '2',
+          '"Example notes"'
+        ];
+        csv += row.join(',') + '\n';
+      }
+    });
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="inventory_import_template.csv"');
+    res.send(csv);
+  } catch (error) {
+    console.error('Import template error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Admin: Export all clients inventory data
 app.get('/api/inventory/export-all', authenticateToken, requireAdmin, async (req, res) => {
   try {
