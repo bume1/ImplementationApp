@@ -1076,8 +1076,10 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
     projectManager: '',
     hubspotRecordId: '',
     hubspotDealStage: '',
+    hubspotPipelineId: '',
     template: ''
   });
+  const [hubspotStages, setHubspotStages] = useState([]);
 
   const loadActivityLog = async () => {
     if (user.role !== 'admin') return;
@@ -1097,10 +1099,19 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
     }
   };
 
+  const loadHubSpotStages = async () => {
+    const result = await api.getHubSpotPipelines(token);
+    if (!result.error && Array.isArray(result)) {
+      const stages = result.flatMap(p => p.stages.map(s => ({ id: s.id, label: s.label, pipelineId: p.id })));
+      setHubspotStages(stages);
+    }
+  };
+
   useEffect(() => {
     loadProjects();
     loadTemplates();
     loadClientPortalDomain();
+    loadHubSpotStages();
   }, []);
 
   const loadClientPortalDomain = async () => {
@@ -1172,6 +1183,9 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
         alert(result.error);
         return;
       }
+      if (result.hubspotSyncStatus === 'failed') {
+        alert('Project created successfully, but HubSpot stage sync failed. Check your HubSpot Record ID and connection.');
+      }
       setShowCreate(false);
       setNewProject({
         name: '',
@@ -1179,6 +1193,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
         projectManager: '',
         hubspotRecordId: '',
         hubspotDealStage: '',
+        hubspotPipelineId: '',
         template: ''
       });
       loadProjects();
@@ -1528,15 +1543,25 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
                     <label className="block text-sm font-medium mb-1">Deal Stage</label>
                     <select
                       value={newProject.hubspotDealStage}
-                      onChange={(e) => setNewProject({...newProject, hubspotDealStage: e.target.value})}
+                      onChange={(e) => {
+                        const selected = hubspotStages.find(s => s.id === e.target.value);
+                        setNewProject({...newProject, hubspotDealStage: e.target.value, hubspotPipelineId: selected ? selected.pipelineId : ''});
+                      }}
                       className="w-full px-3 py-2 border rounded-md"
                     >
                       <option value="">Select stage...</option>
-                      <option value="contract_signed">Contract Signed</option>
-                      <option value="pre_launch">Pre-Launch</option>
-                      <option value="implementation">Implementation</option>
-                      <option value="go_live">Go-Live</option>
-                      <option value="post_launch">Post-Launch</option>
+                      {hubspotStages.length > 0
+                        ? hubspotStages.map(s => (
+                            <option key={s.id} value={s.id}>{s.label}</option>
+                          ))
+                        : <>
+                            <option value="contract_signed">Contract Signed</option>
+                            <option value="pre_launch">Pre-Launch</option>
+                            <option value="implementation">Implementation</option>
+                            <option value="go_live">Go-Live</option>
+                            <option value="post_launch">Post-Launch</option>
+                          </>
+                      }
                     </select>
                   </div>
                 </div>

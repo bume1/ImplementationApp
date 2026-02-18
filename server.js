@@ -3266,7 +3266,7 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
 
 app.post('/api/projects', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { name, clientName, projectManager, hubspotRecordId, hubspotRecordType, hubspotDealStage, template } = req.body;
+    const { name, clientName, projectManager, hubspotRecordId, hubspotRecordType, hubspotDealStage, hubspotPipelineId, template } = req.body;
     if (!name || !clientName) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
@@ -3292,6 +3292,19 @@ app.post('/api/projects', authenticateToken, requireAdmin, async (req, res) => {
     };
     projects.push(newProject);
     await db.set('projects', projects);
+
+    // Sync deal stage to HubSpot on project creation
+    let hubspotSyncStatus = null;
+    if (hubspotRecordId && hubspotDealStage) {
+      try {
+        await hubspot.updateRecordStage(hubspotRecordId, hubspotDealStage, hubspotPipelineId || null);
+        hubspotSyncStatus = 'synced';
+        console.log(`✅ HubSpot stage synced on project creation: record ${hubspotRecordId} -> stage ${hubspotDealStage}`);
+      } catch (hsError) {
+        hubspotSyncStatus = 'failed';
+        console.error('⚠️ HubSpot sync failed during project creation (project still created):', hsError.message);
+      }
+    }
 
     // Load and apply selected template (empty if none selected)
     let templateTasks = [];
@@ -3324,7 +3337,7 @@ app.post('/api/projects', authenticateToken, requireAdmin, async (req, res) => {
     const templateRecord = templates.find(t => t.id === newProject.template);
     newProject.templateName = templateRecord ? templateRecord.name : newProject.template;
 
-    res.json(newProject);
+    res.json({ ...newProject, hubspotSyncStatus });
   } catch (error) {
     console.error('Create project error:', error);
     res.status(500).json({ error: 'Server error' });
