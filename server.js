@@ -4845,6 +4845,67 @@ app.delete('/api/admin/portal-tickets', authenticateToken, requireAdmin, async (
   }
 });
 
+// ===== Client Submit-Ticket Endpoint =====
+
+// Client submits a support ticket via the native portal form.
+// Stores locally in portal_submitted_tickets and optionally creates a HubSpot ticket
+// tagged as External so it surfaces via GET /api/client/hubspot/tickets.
+app.post('/api/client/submit-ticket', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== config.ROLES.CLIENT) {
+      return res.status(403).json({ error: 'Client access required' });
+    }
+
+    const { subject, description, priority } = req.body;
+    if (!subject || !subject.trim()) return res.status(400).json({ error: 'Subject is required' });
+
+    const users = await getUsers();
+    const clientUser = users.find(u => u.id === req.user.id);
+    if (!clientUser) return res.status(404).json({ error: 'User not found' });
+
+    const now = new Date().toISOString();
+    const ticketRecord = {
+      id: uuidv4(),
+      clientSlug: clientUser.slug || '',
+      clientId: clientUser.id,
+      clientName: clientUser.name || clientUser.email,
+      subject: subject.trim(),
+      description: (description || '').trim(),
+      priority: priority || 'Low',
+      status: 'Open',
+      submittedAt: now,
+      source: 'client_submitted',
+      hubspotTicketId: null
+    };
+
+    // Attempt to create HubSpot ticket tagged External
+    if (process.env.HUBSPOT_PRIVATE_APP_TOKEN) {
+      try {
+        const companyId = clientUser.hubspotCompanyId || null;
+        const result = await hubspot.createTicket(
+          { subject: ticketRecord.subject, description: ticketRecord.description, priority: ticketRecord.priority },
+          companyId
+        );
+        ticketRecord.hubspotTicketId = result.ticketId;
+        console.log(`🎫 HubSpot ticket created: ${result.ticketId} for ${clientUser.email}`);
+      } catch (hsErr) {
+        console.warn(`⚠️ HubSpot ticket creation failed (storing locally only): ${hsErr.message}`);
+      }
+    }
+
+    const submitted = (await db.get('portal_submitted_tickets')) || [];
+    submitted.unshift(ticketRecord);
+    await db.set('portal_submitted_tickets', submitted);
+
+    await logActivity(req.user.id, req.user.name || req.user.email, 'support_ticket_submitted', 'ticket', ticketRecord.id, { subject: ticketRecord.subject });
+
+    res.json({ success: true, ticket: ticketRecord });
+  } catch (error) {
+    console.error('Error submitting client ticket:', error);
+    res.status(500).json({ error: 'Failed to submit ticket' });
+  }
+});
+
 // ===== HubSpot Ticket Polling Admin Endpoints =====
 
 // Get polling configuration
@@ -4975,9 +5036,9 @@ app.post('/api/admin/ticket-polling/reset', authenticateToken, requireAdmin, asy
   }
 });
 
-// Fetch support tickets from HubSpot for the logged-in client
-// Shows internal tickets only (filtered by internal_vs_external_ticket field)
-// Attaches matching service reports to each ticket
+// Fetch support tickets for the logged-in client.
+// Merges three sources: HubSpot External tickets, client-submitted tickets, and admin-released tickets.
+// Attaches matching service reports to each ticket.
 app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
   try {
     // Only clients can use this endpoint
@@ -5044,30 +5105,25 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
       }
     }
 
-    // Filter to only show tickets marked as "Internal" in HubSpot
-    // The custom property internal_vs_external_ticket must be "Internal" (case-insensitive)
+    // Filter HubSpot tickets to only those marked External (client-visible)
     const beforeFilter = tickets.length;
     tickets = tickets.filter(t => {
       const typeVal = (t.ticketType || '').toLowerCase().trim();
-      return typeVal === 'internal';
+      return typeVal === 'external';
     });
-    console.log(`🎫 Filtered ${beforeFilter} -> ${tickets.length} internal-only tickets`);
+    console.log(`🎫 Filtered ${beforeFilter} -> ${tickets.length} external/client-facing HubSpot tickets`);
 
     // Fetch service reports to link to tickets
     const serviceReports = (await db.get('service_reports')) || [];
 
-    // Map tickets to simplified format with Open/Closed status and linked service reports
-    const mappedTickets = tickets.map(t => {
-      // Determine status: Closed if stage label contains "closed", otherwise Open
+    // Map HubSpot tickets to simplified format
+    const mapHubSpotTicket = (t) => {
       const stageLower = (t.stage || '').toLowerCase();
       const status = (stageLower.includes('closed') || t.closedAt) ? 'Closed' : 'Open';
-
-      // Find matching service report by HubSpot ticket ID
       const linkedReport = serviceReports.find(r => {
         const reportTicketId = String(r.hubspotTicketId || r.hubspotTicketNumber || '');
         return reportTicketId && reportTicketId === String(t.id);
       });
-
       return {
         id: t.id,
         subject: t.subject,
@@ -5076,6 +5132,7 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
         createdAt: t.createdAt,
         closedAt: t.closedAt || null,
         priority: t.priority,
+        source: 'hubspot',
         serviceReport: linkedReport ? {
           id: linkedReport.id,
           serviceType: linkedReport.serviceType,
@@ -5086,12 +5143,36 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
           driveFileId: linkedReport.driveFileId || null
         } : null
       };
-    });
+    };
+
+    const mappedHubSpot = tickets.map(mapHubSpotTicket);
+
+    // Merge client-submitted tickets (from portal form)
+    const clientSlug = clientUser.slug || '';
+    const allSubmitted = (await db.get('portal_submitted_tickets')) || [];
+    const submittedForClient = allSubmitted.filter(t => t.clientId === clientUser.id || (clientSlug && t.clientSlug === clientSlug));
+    // Deduplicate: if a submitted ticket already has a HubSpot ID that appears in mappedHubSpot, skip the local copy
+    const hsIds = new Set(mappedHubSpot.map(t => String(t.id)));
+    const mappedSubmitted = submittedForClient
+      .filter(t => !t.hubspotTicketId || !hsIds.has(String(t.hubspotTicketId)))
+      .map(t => ({
+        id: t.id,
+        subject: t.subject,
+        description: t.description || '',
+        status: t.status || 'Open',
+        createdAt: t.submittedAt,
+        closedAt: null,
+        priority: t.priority || 'Low',
+        source: 'client_submitted',
+        serviceReport: null
+      }));
+
+    const mappedTickets = [...mappedHubSpot, ...mappedSubmitted];
 
     // Sort by creation date, newest first
     mappedTickets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-    console.log(`🎫 Total tickets returned for ${clientUser.username || clientUser.email}: ${mappedTickets.length}`);
+    console.log(`🎫 Total tickets for ${clientUser.username || clientUser.email}: ${mappedHubSpot.length} HubSpot + ${mappedSubmitted.length} submitted = ${mappedTickets.length}`);
     res.json({ tickets: mappedTickets, count: mappedTickets.length });
   } catch (error) {
     console.error('Error fetching client tickets:', error);
