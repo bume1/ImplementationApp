@@ -9,6 +9,8 @@ const ASSOCIATION_TYPES = Object.freeze({
   DEAL_TO_TASK: 216,
   NOTE_TO_TICKET: 18,
   TICKET_TO_COMPANY: 26,
+  TICKET_TO_CONTACT: 16,
+  TICKET_TO_DEAL: 28,
 });
 
 let connectionSettings = null;
@@ -1340,28 +1342,45 @@ async function searchTicketsByStage(stageIds, modifiedAfter = null, additionalPr
 // Create a plain support ticket (no file attachment).
 // Sets internal_vs_external_ticket = 'External' so the ticket is visible
 // through the client portal filter (GET /api/client/hubspot/tickets).
-async function createTicket(ticketData, companyId = null) {
+async function createTicket(ticketData, companyId = null, contactId = null, dealId = null) {
   const privateAppToken = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
   if (!privateAppToken) throw new Error('HubSpot Private App token not configured');
 
   const priorityMap = { 'Low': 'LOW', 'Medium': 'MEDIUM', 'High': 'HIGH' };
-  const ticketInput = {
-    properties: {
-      subject: ticketData.subject || 'Support Request',
-      content: ticketData.description || '',
-      hs_pipeline: '0',
-      hs_pipeline_stage: '1',
-      hs_ticket_priority: priorityMap[ticketData.priority] || 'LOW',
-      internal_vs_external_ticket: 'External'
-    }
+  const ticketProperties = {
+    subject: ticketData.subject || 'Support Request',
+    content: ticketData.description || '',
+    hs_pipeline: '0',
+    hs_pipeline_stage: '1',
+    hs_ticket_priority: priorityMap[ticketData.priority] || 'LOW',
+    internal_vs_external_ticket: 'External'
   };
 
+  if (ticketData.issueCategory) ticketProperties.issue_category = ticketData.issueCategory;
+  if (ticketData.submittedBy) ticketProperties.submitted_by = ticketData.submittedBy;
+
+  const ticketInput = { properties: ticketProperties };
+
+  const associations = [];
   if (companyId && isValidRecordId(companyId)) {
-    ticketInput.associations = [{
+    associations.push({
       to: { id: companyId },
       types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: ASSOCIATION_TYPES.TICKET_TO_COMPANY }]
-    }];
+    });
   }
+  if (contactId && isValidRecordId(contactId)) {
+    associations.push({
+      to: { id: contactId },
+      types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: ASSOCIATION_TYPES.TICKET_TO_CONTACT }]
+    });
+  }
+  if (dealId && isValidRecordId(dealId)) {
+    associations.push({
+      to: { id: dealId },
+      types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: ASSOCIATION_TYPES.TICKET_TO_DEAL }]
+    });
+  }
+  if (associations.length > 0) ticketInput.associations = associations;
 
   const response = await axios.post(
     'https://api.hubapi.com/crm/v3/objects/tickets',

@@ -4970,7 +4970,7 @@ app.post('/api/client/submit-ticket', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Client access required' });
     }
 
-    const { subject, description, priority } = req.body;
+    const { subject, description, priority, submittedBy, issueCategory } = req.body;
     if (!subject || !subject.trim()) return res.status(400).json({ error: 'Subject is required' });
 
     const users = await getUsers();
@@ -4986,6 +4986,8 @@ app.post('/api/client/submit-ticket', authenticateToken, async (req, res) => {
       subject: subject.trim(),
       description: (description || '').trim(),
       priority: priority || 'Low',
+      submittedBy: (submittedBy || '').trim(),
+      issueCategory: (issueCategory || '').trim(),
       status: 'Open',
       submittedAt: now,
       source: 'client_submitted',
@@ -4996,9 +4998,19 @@ app.post('/api/client/submit-ticket', authenticateToken, async (req, res) => {
     if (process.env.HUBSPOT_PRIVATE_APP_TOKEN) {
       try {
         const companyId = clientUser.hubspotCompanyId || null;
+        const contactId = clientUser.hubspotContactId || null;
+        const dealId = clientUser.hubspotDealId || null;
         const result = await hubspot.createTicket(
-          { subject: ticketRecord.subject, description: ticketRecord.description, priority: ticketRecord.priority },
-          companyId
+          {
+            subject: ticketRecord.subject,
+            description: ticketRecord.description,
+            priority: ticketRecord.priority,
+            submittedBy: ticketRecord.submittedBy,
+            issueCategory: ticketRecord.issueCategory
+          },
+          companyId,
+          contactId,
+          dealId
         );
         ticketRecord.hubspotTicketId = result.ticketId;
         console.log(`🎫 HubSpot ticket created: ${result.ticketId} for ${clientUser.email}`);
