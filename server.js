@@ -2049,6 +2049,10 @@ app.post('/api/users', authenticateToken, async (req, res) => {
         if (hubspotCompanyId) newUser.hubspotCompanyId = hubspotCompanyId;
         if (hubspotDealId) newUser.hubspotDealId = hubspotDealId;
         if (hubspotContactId) newUser.hubspotContactId = hubspotContactId;
+        // Record when HubSpot IDs are first linked — used to prevent retroactive ticket display
+        if (hubspotCompanyId || hubspotDealId || hubspotContactId) {
+          newUser.hubspotLinkedAt = new Date().toISOString();
+        }
       }
     }
 
@@ -2548,9 +2552,14 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
     if (logo !== undefined) users[idx].logo = logo;
 
     // HubSpot record IDs for client-level uploads
+    const hadHubSpotIdsAdmin = users[idx].hubspotCompanyId || users[idx].hubspotDealId || users[idx].hubspotContactId;
     if (hubspotCompanyId !== undefined) users[idx].hubspotCompanyId = hubspotCompanyId;
     if (hubspotDealId !== undefined) users[idx].hubspotDealId = hubspotDealId;
     if (hubspotContactId !== undefined) users[idx].hubspotContactId = hubspotContactId;
+    // Record when HubSpot IDs are linked for the first time (prevents retroactive ticket display)
+    if (!hadHubSpotIdsAdmin && (users[idx].hubspotCompanyId || users[idx].hubspotDealId || users[idx].hubspotContactId)) {
+      users[idx].hubspotLinkedAt = new Date().toISOString();
+    }
 
     await db.set('users', users);
     invalidateUsersCache();
@@ -2660,9 +2669,14 @@ app.put('/api/client-portal/clients/:clientId', authenticateToken, requireClient
       }
     }
     if (logo !== undefined) users[idx].logo = logo;
+    const hadHubSpotIdsPortal = users[idx].hubspotCompanyId || users[idx].hubspotDealId || users[idx].hubspotContactId;
     if (hubspotCompanyId !== undefined) users[idx].hubspotCompanyId = hubspotCompanyId;
     if (hubspotDealId !== undefined) users[idx].hubspotDealId = hubspotDealId;
     if (hubspotContactId !== undefined) users[idx].hubspotContactId = hubspotContactId;
+    // Record when HubSpot IDs are linked for the first time (prevents retroactive ticket display)
+    if (!hadHubSpotIdsPortal && (users[idx].hubspotCompanyId || users[idx].hubspotDealId || users[idx].hubspotContactId)) {
+      users[idx].hubspotLinkedAt = new Date().toISOString();
+    }
     if (accountStatus !== undefined) users[idx].accountStatus = accountStatus;
 
     // Track modification
@@ -5158,10 +5172,28 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
     const hubspotContactId = clientUser.hubspotContactId || '';
     const hubspotDealId = clientUser.hubspotDealId || '';
 
+    // Fetch assigned projects — used for the retroactive cutoff date fallback.
+    const allProjects = await getProjects();
+    const assignedProjects = allProjects.filter(p =>
+      (clientUser.assignedProjects || []).includes(p.id)
+    );
+
+    // Determine the cutoff date to prevent retroactive ticket display.
+    // Tickets created before this date are hidden.
+    // Priority: hubspotLinkedAt (set when IDs were first linked) > earliest assigned project createdAt > no cutoff
+    let ticketCutoffDate = clientUser.hubspotLinkedAt ? new Date(clientUser.hubspotLinkedAt) : null;
+    if (!ticketCutoffDate && assignedProjects.length > 0) {
+      ticketCutoffDate = assignedProjects.reduce((earliest, p) => {
+        const d = new Date(p.createdAt);
+        return !earliest || d < earliest ? d : earliest;
+      }, null);
+    }
+
     console.log(`🎫 Ticket fetch for user ${clientUser.username || clientUser.email}:`);
     console.log(`   - Company ID: "${hubspotCompanyId}"`);
     console.log(`   - Contact ID: "${hubspotContactId}"`);
     console.log(`   - Deal ID: "${hubspotDealId}"`);
+    console.log(`   - Cutoff date: ${ticketCutoffDate ? ticketCutoffDate.toISOString() : 'none (show all)'}`);
 
     if (!hubspotCompanyId && !hubspotContactId && !hubspotDealId) {
       console.log(`🎫 No HubSpot IDs configured for ${clientUser.username || clientUser.email}`);
@@ -5170,7 +5202,8 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
 
     let tickets = [];
 
-    // Fetch tickets by company first (primary)
+    // 1. Fetch by company ID — primary source. Each practice should have its own
+    //    HubSpot company record so this scopes correctly to that practice's tickets.
     if (hubspotCompanyId) {
       try {
         const companyTickets = await hubspot.getTicketsForCompany(hubspotCompanyId);
@@ -5181,28 +5214,38 @@ app.get('/api/client/hubspot/tickets', authenticateToken, async (req, res) => {
       }
     }
 
-    // Fetch tickets by deal ID and merge
+    // 2. Fetch by deal ID and merge (deduplicated).
     if (hubspotDealId && hubspot.getTicketsForDeal) {
       try {
         const dealTickets = await hubspot.getTicketsForDeal(hubspotDealId);
         const existingIds = new Set(tickets.map(t => t.id));
         const newTickets = dealTickets.filter(t => !existingIds.has(t.id));
         tickets = [...tickets, ...newTickets];
+        console.log(`📋 Fetched ${dealTickets.length} tickets for deal ${hubspotDealId} (${newTickets.length} new)`);
       } catch (err) {
         console.error('Error fetching deal tickets:', err.message);
       }
     }
 
-    // Fetch tickets by contact ID and merge (deduping by ID)
+    // 3. Fetch by contact ID and merge (deduplicated).
     if (hubspotContactId) {
       try {
         const contactTickets = await hubspot.getTicketsForContact(hubspotContactId);
         const existingIds = new Set(tickets.map(t => t.id));
         const newTickets = contactTickets.filter(t => !existingIds.has(t.id));
         tickets = [...tickets, ...newTickets];
+        console.log(`📋 Fetched ${contactTickets.length} tickets for contact ${hubspotContactId} (${newTickets.length} new)`);
       } catch (err) {
         console.error('Error fetching contact tickets:', err.message);
       }
+    }
+
+    // Apply retroactive cutoff: hide tickets created before the client was linked.
+    // This prevents historical tickets from flooding the support view on first link.
+    if (ticketCutoffDate) {
+      const beforeCutoff = tickets.length;
+      tickets = tickets.filter(t => !t.createdAt || new Date(t.createdAt) >= ticketCutoffDate);
+      console.log(`📅 Retroactive filter: ${beforeCutoff} -> ${tickets.length} tickets (cutoff: ${ticketCutoffDate.toISOString()})`);
     }
 
     // Filter HubSpot tickets to only those marked External (client-visible)
