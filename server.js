@@ -4030,7 +4030,7 @@ app.post('/api/announcements', authenticateToken, requireClientPortalAdmin, asyn
     await db.set('announcements', announcements);
     res.json(newAnnouncement);
 
-    // Send email notifications to targeted client users (async, non-blocking)
+    // Queue email notifications for targeted client users (async, non-blocking)
     try {
       const users = await getUsers();
       const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT && u.email && u.accountStatus !== 'inactive');
@@ -4045,7 +4045,7 @@ app.post('/api/announcements', authenticateToken, requireClientPortalAdmin, asyn
         // Load editable announcement template
         const annTemplates = await getEmailTemplates();
         const annTpl = getTemplateById(annTemplates, 'announcement');
-        const annVars = {
+        const baseVars = {
           title: newAnnouncement.title,
           content: newAnnouncement.content,
           priorityTag: newAnnouncement.priority ? '[PRIORITY] ' : '',
@@ -4055,55 +4055,45 @@ app.post('/api/announcements', authenticateToken, requireClientPortalAdmin, asyn
           attachmentLine: newAnnouncement.attachmentUrl ? '\n\nAttachment: ' + newAnnouncement.attachmentUrl : '',
           attachmentBlock: newAnnouncement.attachmentUrl ? `<p style="margin-top: 16px;"><a href="${newAnnouncement.attachmentUrl}" style="color: #045E9F; font-weight: 500;">📎 ${newAnnouncement.attachmentName || 'View Attachment'}</a></p>` : ''
         };
-        const subject = renderTemplate(annTpl.subject, annVars);
         // Safeguard: always include full announcement content even if admin edited {{content}} out of template
         let annBody = annTpl.body || '';
         let annHtml = annTpl.htmlBody || '';
-        if (!annBody.includes('{{content}}')) {
-          annBody += '\n\n{{content}}';
-        }
+        if (!annBody.includes('{{content}}')) annBody += '\n\n{{content}}';
         if (annHtml && !annHtml.includes('{{content}}')) {
           annHtml = annHtml.replace(/<hr/, '<div style="color: #374151; line-height: 1.6; white-space: pre-wrap;">{{content}}</div><hr');
         }
-        const htmlBody = annHtml ? renderTemplate(annHtml, annVars) : buildHtmlEmail(renderTemplate(annBody, annVars), null);
-        const textBody = renderTemplate(annBody, annVars);
-        const emailPromises = recipients.map(user =>
-          sendEmail(user.email, subject, textBody, { htmlBody }).then(result => ({
-            email: user.email, ...result
-          })).catch(err => {
-            console.error(`Announcement email failed for ${user.email}:`, err.message);
-            return { email: user.email, success: false, error: err.message };
-          })
-        );
-        Promise.all(emailPromises).then(async (results) => {
-          const sent = results.filter(r => r.success).length;
-          const failed = results.filter(r => !r.success);
-          console.log(`[ANNOUNCEMENTS] Emailed ${sent}/${recipients.length} clients for announcement: ${newAnnouncement.title}`);
 
-          // Save delivery stats on the announcement record
-          try {
-            const current = (await db.get('announcements')) || [];
-            const idx = current.findIndex(a => a.id === newAnnouncement.id);
-            if (idx !== -1) {
-              current[idx].emailDelivery = {
-                sent,
-                failed: failed.length,
-                total: recipients.length,
-                failedRecipients: failed.map(f => f.email),
-                deliveredAt: new Date().toISOString()
-              };
-              await db.set('announcements', current);
-            }
-          } catch (dbErr) {
-            console.error('Failed to save email delivery stats:', dbErr);
-          }
-
-          // Log to activity feed
-          await logActivity(
-            req.user.id, req.user.name, 'announcement_emailed', 'announcement', newAnnouncement.id,
-            { title: newAnnouncement.title, emailsSent: sent, emailsFailed: failed.length, totalRecipients: recipients.length }
+        // Queue one notification per recipient with recipient-specific rendered content
+        let queued = 0;
+        for (const user of recipients) {
+          const vars = { ...baseVars, recipientName: user.name || user.email, recipientEmail: user.email };
+          const subject = renderTemplate(annTpl.subject, vars);
+          const textBody = renderTemplate(annBody, vars);
+          const htmlBody = annHtml ? renderTemplate(annHtml, vars) : buildHtmlEmail(textBody, null);
+          const result = await queueNotification(
+            'announcement', user.id, user.email, user.name || user.email,
+            { subject, body: textBody, htmlBody },
+            { relatedEntityId: newAnnouncement.id, relatedEntityType: 'announcement', createdBy: req.user.id }
           );
-        });
+          if (result) queued++;
+        }
+
+        console.log(`[ANNOUNCEMENTS] Queued ${queued}/${recipients.length} notifications for: ${newAnnouncement.title}`);
+
+        // Save queue stats on announcement record
+        try {
+          const current = (await db.get('announcements')) || [];
+          const idx = current.findIndex(a => a.id === newAnnouncement.id);
+          if (idx !== -1) {
+            current[idx].emailQueued = { queued, total: recipients.length, queuedAt: new Date().toISOString() };
+            await db.set('announcements', current);
+          }
+        } catch (dbErr) {
+          console.error('Failed to save email queue stats:', dbErr);
+        }
+
+        await logActivity(req.user.id, req.user.name, 'announcement_queued', 'announcement', newAnnouncement.id,
+          { title: newAnnouncement.title, emailsQueued: queued, totalRecipients: recipients.length });
       }
     } catch (emailError) {
       console.error('Announcement email notification error:', emailError);
@@ -11023,6 +11013,26 @@ app.post('/api/admin/notifications/retry/:id', authenticateToken, requireAdminHu
     res.json({ message: 'Notification re-queued for retry' });
   } catch (error) {
     console.error('Retry notification error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Preview rendered email HTML for a notification in queue or log
+app.get('/api/admin/notifications/preview/:id', authenticateToken, requireAdminHubAccess, async (req, res) => {
+  try {
+    const queue = (await db.get('pending_notifications')) || [];
+    let notification = queue.find(n => n.id === req.params.id);
+    if (!notification) {
+      const log = (await db.get('notification_log')) || [];
+      notification = log.find(n => n.id === req.params.id);
+    }
+    if (!notification) return res.status(404).json({ error: 'Notification not found' });
+    const html = notification.templateData?.htmlBody
+      || `<html><body style="font-family:sans-serif;padding:20px"><pre style="white-space:pre-wrap">${notification.templateData?.body || '(no content)'}</pre></body></html>`;
+    res.setHeader('Content-Type', 'text/html');
+    res.send(html);
+  } catch (error) {
+    console.error('Preview notification error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });

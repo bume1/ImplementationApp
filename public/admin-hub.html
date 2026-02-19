@@ -3309,6 +3309,7 @@
       const [reminderSettings, setReminderSettings] = useState(null);
       const [loading, setLoading] = useState(true);
       const [selectedIds, setSelectedIds] = useState(new Set());
+      const [previewNotification, setPreviewNotification] = useState(null);
 
       // Email template state
       const [emailTemplates, setEmailTemplates] = useState([]);
@@ -3490,11 +3491,14 @@
         service_report_review: 'Service Report Review',
         task_deadline: 'Task Deadline',
         task_overdue: 'Task Overdue',
+        task_overdue_escalation: 'Task Overdue (Escalation)',
         inventory_reminder: 'Inventory Reminder',
         milestone_reached: 'Milestone Reached',
         milestone_reminder: 'Go-Live Reminder',
         custom_email: 'Custom Email',
-        announcement_nudge: 'Announcement'
+        announcement_nudge: 'Announcement',
+        announcement: 'Announcement',
+        welcome_email: 'Welcome Email'
       };
       const statusColors = {
         pending: 'bg-yellow-100 text-yellow-800',
@@ -3598,9 +3602,12 @@
                         <p className="text-sm font-medium truncate">{n.templateData?.subject}</p>
                         <p className="text-xs text-gray-500">To: {n.recipientEmail} | Trigger: {new Date(n.triggerDate).toLocaleString()}</p>
                       </div>
-                      {n.status === 'pending' && (
-                        <button onClick={() => handleCancel(n.id)} className="text-xs text-red-600 hover:underline flex-shrink-0">Cancel</button>
-                      )}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button onClick={() => setPreviewNotification(n)} className="text-xs text-[#045E9F] hover:underline">View</button>
+                        {n.status === 'pending' && (
+                          <button onClick={() => handleCancel(n.id)} className="text-xs text-red-600 hover:underline">Cancel</button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -3624,9 +3631,12 @@
                         <p className="text-sm font-medium truncate">{n.templateData?.subject}</p>
                         <p className="text-xs text-gray-500">To: {n.recipientEmail} | {n.sentAt ? `Sent: ${new Date(n.sentAt).toLocaleString()}` : `Failed: ${n.failureReason || 'Unknown'}`}</p>
                       </div>
-                      {n.status === 'failed' && (
-                        <button onClick={() => handleRetry(n.id)} className="text-xs text-blue-600 hover:underline">Retry</button>
-                      )}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button onClick={() => setPreviewNotification(n)} className="text-xs text-[#045E9F] hover:underline">View</button>
+                        {n.status === 'failed' && (
+                          <button onClick={() => handleRetry(n.id)} className="text-xs text-red-600 hover:underline">Retry</button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -3871,6 +3881,37 @@
                   ))}
                 </div>
                 <p className="text-xs text-gray-400 mt-3">Scanner runs every {reminderSettings?.scanIntervalMinutes || 30} minutes</p>
+              </div>
+            </div>
+          )}
+
+          {/* Email Preview Modal */}
+          {previewNotification && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setPreviewNotification(null)}>
+              <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl flex flex-col" style={{maxHeight: '90vh'}} onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between p-4 border-b flex-shrink-0">
+                  <div className="min-w-0 pr-4">
+                    <h3 className="font-semibold text-sm">Email Draft Preview</h3>
+                    <p className="text-xs text-gray-500 mt-0.5 truncate">To: {previewNotification.recipientEmail}</p>
+                    <p className="text-xs text-gray-500 truncate">Subject: {previewNotification.templateData?.subject}</p>
+                  </div>
+                  <button onClick={() => setPreviewNotification(null)} className="text-gray-400 hover:text-gray-600 flex-shrink-0">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                  </button>
+                </div>
+                <div className="flex-1 overflow-auto" style={{minHeight: '480px'}}>
+                  <iframe
+                    srcDoc={previewNotification.templateData?.htmlBody || `<html><body style="font-family:sans-serif;padding:24px"><pre style="white-space:pre-wrap;font-family:sans-serif">${(previewNotification.templateData?.body || '(no content)').replace(/</g,'&lt;')}</pre></body></html>`}
+                    className="w-full border-0"
+                    style={{height: '480px'}}
+                    sandbox="allow-same-origin"
+                    title="Email Preview"
+                  />
+                </div>
+                <div className="p-3 border-t flex items-center justify-between bg-gray-50 flex-shrink-0 rounded-b-xl">
+                  <span className={`text-xs px-2 py-0.5 rounded font-medium ${({'pending':'bg-yellow-100 text-yellow-800','sent':'bg-green-100 text-green-800','failed':'bg-red-100 text-red-800','cancelled':'bg-gray-100 text-gray-600'})[previewNotification.status] || 'bg-gray-100 text-gray-600'}`}>{previewNotification.status}</span>
+                  <span className="text-xs text-gray-400">Trigger: {new Date(previewNotification.triggerDate).toLocaleString()}</span>
+                </div>
               </div>
             </div>
           )}
