@@ -3316,9 +3316,11 @@
       const [editingTemplate, setEditingTemplate] = useState(null);
       const [editForm, setEditForm] = useState({ subject: '', body: '', htmlBody: '' });
       const [templatePreview, setTemplatePreview] = useState(null);
+      const [templatePreviewLoading, setTemplatePreviewLoading] = useState(false);
       const [templateSaving, setTemplateSaving] = useState(false);
       const [templateTestSending, setTemplateTestSending] = useState(false);
       const [collapsedPools, setCollapsedPools] = useState({});
+      const templatePreviewRef = React.useRef(null);
 
       const togglePoolCollapse = (poolName) => {
         setCollapsedPools(prev => ({ ...prev, [poolName]: !prev[poolName] }));
@@ -3442,6 +3444,7 @@
 
       const handlePreviewTemplate = async () => {
         if (!editingTemplate) return;
+        setTemplatePreviewLoading(true);
         // Client-side preview using example data
         const vars = {};
         (editingTemplate.variables || []).forEach(v => { vars[v.key] = v.example || `[${v.label}]`; });
@@ -3463,6 +3466,8 @@
           console.error('Failed to fetch HTML preview:', e);
         }
         setTemplatePreview(preview);
+        setTemplatePreviewLoading(false);
+        setTimeout(() => { templatePreviewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
       };
 
       const handleTestSendTemplate = async () => {
@@ -3697,9 +3702,9 @@
                           className="btn-primary text-white px-5 py-2 rounded-lg text-sm font-medium disabled:opacity-50">
                           {templateSaving ? 'Saving...' : 'Save Template'}
                         </button>
-                        <button onClick={handlePreviewTemplate}
-                          className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 font-medium">
-                          Preview
+                        <button onClick={handlePreviewTemplate} disabled={templatePreviewLoading}
+                          className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 font-medium disabled:opacity-50">
+                          {templatePreviewLoading ? 'Loading...' : 'Preview'}
                         </button>
                         <button onClick={handleTestSendTemplate} disabled={templateTestSending}
                           className="px-4 py-2 text-sm border border-primary-500 text-primary-500 rounded-lg hover:bg-primary-50 font-medium disabled:opacity-50">
@@ -3774,7 +3779,7 @@
 
                       {/* Live Preview Card */}
                       {templatePreview && (
-                        <div className="bg-white rounded-xl shadow-sm p-5">
+                        <div ref={templatePreviewRef} className="bg-white rounded-xl shadow-sm p-5">
                           <h4 className="font-semibold text-sm mb-3">Preview</h4>
                           <div className="border rounded-lg p-3 bg-gray-50 space-y-2">
                             <p className="text-xs text-gray-500">Subject:</p>

@@ -366,12 +366,12 @@ const processNotificationQueue = async () => {
 
 // Base HTML email wrapper used when a template has no custom htmlBody
 const BASE_HTML_EMAIL_WRAPPER = `
-<div style="font-family: Inter, -apple-system, sans-serif; max-width: 600px; margin: 0 auto; background: #f8fafc;">
-  <div style="background-color: #ffffff; padding: 24px 28px 20px; border-radius: 8px 8px 0 0; text-align: center; border-bottom: 3px solid #045E9F;">
-    <img src="https://app.thrive365labs.live/thrive365-logo.webp" alt="Thrive 365 Labs" style="height: 44px; max-width: 220px; display: block; margin: 0 auto;" />
+<div style="font-family: Inter, -apple-system, sans-serif; width: 100%; max-width: 600px; margin: 0 auto; background: #f8fafc;">
+  <div style="background-color: #ffffff; padding: 20px 16px 16px; border-radius: 8px 8px 0 0; text-align: center; border-bottom: 3px solid #045E9F;">
+    <img src="https://thrive365labs.live/thrive365-logo.webp" alt="Thrive 365 Labs" style="height: 44px; max-width: 220px; width: 100%; display: block; margin: 0 auto;" />
   </div>
-  <div style="background: #ffffff; padding: 28px 24px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
-    <div style="color: #374151; line-height: 1.7; font-size: 15px; white-space: pre-wrap;">{{content}}</div>
+  <div style="background: #ffffff; padding: 24px 16px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+    <div style="color: #374151; line-height: 1.7; font-size: 15px; white-space: pre-wrap; word-break: break-word;">{{content}}</div>
     {{ctaBlock}}
     <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 28px 0 16px;" />
     <p style="color: #9ca3af; font-size: 12px; margin: 0;">You are receiving this because you have an account with Thrive 365 Labs.</p>
@@ -379,27 +379,27 @@ const BASE_HTML_EMAIL_WRAPPER = `
 </div>`;
 
 // Branded HTML for the welcome email (has credential table — not a standard wrapper)
-const WELCOME_HTML_BODY = `<div style="font-family: Inter, -apple-system, sans-serif; max-width: 600px; margin: 0 auto; background: #f8fafc;">
-  <div style="background-color: #ffffff; padding: 24px 28px 20px; border-radius: 8px 8px 0 0; text-align: center; border-bottom: 3px solid #045E9F;">
-    <img src="https://app.thrive365labs.live/thrive365-logo.webp" alt="Thrive 365 Labs" style="height: 44px; max-width: 220px; display: block; margin: 0 auto;" />
+const WELCOME_HTML_BODY = `<div style="font-family: Inter, -apple-system, sans-serif; width: 100%; max-width: 600px; margin: 0 auto; background: #f8fafc;">
+  <div style="background-color: #ffffff; padding: 20px 16px 16px; border-radius: 8px 8px 0 0; text-align: center; border-bottom: 3px solid #045E9F;">
+    <img src="https://thrive365labs.live/thrive365-logo.webp" alt="Thrive 365 Labs" style="height: 44px; max-width: 220px; width: 100%; display: block; margin: 0 auto;" />
   </div>
-  <div style="background: #ffffff; padding: 32px 28px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+  <div style="background: #ffffff; padding: 24px 16px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
     <h2 style="color: #00205A; margin-top: 0; font-size: 20px;">Welcome to Thrive 365 Labs, {{recipientName}}!</h2>
     <p style="color: #374151; line-height: 1.7; font-size: 15px;">Your account has been created. Use the credentials below to log in for the first time. You will be prompted to set a new password after your first login.</p>
-    <div style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; padding: 20px 24px; margin: 24px 0;">
+    <div style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; padding: 16px; margin: 24px 0;">
       <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
         <tr>
-          <td style="color: #64748b; padding: 6px 0; width: 140px; font-weight: 500;">Username / Email</td>
-          <td style="color: #0f172a; padding: 6px 0; font-weight: 600;">{{recipientEmail}}</td>
+          <td style="color: #64748b; padding: 6px 0; width: 140px; font-weight: 500; vertical-align: top;">Username / Email</td>
+          <td style="color: #0f172a; padding: 6px 0; font-weight: 600; word-break: break-all;">{{recipientEmail}}</td>
         </tr>
         <tr>
-          <td style="color: #64748b; padding: 6px 0; font-weight: 500;">Temporary Password</td>
-          <td style="color: #0f172a; padding: 6px 0; font-weight: 600; font-family: monospace; letter-spacing: 0.05em;">{{temporaryPassword}}</td>
+          <td style="color: #64748b; padding: 6px 0; font-weight: 500; vertical-align: top;">Temporary Password</td>
+          <td style="color: #0f172a; padding: 6px 0; font-weight: 600; font-family: monospace; letter-spacing: 0.05em; word-break: break-all;">{{temporaryPassword}}</td>
         </tr>
       </table>
     </div>
     <p style="margin-top: 20px;">
-      <a href="{{loginUrl}}" style="display: inline-block; background: #045E9F; color: #ffffff; padding: 12px 28px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 14px;">Log In Now</a>
+      <a href="{{loginUrl}}" style="display: inline-block; background: #045E9F; color: #ffffff; padding: 12px 20px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 14px;">Log In Now</a>
     </p>
     <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 28px 0 16px;" />
     <p style="color: #9ca3af; font-size: 12px; margin: 0;">If you did not expect this email, please contact your Thrive 365 Labs administrator.</p>
@@ -432,7 +432,7 @@ const VARIABLE_POOLS = {
     label: 'Account',
     variables: [
       { key: 'temporaryPassword', label: 'Temporary Password', example: 'Welcome2026!' },
-      { key: 'loginUrl', label: 'Login URL', example: 'https://app.thrive365labs.live/login' }
+      { key: 'loginUrl', label: 'Login URL', example: 'https://thrive365labs.live/login' }
     ]
   },
   service_report: {
@@ -444,8 +444,8 @@ const VARIABLE_POOLS = {
       { key: 'serviceType', label: 'Service Type', example: 'Installation' },
       { key: 'reportStatus', label: 'Report Status', example: 'signature_needed' },
       { key: 'reportAge', label: 'Days Since Created', example: '5' },
-      { key: 'reportLink', label: 'Direct Report Link', example: 'https://app.thrive365labs.live/service-portal?report=abc-123' },
-      { key: 'portalLink', label: 'Client Portal Link', example: 'https://app.thrive365labs.live/portal/valley-medical' }
+      { key: 'reportLink', label: 'Direct Report Link', example: 'https://thrive365labs.live/service-portal?report=abc-123' },
+      { key: 'portalLink', label: 'Client Portal Link', example: 'https://thrive365labs.live/portal/valley-medical' }
     ]
   },
   task: {
@@ -457,7 +457,7 @@ const VARIABLE_POOLS = {
       { key: 'timeframe', label: 'Timeframe', example: 'in 3 days' },
       { key: 'daysOverdue', label: 'Days Overdue', example: '5' },
       { key: 'ownerName', label: 'Task Owner', example: 'Jane Doe' },
-      { key: 'taskLink', label: 'Direct Task Link', example: 'https://app.thrive365labs.live/launch/valley-medical?task=42' }
+      { key: 'taskLink', label: 'Direct Task Link', example: 'https://thrive365labs.live/launch/valley-medical?task=42' }
     ]
   },
   project: {
@@ -469,7 +469,7 @@ const VARIABLE_POOLS = {
       { key: 'percentage', label: 'Completion %', example: '75' },
       { key: 'completedTasks', label: 'Completed Tasks', example: '76' },
       { key: 'totalTasks', label: 'Total Tasks', example: '102' },
-      { key: 'projectLink', label: 'Project Link', example: 'https://app.thrive365labs.live/launch/valley-medical' }
+      { key: 'projectLink', label: 'Project Link', example: 'https://thrive365labs.live/launch/valley-medical' }
     ]
   },
   inventory: {
@@ -477,7 +477,7 @@ const VARIABLE_POOLS = {
     variables: [
       { key: 'practiceName', label: 'Practice Name', example: 'Valley Medical' },
       { key: 'daysSince', label: 'Days Since Last Submission', example: '10' },
-      { key: 'inventoryLink', label: 'Inventory Portal Link', example: 'https://app.thrive365labs.live/portal/valley-medical' }
+      { key: 'inventoryLink', label: 'Inventory Portal Link', example: 'https://thrive365labs.live/portal/valley-medical' }
     ]
   },
   announcement: {
@@ -503,7 +503,7 @@ const VARIABLE_POOLS = {
   system: {
     label: 'System',
     variables: [
-      { key: 'appUrl', label: 'App Base URL', example: 'https://app.thrive365labs.live' },
+      { key: 'appUrl', label: 'App Base URL', example: 'https://thrive365labs.live' },
       { key: 'currentDate', label: 'Current Date', example: '02/17/2026' },
       { key: 'companyName', label: 'Company Name', example: 'Thrive 365 Labs' }
     ]
@@ -563,7 +563,7 @@ async function getAppBaseUrl() {
   if (domain) return `https://${domain}`;
   return process.env.REPLIT_DEV_DOMAIN
     ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-    : `http://localhost:${config.PORT}`;
+    : 'https://thrive365labs.live';
 }
 
 function resolveSystemVars(appBaseUrl) {
@@ -778,14 +778,14 @@ const DEFAULT_EMAIL_TEMPLATES = [
     category: 'announcement',
     subject: '{{priorityTag}}New Announcement: {{title}}',
     body: '{{priorityTag}}{{title}}\n\n{{content}}{{attachmentLine}}',
-    htmlBody: `<div style="font-family: Inter, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
-  <div style="background-color: #ffffff; padding: 24px 28px 20px; border-radius: 8px 8px 0 0; text-align: center; border-bottom: 3px solid #045E9F;">
-    <img src="https://app.thrive365labs.live/thrive365-logo.webp" alt="Thrive 365 Labs" style="height: 44px; max-width: 220px; display: block; margin: 0 auto;" />
+    htmlBody: `<div style="font-family: Inter, -apple-system, sans-serif; width: 100%; max-width: 600px; margin: 0 auto;">
+  <div style="background-color: #ffffff; padding: 20px 16px 16px; border-radius: 8px 8px 0 0; text-align: center; border-bottom: 3px solid #045E9F;">
+    <img src="https://thrive365labs.live/thrive365-logo.webp" alt="Thrive 365 Labs" style="height: 44px; max-width: 220px; width: 100%; display: block; margin: 0 auto;" />
   </div>
-  <div style="background: #ffffff; padding: 28px 24px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+  <div style="background: #ffffff; padding: 24px 16px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
     {{priorityBanner}}
     <h2 style="color: #00205A; margin-top: 0;">{{title}}</h2>
-    <div style="color: #374151; line-height: 1.6; white-space: pre-wrap;">{{content}}</div>
+    <div style="color: #374151; line-height: 1.6; white-space: pre-wrap; word-break: break-word;">{{content}}</div>
     {{attachmentBlock}}
     <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
     <p style="color: #9ca3af; font-size: 12px; margin: 0;">You are receiving this because you have a client portal account with Thrive 365 Labs.</p>
