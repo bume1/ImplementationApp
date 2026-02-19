@@ -130,8 +130,10 @@
       getPortalSettings: () =>
         fetch(`${API_URL}/api/portal-settings`).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
-      getAnnouncements: () =>
-        fetch(`${API_URL}/api/announcements`).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+      getAnnouncements: (token) =>
+        fetch(`${API_URL}/api/announcements`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
       getClientDocuments: (slug, token) =>
         fetch(`${API_URL}/api/client-documents/${slug}`, {
@@ -5336,7 +5338,7 @@
             const [portalData, portalSettings, announcementsData, docsData] = await Promise.all([
               api.getPortalData(token),
               api.getPortalSettings(),
-              api.getAnnouncements(),
+              api.getAnnouncements(token),
               api.getClientDocuments(slug, token)
             ]);
             setData(portalData);
