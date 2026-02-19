@@ -425,8 +425,10 @@ const api = {
       body: JSON.stringify(settings)
     }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
   
-  getAnnouncements: () =>
-    fetch(`${API_URL}/api/announcements`).then(r => r.json()),
+  getAnnouncements: (token) =>
+    fetch(`${API_URL}/api/announcements`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.json()),
   
   createAnnouncement: (token, announcement) =>
     fetch(`${API_URL}/api/announcements`, {
@@ -7676,7 +7678,7 @@ const AnnouncementsManager = ({ token, user, onBack, onLogout }) => {
 
   const loadAnnouncements = async () => {
     try {
-      const data = await api.getAnnouncements();
+      const data = await api.getAnnouncements(token);
       setAnnouncements(data);
     } catch (err) {
       console.error('Failed to load announcements:', err);

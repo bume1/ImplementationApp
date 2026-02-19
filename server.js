@@ -4008,13 +4008,25 @@ app.get('/api/client/:linkId', async (req, res) => {
 });
 
 // ============== ANNOUNCEMENTS ==============
-// Get all announcements (public, no auth required for clients)
-app.get('/api/announcements', async (req, res) => {
+// Get announcements (auth required; clients see only their targeted announcements)
+app.get('/api/announcements', authenticateToken, async (req, res) => {
   try {
     const announcements = (await db.get('announcements')) || [];
     // Sort by date, newest first
     announcements.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    res.json(announcements);
+
+    // Non-client roles (admin, user, vendor) see all announcements
+    if (req.user.role !== 'client') {
+      return res.json(announcements);
+    }
+
+    // Client role: only show announcements targeted to their slug or to all clients
+    const userSlug = req.user.slug;
+    const visible = announcements.filter(a =>
+      a.targetAll === true ||
+      (Array.isArray(a.targetClients) && a.targetClients.includes(userSlug))
+    );
+    res.json(visible);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }

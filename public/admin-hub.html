@@ -245,8 +245,10 @@
           body: JSON.stringify(settings)
         }).then(handleResponse).catch(err => ({ error: err.message })),
 
-      getAnnouncements: () =>
-        fetch(`${API_URL}/api/announcements`).then(handleResponse).catch(err => ({ error: err.message })),
+      getAnnouncements: (token) =>
+        fetch(`${API_URL}/api/announcements`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message })),
 
       createAnnouncement: (token, data) =>
         fetch(`${API_URL}/api/announcements`, {
@@ -2717,7 +2719,7 @@
         setLoading(true);
         const [settingsData, announcementsData, usersData, reportsData] = await Promise.all([
           api.getPortalSettings(),
-          api.getAnnouncements(),
+          api.getAnnouncements(token),
           api.getUsers(token),
           api.getInventoryReports(token)
         ]);
