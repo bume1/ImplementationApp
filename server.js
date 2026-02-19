@@ -872,9 +872,14 @@ async function sendWelcomeEmail(user, plainPassword) {
     const htmlBody = tpl.htmlBody
       ? renderTemplate(tpl.htmlBody, vars)
       : renderTemplate(WELCOME_HTML_BODY, vars);
-    const result = await sendEmail(user.email, subject, body, { htmlBody });
-    if (!result.success) console.error('Welcome email failed for', user.email, ':', result.error);
-    return result;
+    const notification = await queueNotification(
+      'welcome_email',
+      user.id, user.email, user.name,
+      { subject, body, htmlBody },
+      { relatedEntityId: user.id, relatedEntityType: 'user', createdBy: 'system' }
+    );
+    if (!notification) console.error('Welcome email failed to queue for', user.email);
+    return notification ? { success: true, queued: true } : { success: false, error: 'Failed to queue' };
   } catch (err) {
     console.error('sendWelcomeEmail error:', err);
     return { success: false, error: err.message };
@@ -11420,35 +11425,24 @@ app.post('/api/admin/email-templates/:id/preview', authenticateToken, requireAdm
   }
 });
 
-// Send a test email using a template (to the admin's own email)
+// Send a test email using a template (to the requesting admin's own email)
 app.post('/api/admin/email-templates/:id/test-send', authenticateToken, requireAdminHubAccess, async (req, res) => {
   try {
     const templates = await getEmailTemplates();
-    const template = templates.find(t => t.id === req.params.id);
-    if (!template) return res.status(404).json({ error: 'Template not found' });
-
-    const exampleVars = {};
-    (template.variables || []).forEach(v => { exampleVars[v.key] = v.example || `[${v.label}]`; });
-    const vars = { ...exampleVars, ...(req.body.variables || {}) };
-
-    const renderedSubject = renderTemplate(template.subject, vars);
-    const renderedBody = renderTemplate(template.body, vars);
-    const renderedHtml = template.htmlBody
-      ? renderTemplate(template.htmlBody, vars)
-      : buildHtmlEmail(renderedBody, null);
-
-    const result = await sendEmail(
-      req.user.email,
-      `[TEST] ${renderedSubject}`,
-      renderedBody,
-      { htmlBody: renderedHtml }
-    );
-
-    if (result.success) {
-      res.json({ message: `Test email sent to ${req.user.email}`, id: result.id });
-    } else {
-      res.status(500).json({ error: `Failed to send test email: ${result.error}` });
-    }
+    const tpl = getTemplateById(templates, req.params.id);
+    if (!tpl) return res.status(404).json({ error: 'Template not found' });
+    const vars = {};
+    getPoolVariablesForTemplate(tpl.id).forEach(v => { vars[v.key] = v.example || `[${v.label}]`; });
+    vars.recipientName = req.user.name;
+    vars.recipientEmail = req.user.email;
+    const subject = `[TEST] ${renderTemplate(tpl.subject, vars)}`;
+    const body = renderTemplate(tpl.body, vars);
+    const htmlSrc = tpl.id === 'welcome_email'
+      ? renderTemplate(WELCOME_HTML_BODY, vars)
+      : buildHtmlEmail(body, tpl.htmlBody ? renderTemplate(tpl.htmlBody, vars) : null);
+    const result = await sendEmail(req.user.email, subject, body, { htmlBody: htmlSrc });
+    if (!result.success) return res.status(500).json({ error: result.error || 'Send failed' });
+    res.json({ message: `Test email sent to ${req.user.email}` });
   } catch (error) {
     console.error('Test send email template error:', error);
     res.status(500).json({ error: 'Server error' });
@@ -11841,30 +11835,6 @@ app.post('/api/admin/email-templates/:id/preview', authenticateToken, requireAdm
   }
 });
 
-// Send a test email to the requesting admin
-app.post('/api/admin/email-templates/:id/test-send', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const templates = await getEmailTemplates();
-    const tpl = getTemplateById(templates, req.params.id);
-    if (!tpl) return res.status(404).json({ error: 'Template not found' });
-    const vars = {};
-    getPoolVariablesForTemplate(tpl.id).forEach(v => { vars[v.key] = v.example || `[${v.label}]`; });
-    vars.recipientName = req.user.name;
-    vars.recipientEmail = req.user.email;
-    const subject = `[TEST] ${renderTemplate(tpl.subject, vars)}`;
-    const body = renderTemplate(tpl.body, vars);
-    const htmlSrc = tpl.id === 'welcome_email'
-      ? renderTemplate(WELCOME_HTML_BODY, vars)
-      : buildHtmlEmail(body, tpl.htmlBody ? renderTemplate(tpl.htmlBody, vars) : null);
-    const result = await sendEmail(req.user.email, subject, body, { htmlBody: htmlSrc });
-    if (!result.success) return res.status(500).json({ error: result.error || 'Send failed' });
-    res.json({ message: `Test email sent to ${req.user.email}` });
-  } catch (error) {
-    console.error('Test send email template error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
 // Legacy root-level route - redirect old project slugs to /launch
 app.get('/:slug', async (req, res, next) => {
   // Skip if it looks like a file request or known route
@@ -11942,6 +11912,13 @@ app.listen(PORT, () => {
   const scanInterval = config.NOTIFICATION_SCAN_INTERVAL_MINUTES * 60 * 1000;
   setInterval(scanAndQueueNotifications, scanInterval);
   console.log(`🔍 Notification trigger scanner started (every ${config.NOTIFICATION_SCAN_INTERVAL_MINUTES}m)`);
+
+  // Run both processors immediately on startup (staggered to avoid concurrent DB writes)
+  // This ensures any queued notifications are sent quickly after a restart instead of waiting
+  // up to 15 minutes for the first setInterval tick.
+  setTimeout(processNotificationQueue, 5000);
+  setTimeout(scanAndQueueNotifications, 8000);
+  console.log('⚡ Notification processors will run immediately at startup (5s / 8s)');
 
   // One-time migrations for service reports
   (async () => {
