@@ -4,6 +4,18 @@
 
 ---
 
+### Version 3.11.0 - February 19, 2026
+
+#### New Features
+- Fix announcement emails bypassing queue; add email draft preview
+- Add inventory import button with CSV template download
+
+#### Bug Fixes
+- restore company-ID-first ticket fetching, keep retroactive cutoff
+- isolate HubSpot tickets per practice and block retroactive population
+- Fix server.js crash from merge duplicate consts; fix portal email + ticket submission
+
+
 ### Version 3.6.0 - February 18, 2026
 
 #### New Features
