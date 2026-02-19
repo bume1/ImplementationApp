@@ -4,6 +4,12 @@
 
 ---
 
+### Version 3.9.0 - February 19, 2026
+
+#### New Features
+- Add welcome email functionality and fix sending errors
+
+
 ### Version 3.8.0 - February 18, 2026
 
 #### New Features
