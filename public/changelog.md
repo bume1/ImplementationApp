@@ -4,6 +4,12 @@
 
 ---
 
+### Version 3.11.1 - February 19, 2026
+
+#### Bug Fixes
+- Fix email template preview UX, broken logo URLs, wrong URL variables, and mobile responsiveness
+
+
 ### Version 3.11.0 - February 19, 2026
 
 #### New Features
