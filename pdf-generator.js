@@ -147,6 +147,66 @@ async function generateServiceReportPDF(reportData, technicianName) {
           y = drawAnalyzersTable(doc, reportData.analyzersValidated, 50, y);
         }
 
+        // Day-by-day validation breakdown (multi-day validations)
+        if (Array.isArray(reportData.validationSegments) && reportData.validationSegments.length > 0) {
+          // Check if we need a new page
+          if (y > 550) { doc.addPage(); y = 50; }
+
+          y += 10;
+          doc.fontSize(10).fillColor(COLORS.accent).font('Helvetica-Bold');
+          doc.text('DAILY VALIDATION LOG', 50, y);
+          doc.moveTo(50, y + 14).lineTo(220, y + 14).strokeColor(COLORS.accent).lineWidth(1).stroke();
+          y += 25;
+
+          reportData.validationSegments.forEach((seg) => {
+            // Check if we need a new page for this segment
+            if (y > 640) { doc.addPage(); y = 50; }
+
+            const segDate = seg.date ? new Date(seg.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : '';
+
+            // Day header with colored bar
+            doc.rect(50, y, 512, 18).fillColor('#EBF5FF').fill();
+            doc.fontSize(9).fillColor(COLORS.accent).font('Helvetica-Bold');
+            doc.text(`Day ${seg.day}`, 55, y + 4);
+            doc.fontSize(9).fillColor(COLORS.gray).font('Helvetica');
+            doc.text(segDate, 100, y + 4);
+            const statusText = seg.status === 'complete' ? 'Complete' : 'In Progress';
+            doc.text(statusText, 450, y + 4, { width: 100, align: 'right' });
+            y += 22;
+
+            if (seg.testsPerformed) {
+              doc.fontSize(8).fillColor(COLORS.darkGray).font('Helvetica-Bold');
+              doc.text('Tests:', 55, y);
+              doc.fontSize(8).fillColor(COLORS.darkGray).font('Helvetica');
+              const testLines = doc.heightOfString(seg.testsPerformed, { width: 440 });
+              doc.text(seg.testsPerformed, 105, y, { width: 440 });
+              y += Math.max(12, testLines + 2);
+            }
+
+            if (seg.results) {
+              doc.fontSize(8).fillColor(COLORS.darkGray).font('Helvetica-Bold');
+              doc.text('Results:', 55, y);
+              doc.fontSize(8).fillColor(COLORS.darkGray).font('Helvetica');
+              const resultLines = doc.heightOfString(seg.results, { width: 440 });
+              doc.text(seg.results, 105, y, { width: 440 });
+              y += Math.max(12, resultLines + 2);
+            }
+
+            if (seg.observations) {
+              doc.fontSize(8).fillColor(COLORS.darkGray).font('Helvetica-Bold');
+              doc.text('Notes:', 55, y);
+              doc.fontSize(8).fillColor(COLORS.darkGray).font('Helvetica');
+              const obsLines = doc.heightOfString(seg.observations, { width: 440 });
+              doc.text(seg.observations, 105, y, { width: 440 });
+              y += Math.max(12, obsLines + 2);
+            }
+
+            y += 8; // spacing between days
+          });
+
+          y += 5;
+        }
+
         if (reportData.trainingProvided) {
           drawFieldRow(doc, 'Training Provided', reportData.trainingProvided, 50, y);
           y += 20 + Math.ceil(reportData.trainingProvided.length / 80) * 12;

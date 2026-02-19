@@ -4,6 +4,288 @@
 
 ---
 
+### Version 3.6.0 - February 18, 2026
+
+#### New Features
+- Add client-specific Quick Tips to Knowledge Hub
+
+#### Changes
+- Show 'View & Download' for cloud-linked documents in client portal
+
+
+### Version 3.5.0 - February 17, 2026
+
+#### New Features
+- Add Hidden Features & Internal Notes guide to Knowledge Hub
+
+
+### Version 3.4.0 - February 17, 2026
+
+#### New Features
+- Add multi-user support to client portal admin hub
+
+#### Bug Fixes
+- Fix board export to include subtasks and full phase titles
+- Update Known Issues in Knowledge Hub to reflect resolved items
+
+#### Changes
+- Hide Known Issues section from Knowledge Hub
+
+
+### Version 3.3.1 - February 17, 2026
+
+#### Bug Fixes
+- Fix client portal sign-out leaving admin session active
+- Fix Knowledge Hub guide visibility for client and vendor roles
+
+
+### Version 3.3.0 - February 17, 2026
+
+#### New Features
+- Add Email Notifications guide to Knowledge Hub
+- Add Feature Reference to Knowledge Hub, fix email logo, standardize sidebar icons
+
+#### Bug Fixes
+- Fix email template Preview button in Notifications page
+
+
+### Version 3.2.0 - February 17, 2026
+
+#### New Features
+- Add variable pools system for email templates
+
+#### Bug Fixes
+- Remove Knowledge Hub from admin sidebar menu, fix sign-out redirect
+
+#### Changes
+- Make notification page data loading resilient to partial failures
+- Grant Managers access to all notification endpoints
+- Make Knowledge Hub search bar sticky when actively searching
+
+
+### Version 3.1.0 - February 17, 2026
+
+#### New Features
+- Add safeguard: announcement emails always include full content text
+- Add dynamic email template system with admin editor UI
+- Add implementation plan for dynamic email templates
+- Add bulk select and delete for notification queue
+- Bump to v3.0.0, add search navigation arrows, and enable Knowledge Hub for all user roles
+
+#### Bug Fixes
+- Fix Knowledge Hub content formatting: proper list numbering and styled checkmarks
+
+#### Changes
+- Remove start date display from client portal milestones
+- Align client portal milestones with internal launch board view
+
+
+### Version 3.0.0 - February 17, 2026
+
+#### Major Release - Platform Evolution
+
+**Knowledge Hub v2**
+- Complete Knowledge Hub rebuild with 5-tier permission system (Super Admin, Manager, Team Member, Vendor, Client)
+- Sticky sidebar navigation organized by portal section
+- Full-text search with keyword highlighting and result-to-result navigation arrows
+- Role-specific workflow walkthroughs for all 5 user roles
+- 50+ documentation articles covering all 5 portal sections
+- Internal-only Known Issues section for admin/manager visibility
+- Developer Guide with API reference and content management docs
+- V2 backend API with full CRUD, search, and one-time seed endpoints
+
+**Notification System**
+- Queue-based notification architecture (Features 1 & 2)
+- Automated reminder triggers for overdue tasks and milestones
+- Manager access to Notifications tab
+
+**Email Integration**
+- Resend email module for system notifications
+- Announcement email delivery with read/delivery stats tracking
+
+**Account & Security**
+- Active/inactive account status to control portal access and notification delivery
+- Locked inactive accounts blocked from all portals
+- Security vulnerability fixes and HubSpot integration cleanup
+
+**Service Portal**
+- Full report view for customer signing workflow
+- Simplified service report submission flow
+- Enhanced activity tracking
+
+**Mobile & UI**
+- Cross-portal mobile visibility optimizations
+- Responsive improvements across all portal files
+
+
+### Version 2.19.0 - February 16, 2026
+
+#### New Features
+- Add test email endpoint for validating Resend setup
+- Add Resend email module for notification system
+
+
+### Version 2.18.0 - February 16, 2026
+
+#### New Features
+- Add Feature 6: Claude API integration to plan
+- Add Feature 5: Automated feedback surveys at 30/60/90 day marks
+- Add missing mimeType field to service report photo and file entries
+
+#### Changes
+- Redesign Features 1 & 2 with queue-based notification architecture
+
+
+### Version 2.17.0 - February 10, 2026
+
+#### New Features
+- Add Daily Validation Log section to report preview
+
+#### Bug Fixes
+- Fix multiple service portal issues: duplicate banner, signatures, filtering, performance
+
+#### Changes
+- Restore Assigned Service Visits dashboard card (only remove top banner)
+
+
+### Version 2.16.2 - February 10, 2026
+
+#### Improvements
+- Improve client portal sign out process to ensure full logout
+
+
+### Version 2.16.1 - February 9, 2026
+
+#### Bug Fixes
+- Fix PDF download 404 and allow preview before signing
+
+
+### Version 2.16.0 - February 9, 2026
+
+#### New Features
+- Fix 403 error when managers add validation day segments
+
+
+### Version 2.15.0 - February 9, 2026
+
+#### New Features
+- Broaden active validation filters and add missing response fields
+
+#### Changes
+- Populate clientSlug on all service reports for reliable client matching
+
+
+### Version 2.14.1 - February 9, 2026
+
+#### Bug Fixes
+- Fix client portal validation matching for NANI and similar clients
+- Fix active validations visibility for managers and validation date saving
+
+
+### Version 2.13.0 - February 9, 2026
+
+#### New Features
+- Add sort and filter controls to all report views across system
+
+#### Bug Fixes
+- Fix PDF download 404 and allow preview before signing
+
+#### Changes
+- Changelog.m
+
+
+### Version 2.12.1 - February 8, 2026
+
+#### Bug Fixes
+- Remove duplicate assigned reports banner, fix PDF download for Replit webview
+
+
+### Version 2.12.0 - February 7, 2026
+
+#### New Features
+- Add Phase 8 auto-update integration across all views
+- Add multi-day validation tracking system
+
+
+### Version 2.10.1 - February 7, 2026
+
+#### Changes
+- Remove service reports API from Service History, use client_documents instead
+
+
+### Version 2.10.0 - February 6, 2026
+
+#### New Features
+- Add centralized config module and wire into server.js
+
+#### Changes
+- Simplify service workflow: move signing to Files area, streamline Service History
+
+
+### Version 2.9.1 - February 6, 2026
+
+#### Bug Fixes
+- Fix service report visibility, auto-update PDFs on sign, cascade name changes
+
+
+### Version 2.9.0 - February 6, 2026
+
+#### New Features
+- Add client portal service report signing and 3-tier status system
+
+#### Bug Fixes
+- Fix service portal issues: technician uploads, signature validation, client visibility, sign-out
+
+#### Changes
+- Remove Pending Signatures tab, show pending status inline in Service Reports tab
+
+
+### Version 2.8.1 - February 6, 2026
+
+#### Bug Fixes
+- Update Service Portal dashboard metrics and fix service report visibility
+
+#### Changes
+- Replace Logo URL text input with file upload button in Client Portal Admin
+
+
+### Version 2.8.0 - February 6, 2026
+
+#### New Features
+- Add admin/manager edit capability for submitted service reports
+- Add admin/manager edit capability for submitted service reports
+- Fix broken service report photos and add NANI report to client files
+- Remove Billing & Fees service type, add signer name fields to signatures
+- Add service report PDF download and Google Drive upload
+- Hide New Service Report button from admins and managers in service portal
+- Add support tickets pipeline, fix service report visibility, multi-user portals, fix broken photos
+- Fix client portal redirect cycle: add missing auth tokens to client-documents API calls
+- Add v2.7.1 changelog documenting all security, bug, and performance fixes
+- Add HubSpot ticket polling as webhook workaround with selective filtering
+- Add HubSpot ticket integration for Service Report auto-assignment
+- Add comprehensive CLAUDE.md for AI assistant guidance
+- Add comprehensive debugging tools and update changelog to v2.7.5
+
+#### Bug Fixes
+- Fix announcements Create/Edit/Delete for managers in Client Portal Admin
+- Automate changelog updates, remove manual controls, fix version ordering
+- Move photo/file storage to Google Drive, normalize task boards, fix NANI report
+- Fix client completion percentage to use all tasks instead of only client-visible ones
+- Fix ReferenceError: move /uploads middleware after authenticateToken definition
+- Fix documented gotchas from Security & Risk Analysis (#3-#18)
+- Fix P2 edge cases, validation gaps, and cross-portal consistency
+- Fix P1 authorization holes, logic bugs, and frontend error handling
+- Fix P0 security vulnerabilities and critical bugs
+- Fix duplicate isManager variable declaration
+- Fix service report photo and file storage path mismatch
+
+#### Changes
+- Move Assigned Reports access from sidebar to My Reports dashboard card
+- Include attached photos in downloadable service report PDFs
+- Remove phase numbers from client portal milestone headers
+- Change default polling filter mode from keyword to property
+
+
 ### Version 2.7.5 - January 2026
 
 #### New Features
