@@ -340,9 +340,9 @@ const processNotificationQueue = async () => {
       }
     }
 
-    // Move sent/failed notifications to log archive
-    const completed = queue.filter(n => n.status === 'sent' || n.status === 'failed');
-    const remaining = queue.filter(n => n.status === 'pending' || n.status === 'cancelled');
+    // Move sent/failed/cancelled notifications to log archive
+    const completed = queue.filter(n => n.status === 'sent' || n.status === 'failed' || n.status === 'cancelled');
+    const remaining = queue.filter(n => n.status === 'pending');
     if (completed.length > 0) {
       log.unshift(...completed);
       if (log.length > config.NOTIFICATION_LOG_MAX_ENTRIES) {
