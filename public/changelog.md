@@ -4,6 +4,26 @@
 
 ---
 
+### Version 3.12.0 - February 23, 2026
+
+#### New Features
+- Fix ticket creation: associate contact/deal, add submitter name and issue category fields
+
+#### Bug Fixes
+- Fix cross-client data exposure in service reports and portal admin views
+- Fix announcement cross-contamination between client portals
+- route all notifications through queue; add startup processing; remove dead route
+- notifications queue missing outbound communications in admin/manager views
+- resolve all inventory system bugs (excluding PDF export)
+- Fix email preview modal collapsing on desktop
+
+#### Changes
+- Unify button styling with brand gradient across all portals
+- Scope service report visibility to pending client assignments
+- Make email preview modal responsive across device sizes
+- Convert email template preview from inline scroll card to modal dialog
+
+
 ### Version 3.11.1 - February 19, 2026
 
 #### Bug Fixes
