@@ -130,8 +130,10 @@
       getPortalSettings: () =>
         fetch(`${API_URL}/api/portal-settings`).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
-      getAnnouncements: () =>
-        fetch(`${API_URL}/api/announcements`).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+      getAnnouncements: (token) =>
+        fetch(`${API_URL}/api/announcements`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
       getClientDocuments: (slug, token) =>
         fetch(`${API_URL}/api/client-documents/${slug}`, {
@@ -1567,7 +1569,7 @@
                   </button>
                   <a href={`${API_URL}/api/inventory/import-template`} download="inventory_import_template.csv" className="text-xs text-primary underline hover:text-accent whitespace-nowrap" title="Download Excel/CSV template">Template</a>
                 </div>
-                <button onClick={handleSubmit} disabled={saving} className="px-6 py-2 bg-primary text-white rounded-lg font-medium hover:bg-accent transition disabled:opacity-50">{saving ? 'Saving...' : 'Submit Inventory'}</button>
+                <button onClick={handleSubmit} disabled={saving} className="px-6 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-lg font-medium hover:opacity-90 transition disabled:opacity-50">{saving ? 'Saving...' : 'Submit Inventory'}</button>
               </div>
             </div>
             {message && <div className={`mt-4 p-3 rounded-lg ${message.includes('success') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{message}</div>}
@@ -1590,7 +1592,7 @@
                   <input type="text" value={newItemName} onChange={(e) => setNewItemName(e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="Enter item name" />
                 </div>
                 <div className="flex items-end gap-2">
-                  <button onClick={addCustomItem} className="px-4 py-2 bg-primary text-white rounded-lg">Add</button>
+                  <button onClick={addCustomItem} className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-lg">Add</button>
                   <button onClick={() => setShowAddItem(false)} className="px-4 py-2 border rounded-lg">Cancel</button>
                 </div>
               </div>
@@ -1631,7 +1633,7 @@
                 <p className="mt-2 text-gray-500">Each row represents one lot/batch. Multiple rows with the same Category + Item Name will be added as separate batch lots.</p>
               </div>
               <div className="flex flex-wrap items-center gap-3">
-                <label className={`flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg font-medium cursor-pointer hover:bg-accent transition ${importing ? 'opacity-50 pointer-events-none' : ''}`}>
+                <label className={`flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-lg font-medium cursor-pointer hover:opacity-90 transition ${importing ? 'opacity-50 pointer-events-none' : ''}`}>
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.75"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 12v9m0-9l-3 3m3-3l3 3M12 3v9" /></svg>
                   {importing ? 'Importing...' : 'Choose CSV File'}
                   <input type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportCSV} disabled={importing} />
@@ -1715,7 +1717,7 @@
           )}
 
           <div className="bg-white p-6 rounded-xl shadow-sm text-center">
-            <button onClick={handleSubmit} disabled={saving} className="px-8 py-3 bg-primary text-white rounded-lg font-medium hover:bg-accent transition disabled:opacity-50">{saving ? 'Saving...' : 'Submit Weekly Inventory'}</button>
+            <button onClick={handleSubmit} disabled={saving} className="px-8 py-3 bg-gradient-to-r from-primary to-accent text-white rounded-lg font-medium hover:opacity-90 transition disabled:opacity-50">{saving ? 'Saving...' : 'Submit Weekly Inventory'}</button>
           </div>
         </div>
       );
@@ -1806,7 +1808,7 @@
                 <p className="text-gray-600 mt-1">View alerts and current stock levels</p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <button onClick={handleDownload} className="bg-primary text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-accent transition-colors flex items-center gap-1">
+                <button onClick={handleDownload} className="bg-gradient-to-r from-primary to-accent text-white px-3 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-1">
                   {Icons.download} Download CSV
                 </button>
                 <button onClick={() => setShowGuide(!showGuide)} className="text-primary hover:text-accent text-sm flex items-center gap-1">
@@ -1915,7 +1917,7 @@
                 {/* Category filter chips */}
                 <div className="flex flex-wrap gap-2 mb-3">
                   {categories.map(cat => (
-                    <button key={cat} onClick={() => setCategoryFilter(cat)} className={`px-3 py-1 rounded-full text-xs font-medium transition ${categoryFilter === cat ? 'bg-primary text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{cat}</button>
+                    <button key={cat} onClick={() => setCategoryFilter(cat)} className={`px-3 py-1 rounded-full text-xs font-medium transition ${categoryFilter === cat ? 'bg-gradient-to-r from-primary to-accent text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{cat}</button>
                   ))}
                 </div>
 
@@ -1991,7 +1993,7 @@
               <p className="text-gray-600 mt-1">Aggregated inventory metrics across all client sites</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button onClick={handleDownloadAll} className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-accent transition-colors flex items-center gap-2">
+              <button onClick={handleDownloadAll} className="bg-gradient-to-r from-primary to-accent text-white px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-colors flex items-center gap-2">
                 {Icons.download} Download All CSV
               </button>
               <button onClick={() => onNavigate('submission_history')} className="border border-primary text-primary px-4 py-2 rounded-lg font-medium hover:bg-primary/10 transition-colors flex items-center gap-2">
@@ -2531,7 +2533,7 @@
                   )}
                   <button
                     onClick={handleDownloadFiltered}
-                    className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-accent transition-colors flex items-center gap-2 text-sm"
+                    className="bg-gradient-to-r from-primary to-accent text-white px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-colors flex items-center gap-2 text-sm"
                   >
                     {Icons.download} {selectedRows.size > 0 ? `Download Selected (${selectedRows.size})` : 'Download All'}
                   </button>
@@ -2939,7 +2941,7 @@
                   {!signing ? (
                     <button
                       onClick={() => setSigning(true)}
-                      className="px-6 py-2.5 bg-primary text-white rounded-lg font-medium hover:bg-accent transition-colors"
+                      className="px-6 py-2.5 bg-gradient-to-r from-primary to-accent text-white rounded-lg font-medium hover:opacity-90 transition-colors"
                     >
                       Sign Service Report
                     </button>
@@ -2958,7 +2960,7 @@
                         <button
                           onClick={handleSign}
                           disabled={submitting || !customerSignature}
-                          className="px-6 py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                          className="px-6 py-2.5 bg-gradient-to-r from-primary to-accent text-white rounded-lg font-medium hover:opacity-90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                         >
                           {submitting ? (
                             <><div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div> Submitting...</>
@@ -2987,7 +2989,7 @@
                   <svg className="w-12 h-12 text-green-500 mx-auto mb-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                   <h4 className="font-semibold text-green-800 text-lg">Signature Submitted Successfully</h4>
                   <p className="text-sm text-green-700 mt-1">This service report is now complete. Thank you!</p>
-                  <button onClick={onBack} className="mt-4 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 text-sm">
+                  <button onClick={onBack} className="mt-4 px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-lg font-medium hover:opacity-90 text-sm">
                     {backLabel ? `Return to ${backLabel.replace('Back to ', '')}` : 'Return'}
                   </button>
                 </div>
@@ -3139,7 +3141,7 @@
                 <span className="hidden sm:inline">Service History</span>
                 <span className="sm:hidden">History</span>
                 {serviceReportDocs.length > 0 && (
-                  <span className="ml-1 w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center bg-primary text-white">
+                  <span className="ml-1 w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center bg-gradient-to-r from-primary to-accent text-white">
                     {serviceReportDocs.length}
                   </span>
                 )}
@@ -3326,7 +3328,7 @@
                                           e.stopPropagation();
                                           openPdfSecurely(`${API_URL}/api/client/service-reports/${ticket.serviceReport.id}/pdf`, token);
                                         }}
-                                        className="ml-3 flex items-center gap-1 px-3 py-1.5 bg-primary text-white text-xs font-medium rounded-lg hover:bg-accent transition whitespace-nowrap"
+                                        className="ml-3 flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-primary to-accent text-white text-xs font-medium rounded-lg hover:opacity-90 transition whitespace-nowrap"
                                       >
                                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                                         Download PDF
@@ -3433,7 +3435,7 @@
                       <button
                         type="submit"
                         disabled={formSubmitting || !formSubject.trim() || !formName.trim() || !formIssueCategory}
-                        className="w-full py-2.5 px-4 bg-primary text-white font-medium rounded-lg hover:bg-accent transition disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                        className="w-full py-2.5 px-4 bg-gradient-to-r from-primary to-accent text-white font-medium rounded-lg hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                       >
                         {formSubmitting ? 'Submitting…' : 'Submit Ticket'}
                       </button>
@@ -3805,7 +3807,7 @@
                 <button
                   type="submit"
                   disabled={uploading || !selectedFile}
-                  className="w-full bg-primary text-white py-2 px-4 rounded-lg font-medium hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full bg-gradient-to-r from-primary to-accent text-white py-2 px-4 rounded-lg font-medium hover:opacity-90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {uploading ? 'Uploading...' : 'Upload File'}
                 </button>
@@ -3877,7 +3879,7 @@
           try {
             const [clientsRes, announcementsRes] = await Promise.all([
               fetch(`${API_URL}/api/users`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()),
-              fetch(`${API_URL}/api/announcements`).then(r => r.json())
+              fetch(`${API_URL}/api/announcements`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json())
             ]);
             setStats({
               clients: Array.isArray(clientsRes) ? clientsRes.filter(u => u.role === 'client').length : 0,
@@ -4050,7 +4052,7 @@
             <button
               onClick={handleSave}
               disabled={saving}
-              className="bg-primary text-white px-6 py-2 rounded-lg font-medium hover:bg-accent transition disabled:opacity-50"
+              className="bg-gradient-to-r from-primary to-accent text-white px-6 py-2 rounded-lg font-medium hover:opacity-90 transition disabled:opacity-50"
             >
               {saving ? 'Saving...' : 'Save Settings'}
             </button>
@@ -4079,7 +4081,7 @@
 
       const loadAnnouncements = async () => {
         try {
-          const res = await fetch(`${API_URL}/api/announcements`);
+          const res = await fetch(`${API_URL}/api/announcements`, { headers: { 'Authorization': `Bearer ${token}` } });
           const data = await res.json();
           setAnnouncements(Array.isArray(data) ? data : []);
         } catch (err) {
@@ -4175,7 +4177,7 @@
             </div>
             <button
               onClick={() => { setShowForm(true); setEditingId(null); setFormData({ title: '', content: '', type: 'info', priority: false, pinned: false, targetAll: true, targetClients: [], attachmentUrl: '', attachmentName: '' }); }}
-              className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-accent transition flex items-center gap-2"
+              className="bg-gradient-to-r from-primary to-accent text-white px-4 py-2 rounded-lg font-medium hover:opacity-90 transition flex items-center gap-2"
             >
               <span>+</span> New Announcement
             </button>
@@ -4320,7 +4322,7 @@
                 </div>
 
                 <div className="flex gap-2 pt-2">
-                  <button onClick={handleSave} className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-accent">
+                  <button onClick={handleSave} className="bg-gradient-to-r from-primary to-accent text-white px-4 py-2 rounded-lg font-medium hover:opacity-90">
                     {editingId ? 'Update' : 'Create'}
                   </button>
                   <button onClick={() => { setShowForm(false); setEditingId(null); }} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg">
@@ -4557,7 +4559,7 @@
                 </h2>
                 <button
                   onClick={() => setShowForm(true)}
-                  className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-accent transition"
+                  className="bg-gradient-to-r from-primary to-accent text-white px-4 py-2 rounded-lg font-medium hover:opacity-90 transition"
                 >
                   + Add Document
                 </button>
@@ -4656,7 +4658,7 @@
                     <button 
                       onClick={handleAdd} 
                       disabled={uploading}
-                      className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-accent disabled:opacity-50"
+                      className="bg-gradient-to-r from-primary to-accent text-white px-4 py-2 rounded-lg font-medium hover:opacity-90 disabled:opacity-50"
                     >
                       {uploading ? 'Adding...' : 'Add'}
                     </button>
@@ -4889,7 +4891,7 @@
             </div>
             <button
               onClick={() => setShowCreateForm(true)}
-              className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-accent font-medium flex items-center gap-2"
+              className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-lg hover:opacity-90 font-medium flex items-center gap-2"
             >
               <span>+</span> Add Client User
             </button>
@@ -4992,14 +4994,14 @@
                     <button
                       type="button"
                       onClick={() => { setAddToExisting(false); setCreateForm(f => ({...f, existingPortalSlug: ''})); }}
-                      className={`flex-1 py-2 transition-colors ${!addToExisting ? 'bg-primary text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                      className={`flex-1 py-2 transition-colors ${!addToExisting ? 'bg-gradient-to-r from-primary to-accent text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
                     >
                       New Portal
                     </button>
                     <button
                       type="button"
                       onClick={() => setAddToExisting(true)}
-                      className={`flex-1 py-2 transition-colors ${addToExisting ? 'bg-primary text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                      className={`flex-1 py-2 transition-colors ${addToExisting ? 'bg-gradient-to-r from-primary to-accent text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
                     >
                       Add to Existing Portal
                     </button>
@@ -5152,7 +5154,7 @@
                   <button
                     onClick={handleCreate}
                     disabled={saving}
-                    className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-accent font-medium disabled:opacity-50"
+                    className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-lg hover:opacity-90 font-medium disabled:opacity-50"
                   >
                     {saving ? 'Creating...' : 'Create Client User'}
                   </button>
@@ -5241,7 +5243,7 @@
                   <button
                     onClick={handleSave}
                     disabled={saving}
-                    className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-accent font-medium disabled:opacity-50"
+                    className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-lg hover:opacity-90 font-medium disabled:opacity-50"
                   >
                     {saving ? 'Saving...' : 'Save Changes'}
                   </button>
@@ -5336,7 +5338,7 @@
             const [portalData, portalSettings, announcementsData, docsData] = await Promise.all([
               api.getPortalData(token),
               api.getPortalSettings(),
-              api.getAnnouncements(),
+              api.getAnnouncements(token),
               api.getClientDocuments(slug, token)
             ]);
             setData(portalData);

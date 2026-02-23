@@ -340,9 +340,9 @@ const processNotificationQueue = async () => {
       }
     }
 
-    // Move sent/failed notifications to log archive
-    const completed = queue.filter(n => n.status === 'sent' || n.status === 'failed');
-    const remaining = queue.filter(n => n.status === 'pending' || n.status === 'cancelled');
+    // Move sent/failed/cancelled notifications to log archive
+    const completed = queue.filter(n => n.status === 'sent' || n.status === 'failed' || n.status === 'cancelled');
+    const remaining = queue.filter(n => n.status === 'pending');
     if (completed.length > 0) {
       log.unshift(...completed);
       if (log.length > config.NOTIFICATION_LOG_MAX_ENTRIES) {
@@ -872,9 +872,14 @@ async function sendWelcomeEmail(user, plainPassword) {
     const htmlBody = tpl.htmlBody
       ? renderTemplate(tpl.htmlBody, vars)
       : renderTemplate(WELCOME_HTML_BODY, vars);
-    const result = await sendEmail(user.email, subject, body, { htmlBody });
-    if (!result.success) console.error('Welcome email failed for', user.email, ':', result.error);
-    return result;
+    const notification = await queueNotification(
+      'welcome_email',
+      user.id, user.email, user.name,
+      { subject, body, htmlBody },
+      { relatedEntityId: user.id, relatedEntityType: 'user', createdBy: 'system' }
+    );
+    if (!notification) console.error('Welcome email failed to queue for', user.email);
+    return notification ? { success: true, queued: true } : { success: false, error: 'Failed to queue' };
   } catch (err) {
     console.error('sendWelcomeEmail error:', err);
     return { success: false, error: err.message };
@@ -4003,13 +4008,25 @@ app.get('/api/client/:linkId', async (req, res) => {
 });
 
 // ============== ANNOUNCEMENTS ==============
-// Get all announcements (public, no auth required for clients)
-app.get('/api/announcements', async (req, res) => {
+// Get announcements (auth required; clients see only their targeted announcements)
+app.get('/api/announcements', authenticateToken, async (req, res) => {
   try {
     const announcements = (await db.get('announcements')) || [];
     // Sort by date, newest first
     announcements.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    res.json(announcements);
+
+    // Non-client roles (admin, user, vendor) see all announcements
+    if (req.user.role !== 'client') {
+      return res.json(announcements);
+    }
+
+    // Client role: only show announcements targeted to their slug or to all clients
+    const userSlug = req.user.slug;
+    const visible = announcements.filter(a =>
+      a.targetAll === true ||
+      (Array.isArray(a.targetClients) && a.targetClients.includes(userSlug))
+    );
+    res.json(visible);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }
@@ -6192,6 +6209,9 @@ app.delete('/api/inventory/submissions', authenticateToken, async (req, res) => 
 
     const { submissionIds, slug } = req.body;
 
+    if (!slug) {
+      return res.status(400).json({ error: 'slug is required' });
+    }
     if (!submissionIds || !Array.isArray(submissionIds) || submissionIds.length === 0) {
       return res.status(400).json({ error: 'submissionIds array is required' });
     }
@@ -8345,6 +8365,18 @@ app.get('/api/service-reports', authenticateToken, requireServiceAccess, async (
   try {
     let serviceReports = (await db.get('service_reports')) || [];
 
+    // For non-admin/manager users, compute the set of client slugs where they have
+    // a pending (status === 'assigned') assignment BEFORE query filters narrow the list.
+    // This lets them see the full report history for any client they're actively visiting.
+    let pendingClientSlugs = new Set();
+    if (req.user.role !== config.ROLES.ADMIN && !req.user.isManager) {
+      serviceReports.forEach(r => {
+        if (String(r.assignedToId || '') === String(req.user.id) && r.status === 'assigned' && r.clientSlug) {
+          pendingClientSlugs.add(r.clientSlug);
+        }
+      });
+    }
+
     // Apply filters
     const { client, dateFrom, dateTo, search, technicianId } = req.query;
 
@@ -8378,6 +8410,18 @@ app.get('/api/service-reports', authenticateToken, requireServiceAccess, async (
 
     if (technicianId) {
       serviceReports = serviceReports.filter(r => r.technicianId === technicianId);
+    }
+
+    // Scope non-admins/non-managers: always show own reports plus all reports for any
+    // client slug where they currently have a pending (status === 'assigned') assignment.
+    // Once they submit (status changes), that slug drops out of pendingClientSlugs
+    // automatically — no extra cleanup required.
+    if (req.user.role !== config.ROLES.ADMIN && !req.user.isManager) {
+      serviceReports = serviceReports.filter(r =>
+        r.technicianId === req.user.id ||
+        String(r.assignedToId || '') === String(req.user.id) ||
+        (r.clientSlug && pendingClientSlugs.has(r.clientSlug))
+      );
     }
 
     // Sort by date descending
@@ -8477,6 +8521,26 @@ app.get('/api/service-reports/:id', authenticateToken, requireServiceAccess, asy
 
     if (!report) {
       return res.status(404).json({ error: 'Report not found' });
+    }
+
+    // Non-admins/managers can access a report if:
+    // - they created it or were assigned to it, OR
+    // - the report belongs to a client where they have a pending (status === 'assigned') assignment
+    if (req.user.role !== config.ROLES.ADMIN && !req.user.isManager) {
+      const isOwnReport =
+        report.technicianId === req.user.id ||
+        String(report.assignedToId || '') === String(req.user.id);
+
+      if (!isOwnReport) {
+        const hasPendingAssignment = report.clientSlug && serviceReports.some(r =>
+          String(r.assignedToId || '') === String(req.user.id) &&
+          r.status === 'assigned' &&
+          r.clientSlug === report.clientSlug
+        );
+        if (!hasPendingAssignment) {
+          return res.status(403).json({ error: 'Access denied' });
+        }
+      }
     }
 
     res.json(report);
@@ -10077,6 +10141,13 @@ app.get('/api/validation-reports/:id', authenticateToken, requireServiceAccess, 
       return res.status(404).json({ error: 'Report not found' });
     }
 
+    // Non-admins can only access their own reports
+    if (req.user.role !== config.ROLES.ADMIN && !req.user.isManager) {
+      if (report.technicianId !== req.user.id) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+    }
+
     res.json(report);
   } catch (error) {
     console.error('Get validation report error:', error);
@@ -11420,35 +11491,24 @@ app.post('/api/admin/email-templates/:id/preview', authenticateToken, requireAdm
   }
 });
 
-// Send a test email using a template (to the admin's own email)
+// Send a test email using a template (to the requesting admin's own email)
 app.post('/api/admin/email-templates/:id/test-send', authenticateToken, requireAdminHubAccess, async (req, res) => {
   try {
     const templates = await getEmailTemplates();
-    const template = templates.find(t => t.id === req.params.id);
-    if (!template) return res.status(404).json({ error: 'Template not found' });
-
-    const exampleVars = {};
-    (template.variables || []).forEach(v => { exampleVars[v.key] = v.example || `[${v.label}]`; });
-    const vars = { ...exampleVars, ...(req.body.variables || {}) };
-
-    const renderedSubject = renderTemplate(template.subject, vars);
-    const renderedBody = renderTemplate(template.body, vars);
-    const renderedHtml = template.htmlBody
-      ? renderTemplate(template.htmlBody, vars)
-      : buildHtmlEmail(renderedBody, null);
-
-    const result = await sendEmail(
-      req.user.email,
-      `[TEST] ${renderedSubject}`,
-      renderedBody,
-      { htmlBody: renderedHtml }
-    );
-
-    if (result.success) {
-      res.json({ message: `Test email sent to ${req.user.email}`, id: result.id });
-    } else {
-      res.status(500).json({ error: `Failed to send test email: ${result.error}` });
-    }
+    const tpl = getTemplateById(templates, req.params.id);
+    if (!tpl) return res.status(404).json({ error: 'Template not found' });
+    const vars = {};
+    getPoolVariablesForTemplate(tpl.id).forEach(v => { vars[v.key] = v.example || `[${v.label}]`; });
+    vars.recipientName = req.user.name;
+    vars.recipientEmail = req.user.email;
+    const subject = `[TEST] ${renderTemplate(tpl.subject, vars)}`;
+    const body = renderTemplate(tpl.body, vars);
+    const htmlSrc = tpl.id === 'welcome_email'
+      ? renderTemplate(WELCOME_HTML_BODY, vars)
+      : buildHtmlEmail(body, tpl.htmlBody ? renderTemplate(tpl.htmlBody, vars) : null);
+    const result = await sendEmail(req.user.email, subject, body, { htmlBody: htmlSrc });
+    if (!result.success) return res.status(500).json({ error: result.error || 'Send failed' });
+    res.json({ message: `Test email sent to ${req.user.email}` });
   } catch (error) {
     console.error('Test send email template error:', error);
     res.status(500).json({ error: 'Server error' });
@@ -11841,30 +11901,6 @@ app.post('/api/admin/email-templates/:id/preview', authenticateToken, requireAdm
   }
 });
 
-// Send a test email to the requesting admin
-app.post('/api/admin/email-templates/:id/test-send', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const templates = await getEmailTemplates();
-    const tpl = getTemplateById(templates, req.params.id);
-    if (!tpl) return res.status(404).json({ error: 'Template not found' });
-    const vars = {};
-    getPoolVariablesForTemplate(tpl.id).forEach(v => { vars[v.key] = v.example || `[${v.label}]`; });
-    vars.recipientName = req.user.name;
-    vars.recipientEmail = req.user.email;
-    const subject = `[TEST] ${renderTemplate(tpl.subject, vars)}`;
-    const body = renderTemplate(tpl.body, vars);
-    const htmlSrc = tpl.id === 'welcome_email'
-      ? renderTemplate(WELCOME_HTML_BODY, vars)
-      : buildHtmlEmail(body, tpl.htmlBody ? renderTemplate(tpl.htmlBody, vars) : null);
-    const result = await sendEmail(req.user.email, subject, body, { htmlBody: htmlSrc });
-    if (!result.success) return res.status(500).json({ error: result.error || 'Send failed' });
-    res.json({ message: `Test email sent to ${req.user.email}` });
-  } catch (error) {
-    console.error('Test send email template error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
 // Legacy root-level route - redirect old project slugs to /launch
 app.get('/:slug', async (req, res, next) => {
   // Skip if it looks like a file request or known route
@@ -11942,6 +11978,13 @@ app.listen(PORT, () => {
   const scanInterval = config.NOTIFICATION_SCAN_INTERVAL_MINUTES * 60 * 1000;
   setInterval(scanAndQueueNotifications, scanInterval);
   console.log(`🔍 Notification trigger scanner started (every ${config.NOTIFICATION_SCAN_INTERVAL_MINUTES}m)`);
+
+  // Run both processors immediately on startup (staggered to avoid concurrent DB writes)
+  // This ensures any queued notifications are sent quickly after a restart instead of waiting
+  // up to 15 minutes for the first setInterval tick.
+  setTimeout(processNotificationQueue, 5000);
+  setTimeout(scanAndQueueNotifications, 8000);
+  console.log('⚡ Notification processors will run immediately at startup (5s / 8s)');
 
   // One-time migrations for service reports
   (async () => {
