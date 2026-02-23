@@ -5102,7 +5102,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                               title={hasIncompleteDependencies(task) ? 'Complete dependencies first' : ''}
                             >
                               {task.completed ? (
-                                <div className="w-6 h-6 bg-gradient-to-r from-primary to-accent rounded-full flex items-center justify-center text-white text-sm">
+                                <div className="w-6 h-6 bg-green-600 rounded-full flex items-center justify-center text-white text-sm">
                                   ✓
                                 </div>
                               ) : hasIncompleteDependencies(task) ? (
@@ -5116,7 +5116,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                           ) : (
                             <div className="mt-1 flex-shrink-0">
                               {task.completed ? (
-                                <div className="w-6 h-6 bg-gradient-to-r from-primary to-accent rounded-full flex items-center justify-center text-white text-sm">
+                                <div className="w-6 h-6 bg-green-600 rounded-full flex items-center justify-center text-white text-sm">
                                   ✓
                                 </div>
                               ) : (
@@ -5128,7 +5128,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                         {viewMode === 'client' && (
                           <div className="mt-1 flex-shrink-0">
                             {task.completed ? (
-                              <div className="w-6 h-6 bg-gradient-to-r from-primary to-accent rounded-full flex items-center justify-center text-white text-sm">
+                              <div className="w-6 h-6 bg-green-600 rounded-full flex items-center justify-center text-white text-sm">
                                 ✓
                               </div>
                             ) : (
