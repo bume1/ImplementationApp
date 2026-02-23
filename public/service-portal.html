@@ -2786,235 +2786,6 @@
       );
     };
 
-    // Validation Day Entry Page - For technicians to log day-over-day validation data
-    const ValidationDayEntryPage = ({ token, user, assignment, onSuccess, onCancel }) => {
-      const [dayEntries, setDayEntries] = useState([]);
-      const [loading, setLoading] = useState(true);
-      const [submitting, setSubmitting] = useState(false);
-      const [formData, setFormData] = useState({
-        date: new Date().toISOString().split('T')[0],
-        dayNumber: 1,
-        testsPerformed: '',
-        readings: '',
-        results: '',
-        notes: '',
-        issues: ''
-      });
-      const [editingEntry, setEditingEntry] = useState(null);
-
-      useEffect(() => {
-        loadEntries();
-      }, []);
-
-      const loadEntries = async () => {
-        setLoading(true);
-        const result = await api.getDayEntries(token, assignment.id);
-        if (!result.error) {
-          const entries = Array.isArray(result) ? result : [];
-          setDayEntries(entries);
-          setFormData(prev => ({ ...prev, dayNumber: entries.length + 1 }));
-        }
-        setLoading(false);
-      };
-
-      const handleSubmitEntry = async (e) => {
-        e.preventDefault();
-        if (!formData.date) { alert('Date is required'); return; }
-        setSubmitting(true);
-        try {
-          let result;
-          if (editingEntry) {
-            result = await api.updateDayEntry(token, assignment.id, editingEntry.id, formData);
-          } else {
-            result = await api.addDayEntry(token, assignment.id, formData);
-          }
-          if (result.error) {
-            alert('Error: ' + result.error);
-          } else {
-            setEditingEntry(null);
-            setFormData({
-              date: new Date().toISOString().split('T')[0],
-              dayNumber: dayEntries.length + (editingEntry ? 1 : 2),
-              testsPerformed: '', readings: '', results: '', notes: '', issues: ''
-            });
-            loadEntries();
-          }
-        } catch (err) {
-          alert('Error: ' + err.message);
-        }
-        setSubmitting(false);
-      };
-
-      const handleDeleteEntry = async (entryId) => {
-        if (!confirm('Delete this day entry?')) return;
-        const result = await api.deleteDayEntry(token, assignment.id, entryId);
-        if (!result.error) loadEntries();
-        else alert('Error: ' + result.error);
-      };
-
-      const handleEditEntry = (entry) => {
-        setEditingEntry(entry);
-        setFormData({
-          date: entry.date,
-          dayNumber: entry.dayNumber,
-          testsPerformed: entry.testsPerformed || '',
-          readings: entry.readings || '',
-          results: entry.results || '',
-          notes: entry.notes || '',
-          issues: entry.issues || ''
-        });
-      };
-
-      return (
-        <div className="space-y-6 animate-fade-in">
-          <div className="flex items-center justify-between">
-            <button onClick={onCancel} className="flex items-center gap-2 text-gray-600 hover:text-primary-500">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
-              Back to Dashboard
-            </button>
-          </div>
-
-          <div className="card-modern overflow-hidden">
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
-                  {Icons.chartBar}
-                </div>
-                <div>
-                  <h1 className="text-2xl font-bold">Validation Day-Over-Day Log</h1>
-                  <p className="opacity-90">{assignment.clientFacilityName}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Existing Day Entries */}
-            <div className="p-6 border-b">
-              <h2 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <span className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 text-sm">1</span>
-                Logged Entries ({dayEntries.length})
-              </h2>
-              {loading ? (
-                <p className="text-gray-500 text-sm">Loading entries...</p>
-              ) : dayEntries.length === 0 ? (
-                <div className="text-center py-6 text-gray-400">
-                  <p>No day entries logged yet. Start logging below.</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {dayEntries.sort((a, b) => a.dayNumber - b.dayNumber).map(entry => (
-                    <div key={entry.id} className="bg-gray-50 rounded-xl p-4 border border-gray-200">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-3">
-                          <span className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold">
-                            {entry.dayNumber}
-                          </span>
-                          <div>
-                            <span className="font-semibold text-gray-900">Day {entry.dayNumber}</span>
-                            <span className="text-sm text-gray-500 ml-2">{new Date(entry.date + 'T12:00:00').toLocaleDateString()}</span>
-                          </div>
-                        </div>
-                        <div className="flex gap-2">
-                          <button onClick={() => handleEditEntry(entry)} className="text-blue-600 hover:text-blue-800 text-sm">Edit</button>
-                          <button onClick={() => handleDeleteEntry(entry.id)} className="text-red-500 hover:text-red-700 text-sm">Delete</button>
-                        </div>
-                      </div>
-                      {entry.testsPerformed && <p className="text-sm text-gray-700"><span className="font-medium">Tests:</span> {entry.testsPerformed}</p>}
-                      {entry.readings && <p className="text-sm text-gray-700"><span className="font-medium">Readings:</span> {entry.readings}</p>}
-                      {entry.results && <p className="text-sm text-gray-700"><span className="font-medium">Results:</span> {entry.results}</p>}
-                      {entry.notes && <p className="text-sm text-gray-600 mt-1"><span className="font-medium">Notes:</span> {entry.notes}</p>}
-                      {entry.issues && <p className="text-sm text-orange-600 mt-1"><span className="font-medium">Issues:</span> {entry.issues}</p>}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Add/Edit Day Entry Form */}
-            <form onSubmit={handleSubmitEntry} className="p-6 space-y-4">
-              <h2 className="font-bold text-gray-900 flex items-center gap-2">
-                <span className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 text-sm">2</span>
-                {editingEntry ? 'Edit Day Entry' : 'Add New Day Entry'}
-              </h2>
-
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
-                  <input type="date" value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})}
-                    className="input-modern w-full px-4 py-3" required />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Day Number</label>
-                  <input type="number" min="1" value={formData.dayNumber} onChange={(e) => setFormData({...formData, dayNumber: parseInt(e.target.value) || 1})}
-                    className="input-modern w-full px-4 py-3" />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Tests Performed</label>
-                <textarea value={formData.testsPerformed} onChange={(e) => setFormData({...formData, testsPerformed: e.target.value})}
-                  rows={2} className="input-modern w-full px-4 py-3" placeholder="e.g., Precision, accuracy, linearity runs for Day X..." />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Readings / Data</label>
-                <textarea value={formData.readings} onChange={(e) => setFormData({...formData, readings: e.target.value})}
-                  rows={2} className="input-modern w-full px-4 py-3" placeholder="Enter instrument readings, values, and measurements..." />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Results</label>
-                <textarea value={formData.results} onChange={(e) => setFormData({...formData, results: e.target.value})}
-                  rows={2} className="input-modern w-full px-4 py-3" placeholder="Pass/fail results, observations..." />
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                  <textarea value={formData.notes} onChange={(e) => setFormData({...formData, notes: e.target.value})}
-                    rows={2} className="input-modern w-full px-4 py-3" placeholder="Additional notes for this day..." />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Issues Encountered</label>
-                  <textarea value={formData.issues} onChange={(e) => setFormData({...formData, issues: e.target.value})}
-                    rows={2} className="input-modern w-full px-4 py-3" placeholder="Any issues or problems encountered..." />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                {editingEntry && (
-                  <button type="button" onClick={() => {
-                    setEditingEntry(null);
-                    setFormData({ date: new Date().toISOString().split('T')[0], dayNumber: dayEntries.length + 1, testsPerformed: '', readings: '', results: '', notes: '', issues: '' });
-                  }} className="px-4 py-2 border rounded-xl hover:bg-gray-50 font-medium text-sm">Cancel Edit</button>
-                )}
-                <button type="submit" disabled={submitting} className="btn-primary px-6 py-2 text-white rounded-xl font-medium disabled:opacity-50 text-sm">
-                  {submitting ? 'Saving...' : editingEntry ? 'Update Entry' : 'Add Day Entry'}
-                </button>
-              </div>
-            </form>
-
-            {/* Actions */}
-            <div className="p-6 border-t bg-gray-50">
-              <div className="flex justify-between items-center">
-                <p className="text-sm text-gray-500">
-                  {dayEntries.length > 0
-                    ? `${dayEntries.length} day${dayEntries.length > 1 ? 's' : ''} logged. When ready, complete the final validation report.`
-                    : 'Log your daily validation data, then complete the final report when ready.'}
-                </p>
-                <button
-                  onClick={() => onSuccess()}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition text-sm flex items-center gap-2"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/></svg>
-                  Complete Final Report
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    };
-
     // Complete Assignment Page - For technicians to complete assigned service reports
     const CompleteAssignmentPage = ({ token, user, assignment, onSuccess, onCancel }) => {
       const [formData, setFormData] = useState({
@@ -3374,19 +3145,9 @@
                   </div>
 
                   <div className="mt-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Training Provided</label>
-                    <textarea value={formData.trainingProvided} onChange={(e) => setFormData({...formData, trainingProvided: e.target.value})}
-                      rows={2} className="input-modern w-full px-4 py-3" placeholder="Describe any training provided to staff..." />
-                  </div>
-                  <div className="mt-4">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Validation Results *</label>
                     <textarea value={formData.validationResults} onChange={(e) => setFormData({...formData, validationResults: e.target.value})}
                       rows={3} className="input-modern w-full px-4 py-3" placeholder="Summary of validation tests performed and results..." required />
-                  </div>
-                  <div className="mt-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Recommendations</label>
-                    <textarea value={formData.recommendations} onChange={(e) => setFormData({...formData, recommendations: e.target.value})}
-                      rows={3} className="input-modern w-full px-4 py-3" placeholder="List any recommendations for the client..." />
                   </div>
 
                   {/* Validation Report File Upload */}
@@ -3413,13 +3174,63 @@
                       )}
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* Signatures */}
+              <div className="border-t pt-6">
+                <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
+                  <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">3</span>
+                  Signatures
+                </h2>
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div>
+                    <SignaturePad label="Customer Signature" onSave={setCustomerSignature} />
+                    <div className="grid grid-cols-2 gap-3 mt-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+                        <input type="text" value={customerFirstName} onChange={(e) => setCustomerFirstName(e.target.value)}
+                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary" placeholder="First name" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                        <input type="text" value={customerLastName} onChange={(e) => setCustomerLastName(e.target.value)}
+                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary" placeholder="Last name" />
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <SignaturePad label="Technician Signature" onSave={setTechnicianSignature} />
+                    <div className="grid grid-cols-2 gap-3 mt-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+                        <input type="text" value={technicianFirstName} onChange={(e) => setTechnicianFirstName(e.target.value)}
+                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary" placeholder="First name" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                        <input type="text" value={technicianLastName} onChange={(e) => setTechnicianLastName(e.target.value)}
+                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary" placeholder="Last name" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 4: Validation Log (validation reports only) */}
+              {isValidation && (
+                <div className="border-t pt-6">
+                  <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-6">
+                    <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">4</span>
+                    Validation Log
+                  </h2>
 
                   {/* Day-Over-Day Entries */}
-                  <div className="mt-6 border-t pt-6">
+                  <div className="mb-6">
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="font-semibold text-gray-900 flex items-center gap-2">
                         {Icons.chartBar}
-                        Day-Over-Day Validation Entries
+                        Day-Over-Day Entries
                         {dayEntries.length > 0 && <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{dayEntries.length} day{dayEntries.length !== 1 ? 's' : ''}</span>}
                       </h3>
                       <button type="button" onClick={() => { setShowAddDayEntry(!showAddDayEntry); setEditingDayEntryId(null); setNewDayEntry({ date: new Date().toISOString().split('T')[0], dayNumber: dayEntries.length + 1, testsPerformed: '', readings: '', results: '', notes: '', issues: '' }); }}
@@ -3433,7 +3244,7 @@
                       <p className="text-sm text-gray-400">Loading day entries...</p>
                     ) : dayEntries.length === 0 && !showAddDayEntry ? (
                       <div className="text-center py-4 bg-gray-50 rounded-xl border border-dashed border-gray-300">
-                        <p className="text-sm text-gray-400">No day entries yet. Add entries here or via the Validation Log on the dashboard.</p>
+                        <p className="text-sm text-gray-400">No day entries yet. Add entries to build the daily record before submitting.</p>
                       </div>
                     ) : (
                       <div className="space-y-2 mb-4">
@@ -3514,48 +3325,22 @@
                       </div>
                     )}
                   </div>
+
+                  {/* Training Provided — summary of training delivered across all days */}
+                  <div className="border-t pt-6">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Training Provided</label>
+                    <textarea value={formData.trainingProvided} onChange={(e) => setFormData({...formData, trainingProvided: e.target.value})}
+                      rows={2} className="input-modern w-full px-4 py-3" placeholder="Describe any training provided to staff..." />
+                  </div>
+
+                  {/* Recommendations — post-validation summary and next steps */}
+                  <div className="mt-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Recommendations</label>
+                    <textarea value={formData.recommendations} onChange={(e) => setFormData({...formData, recommendations: e.target.value})}
+                      rows={3} className="input-modern w-full px-4 py-3" placeholder="List any recommendations for the client..." />
+                  </div>
                 </div>
               )}
-
-              {/* Signatures */}
-              <div className="border-t pt-6">
-                <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
-                  <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">3</span>
-                  Signatures
-                </h2>
-                <div className="grid md:grid-cols-2 gap-6">
-                  <div>
-                    <SignaturePad label="Customer Signature" onSave={setCustomerSignature} />
-                    <div className="grid grid-cols-2 gap-3 mt-3">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
-                        <input type="text" value={customerFirstName} onChange={(e) => setCustomerFirstName(e.target.value)}
-                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary" placeholder="First name" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
-                        <input type="text" value={customerLastName} onChange={(e) => setCustomerLastName(e.target.value)}
-                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary" placeholder="Last name" />
-                      </div>
-                    </div>
-                  </div>
-                  <div>
-                    <SignaturePad label="Technician Signature" onSave={setTechnicianSignature} />
-                    <div className="grid grid-cols-2 gap-3 mt-3">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
-                        <input type="text" value={technicianFirstName} onChange={(e) => setTechnicianFirstName(e.target.value)}
-                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary" placeholder="First name" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
-                        <input type="text" value={technicianLastName} onChange={(e) => setTechnicianLastName(e.target.value)}
-                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary" placeholder="Last name" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
 
               <div className="flex justify-end gap-3 pt-4 border-t">
                 <button type="button" onClick={onCancel} className="px-6 py-3 border rounded-xl hover:bg-gray-50 font-medium">Cancel</button>
@@ -4447,15 +4232,14 @@
 
         if (loggingDayEntry && activePage === 'log_day_entry') {
           return (
-            <ValidationDayEntryPage
+            <CompleteAssignmentPage
               token={token}
               user={user}
               assignment={loggingDayEntry}
               onSuccess={() => {
-                // "Complete Final Report" → navigate to the full report form
-                setEditingAssignment(loggingDayEntry);
                 setLoggingDayEntry(null);
-                setActivePage('complete_assignment');
+                loadData();
+                setActivePage('home');
               }}
               onCancel={() => {
                 setLoggingDayEntry(null);
