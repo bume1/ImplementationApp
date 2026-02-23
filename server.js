@@ -4163,9 +4163,15 @@ app.delete('/api/admin/reset-test-data', authenticateToken, requireAdmin, async 
     const results = {};
 
     if (resetSubmissions !== false) {
-      const oldSubmissions = (await db.get('inventory_submissions')) || [];
-      await db.set('inventory_submissions', []);
-      results.submissionsCleared = oldSubmissions.length;
+      const allUsers = await getUsers();
+      const clientUsers = allUsers.filter(u => u.role === config.ROLES.CLIENT && u.slug);
+      let clearedCount = 0;
+      for (const u of clientUsers) {
+        const subs = (await db.get(`inventory_submissions_${u.slug}`)) || [];
+        clearedCount += subs.length;
+        await db.set(`inventory_submissions_${u.slug}`, []);
+      }
+      results.submissionsCleared = clearedCount;
     }
 
     if (resetAnnouncements !== false) {
@@ -5944,8 +5950,8 @@ app.get('/api/inventory/submissions/:slug', authenticateToken, async (req, res) 
     if (req.user.role === config.ROLES.CLIENT && req.user.slug !== slug) {
       return res.status(403).json({ error: 'Access denied' });
     }
-    const allSubmissions = (await db.get('inventory_submissions')) || [];
-    const clientSubmissions = allSubmissions.filter(s => s.slug === slug);
+    const allSubmissions = (await db.get(`inventory_submissions_${slug}`)) || [];
+    const clientSubmissions = [...allSubmissions].sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
     res.json(clientSubmissions);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
@@ -5962,11 +5968,10 @@ app.get('/api/inventory/export/:slug', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
     
-    const allSubmissions = (await db.get('inventory_submissions')) || [];
-    const clientSubmissions = allSubmissions
-      .filter(s => s.slug === slug)
+    const allSubmissions = (await db.get(`inventory_submissions_${slug}`)) || [];
+    const clientSubmissions = [...allSubmissions]
       .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
-    
+
     let dataToExport;
     if (submissionId) {
       const submission = clientSubmissions.find(s => s.id === submissionId);
@@ -6048,18 +6053,24 @@ app.get('/api/inventory/import-template', async (req, res) => {
 // Admin: Export all clients inventory data
 app.get('/api/inventory/export-all', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const allSubmissions = (await db.get('inventory_submissions')) || [];
     const users = await getUsers();
-    const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT);
-    
+    const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT && u.slug);
+
     // Get client names mapping
     const clientNames = {};
     clientUsers.forEach(u => { clientNames[u.slug] = u.practiceName || u.name || u.slug; });
-    
+
+    // Gather submissions from all per-client keys
+    const allSubmissions = [];
+    for (const u of clientUsers) {
+      const subs = (await db.get(`inventory_submissions_${u.slug}`)) || [];
+      allSubmissions.push(...subs);
+    }
+
     // Build CSV with client info
     const headers = ['Client', 'Submission Date', 'Submitted By', 'Category', 'Item', 'Lot Number', 'Expiry Date', 'Open Qty', 'Open Date', 'Closed Qty', 'Notes'];
     let csv = headers.join(',') + '\n';
-    
+
     // Sort by date descending
     allSubmissions.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
     
@@ -6121,11 +6132,10 @@ app.get('/api/inventory/latest/:slug', authenticateToken, async (req, res) => {
     if (req.user.role === config.ROLES.CLIENT && req.user.slug !== slug) {
       return res.status(403).json({ error: 'Access denied' });
     }
-    const allSubmissions = (await db.get('inventory_submissions')) || [];
-    const clientSubmissions = allSubmissions
-      .filter(s => s.slug === slug)
+    const allSubmissions = (await db.get(`inventory_submissions_${slug}`)) || [];
+    const clientSubmissions = [...allSubmissions]
       .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
-    
+
     if (clientSubmissions.length === 0) {
       const template = (await db.get('inventory_template')) || DEFAULT_INVENTORY_ITEMS;
       const emptyData = {};
@@ -6147,34 +6157,53 @@ app.get('/api/inventory/latest/:slug', authenticateToken, async (req, res) => {
 app.post('/api/inventory/submit', authenticateToken, async (req, res) => {
   try {
     const { slug, data } = req.body;
-    
+
+    if (!slug || typeof slug !== 'string') {
+      return res.status(400).json({ error: 'slug is required' });
+    }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      return res.status(400).json({ error: 'data must be a non-empty object' });
+    }
+
     if (req.user.role === config.ROLES.CLIENT && req.user.slug !== slug) {
       return res.status(403).json({ error: 'Access denied' });
     }
-    
+
+    // Normalize batches and coerce qty fields to numbers
+    const sanitizedData = {};
+    Object.entries(data).forEach(([key, value]) => {
+      const batches = Array.isArray(value?.batches) ? value.batches : [value || {}];
+      sanitizedData[key] = {
+        batches: batches.map(b => ({
+          ...b,
+          openQty: parseInt(b.openQty) || 0,
+          closedQty: parseInt(b.closedQty) || 0
+        }))
+      };
+    });
+
     const submission = {
       id: require('uuid').v4(),
       slug,
-      data,
+      data: sanitizedData,
       submittedAt: new Date().toISOString(),
       submittedBy: req.user.name || req.user.email
     };
-    
-    const allSubmissions = (await db.get('inventory_submissions')) || [];
-    allSubmissions.unshift(submission);
-    
-    if (allSubmissions.length > 1000) allSubmissions.length = 1000;
-    await db.set('inventory_submissions', allSubmissions);
-    
+
+    const clientSubmissions = (await db.get(`inventory_submissions_${slug}`)) || [];
+    clientSubmissions.unshift(submission);
+    if (clientSubmissions.length > 1000) clientSubmissions.length = 1000;
+    await db.set(`inventory_submissions_${slug}`, clientSubmissions);
+
     await logActivity(
       req.user.id || null,
       req.user.name || req.user.email,
       'inventory_submitted',
       'inventory',
       submission.id,
-      { slug, itemCount: Object.keys(data).length }
+      { slug, itemCount: Object.keys(sanitizedData).length }
     );
-    
+
     res.json({ success: true, submission });
   } catch (error) {
     console.error('Inventory submit error:', error);
@@ -6195,19 +6224,23 @@ app.delete('/api/inventory/submissions', authenticateToken, async (req, res) => 
     if (!submissionIds || !Array.isArray(submissionIds) || submissionIds.length === 0) {
       return res.status(400).json({ error: 'submissionIds array is required' });
     }
+    if (!slug || typeof slug !== 'string') {
+      return res.status(400).json({ error: 'slug is required' });
+    }
 
-    const allSubmissions = (await db.get('inventory_submissions')) || [];
+    const clientSubmissions = (await db.get(`inventory_submissions_${slug}`)) || [];
     const idsToDelete = new Set(submissionIds);
 
-    // Filter out submissions that match the IDs and optionally the slug
-    const remainingSubmissions = allSubmissions.filter(s => {
-      if (slug && s.slug !== slug) return true; // Keep submissions from other clients
-      return !idsToDelete.has(s.id);
-    });
+    // Pre-validate: all requested IDs must exist before deleting any
+    const missingIds = submissionIds.filter(id => !clientSubmissions.find(s => s.id === id));
+    if (missingIds.length > 0) {
+      return res.status(400).json({ error: `Submissions not found: ${missingIds.join(', ')}` });
+    }
 
-    const deletedCount = allSubmissions.length - remainingSubmissions.length;
+    const remainingSubmissions = clientSubmissions.filter(s => !idsToDelete.has(s.id));
+    const deletedCount = clientSubmissions.length - remainingSubmissions.length;
 
-    await db.set('inventory_submissions', remainingSubmissions);
+    await db.set(`inventory_submissions_${slug}`, remainingSubmissions);
 
     await logActivity(
       req.user.id || null,
@@ -6232,9 +6265,8 @@ app.get('/api/inventory/report/:slug', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
     
-    const allSubmissions = (await db.get('inventory_submissions')) || [];
-    const clientSubmissions = allSubmissions
-      .filter(s => s.slug === slug)
+    const allSubmissions = (await db.get(`inventory_submissions_${slug}`)) || [];
+    const clientSubmissions = [...allSubmissions]
       .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))
       .slice(0, 52);
     
@@ -6399,24 +6431,19 @@ app.get('/api/inventory/report/:slug', authenticateToken, async (req, res) => {
 // Allow Super Admins, Managers, and Client Portal Admins to access
 app.get('/api/inventory/report-all', authenticateToken, requireClientPortalAdmin, async (req, res) => {
   try {
-    const allSubmissions = (await db.get('inventory_submissions')) || [];
     const users = await getUsers();
-    const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT);
-    
-    // Group submissions by slug (client)
+    const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT && u.slug);
+
+    // Load per-client submissions
     const submissionsBySlug = {};
-    allSubmissions.forEach(sub => {
-      if (!submissionsBySlug[sub.slug]) {
-        submissionsBySlug[sub.slug] = [];
+    for (const u of clientUsers) {
+      const subs = (await db.get(`inventory_submissions_${u.slug}`)) || [];
+      if (subs.length > 0) {
+        submissionsBySlug[u.slug] = [...subs]
+          .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))
+          .slice(0, 12);
       }
-      submissionsBySlug[sub.slug].push(sub);
-    });
-    
-    // Sort each client's submissions and keep recent ones
-    Object.keys(submissionsBySlug).forEach(slug => {
-      submissionsBySlug[slug].sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
-      submissionsBySlug[slug] = submissionsBySlug[slug].slice(0, 12);
-    });
+    }
     
     const today = new Date();
     const thirtyDaysFromNow = new Date(today.getTime() + INVENTORY_EXPIRY_WARNING_DAYS * 24 * 60 * 60 * 1000);
@@ -12227,4 +12254,43 @@ app.listen(PORT, () => {
 
   // Auto-generate changelog from git commits on startup
   changelogGenerator.autoUpdateChangelog(db);
+
+  // One-time migration: move global inventory_submissions to per-client keys
+  (async () => {
+    try {
+      const migKey = 'migration_inventory_per_client_v1';
+      const alreadyRan = await db.get(migKey);
+      if (alreadyRan) return;
+
+      const globalSubs = (await db.get('inventory_submissions')) || [];
+      if (globalSubs.length === 0) {
+        await db.set(migKey, { ranAt: new Date().toISOString(), migrated: 0 });
+        return;
+      }
+
+      // Group by slug
+      const bySlug = {};
+      globalSubs.forEach(sub => {
+        if (!sub.slug) return;
+        if (!bySlug[sub.slug]) bySlug[sub.slug] = [];
+        bySlug[sub.slug].push(sub);
+      });
+
+      let migrated = 0;
+      for (const [slug, subs] of Object.entries(bySlug)) {
+        const existing = (await db.get(`inventory_submissions_${slug}`)) || [];
+        if (existing.length === 0) {
+          subs.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
+          await db.set(`inventory_submissions_${slug}`, subs.slice(0, 1000));
+          migrated += subs.length;
+        }
+      }
+
+      await db.set('inventory_submissions', []);
+      await db.set(migKey, { ranAt: new Date().toISOString(), migrated });
+      console.log(`✅ Migration: Moved ${migrated} inventory submissions to per-client storage`);
+    } catch (e) {
+      console.error('Inventory migration error (non-blocking):', e.message);
+    }
+  })();
 });
