@@ -8365,6 +8365,18 @@ app.get('/api/service-reports', authenticateToken, requireServiceAccess, async (
   try {
     let serviceReports = (await db.get('service_reports')) || [];
 
+    // For non-admin/manager users, compute the set of client slugs where they have
+    // a pending (status === 'assigned') assignment BEFORE query filters narrow the list.
+    // This lets them see the full report history for any client they're actively visiting.
+    let pendingClientSlugs = new Set();
+    if (req.user.role !== config.ROLES.ADMIN && !req.user.isManager) {
+      serviceReports.forEach(r => {
+        if (String(r.assignedToId || '') === String(req.user.id) && r.status === 'assigned' && r.clientSlug) {
+          pendingClientSlugs.add(r.clientSlug);
+        }
+      });
+    }
+
     // Apply filters
     const { client, dateFrom, dateTo, search, technicianId } = req.query;
 
@@ -8400,10 +8412,15 @@ app.get('/api/service-reports', authenticateToken, requireServiceAccess, async (
       serviceReports = serviceReports.filter(r => r.technicianId === technicianId);
     }
 
-    // Scope non-admins/non-managers to only their own reports
+    // Scope non-admins/non-managers: always show own reports plus all reports for any
+    // client slug where they currently have a pending (status === 'assigned') assignment.
+    // Once they submit (status changes), that slug drops out of pendingClientSlugs
+    // automatically — no extra cleanup required.
     if (req.user.role !== config.ROLES.ADMIN && !req.user.isManager) {
       serviceReports = serviceReports.filter(r =>
-        r.technicianId === req.user.id || r.assignedToId === req.user.id
+        r.technicianId === req.user.id ||
+        String(r.assignedToId || '') === String(req.user.id) ||
+        (r.clientSlug && pendingClientSlugs.has(r.clientSlug))
       );
     }
 
@@ -8506,10 +8523,23 @@ app.get('/api/service-reports/:id', authenticateToken, requireServiceAccess, asy
       return res.status(404).json({ error: 'Report not found' });
     }
 
-    // Non-admins/managers can only access reports they created or were assigned to
+    // Non-admins/managers can access a report if:
+    // - they created it or were assigned to it, OR
+    // - the report belongs to a client where they have a pending (status === 'assigned') assignment
     if (req.user.role !== config.ROLES.ADMIN && !req.user.isManager) {
-      if (report.technicianId !== req.user.id && report.assignedToId !== req.user.id) {
-        return res.status(403).json({ error: 'Access denied' });
+      const isOwnReport =
+        report.technicianId === req.user.id ||
+        String(report.assignedToId || '') === String(req.user.id);
+
+      if (!isOwnReport) {
+        const hasPendingAssignment = report.clientSlug && serviceReports.some(r =>
+          String(r.assignedToId || '') === String(req.user.id) &&
+          r.status === 'assigned' &&
+          r.clientSlug === report.clientSlug
+        );
+        if (!hasPendingAssignment) {
+          return res.status(403).json({ error: 'Access denied' });
+        }
       }
     }
 
