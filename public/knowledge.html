@@ -656,7 +656,7 @@ The technician will then:
         title: 'Launch App (Implementations)',
         description: 'Project tracking, client onboarding, and implementations',
         icon: Icons.launch,
-        color: 'bg-purple-600',
+        color: 'bg-primary',
         visibleTo: ['super_admin', 'manager', 'team_member'],
         portalSection: 'launch_portal',
         articles: [
@@ -3354,9 +3354,9 @@ This renders as color-coded sections with distinct visual styling.`
       if (!article.format) return null;
       const sections = [
         { key: 'whatItIs', label: 'What It Is', borderColor: 'border-blue-500', textColor: 'text-blue-700' },
-        { key: 'whoUsesIt', label: 'Who Uses It', borderColor: 'border-purple-500', textColor: 'text-purple-700' },
+        { key: 'whoUsesIt', label: 'Who Uses It', borderColor: 'border-blue-500', textColor: 'text-blue-700' },
         { key: 'whenToUse', label: 'When to Use', borderColor: 'border-green-500', textColor: 'text-green-700' },
-        { key: 'howToUse', label: 'How to Use', borderColor: 'border-indigo-500', textColor: 'text-indigo-700' },
+        { key: 'howToUse', label: 'How to Use', borderColor: 'border-accent', textColor: 'text-accent' },
         { key: 'whatHappensNext', label: 'What Happens Next', borderColor: 'border-teal-500', textColor: 'text-teal-700' },
         { key: 'commonMistakes', label: 'Common Mistakes', borderColor: 'border-red-500', textColor: 'text-red-700' }
       ];
@@ -3416,14 +3416,14 @@ This renders as color-coded sections with distinct visual styling.`
           'PDF report generation',
           'Full report history'
         ]},
-        { portal: 'Client Portal Admin', icon: Icons.client, colorClass: 'bg-purple-600', features: [
+        { portal: 'Client Portal Admin', icon: Icons.client, colorClass: 'bg-primary', features: [
           'Publish announcements',
           'Manage client documents',
           'Inventory template & submissions review',
           'Support ticket oversight',
           'Custom domain configuration'
         ]},
-        { portal: 'Knowledge Hub', icon: Icons.book, colorClass: 'bg-indigo-600', features: [
+        { portal: 'Knowledge Hub', icon: Icons.book, colorClass: 'bg-primary', features: [
           'All portal guides including internal docs',
           'Known issues log',
           'Admin-only technical documentation',
@@ -3442,13 +3442,13 @@ This renders as color-coded sections with distinct visual styling.`
           'Validation report oversight',
           'Full report history'
         ]},
-        { portal: 'Client Portal Admin', icon: Icons.client, colorClass: 'bg-purple-600', features: [
+        { portal: 'Client Portal Admin', icon: Icons.client, colorClass: 'bg-primary', features: [
           'Publish announcements',
           'Manage client documents',
           'Inventory review',
           'Support ticket oversight'
         ]},
-        { portal: 'Knowledge Hub', icon: Icons.book, colorClass: 'bg-indigo-600', features: [
+        { portal: 'Knowledge Hub', icon: Icons.book, colorClass: 'bg-primary', features: [
           'All portal guides',
           'Role-specific workflow walkthroughs',
           'Internal documentation'
@@ -3461,7 +3461,7 @@ This renders as color-coded sections with distinct visual styling.`
           'Complete validation reports',
           'View your report history'
         ]},
-        { portal: 'Knowledge Hub', icon: Icons.book, colorClass: 'bg-indigo-600', features: [
+        { portal: 'Knowledge Hub', icon: Icons.book, colorClass: 'bg-primary', features: [
           'Service portal guides',
           'Role-specific workflow walkthroughs'
         ]}
@@ -3475,7 +3475,7 @@ This renders as color-coded sections with distinct visual styling.`
           'Submit and track support tickets',
           'View signed service report history'
         ]},
-        { portal: 'Knowledge Hub', icon: Icons.book, colorClass: 'bg-indigo-600', features: [
+        { portal: 'Knowledge Hub', icon: Icons.book, colorClass: 'bg-primary', features: [
           'Client portal guides',
           'Workflow walkthroughs'
         ]}
@@ -3509,13 +3509,13 @@ This renders as color-coded sections with distinct visual styling.`
         ]});
       }
       if (user.hasClientPortalAdminAccess) {
-        features.push({ portal: 'Client Portal Admin', icon: Icons.client, colorClass: 'bg-purple-600', features: [
+        features.push({ portal: 'Client Portal Admin', icon: Icons.client, colorClass: 'bg-primary', features: [
           'Publish announcements',
           'Manage client documents',
           'Inventory review'
         ]});
       }
-      features.push({ portal: 'Knowledge Hub', icon: Icons.book, colorClass: 'bg-indigo-600', features: [
+      features.push({ portal: 'Knowledge Hub', icon: Icons.book, colorClass: 'bg-primary', features: [
         'Portal guides for your access areas',
         'Role-specific workflow walkthroughs'
       ]});
@@ -3763,7 +3763,7 @@ This renders as color-coded sections with distinct visual styling.`
 
       return (
         <div id="section-walkthroughs" className="mb-8">
-          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl overflow-hidden shadow-lg">
+          <div className="bg-gradient-to-r from-primary to-accent rounded-2xl overflow-hidden shadow-lg">
             <button onClick={() => setIsExpanded(!isExpanded)} className="w-full p-6 text-left text-white">
               <div className="flex items-center justify-between">
                 <div>

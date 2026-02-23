@@ -751,7 +751,7 @@ const AppHeader = ({ user, onLogout, children }) => {
             <div className="flex items-center gap-2 sm:gap-3">
               <span className="text-gray-600 text-xs sm:text-sm hidden sm:inline">
                 {user.name}
-                {user.role === 'admin' && <span className="ml-1 text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded">ADMIN</span>}
+                {user.role === 'admin' && <span className="ml-1 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">ADMIN</span>}
               </span>
               <a
                 href="/"
@@ -1384,12 +1384,12 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
                   <h3 className="text-lg font-bold text-primary mb-3">Project Phases</h3>
                   <div className="space-y-2 text-gray-600 text-sm">
                     <div className="flex items-center gap-3"><div className="w-4 h-4 bg-blue-500 rounded"></div><span><strong>Phase 1:</strong> Contract & Initial Setup</span></div>
-                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-indigo-500 rounded"></div><span><strong>Phase 2:</strong> Billing, CLIA & Hiring</span></div>
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-blue-500 rounded"></div><span><strong>Phase 2:</strong> Billing, CLIA & Hiring</span></div>
                     <div className="flex items-center gap-3"><div className="w-4 h-4 bg-cyan-500 rounded"></div><span><strong>Phase 3:</strong> Tech Infrastructure & LIS Integration</span></div>
                     <div className="flex items-center gap-3"><div className="w-4 h-4 bg-yellow-500 rounded"></div><span><strong>Phase 4:</strong> Inventory Forecasting & Procurement</span></div>
                     <div className="flex items-center gap-3"><div className="w-4 h-4 bg-green-500 rounded"></div><span><strong>Phase 5:</strong> Supply Orders & Logistics</span></div>
                     <div className="flex items-center gap-3"><div className="w-4 h-4 bg-teal-500 rounded"></div><span><strong>Phase 6:</strong> Onboarding & Welcome Calls</span></div>
-                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-purple-500 rounded"></div><span><strong>Phase 7:</strong> Virtual Soft Pilot & Prep</span></div>
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-blue-500 rounded"></div><span><strong>Phase 7:</strong> Virtual Soft Pilot & Prep</span></div>
                     <div className="flex items-center gap-3"><div className="w-4 h-4 bg-orange-500 rounded"></div><span><strong>Phase 8:</strong> Training & Full Validation</span></div>
                     <div className="flex items-center gap-3"><div className="w-4 h-4 bg-red-500 rounded"></div><span><strong>Phase 9:</strong> Go-Live</span></div>
                     <div className="flex items-center gap-3"><div className="w-4 h-4 bg-pink-500 rounded"></div><span><strong>Phase 10:</strong> Post-Launch Support & Optimization</span></div>
@@ -1768,7 +1768,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
                                 {dayTraining.slice(0, 1).map(p => (
                                   <div 
                                     key={`training-${p.id}`} 
-                                    className="text-xs px-2 py-1 rounded-md truncate cursor-pointer transition-colors bg-purple-100 text-purple-800 hover:bg-purple-200"
+                                    className="text-xs px-2 py-1 rounded-md truncate cursor-pointer transition-colors bg-blue-100 text-blue-800 hover:bg-blue-200"
                                     title={`Training/Validation - ${p.clientName}`}
                                     onClick={() => onSelectProject(p, p.trainingStartTaskId)}
                                   >
@@ -1776,7 +1776,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
                                   </div>
                                 ))}
                                 {dayTraining.length > 1 && (
-                                  <div className="text-xs text-purple-500 font-medium">+{dayTraining.length - 1} training</div>
+                                  <div className="text-xs text-primary font-medium">+{dayTraining.length - 1} training</div>
                                 )}
                                 {/* Go-live entries */}
                                 {dayProjects.slice(0, 2).map(p => (
@@ -1898,7 +1898,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
                 {/* Legend */}
                 <div className="px-4 pb-4 flex flex-wrap gap-4 text-xs">
                   <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded bg-purple-100"></div>
+                    <div className="w-3 h-3 rounded bg-blue-100"></div>
                     <span className="text-gray-600">Training/Validation Week</span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -2074,7 +2074,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
                                 <div
                                   key={entry.id || `${entry.type}-${entry.label}`}
                                   className={`text-xs p-1.5 rounded cursor-pointer hover:opacity-80 ${
-                                    entry.type === 'training' ? 'bg-purple-100 text-purple-700' :
+                                    entry.type === 'training' ? 'bg-blue-100 text-blue-700' :
                                     entry.type === 'golive-completed' ? 'bg-green-100 text-green-700' :
                                     entry.type === 'golive-paused' ? 'bg-yellow-100 text-yellow-700' :
                                     entry.type === 'golive' ? 'bg-primary/20 text-primary' :
@@ -2129,7 +2129,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
                                 key={day} 
                                 className={`text-center p-0.5 rounded ${
                                   hasGolive ? 'bg-primary/30 text-primary font-bold' :
-                                  hasTraining ? 'bg-purple-200 text-purple-700' :
+                                  hasTraining ? 'bg-blue-100 text-blue-700' :
                                   'text-gray-600'
                                 }`}
                               >
@@ -2147,7 +2147,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
               {/* Legend */}
               <div className="px-6 pb-6 flex flex-wrap gap-4 text-sm">
                 <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded bg-purple-100"></div>
+                  <div className="w-4 h-4 rounded bg-blue-100"></div>
                   <span className="text-gray-600">Training/Validation Week</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -2275,7 +2275,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
                   <div className="flex gap-2">
                     <button
                       onClick={() => handleCloneProject(project)}
-                      className="flex-1 bg-purple-50 text-purple-600 py-2 rounded-md hover:bg-purple-100 text-sm"
+                      className="flex-1 bg-blue-50 text-primary py-2 rounded-md hover:bg-blue-100 text-sm"
                     >
                       Clone Project
                     </button>
@@ -4181,12 +4181,12 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
   const getPhaseBackground = (phase) => {
     const colors = {
       'Phase 1': 'bg-blue-500',
-      'Phase 2': 'bg-indigo-500',
+      'Phase 2': 'bg-blue-500',
       'Phase 3': 'bg-cyan-500',
       'Phase 4': 'bg-yellow-500',
       'Phase 5': 'bg-green-500',
       'Phase 6': 'bg-teal-500',
-      'Phase 7': 'bg-purple-500',
+      'Phase 7': 'bg-blue-500',
       'Phase 8': 'bg-orange-500',
       'Phase 9': 'bg-red-500',
       'Phase 10': 'bg-pink-500'
@@ -4860,7 +4860,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                     <label className="block text-xs text-gray-500 mb-1">&nbsp;</label>
                     <button
                       onClick={downloadSampleCSV}
-                      className="px-3 py-2 text-purple-600 hover:text-purple-800 text-sm underline"
+                      className="px-3 py-2 text-primary hover:text-accent text-sm underline"
                     >
                       Download Template
                     </button>
@@ -5532,7 +5532,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                   >
                                     {expandedTaskId === task.id ? '▼ Hide Notes' : `+ Notes (${(task.notes || []).length})`}
                                   </button>
-                                  <span className="text-xs sm:text-sm text-purple-600">
+                                  <span className="text-xs sm:text-sm text-primary">
                                     Subtasks ({(task.subtasks || []).filter(s => s.completed || s.notApplicable || s.status === 'Complete' || s.status === 'N/A').length}/{(task.subtasks || []).length})
                                   </span>
                                   {canEdit && (
@@ -5693,7 +5693,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                 </div>
                               )}
                               {viewMode === 'internal' && (task.subtasks || []).length > 0 && (
-                                <div className="w-full mt-2 bg-purple-50 rounded-lg p-3">
+                                <div className="w-full mt-2 bg-blue-50 rounded-lg p-3">
                                   <h4 className="text-sm font-medium text-gray-700 mb-2">Subtasks</h4>
                                   <div className="space-y-2 mb-3">
                                     {(task.subtasks || []).length === 0 ? (
@@ -6671,7 +6671,7 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
                         </button>
                         <button
                           onClick={() => handleCloneTemplate(template)}
-                          className="text-purple-600 hover:underline"
+                          className="text-primary hover:underline"
                         >
                           Clone
                         </button>
@@ -6714,7 +6714,7 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
                 </label>
                 <button
                   onClick={downloadSampleCSV}
-                  className="text-purple-600 hover:text-purple-800 text-sm underline"
+                  className="text-primary hover:text-accent text-sm underline"
                 >
                   Download Template
                 </button>
@@ -6865,7 +6865,7 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
                           <td className="px-4 py-2 text-sm">{task.phase}</td>
                           <td className="px-4 py-2 text-sm">{task.stage}</td>
                           <td className="px-4 py-2 text-sm font-medium">{task.taskTitle}</td>
-                          <td className="px-4 py-2 text-sm text-purple-600">
+                          <td className="px-4 py-2 text-sm text-primary">
                             {(task.subtasks || []).length > 0 ? (
                               <span title={(task.subtasks || []).map(st => st.title).join(', ')}>
                                 {(task.subtasks || []).length} subtask{(task.subtasks || []).length > 1 ? 's' : ''}
@@ -7272,11 +7272,11 @@ const Reporting = ({ token, user, onBack, onLogout }) => {
               </div>
               <div className="text-sm text-yellow-800">In Progress</div>
             </div>
-            <div className="bg-purple-50 p-4 rounded-lg text-center">
-              <div className="text-3xl font-bold text-purple-600">
+            <div className="bg-blue-50 p-4 rounded-lg text-center">
+              <div className="text-3xl font-bold text-primary">
                 {timelines.length > 0 ? Math.round(timelines.reduce((sum, t) => sum + t.weeks, 0) / timelines.length) : 0}
               </div>
-              <div className="text-sm text-purple-800">Avg Weeks to Launch</div>
+              <div className="text-sm text-primary">Avg Weeks to Launch</div>
             </div>
           </div>
 
@@ -7352,7 +7352,7 @@ const Reporting = ({ token, user, onBack, onLogout }) => {
                       </div>
                       <div className="flex-1 bg-gray-200 rounded h-8 overflow-hidden">
                         <div 
-                          className="bg-gradient-to-r from-indigo-500 to-purple-500 h-full flex items-center justify-end pr-2"
+                          className="bg-gradient-to-r from-primary to-accent h-full flex items-center justify-end pr-2"
                           style={{ width: `${(project.weeks / maxWeeks) * 100}%`, minWidth: '40px' }}
                         >
                           <span className="text-white text-xs font-bold">{project.weeks}w</span>
@@ -7379,13 +7379,13 @@ const Reporting = ({ token, user, onBack, onLogout }) => {
               <div className="mt-8">
                 <h2 className="text-xl font-bold mb-4">Validation Reports</h2>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                  <div className="bg-purple-50 p-4 rounded-lg text-center">
-                    <div className="text-3xl font-bold text-purple-600">{metrics.total}</div>
-                    <div className="text-sm text-purple-800">Total Validations</div>
+                  <div className="bg-blue-50 p-4 rounded-lg text-center">
+                    <div className="text-3xl font-bold text-primary">{metrics.total}</div>
+                    <div className="text-sm text-primary">Total Validations</div>
                   </div>
-                  <div className="bg-indigo-50 p-4 rounded-lg text-center">
-                    <div className="text-3xl font-bold text-indigo-600">{metrics.avgDaysOnSite}</div>
-                    <div className="text-sm text-indigo-800">Avg Days On-Site</div>
+                  <div className="bg-blue-50 p-4 rounded-lg text-center">
+                    <div className="text-3xl font-bold text-primary">{metrics.avgDaysOnSite}</div>
+                    <div className="text-sm text-primary">Avg Days On-Site</div>
                   </div>
                   <div className="bg-cyan-50 p-4 rounded-lg text-center">
                     <div className="text-3xl font-bold text-cyan-600">{metrics.totalAnalyzers}</div>
@@ -7408,7 +7408,7 @@ const Reporting = ({ token, user, onBack, onLogout }) => {
                           <div className="w-40 text-sm font-medium truncate">{client}</div>
                           <div className="flex-1 bg-gray-200 rounded h-6 overflow-hidden">
                             <div
-                              className="bg-gradient-to-r from-purple-500 to-indigo-500 h-full flex items-center justify-end pr-2"
+                              className="bg-gradient-to-r from-primary to-accent h-full flex items-center justify-end pr-2"
                               style={{ width: `${(count / metrics.total) * 100}%`, minWidth: '30px' }}
                             >
                               <span className="text-white text-xs font-bold">{count}</span>
@@ -7497,7 +7497,7 @@ const Reporting = ({ token, user, onBack, onLogout }) => {
                       </td>
                       <td className="px-4 py-3 text-sm">
                         {project.launchDurationWeeks !== null ? (
-                          <span className="font-medium text-purple-600">{project.launchDurationWeeks} weeks</span>
+                          <span className="font-medium text-primary">{project.launchDurationWeeks} weeks</span>
                         ) : (
                           <span className="text-gray-400">-</span>
                         )}
