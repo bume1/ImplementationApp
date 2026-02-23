@@ -6209,6 +6209,9 @@ app.delete('/api/inventory/submissions', authenticateToken, async (req, res) => 
 
     const { submissionIds, slug } = req.body;
 
+    if (!slug) {
+      return res.status(400).json({ error: 'slug is required' });
+    }
     if (!submissionIds || !Array.isArray(submissionIds) || submissionIds.length === 0) {
       return res.status(400).json({ error: 'submissionIds array is required' });
     }
@@ -8397,6 +8400,13 @@ app.get('/api/service-reports', authenticateToken, requireServiceAccess, async (
       serviceReports = serviceReports.filter(r => r.technicianId === technicianId);
     }
 
+    // Scope non-admins/non-managers to only their own reports
+    if (req.user.role !== config.ROLES.ADMIN && !req.user.isManager) {
+      serviceReports = serviceReports.filter(r =>
+        r.technicianId === req.user.id || r.assignedToId === req.user.id
+      );
+    }
+
     // Sort by date descending
     serviceReports.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
@@ -8494,6 +8504,13 @@ app.get('/api/service-reports/:id', authenticateToken, requireServiceAccess, asy
 
     if (!report) {
       return res.status(404).json({ error: 'Report not found' });
+    }
+
+    // Non-admins/managers can only access reports they created or were assigned to
+    if (req.user.role !== config.ROLES.ADMIN && !req.user.isManager) {
+      if (report.technicianId !== req.user.id && report.assignedToId !== req.user.id) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
     }
 
     res.json(report);
@@ -10092,6 +10109,13 @@ app.get('/api/validation-reports/:id', authenticateToken, requireServiceAccess, 
 
     if (!report) {
       return res.status(404).json({ error: 'Report not found' });
+    }
+
+    // Non-admins can only access their own reports
+    if (req.user.role !== config.ROLES.ADMIN && !req.user.isManager) {
+      if (report.technicianId !== req.user.id) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
     }
 
     res.json(report);

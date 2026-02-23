@@ -3879,7 +3879,7 @@
           try {
             const [clientsRes, announcementsRes] = await Promise.all([
               fetch(`${API_URL}/api/users`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()),
-              fetch(`${API_URL}/api/announcements`).then(r => r.json())
+              fetch(`${API_URL}/api/announcements`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json())
             ]);
             setStats({
               clients: Array.isArray(clientsRes) ? clientsRes.filter(u => u.role === 'client').length : 0,
@@ -4081,7 +4081,7 @@
 
       const loadAnnouncements = async () => {
         try {
-          const res = await fetch(`${API_URL}/api/announcements`);
+          const res = await fetch(`${API_URL}/api/announcements`, { headers: { 'Authorization': `Bearer ${token}` } });
           const data = await res.json();
           setAnnouncements(Array.isArray(data) ? data : []);
         } catch (err) {
