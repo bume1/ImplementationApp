@@ -1000,7 +1000,7 @@ const AuthScreen = ({ onLogin }) => {
           <button
             onClick={handleSubmit}
             disabled={loading}
-            className="w-full bg-primary text-white py-2 rounded-md hover:bg-accent disabled:bg-gray-400"
+            className="w-full bg-gradient-to-r from-primary to-accent text-white py-2 rounded-md hover:opacity-90 disabled:bg-gray-400"
           >
             {loading ? 'Please wait...' : mode === 'login' ? 'Login' : mode === 'signup' ? 'Create Account' : 'Request Password Reset'}
           </button>
@@ -1571,7 +1571,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
               <div className="flex gap-2">
                 <button
                   onClick={handleCreate}
-                  className="bg-primary text-white px-4 py-2 rounded-md hover:bg-accent"
+                  className="bg-gradient-to-r from-primary to-accent text-white px-4 py-2 rounded-md hover:opacity-90"
                 >
                   Create Project with Template
                 </button>
@@ -2254,7 +2254,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
                 <div className="space-y-2">
                   <button
                     onClick={() => onSelectProject(project)}
-                    className="w-full bg-primary text-white py-2 rounded-md hover:bg-accent"
+                    className="w-full bg-gradient-to-r from-primary to-accent text-white py-2 rounded-md hover:opacity-90"
                   >
                     Open Tracker
                   </button>
@@ -2317,7 +2317,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
               <div className="flex gap-2 mt-6">
                 <button
                   onClick={saveClientPortalDomain}
-                  className="flex-1 bg-primary text-white py-2 rounded-md hover:bg-accent"
+                  className="flex-1 bg-gradient-to-r from-primary to-accent text-white py-2 rounded-md hover:opacity-90"
                 >
                   Save Domain
                 </button>
@@ -2422,7 +2422,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
               <div className="flex gap-2 mt-6">
                 <button
                   onClick={handleEditProject}
-                  className="flex-1 bg-primary text-white py-2 rounded-md hover:bg-accent"
+                  className="flex-1 bg-gradient-to-r from-primary to-accent text-white py-2 rounded-md hover:opacity-90"
                 >
                   Save Changes
                 </button>
@@ -3308,7 +3308,7 @@ const SoftPilotChecklist = ({ token, project, tasks, teamMembers, onClose, onSub
             <button
               onClick={handleSubmit}
               disabled={submitting || !project.hubspotRecordId}
-              className="px-6 py-2 bg-primary text-white rounded-md hover:bg-accent disabled:bg-gray-400"
+              className="px-6 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90 disabled:bg-gray-400"
             >
               {submitting ? 'Submitting...' : isResubmission ? 'Resubmit & Upload' : 'Submit & Upload'}
             </button>
@@ -4404,7 +4404,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                 onClick={() => setViewMode('internal')}
                 className={`px-3 py-1.5 rounded-md text-sm ${
                   viewMode === 'internal'
-                    ? 'bg-primary text-white'
+                    ? 'bg-gradient-to-r from-primary to-accent text-white'
                     : 'bg-gray-200 text-gray-700'
                 }`}
               >
@@ -4414,7 +4414,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                 onClick={() => setViewMode('client')}
                 className={`px-3 py-1.5 rounded-md text-sm ${
                   viewMode === 'client'
-                    ? 'bg-primary text-white'
+                    ? 'bg-gradient-to-r from-primary to-accent text-white'
                     : 'bg-gray-200 text-gray-700'
                 }`}
               >
@@ -4427,7 +4427,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                 onClick={() => setViewType('list')}
                 className={`px-3 py-1.5 rounded-md text-sm ${
                   viewType === 'list'
-                    ? 'bg-purple-600 text-white'
+                    ? 'bg-gradient-to-r from-primary to-accent text-white'
                     : 'bg-gray-200 text-gray-700'
                 }`}
               >
@@ -4437,7 +4437,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                 onClick={() => setViewType('timeline')}
                 className={`px-3 py-1.5 rounded-md text-sm ${
                   viewType === 'timeline'
-                    ? 'bg-purple-600 text-white'
+                    ? 'bg-gradient-to-r from-primary to-accent text-white'
                     : 'bg-gray-200 text-gray-700'
                 }`}
               >
@@ -4447,7 +4447,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                 onClick={() => setViewType('calendar')}
                 className={`px-3 py-1.5 rounded-md text-sm ${
                   viewType === 'calendar'
-                    ? 'bg-purple-600 text-white'
+                    ? 'bg-gradient-to-r from-primary to-accent text-white'
                     : 'bg-gray-200 text-gray-700'
                 }`}
               >
@@ -4460,7 +4460,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                   <button
                     onClick={handleCreateTemplate}
                     disabled={creatingTemplate || tasks.length === 0}
-                    className="px-3 py-1.5 rounded-md text-sm bg-green-600 text-white hover:bg-green-700 disabled:bg-gray-400"
+                    className="px-3 py-1.5 rounded-md text-sm bg-gradient-to-r from-primary to-accent text-white hover:opacity-90 disabled:bg-gray-400"
                     title="Create a reusable template from this board's tasks"
                   >
                     {creatingTemplate ? 'Creating...' : 'Create Template'}
@@ -4561,7 +4561,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                         alert(`Progress update queued for ${result.queued} recipient(s)`);
                       }
                     }}
-                    className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
+                    className="px-2 py-1 bg-gradient-to-r from-primary to-accent text-white text-xs rounded hover:opacity-90"
                   >
                     Send Progress Update
                   </button>
@@ -4788,7 +4788,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                         <label className="block text-xs text-gray-500 mb-1">&nbsp;</label>
                         <button
                           onClick={() => handleBulkComplete(true)}
-                          className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm"
+                          className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90 text-sm"
                         >
                           Mark {selectedTasks.length} Complete
                         </button>
@@ -4839,14 +4839,14 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                     <label className="block text-xs text-gray-500 mb-1">&nbsp;</label>
                     <button
                       onClick={() => setShowAddTask(true)}
-                      className="px-4 py-2 bg-primary text-white rounded-md hover:bg-accent text-sm"
+                      className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90 text-sm"
                     >
                       + Add Task
                     </button>
                   </div>
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">&nbsp;</label>
-                    <label className="cursor-pointer px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 text-sm inline-block">
+                    <label className="cursor-pointer px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90 text-sm inline-block">
                       Import CSV
                       <input
                         type="file"
@@ -5040,7 +5040,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                         {viewMode === 'internal' && stageName === 'Sprint 3: Soft-Pilot' && (
                           <button
                             onClick={() => setShowSoftPilotChecklist(true)}
-                            className="px-3 py-1 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700"
+                            className="px-3 py-1 bg-gradient-to-r from-primary to-accent text-white text-sm rounded-md hover:opacity-90"
                           >
                             View & Complete Checklist
                           </button>
@@ -5102,7 +5102,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                               title={hasIncompleteDependencies(task) ? 'Complete dependencies first' : ''}
                             >
                               {task.completed ? (
-                                <div className="w-6 h-6 bg-green-600 rounded-full flex items-center justify-center text-white text-sm">
+                                <div className="w-6 h-6 bg-gradient-to-r from-primary to-accent rounded-full flex items-center justify-center text-white text-sm">
                                   ✓
                                 </div>
                               ) : hasIncompleteDependencies(task) ? (
@@ -5116,7 +5116,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                           ) : (
                             <div className="mt-1 flex-shrink-0">
                               {task.completed ? (
-                                <div className="w-6 h-6 bg-green-600 rounded-full flex items-center justify-center text-white text-sm">
+                                <div className="w-6 h-6 bg-gradient-to-r from-primary to-accent rounded-full flex items-center justify-center text-white text-sm">
                                   ✓
                                 </div>
                               ) : (
@@ -5128,7 +5128,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                         {viewMode === 'client' && (
                           <div className="mt-1 flex-shrink-0">
                             {task.completed ? (
-                              <div className="w-6 h-6 bg-green-600 rounded-full flex items-center justify-center text-white text-sm">
+                              <div className="w-6 h-6 bg-gradient-to-r from-primary to-accent rounded-full flex items-center justify-center text-white text-sm">
                                 ✓
                               </div>
                             ) : (
@@ -5331,7 +5331,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                         }}
                                         className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${
                                           isSelected 
-                                            ? 'bg-primary text-white border-primary' 
+                                            ? 'bg-gradient-to-r from-primary to-accent text-white border-primary' 
                                             : 'bg-gray-50 text-gray-600 border-gray-300 hover:bg-gray-100'
                                         }`}
                                       >
@@ -5356,7 +5356,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                 <div className="flex gap-2">
                                   <button
                                     onClick={handleSaveEdit}
-                                    className="px-4 py-2 bg-green-600 text-white rounded-md"
+                                    className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md"
                                   >
                                     Save
                                   </button>
@@ -5528,7 +5528,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                 <div className="mt-3 flex flex-wrap gap-2 sm:gap-4 items-center">
                                   <button
                                     onClick={() => setExpandedTaskId(expandedTaskId === task.id ? null : task.id)}
-                                    className={`text-xs sm:text-sm px-2 sm:px-3 py-1.5 rounded ${expandedTaskId === task.id ? 'bg-primary text-white' : 'bg-blue-100 text-primary hover:bg-blue-200'}`}
+                                    className={`text-xs sm:text-sm px-2 sm:px-3 py-1.5 rounded ${expandedTaskId === task.id ? 'bg-gradient-to-r from-primary to-accent text-white' : 'bg-blue-100 text-primary hover:bg-blue-200'}`}
                                   >
                                     {expandedTaskId === task.id ? '▼ Hide Notes' : `+ Notes (${(task.notes || []).length})`}
                                   </button>
@@ -5570,7 +5570,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                               <div className="flex gap-2">
                                                 <button
                                                   onClick={() => handleUpdateNote(task.id, note.id)}
-                                                  className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
+                                                  className="px-2 py-1 bg-gradient-to-r from-primary to-accent text-white text-xs rounded hover:opacity-90"
                                                 >
                                                   Save
                                                 </button>
@@ -5623,7 +5623,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                       />
                                       <button
                                         onClick={() => handleAddNote(task.id)}
-                                        className="px-3 py-2 bg-primary text-white rounded-md text-sm hover:bg-accent"
+                                        className="px-3 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md text-sm hover:opacity-90"
                                       >
                                         Add
                                       </button>
@@ -5727,7 +5727,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                             <div className="flex gap-2">
                                               <button
                                                 onClick={handleSaveSubtaskEdit}
-                                                className="px-3 py-1.5 bg-green-600 text-white rounded text-xs hover:bg-green-700"
+                                                className="px-3 py-1.5 bg-gradient-to-r from-primary to-accent text-white rounded text-xs hover:opacity-90"
                                               >
                                                 Save
                                               </button>
@@ -5841,7 +5841,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                     />
                                     <button
                                       onClick={() => handleAddSubtask(task.id)}
-                                      className="px-3 py-2 bg-green-600 text-white rounded-md text-sm hover:bg-green-700"
+                                      className="px-3 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md text-sm hover:opacity-90"
                                     >
                                       Add
                                     </button>
@@ -6003,7 +6003,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                   </button>
                   <button
                     onClick={handleCreateTask}
-                    className="px-4 py-2 bg-primary text-white rounded-md hover:bg-accent"
+                    className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90"
                   >
                     Create Task
                   </button>
@@ -6273,7 +6273,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                       alert('Failed to update project');
                     }
                   }}
-                  className="px-4 py-2 bg-primary text-white rounded-md hover:bg-accent"
+                  className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90"
                 >
                   Save Changes
                 </button>
@@ -6594,7 +6594,7 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
             <div className="flex justify-end mb-4">
               <button
                 onClick={() => setShowCreateTemplate(true)}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90"
               >
                 + Create New Template
               </button>
@@ -6626,7 +6626,7 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
                     <button
                       onClick={handleCreateTemplate}
                       disabled={saving}
-                      className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+                      className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90 disabled:opacity-50"
                     >
                       {saving ? 'Creating...' : 'Create Template'}
                     </button>
@@ -6702,7 +6702,7 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
           <div className="space-y-4">
             <div className="flex justify-between items-center mb-4">
               <div className="flex items-center gap-2">
-                <label className="cursor-pointer px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700">
+                <label className="cursor-pointer px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90">
                   Import CSV
                   <input
                     type="file"
@@ -6722,7 +6722,7 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
               <button
                 onClick={handleAddTask}
                 disabled={saving}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+                className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90 disabled:opacity-50"
               >
                 + Add Task to Template
               </button>
@@ -7097,7 +7097,7 @@ const HubSpotSettings = ({ token, user, onBack, onLogout }) => {
                         <button
                           onClick={handleSave}
                           disabled={saving || !selectedPipeline}
-                          className="bg-primary text-white px-6 py-2 rounded-lg hover:bg-accent disabled:opacity-50"
+                          className="bg-gradient-to-r from-primary to-accent text-white px-6 py-2 rounded-lg hover:opacity-90 disabled:opacity-50"
                         >
                           {saving ? 'Saving...' : 'Save Mapping'}
                         </button>
@@ -7628,7 +7628,7 @@ const PortalSettings = ({ token, user, onBack, onLogout }) => {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="px-6 py-2 bg-primary text-white rounded-md hover:bg-accent disabled:opacity-50"
+                className="px-6 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90 disabled:opacity-50"
               >
                 {saving ? 'Saving...' : 'Save Settings'}
               </button>
@@ -7743,7 +7743,7 @@ const AnnouncementsManager = ({ token, user, onBack, onLogout }) => {
           </div>
           <button
             onClick={() => { setShowAdd(true); setEditing(null); setForm({ title: '', content: '', type: 'info' }); }}
-            className="px-4 py-2 bg-primary text-white rounded-md hover:bg-accent"
+            className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90"
           >
             + New Announcement
           </button>
@@ -7787,7 +7787,7 @@ const AnnouncementsManager = ({ token, user, onBack, onLogout }) => {
               <div className="flex gap-2">
                 <button
                   onClick={editing ? handleUpdate : handleCreate}
-                  className="px-4 py-2 bg-primary text-white rounded-md hover:bg-accent"
+                  className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90"
                 >
                   {editing ? 'Save Changes' : 'Create'}
                 </button>
@@ -7915,7 +7915,7 @@ const ClientDocumentsManager = ({ token, user, onBack, onLogout }) => {
           </div>
           <button
             onClick={() => setShowAdd(true)}
-            className="px-4 py-2 bg-primary text-white rounded-md hover:bg-accent"
+            className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90"
           >
             + Add Document
           </button>
@@ -7980,7 +7980,7 @@ const ClientDocumentsManager = ({ token, user, onBack, onLogout }) => {
               </div>
             </div>
             <div className="flex gap-2 mt-4">
-              <button onClick={handleCreate} className="px-4 py-2 bg-primary text-white rounded-md hover:bg-accent">
+              <button onClick={handleCreate} className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90">
                 Add Document
               </button>
               <button onClick={() => setShowAdd(false)} className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400">
