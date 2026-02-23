@@ -1119,7 +1119,7 @@ async function getTicketById(ticketId) {
             'serial_number',       // Custom property
             'submitted_by'         // Custom property
           ].join(','),
-          associations: 'company,contact'
+          associations: 'company,contact,deal'
         },
         headers: {
           'Authorization': `Bearer ${privateAppToken}`,
@@ -1131,9 +1131,10 @@ async function getTicketById(ticketId) {
     const ticket = ticketResponse.data;
     const props = ticket.properties;
 
-    // Get associated company
+    // Get associated company (name + address)
     let companyId = null;
     let companyName = null;
+    let companyAddress = '';
     const companyAssoc = ticket.associations?.companies?.results?.[0];
     if (companyAssoc) {
       companyId = companyAssoc.id;
@@ -1141,17 +1142,27 @@ async function getTicketById(ticketId) {
         const companyResponse = await axios.get(
           `https://api.hubapi.com/crm/v3/objects/companies/${companyId}`,
           {
-            params: { properties: 'name' },
+            params: { properties: 'name,address,city,state,zip' },
             headers: {
               'Authorization': `Bearer ${privateAppToken}`,
               'Content-Type': 'application/json'
             }
           }
         );
-        companyName = companyResponse.data.properties.name;
+        const cp = companyResponse.data.properties;
+        companyName = cp.name || null;
+        const parts = [cp.address, cp.city, cp.state, cp.zip].filter(Boolean);
+        companyAddress = parts.join(', ');
       } catch (err) {
-        console.log(`Could not fetch company name for ${companyId}:`, err.message);
+        console.log(`Could not fetch company details for ${companyId}:`, err.message);
       }
+    }
+
+    // Get associated deal (first deal linked to the ticket)
+    let dealId = null;
+    const dealAssoc = ticket.associations?.deals?.results?.[0];
+    if (dealAssoc) {
+      dealId = dealAssoc.id;
     }
 
     // Get associated contact (primary contact)
@@ -1250,7 +1261,10 @@ async function getTicketById(ticketId) {
       submittedBy: props.submitted_by || contactName || '',
       companyId: companyId,
       companyName: companyName,
+      address: companyAddress,
+      dealId: dealId,
       contactId: contactId,
+      contactName: contactName,
       notes: notes
     };
   } catch (error) {

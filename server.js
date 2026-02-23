@@ -39,6 +39,7 @@ const PORT = process.env.PORT || 3000;
 
 // HubSpot ticket polling timer reference
 let hubspotPollingTimer = null;
+let isPolling = false; // Concurrency guard — prevents overlapping poll cycles
 const JWT_SECRET = process.env.JWT_SECRET || 'thrive365-secret-change-in-production';
 
 // Startup security warnings
@@ -268,8 +269,8 @@ async function loadTemplate() {
 }
 
 // ===== HubSpot Ticket Polling Engine =====
-// Polls HubSpot for tickets in target stages and creates service reports
-// Workaround for when HubSpot webhooks are not available
+// Polls HubSpot every 60s for tickets in target stages and auto-creates service reports.
+// Trigger conditions: stage = "Assigned" or "Vendor Escalation" AND create_service_report = true.
 
 function getDefaultPollingConfig() {
   return {
@@ -279,6 +280,7 @@ function getDefaultPollingConfig() {
     lastPollTime: null,
     processedTicketIds: [],
     targetStages: ['assigned', 'vendor escalation'],
+    targetPipelineName: '',   // If set, only resolve stage IDs from this pipeline (exact match, case-insensitive)
     resolvedStageIds: [],
     stageIdsCachedAt: null,
     filter: {
@@ -287,6 +289,9 @@ function getDefaultPollingConfig() {
       propertyName: 'create_service_report', // For property mode: HubSpot custom property name
       propertyValue: 'true'   // For property mode: expected value
     },
+    // Tickets that were found but could not be auto-assigned (e.g. no owner match).
+    // Admin must review and manually assign these.
+    pendingReviewTickets: [],
     stats: {
       totalPolls: 0,
       totalReportsCreated: 0,
@@ -300,9 +305,20 @@ function getDefaultPollingConfig() {
 }
 
 async function pollHubSpotTickets() {
+  // Concurrency guard — skip if a poll cycle is already running
+  if (isPolling) {
+    console.log('[HubSpot Poll] Skipping — previous cycle still running.');
+    return;
+  }
+  isPolling = true;
+
   try {
     const config = await db.get('ticket_polling_config');
     if (!config || !config.enabled) return;
+
+    // Ensure new config fields exist on older stored configs
+    if (!config.pendingReviewTickets) config.pendingReviewTickets = [];
+    if (config.targetPipelineName === undefined) config.targetPipelineName = '';
 
     console.log('[HubSpot Poll] Starting poll cycle...');
 
@@ -315,10 +331,16 @@ async function pollHubSpotTickets() {
       try {
         const pipelines = await hubspot.getTicketPipelines();
         const targetLabels = config.targetStages.map(s => s.toLowerCase());
+        const pipelineNameFilter = (config.targetPipelineName || '').toLowerCase();
         const stageIds = [];
         for (const pipeline of pipelines) {
+          // If targetPipelineName is set, only look in that specific pipeline
+          if (pipelineNameFilter && !pipeline.label.toLowerCase().includes(pipelineNameFilter)) {
+            continue;
+          }
           for (const stage of pipeline.stages) {
-            if (targetLabels.some(t => stage.label.toLowerCase().includes(t))) {
+            // Exact label match (case-insensitive) rather than partial includes
+            if (targetLabels.some(t => stage.label.toLowerCase() === t)) {
               stageIds.push(stage.id);
             }
           }
@@ -378,7 +400,7 @@ async function pollHubSpotTickets() {
 
     console.log(`[HubSpot Poll] Found ${candidates.length} candidate ticket(s).`);
 
-    // Filter out already-processed tickets
+    // Filter out already-processed tickets (successfully created reports only)
     const processedIds = new Set(config.processedTicketIds || []);
     let filteredCandidates = candidates.filter(t => !processedIds.has(String(t.id)));
 
@@ -421,6 +443,11 @@ async function pollHubSpotTickets() {
     );
     const users = (await db.get('users')) || [];
 
+    // Track pending review tickets by ID so we don't add duplicates
+    const pendingReviewIds = new Set(
+      (config.pendingReviewTickets || []).map(t => String(t.ticketId))
+    );
+
     const serviceTypeMapping = {
       'analyzer hardware': 'Analyzer Hardware',
       'inventory': 'Inventory',
@@ -440,23 +467,24 @@ async function pollHubSpotTickets() {
     for (const candidate of filteredCandidates) {
       const ticketId = String(candidate.id);
 
-      // Skip if service report already exists for this ticket
+      // Primary duplicate defense: check against existing service_reports records
       if (existingTicketIds.has(ticketId)) {
         console.log(`[HubSpot Poll] Service report already exists for ticket ${ticketId}, skipping.`);
         processedIds.add(ticketId);
         continue;
       }
 
-      // Fetch full ticket details (company, contact, notes)
+      // Fetch full ticket details (company, contact, deal, address, notes)
       let ticket;
       try {
         ticket = await hubspot.getTicketById(ticketId);
       } catch (fetchErr) {
         console.error(`[HubSpot Poll] Failed to fetch ticket ${ticketId}:`, fetchErr.message);
+        // Do NOT add to processedIds — allow retry on next poll
         continue;
       }
 
-      // Map HubSpot owner to internal user (same logic as webhook handler)
+      // Map HubSpot owner to internal user
       let assignedToId = null;
       let assignedToName = null;
 
@@ -477,7 +505,7 @@ async function pollHubSpotTickets() {
                 assignedToName = userByEmail.name;
               }
             }
-            // Fall back to name match
+            // Fall back to full name match
             if (!assignedToId && hubspotOwner.firstName && hubspotOwner.lastName) {
               const fullName = `${hubspotOwner.firstName} ${hubspotOwner.lastName}`;
               const userByName = users.find(u =>
@@ -496,8 +524,23 @@ async function pollHubSpotTickets() {
       }
 
       if (!assignedToId) {
-        console.log(`[HubSpot Poll] No internal user match for ticket ${ticketId} (owner ${ticket.ownerId}). Skipping.`);
-        processedIds.add(ticketId);
+        const reason = ticket.ownerId
+          ? `HubSpot owner ID ${ticket.ownerId} has no matching internal user`
+          : 'Ticket has no assigned owner in HubSpot';
+        console.log(`[HubSpot Poll] ${reason} — queuing ticket ${ticketId} for manual review.`);
+
+        // Queue for admin review instead of silently dropping.
+        // Do NOT add to processedIds — the ticket stays retryable if the user is added later.
+        if (!pendingReviewIds.has(ticketId)) {
+          config.pendingReviewTickets.push({
+            ticketId,
+            subject: candidate.properties?.subject || '',
+            companyName: ticket.companyName || '',
+            reason,
+            seenAt: new Date().toISOString()
+          });
+          pendingReviewIds.add(ticketId);
+        }
         continue;
       }
 
@@ -505,7 +548,7 @@ async function pollHubSpotTickets() {
       const issueCategoryLower = (ticket.issueCategory || '').toLowerCase();
       const serviceType = serviceTypeMapping[issueCategoryLower] || '';
 
-      // Build manager notes from ticket description and notes
+      // Build manager notes from ticket description and notes (full context for the manager)
       let managerNotes = '';
       if (ticket.description) {
         managerNotes += `**Ticket Description:**\n${ticket.description}\n\n`;
@@ -531,22 +574,24 @@ async function pollHubSpotTickets() {
         assignedByName: 'HubSpot Polling',
         assignedAt: new Date().toISOString(),
         clientFacilityName: ticket.companyName || '',
-        customerName: ticket.submittedBy || '',
+        customerName: ticket.submittedBy || ticket.contactName || '',
         serviceProviderName: assignedToName,
-        address: '',
+        address: ticket.address || '',
         serviceType,
         analyzerModel: '',
         analyzerSerialNumber: ticket.serialNumber || '',
         hubspotTicketNumber: String(ticket.id),
         hubspotCompanyId: ticket.companyId || '',
-        hubspotDealId: '',
-        serviceCompletionDate: new Date().toISOString().split('T')[0],
+        hubspotDealId: ticket.dealId || '',
+        hubspotContactId: ticket.contactId || '',
+        serviceCompletionDate: '',
         managerNotes: managerNotes.trim(),
         photos: [],
         clientFiles: [],
         technicianId: null,
         technicianName: null,
-        descriptionOfWork: '',
+        // Pre-fill description from ticket subject/body so technician has context immediately
+        descriptionOfWork: ticket.description || ticket.subject || '',
         materialsUsed: '',
         solution: '',
         outstandingIssues: '',
@@ -563,12 +608,12 @@ async function pollHubSpotTickets() {
         technicianSignatureDate: null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        createdViaWebhook: true,
         createdViaPolling: true
       };
 
       serviceReports.push(newReport);
       existingTicketIds.add(ticketId);
+      // Only add to processedIds after a report is successfully created
       processedIds.add(ticketId);
       reportsCreated++;
 
@@ -594,16 +639,16 @@ async function pollHubSpotTickets() {
       }
     }
 
-    // Persist all new service reports
+    // Persist all new service reports atomically
     if (reportsCreated > 0) {
       await db.set('service_reports', serviceReports);
     }
 
     // Update polling config state
     config.processedTicketIds = Array.from(processedIds);
-    // Trim to last 500 IDs to prevent unbounded growth
-    if (config.processedTicketIds.length > 500) {
-      config.processedTicketIds = config.processedTicketIds.slice(-500);
+    // Trim to last 1000 IDs to prevent unbounded growth
+    if (config.processedTicketIds.length > 1000) {
+      config.processedTicketIds = config.processedTicketIds.slice(-1000);
     }
     config.lastPollTime = new Date().toISOString();
     config.stats.totalPolls++;
@@ -613,7 +658,7 @@ async function pollHubSpotTickets() {
     config.stats.lastErrorTime = null;
     await db.set('ticket_polling_config', config);
 
-    console.log(`[HubSpot Poll] Cycle complete. Created ${reportsCreated} report(s).`);
+    console.log(`[HubSpot Poll] Cycle complete. Created ${reportsCreated} report(s). Pending review: ${config.pendingReviewTickets.length}.`);
   } catch (error) {
     console.error('[HubSpot Poll] Unexpected error:', error.message);
     try {
@@ -627,6 +672,8 @@ async function pollHubSpotTickets() {
     } catch (dbErr) {
       console.error('[HubSpot Poll] Could not persist error state:', dbErr.message);
     }
+  } finally {
+    isPolling = false;
   }
 }
 
@@ -3389,233 +3436,8 @@ app.post('/api/webhook/hubspot/ticket-created', async (req, res) => {
   }
 });
 
-// Webhook endpoint for HubSpot ticket stage changes
-// HubSpot workflow should trigger this when ticket moves to "Assigned" or "Vendor Escalation" stage
-app.post('/api/webhook/hubspot/ticket-stage-change', async (req, res) => {
-  try {
-    const { ticketId, stageId, stageName } = req.body;
-
-    if (!ticketId) {
-      return res.status(400).json({ error: 'ticketId is required' });
-    }
-
-    console.log(`🎫 Ticket stage change webhook: ${ticketId} -> ${stageName || stageId}`);
-
-    // Check if the stage is one we should process
-    const targetStages = ['assigned', 'vendor escalation', 'vendor_escalation'];
-    const stageNameLower = (stageName || '').toLowerCase();
-    const shouldProcess = targetStages.some(stage => stageNameLower.includes(stage));
-
-    if (!shouldProcess) {
-      return res.json({
-        message: 'Stage not configured for auto-assignment',
-        ticketId,
-        stageName
-      });
-    }
-
-    // Fetch the ticket from HubSpot
-    let ticket;
-    try {
-      ticket = await hubspot.getTicketById(ticketId);
-    } catch (err) {
-      console.error(`Failed to fetch ticket ${ticketId}:`, err.message);
-      return res.status(404).json({
-        error: 'Ticket not found in HubSpot',
-        ticketId,
-        details: err.message
-      });
-    }
-
-    // Check if service report already exists for this ticket
-    const serviceReports = (await db.get('service_reports')) || [];
-    const existingReport = serviceReports.find(r =>
-      r.hubspotTicketNumber === ticketId || r.hubspotTicketNumber === String(ticketId)
-    );
-
-    if (existingReport) {
-      console.log(`Service report already exists for ticket ${ticketId}`);
-      return res.json({
-        message: 'Service report already exists for this ticket',
-        ticketId,
-        reportId: existingReport.id
-      });
-    }
-
-    // Map HubSpot owner ID to internal user
-    let assignedToId = null;
-    let assignedToName = null;
-    const users = (await db.get('users')) || [];
-
-    if (ticket.ownerId) {
-      try {
-        const owners = await hubspot.getOwners();
-        const hubspotOwner = owners.find(o => String(o.id) === String(ticket.ownerId));
-
-        if (hubspotOwner) {
-          // Try to match by email first
-          if (hubspotOwner.email) {
-            const userByEmail = users.find(u =>
-              u.email && u.email.toLowerCase() === hubspotOwner.email.toLowerCase() &&
-              (u.role === 'vendor' || u.role === 'admin' || u.hasServicePortalAccess)
-            );
-            if (userByEmail) {
-              assignedToId = userByEmail.id;
-              assignedToName = userByEmail.name;
-            }
-          }
-
-          // If no match by email, try by name
-          if (!assignedToId && hubspotOwner.firstName && hubspotOwner.lastName) {
-            const fullName = `${hubspotOwner.firstName} ${hubspotOwner.lastName}`;
-            const userByName = users.find(u =>
-              u.name && u.name.toLowerCase() === fullName.toLowerCase() &&
-              (u.role === 'vendor' || u.role === 'admin' || u.hasServicePortalAccess)
-            );
-            if (userByName) {
-              assignedToId = userByName.id;
-              assignedToName = userByName.name;
-            }
-          }
-        }
-      } catch (ownerErr) {
-        console.log('Could not match HubSpot owner to internal user:', ownerErr.message);
-      }
-    }
-
-    // If no assignee found, we cannot auto-create the service report
-    if (!assignedToId) {
-      console.log(`Cannot auto-create service report: No internal user found for HubSpot owner ${ticket.ownerId}`);
-      return res.json({
-        message: 'Ticket owner not matched to internal user - manual assignment required',
-        ticketId,
-        hubspotOwnerId: ticket.ownerId,
-        requiresManualAssignment: true
-      });
-    }
-
-    // Map Service Type from Issue Category
-    const serviceTypeMapping = {
-      'analyzer hardware': 'Analyzer Hardware',
-      'inventory': 'Inventory',
-      'lis/emr': 'LIS/EMR',
-      'lis': 'LIS/EMR',
-      'emr': 'LIS/EMR',
-      'billing & fees': 'Billing & Fees',
-      'billing': 'Billing & Fees',
-      'compliance': 'Compliance',
-      'training': 'Training',
-      'validations': 'Validations',
-      'validation': 'Validations'
-    };
-
-    const issueCategoryLower = (ticket.issueCategory || '').toLowerCase();
-    const serviceType = serviceTypeMapping[issueCategoryLower] || '';
-
-    // Combine ticket description and notes into manager notes
-    let managerNotes = '';
-    if (ticket.description) {
-      managerNotes += `**Ticket Description:**\n${ticket.description}\n\n`;
-    }
-    if (ticket.notes && ticket.notes.length > 0) {
-      managerNotes += `**Ticket Notes:**\n`;
-      ticket.notes.forEach((note, index) => {
-        const timestamp = note.timestamp ? new Date(parseInt(note.timestamp)).toLocaleString() : '';
-        managerNotes += `\n[${timestamp}]\n${note.body}\n`;
-        if (note.attachmentIds) {
-          managerNotes += `(Attachments: ${note.attachmentIds})\n`;
-        }
-      });
-    }
-
-    // Create the service report
-    const newReport = {
-      id: uuidv4(),
-      // Assignment info
-      status: 'assigned',
-      assignedToId,
-      assignedToName,
-      assignedById: 'system', // System-generated from webhook
-      assignedByName: 'HubSpot Automation',
-      assignedAt: new Date().toISOString(),
-      // Pre-filled info from HubSpot ticket
-      clientFacilityName: ticket.companyName || '',
-      customerName: ticket.submittedBy || '',
-      serviceProviderName: assignedToName,
-      address: '',
-      serviceType: serviceType,
-      analyzerModel: '',
-      analyzerSerialNumber: ticket.serialNumber || '',
-      hubspotTicketNumber: String(ticket.id),
-      hubspotCompanyId: ticket.companyId || '',
-      hubspotDealId: '',
-      serviceCompletionDate: new Date().toISOString().split('T')[0],
-      // Manager-only fields
-      managerNotes: managerNotes.trim(),
-      photos: [],
-      clientFiles: [],
-      // Technician fields (to be filled when completing)
-      technicianId: null,
-      technicianName: null,
-      descriptionOfWork: '',
-      materialsUsed: '',
-      solution: '',
-      outstandingIssues: '',
-      validationResults: '',
-      validationStartDate: '',
-      validationEndDate: '',
-      trainingProvided: '',
-      testProcedures: '',
-      recommendations: '',
-      analyzersValidated: [],
-      customerSignature: null,
-      customerSignatureDate: null,
-      technicianSignature: null,
-      technicianSignatureDate: null,
-      // Metadata
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      createdViaWebhook: true
-    };
-
-    serviceReports.push(newReport);
-    await db.set('service_reports', serviceReports);
-
-    console.log(`✅ Auto-created service report ${newReport.id} from ticket ${ticketId}`);
-
-    // Log activity (skip if system user doesn't exist)
-    try {
-      await logActivity(
-        'system',
-        'HubSpot Automation',
-        'service_report_auto_assigned',
-        'service_report',
-        newReport.id,
-        {
-          ticketId,
-          assignedTo: assignedToName,
-          clientName: ticket.companyName
-        }
-      );
-    } catch (logErr) {
-      console.log('Could not log activity:', logErr.message);
-    }
-
-    res.json({
-      success: true,
-      message: 'Service report auto-created from ticket',
-      ticketId,
-      reportId: newReport.id,
-      assignedTo: assignedToName
-    });
-  } catch (error) {
-    console.error('Error processing ticket stage change webhook:', error);
-    res.status(500).json({
-      error: 'Failed to process webhook',
-      details: error.message
-    });
-  }
-});
+// Webhook endpoint removed — service report auto-assignment is handled entirely
+// by the 60-second HubSpot ticket polling engine above (pollHubSpotTickets).
 
 // Admin endpoint to view/manage portal tickets
 app.get('/api/admin/portal-tickets', authenticateToken, requireAdmin, async (req, res) => {
@@ -3662,6 +3484,12 @@ app.put('/api/admin/ticket-polling/config', authenticateToken, requireAdmin, asy
       config.intervalSeconds = Math.max(30, Math.min(3600, Number(updates.intervalSeconds)));
     }
     if (updates.targetStages) config.targetStages = updates.targetStages;
+    if (updates.targetPipelineName !== undefined) {
+      config.targetPipelineName = String(updates.targetPipelineName);
+      // Force stage re-resolution when pipeline filter changes
+      config.resolvedStageIds = [];
+      config.stageIdsCachedAt = null;
+    }
 
     // Update filter settings
     if (updates.filter) {
@@ -3710,7 +3538,9 @@ app.get('/api/admin/ticket-polling/status', authenticateToken, requireAdmin, asy
     res.json({
       enabled: config?.enabled || false,
       running: !!hubspotPollingTimer,
+      currentlyPolling: isPolling,
       intervalSeconds: config?.intervalSeconds || 60,
+      targetPipelineName: config?.targetPipelineName || '',
       filterMode: config?.filter?.mode || 'keyword',
       filterDetail: config?.filter?.mode === 'keyword'
         ? `Subject contains "${config?.filter?.subjectKeyword || '[SR]'}"`
@@ -3721,6 +3551,7 @@ app.get('/api/admin/ticket-polling/status', authenticateToken, requireAdmin, asy
       startedAt: config?.startedAt || null,
       processedTicketCount: config?.processedTicketIds?.length || 0,
       resolvedStageIds: config?.resolvedStageIds || [],
+      pendingReviewTickets: config?.pendingReviewTickets || [],
       stats: config?.stats || {}
     });
   } catch (error) {
@@ -3765,6 +3596,32 @@ app.post('/api/admin/ticket-polling/reset', authenticateToken, requireAdmin, asy
     res.json({ success: true, message: 'Polling state reset', config });
   } catch (error) {
     res.status(500).json({ error: 'Failed to reset polling state' });
+  }
+});
+
+// Dismiss one or all pending-review tickets (after manual assignment or decision to skip)
+// DELETE /api/admin/ticket-polling/pending-review          -> clear all
+// DELETE /api/admin/ticket-polling/pending-review/:ticketId -> dismiss one
+app.delete('/api/admin/ticket-polling/pending-review/:ticketId?', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const config = (await db.get('ticket_polling_config')) || getDefaultPollingConfig();
+    if (!config.pendingReviewTickets) config.pendingReviewTickets = [];
+
+    const { ticketId } = req.params;
+    if (ticketId) {
+      const before = config.pendingReviewTickets.length;
+      config.pendingReviewTickets = config.pendingReviewTickets.filter(t => String(t.ticketId) !== String(ticketId));
+      const removed = before - config.pendingReviewTickets.length;
+      if (!removed) return res.status(404).json({ error: 'Ticket not found in pending review list' });
+    } else {
+      config.pendingReviewTickets = [];
+    }
+
+    config.updatedAt = new Date().toISOString();
+    await db.set('ticket_polling_config', config);
+    res.json({ success: true, pendingReviewTickets: config.pendingReviewTickets });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to dismiss pending review ticket(s)' });
   }
 });
 
