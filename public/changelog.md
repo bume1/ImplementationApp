@@ -4,6 +4,18 @@
 
 ---
 
+### Version 3.14.1 - February 24, 2026
+
+#### Bug Fixes
+- Fix manager permissions and validation phased view
+- Fix Active Validations routing: use handleValidationClick based on report status
+- Fix Active Validations dashboard card for two-phase system
+- Fix validation report banner: red header and correct title
+
+#### Changes
+- Active Validations: managers/admins always see View Details button only
+
+
 ### Version 3.14.0 - February 24, 2026
 
 #### New Features
