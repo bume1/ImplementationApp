@@ -4922,8 +4922,10 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                       <h2 className="text-lg font-bold flex items-center gap-2">
                         {phaseNames[phase] || phase}
                         {phase === 'Phase 8' && activeValidations.length > 0 && (
-                          <span className="px-2 py-0.5 bg-blue-500/30 text-white text-xs rounded-full font-medium animate-pulse">
-                            {activeValidations.length} validation{activeValidations.length > 1 ? 's' : ''} in progress
+                          <span className={`px-2 py-0.5 text-white text-xs rounded-full font-medium animate-pulse ${activeValidations.some(v => v.status !== 'assigned') ? 'bg-blue-500/30' : 'bg-amber-500/40'}`}>
+                            {activeValidations.filter(v => v.status !== 'assigned').length > 0
+                              ? `${activeValidations.filter(v => v.status !== 'assigned').length} validation${activeValidations.filter(v => v.status !== 'assigned').length > 1 ? 's' : ''} in progress`
+                              : `${activeValidations.length} validation${activeValidations.length > 1 ? 's' : ''} scheduled`}
                           </span>
                         )}
                       </h2>
@@ -4940,73 +4942,107 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                 <>
                 {/* Active Validation Progress Card for Phase 8 */}
                 {phase === 'Phase 8' && (
-                  <div className={`bg-white rounded-xl shadow-sm border-2 ${activeValidations.length > 0 ? 'border-blue-200' : 'border-gray-200'} overflow-hidden`}>
-                    <div className={`${activeValidations.length > 0 ? 'bg-gradient-to-r from-blue-600 to-blue-700' : 'bg-gradient-to-r from-gray-500 to-gray-600'} p-4 text-white`}>
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="font-bold flex items-center gap-2">
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5"/></svg>
-                            {activeValidations.length > 0
-                              ? `Active Validation${activeValidations.length > 1 ? 's' : ''} In Progress`
-                              : 'Validation Tracking'}
-                          </h3>
-                          <p className={`${activeValidations.length > 0 ? 'text-blue-100' : 'text-gray-200'} text-sm mt-1`}>Phase 8 tasks auto-update as validation progresses</p>
-                        </div>
-                        <span className={`px-3 py-1 ${activeValidations.length > 0 ? 'bg-blue-500/30' : 'bg-gray-400/30'} rounded-full text-sm font-medium`}>{activeValidations.length} active</span>
-                      </div>
-                    </div>
-                    <div className="p-4 space-y-3">
-                      {activeValidations.length > 0 ? activeValidations.map(v => {
-                        const daysLogged = v.daysLogged || 0;
-                        const expected = v.expectedDays;
-                        const pct = expected ? Math.min(100, Math.round((daysLogged / expected) * 100)) : null;
-                        return (
-                          <div key={v.id} className="border rounded-lg p-3 hover:bg-gray-50 transition">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <p className="font-medium text-gray-900">{v.analyzerModel || 'Biolis AU480'} {v.analyzerSerialNumber ? `(${v.analyzerSerialNumber})` : ''}</p>
-                                <p className="text-sm text-gray-600">Technician: {v.technicianName} · {daysLogged} day{daysLogged !== 1 ? 's' : ''} logged</p>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                {(v.segments || []).map((s, i) => (
-                                  <div key={i} className={`w-2.5 h-2.5 rounded-full ${s.status === 'complete' ? 'bg-green-500' : 'bg-yellow-400'}`} title={`Day ${s.day}`}></div>
-                                ))}
-                              </div>
+                  (() => {
+                    const inProgress = activeValidations.filter(v => v.status !== 'assigned');
+                    const scheduled = activeValidations.filter(v => v.status === 'assigned');
+                    const hasActive = inProgress.length > 0;
+                    const hasAny = activeValidations.length > 0;
+                    const headerGradient = hasActive ? 'bg-gradient-to-r from-blue-600 to-blue-700' : hasAny ? 'bg-gradient-to-r from-amber-500 to-amber-600' : 'bg-gradient-to-r from-gray-500 to-gray-600';
+                    const borderColor = hasActive ? 'border-blue-200' : hasAny ? 'border-amber-200' : 'border-gray-200';
+                    const badgeBg = hasActive ? 'bg-blue-500/30' : hasAny ? 'bg-amber-400/30' : 'bg-gray-400/30';
+                    const headerTitle = hasActive
+                      ? `Active Validation${inProgress.length > 1 ? 's' : ''} In Progress`
+                      : hasAny ? `Validation${scheduled.length > 1 ? 's' : ''} Scheduled`
+                      : 'Validation Tracking';
+                    const badgeLabel = hasActive
+                      ? `${inProgress.length} in progress${scheduled.length > 0 ? `, ${scheduled.length} scheduled` : ''}`
+                      : hasAny ? `${scheduled.length} scheduled`
+                      : '0 active';
+                    return (
+                      <div className={`bg-white rounded-xl shadow-sm border-2 ${borderColor} overflow-hidden`}>
+                        <div className={`${headerGradient} p-4 text-white`}>
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <h3 className="font-bold flex items-center gap-2">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5"/></svg>
+                                {headerTitle}
+                              </h3>
+                              <p className={`${hasAny ? (hasActive ? 'text-blue-100' : 'text-amber-100') : 'text-gray-200'} text-sm mt-1`}>Multi-day analyzer validation progress</p>
                             </div>
-                            {expected && pct !== null && (
-                              <div className="mt-2">
-                                <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
-                                  <div className={`h-full rounded-full transition-all ${pct >= 100 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${pct}%` }} />
-                                </div>
-                                <p className="text-xs text-gray-500 mt-0.5">{daysLogged} of {expected} days · {pct}%</p>
-                              </div>
-                            )}
-                            {(v.segments || []).length > 0 && (
-                              <details className="mt-2">
-                                <summary className="text-xs text-blue-600 cursor-pointer hover:text-blue-800 font-medium">View daily log</summary>
-                                <div className="mt-2 space-y-2">
-                                  {(v.segments || []).map(seg => (
-                                    <div key={seg.day} className="bg-gray-50 rounded p-2 text-xs">
-                                      <span className="font-medium text-gray-900">Day {seg.day}</span>
-                                      <span className="text-gray-500 ml-2">{seg.date ? new Date(seg.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ''}</span>
-                                      {seg.testsPerformed && <p className="text-gray-700 mt-1"><span className="text-gray-500">Tests:</span> {seg.testsPerformed}</p>}
-                                      {seg.results && <p className="text-gray-700"><span className="text-gray-500">Results:</span> {seg.results}</p>}
-                                      {seg.observations && <p className="text-gray-700"><span className="text-gray-500">Notes:</span> {seg.observations}</p>}
-                                    </div>
-                                  ))}
-                                </div>
-                              </details>
-                            )}
+                            <span className={`px-3 py-1 ${badgeBg} rounded-full text-sm font-medium`}>{badgeLabel}</span>
                           </div>
-                        );
-                      }) : (
-                        <div className="text-center py-4 text-gray-500">
-                          <p className="text-sm">No active validations for this project.</p>
-                          <p className="text-xs mt-1">When a technician starts a multi-day validation in the Service Portal, progress will appear here and tasks will auto-complete.</p>
                         </div>
-                      )}
-                    </div>
-                  </div>
+                        <div className="p-4 space-y-3">
+                          {activeValidations.length > 0 ? activeValidations.map(v => {
+                            const isScheduled = v.status === 'assigned';
+                            const daysLogged = v.daysLogged || 0;
+                            const expected = v.expectedDays;
+                            const pct = expected ? Math.min(100, Math.round((daysLogged / expected) * 100)) : null;
+                            const scheduledStart = v.validationStartDate
+                              ? new Date(v.validationStartDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                              : null;
+                            return (
+                              <div key={v.id} className={`border rounded-lg p-3 transition ${isScheduled ? 'bg-amber-50 border-amber-200' : 'hover:bg-gray-50'}`}>
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <p className="font-medium text-gray-900">{v.analyzerModel || 'Biolis AU480'} {v.analyzerSerialNumber ? `(${v.analyzerSerialNumber})` : ''}</p>
+                                      {isScheduled && <span className="text-xs px-1.5 py-0.5 rounded bg-amber-200 text-amber-800 font-medium">Scheduled</span>}
+                                    </div>
+                                    {isScheduled ? (
+                                      <p className="text-sm text-gray-500">
+                                        Technician: {v.technicianName || '—'}
+                                        {scheduledStart ? ` · Starts ${scheduledStart}` : ''}
+                                        {expected ? ` · ${expected} day${expected !== 1 ? 's' : ''} planned` : ''}
+                                      </p>
+                                    ) : (
+                                      <p className="text-sm text-gray-600">Technician: {v.technicianName || '—'} · {daysLogged} day{daysLogged !== 1 ? 's' : ''} logged</p>
+                                    )}
+                                  </div>
+                                  {!isScheduled && (
+                                    <div className="flex items-center gap-1">
+                                      {(v.segments || []).map((s, i) => (
+                                        <div key={i} className={`w-2.5 h-2.5 rounded-full ${s.status === 'complete' ? 'bg-green-500' : 'bg-yellow-400'}`} title={`Day ${s.day}`}></div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                                {!isScheduled && expected && pct !== null && (
+                                  <div className="mt-2">
+                                    <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                                      <div className={`h-full rounded-full transition-all ${pct >= 100 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${pct}%` }} />
+                                    </div>
+                                    <p className="text-xs text-gray-500 mt-0.5">{daysLogged} of {expected} days · {pct}%</p>
+                                  </div>
+                                )}
+                                {!isScheduled && (v.segments || []).length > 0 && (
+                                  <details className="mt-2">
+                                    <summary className="text-xs text-blue-600 cursor-pointer hover:text-blue-800 font-medium">View daily log</summary>
+                                    <div className="mt-2 space-y-2">
+                                      {(v.segments || []).map(seg => (
+                                        <div key={seg.day} className="bg-gray-50 rounded p-2 text-xs">
+                                          <span className="font-medium text-gray-900">Day {seg.day}</span>
+                                          <span className="text-gray-500 ml-2">{seg.date ? new Date(seg.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ''}</span>
+                                          {seg.testsPerformed && <p className="text-gray-700 mt-1"><span className="text-gray-500">Tests:</span> {seg.testsPerformed}</p>}
+                                          {seg.results && <p className="text-gray-700"><span className="text-gray-500">Results:</span> {seg.results}</p>}
+                                          {seg.observations && <p className="text-gray-700"><span className="text-gray-500">Notes:</span> {seg.observations}</p>}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </details>
+                                )}
+                              </div>
+                            );
+                          }) : (
+                            <div className="text-center py-4 text-gray-500">
+                              <p className="text-sm">No active validations for this project.</p>
+                              <p className="text-xs mt-1">When a technician is assigned a validation in the Service Portal, it will appear here.</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()
                 )}
                 {Object.entries(groupedByPhase[phase] || {}).map(([stageName, stageTasks]) => (
                   <div key={stageName} className={`bg-white rounded-lg shadow-sm overflow-hidden border-l-4 ${getPhaseColor(phase)}`}>
