@@ -4,6 +4,13 @@
 
 ---
 
+### Version 3.13.1 - February 24, 2026
+
+#### Changes
+- Full validation workflow audit and overhaul
+- Make Google Drive uploads non-blocking in service report photo/file endpoints
+
+
 ### Version 3.13.0 - February 24, 2026
 
 #### New Features
