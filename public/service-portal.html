@@ -294,6 +294,28 @@
       getActiveValidations: (token) =>
         fetch(`${API_URL}/api/service-reports/active-validations`, {
           headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+      // Two-phase assigned validation APIs
+      completeOnsiteValidation: (token, reportId, data) =>
+        fetch(`${API_URL}/api/service-reports/${reportId}/complete-onsite`, {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+      addOffsiteSegment: (token, reportId, data) =>
+        fetch(`${API_URL}/api/service-reports/${reportId}/offsite-segment`, {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+      submitValidationReport: (token, reportId, formData) =>
+        fetch(`${API_URL}/api/service-reports/${reportId}/submit-validation`, {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: formData
         }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' }))
     };
 
@@ -3213,8 +3235,145 @@
       );
     };
 
+    // Shared daily log section used by both Phase 1 and Phase 2
+    const DailyLogSection = ({ token, reportId, savedDays, onSaveDay, onSubmitClick, submitLabel, showSubmit, isSubmitting }) => {
+      const blankDay = { date: new Date().toISOString().split('T')[0], testsPerformed: '', trainingCompleted: true, trainingReason: '', results: '', outstandingIssues: '', finalRecommendations: '' };
+      const [dayForm, setDayForm] = React.useState(blankDay);
+      const [savingDay, setSavingDay] = React.useState(false);
+      const [dayPhotos, setDayPhotos] = React.useState([]);
+      const [dayPhotoUrls, setDayPhotoUrls] = React.useState([]);
+      const [dayFiles, setDayFiles] = React.useState([]);
+      const [dayFileNames, setDayFileNames] = React.useState([]);
+      const dayPhotoRef = React.useRef(null);
+      const dayFileRef = React.useRef(null);
+      const currentDayNum = savedDays.length + 1;
+
+      const handleSave = async () => {
+        if (!dayForm.testsPerformed.trim()) { alert('Tests Performed is required'); return; }
+        setSavingDay(true);
+        await onSaveDay({ ...dayForm, day: currentDayNum }, dayPhotos, dayFiles);
+        dayPhotoUrls.forEach(u => URL.revokeObjectURL(u));
+        setDayForm(blankDay);
+        setDayPhotos([]); setDayPhotoUrls([]); setDayFiles([]); setDayFileNames([]);
+        setSavingDay(false);
+      };
+
+      return (
+        <div className="space-y-3">
+          {savedDays.map((d, i) => (
+            <div key={i} className="flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-xl">
+              <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+                <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+              </div>
+              <span className="font-semibold text-gray-800 text-sm">Day {d.day}</span>
+              {d.date && <span className="text-gray-500 text-sm">— {new Date(d.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>}
+            </div>
+          ))}
+
+          <div className="border-2 border-blue-200 rounded-xl p-5 bg-blue-50/20">
+            <h4 className="font-semibold text-gray-800 mb-4 text-sm">Day {currentDayNum}</h4>
+            <div className="space-y-4">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                  <input type="date" value={dayForm.date} onChange={e => setDayForm({...dayForm, date: e.target.value})} className="input-modern w-full px-4 py-3" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tests Performed <span className="text-red-500">*</span></label>
+                <textarea value={dayForm.testsPerformed} onChange={e => setDayForm({...dayForm, testsPerformed: e.target.value})} rows={3} className="input-modern w-full px-4 py-3" placeholder="Describe the tests performed today..." />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Training Completed</label>
+                <div className="flex gap-3">
+                  <button type="button" onClick={() => setDayForm({...dayForm, trainingCompleted: true, trainingReason: ''})} className={`flex-1 py-2.5 rounded-xl border-2 font-medium text-sm transition ${dayForm.trainingCompleted ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>Yes</button>
+                  <button type="button" onClick={() => setDayForm({...dayForm, trainingCompleted: false})} className={`flex-1 py-2.5 rounded-xl border-2 font-medium text-sm transition ${dayForm.trainingCompleted === false ? 'border-red-400 bg-red-50 text-red-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>No</button>
+                </div>
+                {dayForm.trainingCompleted === false && (
+                  <textarea value={dayForm.trainingReason} onChange={e => setDayForm({...dayForm, trainingReason: e.target.value})} rows={2} className="input-modern w-full px-4 py-3 mt-2" placeholder="Why was training not completed?" />
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Results / Readings</label>
+                <textarea value={dayForm.results} onChange={e => setDayForm({...dayForm, results: e.target.value})} rows={3} className="input-modern w-full px-4 py-3" placeholder="Document today's results and readings..." />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Outstanding Issues / Items</label>
+                <textarea value={dayForm.outstandingIssues} onChange={e => setDayForm({...dayForm, outstandingIssues: e.target.value})} rows={2} className="input-modern w-full px-4 py-3" placeholder="Note any outstanding issues or items..." />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Final Recommendations</label>
+                <textarea value={dayForm.finalRecommendations} onChange={e => setDayForm({...dayForm, finalRecommendations: e.target.value})} rows={2} className="input-modern w-full px-4 py-3" placeholder="Any recommendations for today..." />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Attachments</label>
+                <div className="grid md:grid-cols-2 gap-3">
+                  <div>
+                    <input ref={dayPhotoRef} type="file" accept="image/*" multiple onChange={e => { const f = Array.from(e.target.files); setDayPhotos(p => [...p, ...f]); setDayPhotoUrls(p => [...p, ...f.map(x => URL.createObjectURL(x))]); }} className="hidden" />
+                    <button type="button" onClick={() => dayPhotoRef.current?.click()} className="w-full border-2 border-dashed border-gray-300 rounded-xl p-3 text-center hover:border-primary-400 hover:bg-primary-50/50 transition text-sm text-gray-500">+ Photos</button>
+                    {dayPhotoUrls.length > 0 && <div className="flex flex-wrap gap-2 mt-2">{dayPhotoUrls.map((u, i) => <div key={i} className="relative group"><img src={u} className="w-12 h-12 object-cover rounded-lg border" /><button type="button" onClick={() => { URL.revokeObjectURL(u); setDayPhotos(p => p.filter((_,j)=>j!==i)); setDayPhotoUrls(p => p.filter((_,j)=>j!==i)); }} className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100">&times;</button></div>)}</div>}
+                  </div>
+                  <div>
+                    <input ref={dayFileRef} type="file" multiple onChange={e => { const f = Array.from(e.target.files); setDayFiles(p => [...p, ...f]); setDayFileNames(p => [...p, ...f.map(x => x.name)]); }} className="hidden" />
+                    <button type="button" onClick={() => dayFileRef.current?.click()} className="w-full border-2 border-dashed border-gray-300 rounded-xl p-3 text-center hover:border-primary-400 hover:bg-primary-50/50 transition text-sm text-gray-500">+ Files</button>
+                    {dayFileNames.length > 0 && <div className="space-y-1 mt-2">{dayFileNames.map((n, i) => <div key={i} className="flex items-center gap-2 p-1.5 bg-gray-50 rounded border text-xs text-gray-700 group"><span className="flex-1 truncate">{n}</span><button type="button" onClick={() => { setDayFiles(p => p.filter((_,j)=>j!==i)); setDayFileNames(p => p.filter((_,j)=>j!==i)); }} className="text-red-400 opacity-0 group-hover:opacity-100">&times;</button></div>)}</div>}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button type="button" onClick={handleSave} disabled={savingDay} className="btn-primary px-5 py-2.5 text-white rounded-xl font-medium disabled:opacity-50 text-sm">
+                {savingDay ? 'Saving...' : `Save Day ${currentDayNum}`}
+              </button>
+              {showSubmit && (
+                <button type="button" onClick={onSubmitClick} disabled={isSubmitting} className="px-5 py-2.5 border-2 border-primary text-primary-600 hover:bg-primary-50 rounded-xl font-medium text-sm disabled:opacity-50 transition">
+                  {isSubmitting ? 'Submitting...' : submitLabel}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
     // Complete Assignment Page - For technicians to complete assigned service reports
     const CompleteAssignmentPage = ({ token, user, assignment, onSuccess, onCancel }) => {
+      const isValidation = assignment.serviceType === 'Validations';
+
+      // Local assignment state — updated in-place after Phase 1 submit so Phase 2 renders without navigation
+      const [localAssignment, setLocalAssignment] = useState(assignment);
+      const isPhase1 = isValidation && localAssignment.status === 'assigned';
+      const isPhase2 = isValidation && localAssignment.status === 'onsite_submitted';
+
+      // ---- Validation Phase 1 state ----
+      const [onsiteFormData, setOnsiteFormData] = useState({
+        validationStartDate: assignment.validationStartDate || '',
+        validationEndDate: assignment.validationEndDate || '',
+        analyzerSerialNumber: assignment.analyzerSerialNumber || '',
+        materialsAvailable: ''
+      });
+      const [onsiteDays, setOnsiteDays] = useState([]);
+      const [showSignatures, setShowSignatures] = useState(false);
+      const [submittingOnsite, setSubmittingOnsite] = useState(false);
+
+      // ---- Validation Phase 2 state ----
+      const [offsiteDays, setOffsiteDays] = useState(() =>
+        (assignment.validationSegments || []).filter(s => s.phase === 'offsite')
+      );
+      const [showDocUpload, setShowDocUpload] = useState(false);
+      const [validationDocFile, setValidationDocFile] = useState(null);
+      const [submittingFinal, setSubmittingFinal] = useState(false);
+      const docFileRef = useRef(null);
+
+      // ---- Shared signature state (used by Phase 1 and non-validation) ----
+      const [customerSignature, setCustomerSignature] = useState(null);
+      const [technicianSignature, setTechnicianSignature] = useState(null);
+      const [customerFirstName, setCustomerFirstName] = useState('');
+      const [customerLastName, setCustomerLastName] = useState('');
+      const [technicianFirstName, setTechnicianFirstName] = useState(user?.name?.split(' ')[0] || '');
+      const [technicianLastName, setTechnicianLastName] = useState(user?.name?.split(' ').slice(1).join(' ') || '');
+
+      // ---- Non-validation form state (unchanged) ----
       const [formData, setFormData] = useState({
         descriptionOfWork: '',
         materialsUsed: '',
@@ -3230,15 +3389,7 @@
         serviceCompletionDate: assignment.serviceCompletionDate || new Date().toISOString().split('T')[0],
         analyzerSerialNumber: assignment.analyzerSerialNumber || ''
       });
-      const [customerSignature, setCustomerSignature] = useState(null);
-      const [technicianSignature, setTechnicianSignature] = useState(null);
-      const [customerFirstName, setCustomerFirstName] = useState('');
-      const [customerLastName, setCustomerLastName] = useState('');
-      const [technicianFirstName, setTechnicianFirstName] = useState(user?.name?.split(' ')[0] || '');
-      const [technicianLastName, setTechnicianLastName] = useState(user?.name?.split(' ').slice(1).join(' ') || '');
       const [submitting, setSubmitting] = useState(false);
-
-      // Technician file upload state
       const [techPhotos, setTechPhotos] = useState([]);
       const [techFiles, setTechFiles] = useState([]);
       const [techPhotoPreviewUrls, setTechPhotoPreviewUrls] = useState([]);
@@ -3247,7 +3398,74 @@
       const techFileInputRef = useRef(null);
 
       const serviceTypes = ['Analyzer Hardware', 'Inventory', 'LIS/EMR', 'Compliance', 'Training', 'Validations'];
-      const isValidation = assignment.serviceType === 'Validations';
+
+      // ---- Phase 1 handlers ----
+      const handleSaveOnsiteDay = async (dayData, photos, files) => {
+        let attachments = [];
+        if (photos.length > 0) {
+          const r = await api.uploadTechnicianPhotos(token, localAssignment.id, photos);
+          if (!r.error && Array.isArray(r)) attachments = [...attachments, ...r.map(p => ({...p, type: 'photo'}))];
+        }
+        if (files.length > 0) {
+          const r = await api.uploadTechnicianFiles(token, localAssignment.id, files);
+          if (!r.error && Array.isArray(r)) attachments = [...attachments, ...r.map(f => ({...f, type: 'file'}))];
+        }
+        setOnsiteDays(prev => [...prev, { ...dayData, attachments }]);
+      };
+
+      const handleOnsiteSubmit = async () => {
+        if (!technicianSignature) { alert('Technician signature is required'); return; }
+        setSubmittingOnsite(true);
+        const result = await api.completeOnsiteValidation(token, localAssignment.id, {
+          ...onsiteFormData,
+          onsiteSegments: onsiteDays,
+          technicianSignature,
+          technicianSignatureDate: new Date().toISOString().split('T')[0],
+          technicianFirstName,
+          technicianLastName,
+          customerSignature: customerSignature || '',
+          customerSignatureDate: customerSignature ? new Date().toISOString().split('T')[0] : null,
+          customerFirstName,
+          customerLastName
+        });
+        if (result.error) {
+          alert('Error: ' + result.error);
+        } else {
+          setLocalAssignment(result);
+          setOffsiteDays((result.validationSegments || []).filter(s => s.phase === 'offsite'));
+        }
+        setSubmittingOnsite(false);
+      };
+
+      // ---- Phase 2 handlers ----
+      const handleSaveOffsiteDay = async (dayData, photos, files) => {
+        let attachments = [];
+        if (photos.length > 0) {
+          const r = await api.uploadTechnicianPhotos(token, localAssignment.id, photos);
+          if (!r.error && Array.isArray(r)) attachments = [...attachments, ...r.map(p => ({...p, type: 'photo'}))];
+        }
+        if (files.length > 0) {
+          const r = await api.uploadTechnicianFiles(token, localAssignment.id, files);
+          if (!r.error && Array.isArray(r)) attachments = [...attachments, ...r.map(f => ({...f, type: 'file'}))];
+        }
+        const result = await api.addOffsiteSegment(token, localAssignment.id, { ...dayData, attachments });
+        if (result.error) { alert('Error saving day: ' + result.error); return; }
+        setOffsiteDays(prev => [...prev, { ...dayData, attachments }]);
+      };
+
+      const handleFinalSubmit = async () => {
+        if (!validationDocFile) { alert('Please upload your completed validation report document'); return; }
+        setSubmittingFinal(true);
+        const fd = new FormData();
+        fd.append('validationReportDocument', validationDocFile);
+        const result = await api.submitValidationReport(token, localAssignment.id, fd);
+        if (result.error) {
+          alert('Error: ' + result.error);
+          setSubmittingFinal(false);
+          return;
+        }
+        onSuccess();
+      };
 
       const handleTechPhotoSelect = (e) => {
         const selectedFiles = Array.from(e.target.files);
@@ -3322,9 +3540,94 @@
         setSubmitting(false);
       };
 
+      // Shared assignment details section (Section 1 — read-only)
+      const AssignmentDetails = () => (
+        <div className="p-6 bg-gray-50 border-b">
+          <h2 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">1</span>
+            Assignment Details (Read-only)
+          </h2>
+          <div className="grid md:grid-cols-2 gap-4 text-sm">
+            <div><span className="text-gray-500">Client:</span> <span className="font-medium">{assignment.clientFacilityName}</span></div>
+            <div><span className="text-gray-500">Customer:</span> <span className="font-medium">{assignment.customerName || '-'}</span></div>
+            <div><span className="text-gray-500">Address:</span> <span className="font-medium">{assignment.address || '-'}</span></div>
+            <div><span className="text-gray-500">Service Type:</span> <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">{assignment.serviceType || '-'}</span></div>
+            <div><span className="text-gray-500">Analyzer:</span> <span className="font-medium">{assignment.analyzerModel || '-'}</span></div>
+            <div><span className="text-gray-500">Ticket #:</span> <span className="font-medium">{assignment.hubspotTicketNumber || '-'}</span></div>
+          </div>
+          {assignment.managerNotes && (
+            <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <h3 className="font-semibold text-blue-800 mb-2 text-sm">Manager Notes</h3>
+              <p className="text-sm text-blue-900 whitespace-pre-wrap">{assignment.managerNotes}</p>
+            </div>
+          )}
+          {assignment.photos && assignment.photos.length > 0 && (
+            <div className="mt-4">
+              <h3 className="font-semibold text-gray-700 mb-2 text-sm">Reference Photos</h3>
+              <div className="flex flex-wrap gap-3">
+                {assignment.photos.map((photo, idx) => (
+                  <div key={photo.id || idx} className="inline-block">
+                    {photo.url || photo.driveFileId ? (
+                      <React.Fragment>
+                        <a href={photo.webViewLink || getDownloadUrl(photo)} target="_blank" rel="noopener noreferrer" className="block">
+                          <img src={getPhotoSrc(photo)} alt={photo.name} className="w-20 h-20 object-cover rounded-lg border hover:opacity-80 transition" />
+                        </a>
+                      </React.Fragment>
+                    ) : (
+                      <div className="w-20 h-20 flex items-center justify-center rounded-lg border border-red-200 bg-red-50"><p className="text-xs text-red-400 text-center px-1">Unavailable</p></div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {assignment.clientFiles && assignment.clientFiles.length > 0 && (
+            <div className="mt-4">
+              <h3 className="font-semibold text-gray-700 mb-2 text-sm">Client Files</h3>
+              <div className="space-y-2">
+                {assignment.clientFiles.map((file, idx) => (
+                  <a key={file.id || idx} href={getDownloadUrl(file)} download={file.name} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-2 bg-white rounded border hover:bg-gray-50 transition text-sm">
+                    {Icons.folder}<span className="text-primary-500 hover:underline">{file.name}</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+
+      // Shared signatures section
+      const SignaturesSection = ({ sectionNumber }) => (
+        <div className="border-t pt-6">
+          <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
+            <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">{sectionNumber}</span>
+            Signatures
+          </h2>
+          <div className="grid md:grid-cols-2 gap-6">
+            <div>
+              <SignaturePad label="Customer Signature" onSave={setCustomerSignature} />
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+                  <input type="text" value={customerFirstName} onChange={e => setCustomerFirstName(e.target.value)} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary" placeholder="First name" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                  <input type="text" value={customerLastName} onChange={e => setCustomerLastName(e.target.value)} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary" placeholder="Last name" /></div>
+              </div>
+            </div>
+            <div>
+              <SignaturePad label="Technician Signature" onSave={setTechnicianSignature} />
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+                  <input type="text" value={technicianFirstName} onChange={e => setTechnicianFirstName(e.target.value)} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary" placeholder="First name" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                  <input type="text" value={technicianLastName} onChange={e => setTechnicianLastName(e.target.value)} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary" placeholder="Last name" /></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+
       return (
         <div className="space-y-6 animate-fade-in">
-          {/* Header */}
           <div className="flex items-center justify-between">
             <button onClick={onCancel} className="flex items-center gap-2 text-gray-600 hover:text-primary-500">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
@@ -3333,291 +3636,246 @@
           </div>
 
           <div className="card-modern overflow-hidden">
-            <div className="bg-gradient-to-r from-red-600 to-red-700 text-white p-6">
+            {/* Card header */}
+            <div className={`${isValidation ? 'bg-gradient-to-r from-blue-700 to-blue-800' : 'bg-gradient-to-r from-red-600 to-red-700'} text-white p-6`}>
               <div className="flex items-center gap-3 mb-2">
                 <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z"/></svg>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082"/></svg>
                 </div>
                 <div>
-                  <h1 className="text-2xl font-bold">Complete Service Report</h1>
+                  <h1 className="text-2xl font-bold">{isValidation ? 'Validation Service Report' : 'Complete Service Report'}</h1>
                   <p className="opacity-90">Assigned by {assignment.assignedByName}</p>
                 </div>
               </div>
             </div>
 
-            {/* Pre-filled Assignment Info (Read-only) */}
-            <div className="p-6 bg-gray-50 border-b">
-              <h2 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">1</span>
-                Assignment Details (Read-only)
-              </h2>
-              <div className="grid md:grid-cols-2 gap-4 text-sm">
-                <div><span className="text-gray-500">Client:</span> <span className="font-medium">{assignment.clientFacilityName}</span></div>
-                <div><span className="text-gray-500">Customer:</span> <span className="font-medium">{assignment.customerName || '-'}</span></div>
-                <div><span className="text-gray-500">Address:</span> <span className="font-medium">{assignment.address || '-'}</span></div>
-                <div><span className="text-gray-500">Service Type:</span> <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">{assignment.serviceType || '-'}</span></div>
-                <div><span className="text-gray-500">Analyzer:</span> <span className="font-medium">{assignment.analyzerModel || '-'} {assignment.analyzerSerialNumber ? `(S/N: ${assignment.analyzerSerialNumber})` : ''}</span></div>
-                <div><span className="text-gray-500">Ticket #:</span> <span className="font-medium">{assignment.hubspotTicketNumber || '-'}</span></div>
-              </div>
+            {/* ============ VALIDATION PHASE 1 ============ */}
+            {isPhase1 && (
+              <div className="space-y-0">
+                <AssignmentDetails />
 
-              {/* Manager Notes */}
-              {assignment.managerNotes && (
-                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                  <h3 className="font-semibold text-blue-800 mb-2 text-sm">Manager Notes</h3>
-                  <p className="text-sm text-blue-900 whitespace-pre-wrap">{assignment.managerNotes}</p>
-                </div>
-              )}
-
-              {/* Photos */}
-              {assignment.photos && assignment.photos.length > 0 && (
-                <div className="mt-4">
-                  <h3 className="font-semibold text-gray-700 mb-2 text-sm">Reference Photos</h3>
-                  <div className="flex flex-wrap gap-3">
-                    {assignment.photos.map((photo, idx) => (
-                      <div key={photo.id || idx} className="inline-block">
-                        {photo.url || photo.driveFileId ? (
-                          <React.Fragment>
-                            <a href={photo.webViewLink || getDownloadUrl(photo)} target="_blank" rel="noopener noreferrer" className="block">
-                              <img src={getPhotoSrc(photo)} alt={photo.name} className="w-20 h-20 object-cover rounded-lg border hover:opacity-80 transition" />
-                            </a>
-                            <a href={getDownloadUrl(photo)} download={photo.name} className="text-xs text-primary hover:text-accent mt-1 flex items-center gap-1">
-                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                              Download
-                            </a>
-                          </React.Fragment>
-                        ) : (
-                          <div className="w-20 h-20 flex items-center justify-center rounded-lg border border-red-200 bg-red-50">
-                            <p className="text-xs text-red-400 text-center px-1">Unavailable</p>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Client Files */}
-              {assignment.clientFiles && assignment.clientFiles.length > 0 && (
-                <div className="mt-4">
-                  <h3 className="font-semibold text-gray-700 mb-2 text-sm">Client Files</h3>
-                  <div className="space-y-2">
-                    {assignment.clientFiles.map((file, idx) => (
-                      <a key={file.id || idx} href={getDownloadUrl(file)} download={file.name} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-2 p-2 bg-white rounded border hover:bg-gray-50 transition text-sm">
-                        {Icons.folder}
-                        <span className="text-primary-500 hover:underline">{file.name}</span>
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Technician Form */}
-            <form onSubmit={handleSubmit} className="p-6 space-y-6">
-              <h2 className="font-bold text-gray-900 flex items-center gap-2">
-                <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">2</span>
-                Your Service Details
-              </h2>
-
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Service Date *</label>
-                  <input type="date" value={formData.serviceCompletionDate} onChange={(e) => setFormData({...formData, serviceCompletionDate: e.target.value})}
-                    className="input-modern w-full px-4 py-3" required />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Analyzer Serial Number (S/N)</label>
-                  <input type="text" value={formData.analyzerSerialNumber} onChange={(e) => setFormData({...formData, analyzerSerialNumber: e.target.value})}
-                    className="input-modern w-full px-4 py-3" placeholder="e.g., 601744124" />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description of Work Performed *</label>
-                <textarea value={formData.descriptionOfWork} onChange={(e) => setFormData({...formData, descriptionOfWork: e.target.value})}
-                  rows={4} className="input-modern w-full px-4 py-3" placeholder="Describe the work performed during this service visit..." required />
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Materials Used</label>
-                  <textarea value={formData.materialsUsed} onChange={(e) => setFormData({...formData, materialsUsed: e.target.value})}
-                    rows={3} className="input-modern w-full px-4 py-3" placeholder="List materials, parts, or supplies used..." />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Solution Provided</label>
-                  <textarea value={formData.solution} onChange={(e) => setFormData({...formData, solution: e.target.value})}
-                    rows={3} className="input-modern w-full px-4 py-3" placeholder="Describe the solution or fix implemented..." />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Outstanding Issues / Recommendations</label>
-                <textarea value={formData.outstandingIssues} onChange={(e) => setFormData({...formData, outstandingIssues: e.target.value})}
-                  rows={3} className="input-modern w-full px-4 py-3" placeholder="Note any issues that need follow-up or recommendations for the client..." />
-              </div>
-
-              {/* Validation-specific fields */}
-              {isValidation && (
-                <div className="border-t pt-6">
-                  <h3 className="font-semibold text-gray-900 mb-4">Validation Details</h3>
+                {/* Section 2 — Your On-Site Service Details */}
+                <div className="p-6 border-b">
+                  <h2 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                    <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">2</span>
+                    Your On-Site Service Details
+                  </h2>
                   <div className="grid md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Validation Start Date</label>
-                      <input type="date" value={formData.validationStartDate} onChange={(e) => setFormData({...formData, validationStartDate: e.target.value})}
-                        className="input-modern w-full px-4 py-3" />
+                      <input type="date" value={onsiteFormData.validationStartDate} onChange={e => setOnsiteFormData({...onsiteFormData, validationStartDate: e.target.value})} className="input-modern w-full px-4 py-3" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Validation End Date</label>
-                      <input type="date" value={formData.validationEndDate} onChange={(e) => setFormData({...formData, validationEndDate: e.target.value})}
-                        className="input-modern w-full px-4 py-3" />
+                      <input type="date" value={onsiteFormData.validationEndDate} onChange={e => setOnsiteFormData({...onsiteFormData, validationEndDate: e.target.value})} className="input-modern w-full px-4 py-3" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Analyzer Serial Number</label>
+                      <input type="text" value={onsiteFormData.analyzerSerialNumber} onChange={e => setOnsiteFormData({...onsiteFormData, analyzerSerialNumber: e.target.value})} className="input-modern w-full px-4 py-3" placeholder="e.g., 601744124" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Materials Available</label>
+                      <input type="text" value={onsiteFormData.materialsAvailable} onChange={e => setOnsiteFormData({...onsiteFormData, materialsAvailable: e.target.value})} className="input-modern w-full px-4 py-3" placeholder="List available materials / reagents..." />
                     </div>
                   </div>
-                  <div className="mt-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Test Procedures *</label>
-                    <textarea value={formData.testProcedures} onChange={(e) => setFormData({...formData, testProcedures: e.target.value})}
-                      rows={3} className="input-modern w-full px-4 py-3" placeholder="Describe the test procedures used (e.g., precision, accuracy, linearity, reportable range, reference interval verification)..." required />
+                </div>
+
+                {/* Section 3 — On-Site Daily Validation Log */}
+                <div className="p-6 border-b">
+                  <h2 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                    <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">3</span>
+                    On-Site Daily Validation Log
+                  </h2>
+                  <DailyLogSection
+                    token={token}
+                    reportId={localAssignment.id}
+                    savedDays={onsiteDays}
+                    onSaveDay={handleSaveOnsiteDay}
+                    onSubmitClick={() => setShowSignatures(true)}
+                    submitLabel="Submit Daily Log"
+                    showSubmit={onsiteDays.length > 0}
+                    isSubmitting={false}
+                  />
+                </div>
+
+                {/* Section 4 — Signatures (revealed after Submit Daily Log) */}
+                {showSignatures && (
+                  <div className="p-6 border-b">
+                    <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-1">
+                      <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">4</span>
+                      Signatures
+                    </h2>
+                    <p className="text-sm text-gray-500 mb-4 ml-8">Sign below to complete the on-site phase</p>
+                    <SignaturesSection sectionNumber="4" />
+                    <div className="flex justify-end gap-3 pt-6 mt-2 border-t">
+                      <button type="button" onClick={() => setShowSignatures(false)} className="px-6 py-3 border rounded-xl hover:bg-gray-50 font-medium">Back to Log</button>
+                      <button type="button" onClick={handleOnsiteSubmit} disabled={submittingOnsite} className="btn-primary px-8 py-3 text-white rounded-xl font-medium disabled:opacity-50">
+                        {submittingOnsite ? 'Submitting...' : 'Submit On-Site Report'}
+                      </button>
+                    </div>
                   </div>
-                  <div className="mt-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Training Provided</label>
-                    <textarea value={formData.trainingProvided} onChange={(e) => setFormData({...formData, trainingProvided: e.target.value})}
-                      rows={2} className="input-modern w-full px-4 py-3" placeholder="Describe any training provided to staff..." />
+                )}
+              </div>
+            )}
+
+            {/* ============ VALIDATION PHASE 2 ============ */}
+            {isPhase2 && (
+              <div className="space-y-0">
+                {/* On-Site Visit Complete banner */}
+                <div className="p-5 bg-green-50 border-b border-green-200 flex items-center gap-4">
+                  <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
                   </div>
-                  <div className="mt-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Validation Results *</label>
-                    <textarea value={formData.validationResults} onChange={(e) => setFormData({...formData, validationResults: e.target.value})}
-                      rows={3} className="input-modern w-full px-4 py-3" placeholder="Describe validation results..." required />
+                  <div>
+                    <h3 className="font-bold text-green-800">On-Site Visit Complete</h3>
+                    <p className="text-sm text-green-700">
+                      On-site phase submitted{localAssignment.onsiteSubmittedAt ? ` on ${new Date(localAssignment.onsiteSubmittedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}.
+                      Continue logging off-site validation days below.
+                    </p>
                   </div>
                 </div>
-              )}
 
-              {/* Attachments - Photos & Files */}
-              <div className="border-t pt-6">
-                <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-1">
-                  <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">3</span>
-                  Attachments
-                </h2>
-                <p className="text-sm text-gray-500 mb-4 ml-8">Upload photos or files from the service visit</p>
+                {/* Off-Site Continued Validation Log */}
+                <div className="p-6">
+                  <h2 className="font-bold text-gray-900 mb-1 flex items-center gap-2">
+                    <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082"/></svg>
+                    Off-Site Continued Validation Log
+                  </h2>
+                  <p className="text-sm text-gray-500 mb-5 ml-7">Log each day of off-site validation work. Submit when complete.</p>
 
-                <div className="grid md:grid-cols-2 gap-6">
-                  {/* Photos */}
+                  <DailyLogSection
+                    token={token}
+                    reportId={localAssignment.id}
+                    savedDays={offsiteDays}
+                    onSaveDay={handleSaveOffsiteDay}
+                    onSubmitClick={() => setShowDocUpload(true)}
+                    submitLabel="Submit Validation Report"
+                    showSubmit={offsiteDays.length > 0}
+                    isSubmitting={submittingFinal}
+                  />
+
+                  {/* Document upload + final submit */}
+                  {showDocUpload && (
+                    <div className="mt-6 p-5 border-2 border-blue-200 rounded-xl bg-blue-50/20">
+                      <h3 className="font-semibold text-gray-800 mb-3">Upload Completed Validation Report Document</h3>
+                      <p className="text-sm text-gray-600 mb-4">Upload your finalized validation report document (PDF, Word, or Excel). This will be attached to the report and made available for client download.</p>
+                      <input ref={docFileRef} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx" onChange={e => setValidationDocFile(e.target.files[0] || null)} className="hidden" />
+                      {validationDocFile ? (
+                        <div className="flex items-center gap-3 p-3 bg-white rounded-xl border border-blue-200 mb-4">
+                          <svg className="w-5 h-5 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
+                          <span className="flex-1 text-sm text-gray-700 truncate">{validationDocFile.name}</span>
+                          <button type="button" onClick={() => setValidationDocFile(null)} className="text-red-400 hover:text-red-600 text-sm">Remove</button>
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => docFileRef.current?.click()} className="w-full border-2 border-dashed border-blue-300 rounded-xl p-4 text-center hover:border-blue-400 hover:bg-blue-50 transition mb-4">
+                          <svg className="w-8 h-8 mx-auto text-blue-400 mb-1" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
+                          <p className="text-sm text-blue-600 font-medium">Click to select your validation report document</p>
+                          <p className="text-xs text-gray-400 mt-0.5">PDF, Word, or Excel</p>
+                        </button>
+                      )}
+                      <div className="flex gap-3">
+                        <button type="button" onClick={() => setShowDocUpload(false)} className="px-5 py-2.5 border rounded-xl hover:bg-gray-50 font-medium text-sm">Back</button>
+                        <button type="button" onClick={handleFinalSubmit} disabled={submittingFinal || !validationDocFile} className="btn-primary px-7 py-2.5 text-white rounded-xl font-medium disabled:opacity-50 text-sm flex-1">
+                          {submittingFinal ? 'Submitting...' : 'Submit Full Validation Report'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ============ NON-VALIDATION (existing behavior unchanged) ============ */}
+            {!isValidation && (
+              <div>
+                <AssignmentDetails />
+                <form onSubmit={handleSubmit} className="p-6 space-y-6">
+                  <h2 className="font-bold text-gray-900 flex items-center gap-2">
+                    <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">2</span>
+                    Your Service Details
+                  </h2>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Service Date *</label>
+                      <input type="date" value={formData.serviceCompletionDate} onChange={e => setFormData({...formData, serviceCompletionDate: e.target.value})} className="input-modern w-full px-4 py-3" required />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Analyzer Serial Number (S/N)</label>
+                      <input type="text" value={formData.analyzerSerialNumber} onChange={e => setFormData({...formData, analyzerSerialNumber: e.target.value})} className="input-modern w-full px-4 py-3" placeholder="e.g., 601744124" />
+                    </div>
+                  </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Photos</label>
-                    <input
-                      ref={techPhotoInputRef}
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      onChange={handleTechPhotoSelect}
-                      className="hidden"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => techPhotoInputRef.current?.click()}
-                      className="w-full border-2 border-dashed border-gray-300 rounded-xl p-4 text-center hover:border-primary-400 hover:bg-primary-50/50 transition cursor-pointer"
-                    >
-                      <svg className="w-8 h-8 mx-auto text-gray-400 mb-1" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z"/><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z"/></svg>
-                      <p className="text-sm text-gray-500">Click to add photos</p>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Description of Work Performed *</label>
+                    <textarea value={formData.descriptionOfWork} onChange={e => setFormData({...formData, descriptionOfWork: e.target.value})} rows={4} className="input-modern w-full px-4 py-3" placeholder="Describe the work performed..." required />
+                  </div>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Materials Used</label>
+                      <textarea value={formData.materialsUsed} onChange={e => setFormData({...formData, materialsUsed: e.target.value})} rows={3} className="input-modern w-full px-4 py-3" placeholder="List materials, parts, or supplies used..." />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Solution Provided</label>
+                      <textarea value={formData.solution} onChange={e => setFormData({...formData, solution: e.target.value})} rows={3} className="input-modern w-full px-4 py-3" placeholder="Describe the solution or fix implemented..." />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Outstanding Issues / Recommendations</label>
+                    <textarea value={formData.outstandingIssues} onChange={e => setFormData({...formData, outstandingIssues: e.target.value})} rows={3} className="input-modern w-full px-4 py-3" placeholder="Note any issues that need follow-up..." />
+                  </div>
+                  {/* Attachments */}
+                  <div className="border-t pt-6">
+                    <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-1">
+                      <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">3</span>
+                      Attachments
+                    </h2>
+                    <p className="text-sm text-gray-500 mb-4 ml-8">Upload photos or files from the service visit</p>
+                    <div className="grid md:grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Photos</label>
+                        <input ref={techPhotoInputRef} type="file" accept="image/*" multiple onChange={handleTechPhotoSelect} className="hidden" />
+                        <button type="button" onClick={() => techPhotoInputRef.current?.click()} className="w-full border-2 border-dashed border-gray-300 rounded-xl p-4 text-center hover:border-primary-400 hover:bg-primary-50/50 transition">
+                          <svg className="w-8 h-8 mx-auto text-gray-400 mb-1" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z"/><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z"/></svg>
+                          <p className="text-sm text-gray-500">Click to add photos</p>
+                        </button>
+                        {techPhotoPreviewUrls.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mt-3">{techPhotoPreviewUrls.map((url, idx) => (
+                            <div key={idx} className="relative group">
+                              <img src={url} className="w-16 h-16 object-cover rounded-lg border" />
+                              <button type="button" onClick={() => removeTechPhoto(idx)} className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100">&times;</button>
+                            </div>
+                          ))}</div>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Files</label>
+                        <input ref={techFileInputRef} type="file" multiple onChange={handleTechFileSelect} className="hidden" />
+                        <button type="button" onClick={() => techFileInputRef.current?.click()} className="w-full border-2 border-dashed border-gray-300 rounded-xl p-4 text-center hover:border-primary-400 hover:bg-primary-50/50 transition">
+                          <svg className="w-8 h-8 mx-auto text-gray-400 mb-1" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
+                          <p className="text-sm text-gray-500">Click to add files</p>
+                        </button>
+                        {techFileNames.length > 0 && (
+                          <div className="space-y-1.5 mt-3">{techFileNames.map((name, idx) => (
+                            <div key={idx} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg border text-sm group">
+                              {Icons.document}<span className="flex-1 truncate text-gray-700">{name}</span>
+                              <button type="button" onClick={() => removeTechFile(idx)} className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                              </button>
+                            </div>
+                          ))}</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <SignaturesSection sectionNumber="4" />
+                  <div className="flex justify-end gap-3 pt-4 border-t">
+                    <button type="button" onClick={onCancel} className="px-6 py-3 border rounded-xl hover:bg-gray-50 font-medium">Cancel</button>
+                    <button type="submit" disabled={submitting} className="btn-primary px-8 py-3 text-white rounded-xl font-medium disabled:opacity-50">
+                      {submitting ? 'Submitting...' : 'Submit Service Report'}
                     </button>
-                    {techPhotoPreviewUrls.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mt-3">
-                        {techPhotoPreviewUrls.map((url, idx) => (
-                          <div key={idx} className="relative group">
-                            <img src={url} alt={`Photo ${idx + 1}`} className="w-16 h-16 object-cover rounded-lg border" />
-                            <button type="button" onClick={() => removeTechPhoto(idx)}
-                              className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
-                              &times;
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
                   </div>
-
-                  {/* Files */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Files</label>
-                    <input
-                      ref={techFileInputRef}
-                      type="file"
-                      multiple
-                      onChange={handleTechFileSelect}
-                      className="hidden"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => techFileInputRef.current?.click()}
-                      className="w-full border-2 border-dashed border-gray-300 rounded-xl p-4 text-center hover:border-primary-400 hover:bg-primary-50/50 transition cursor-pointer"
-                    >
-                      <svg className="w-8 h-8 mx-auto text-gray-400 mb-1" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
-                      <p className="text-sm text-gray-500">Click to add files</p>
-                    </button>
-                    {techFileNames.length > 0 && (
-                      <div className="space-y-1.5 mt-3">
-                        {techFileNames.map((name, idx) => (
-                          <div key={idx} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg border text-sm group">
-                            <svg className="w-4 h-4 text-primary-500 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
-                            <span className="flex-1 truncate text-gray-700">{name}</span>
-                            <button type="button" onClick={() => removeTechFile(idx)}
-                              className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition">
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
+                </form>
               </div>
-
-              {/* Signatures */}
-              <div className="border-t pt-6">
-                <h2 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
-                  <span className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 text-sm">4</span>
-                  Signatures
-                </h2>
-                <div className="grid md:grid-cols-2 gap-6">
-                  <div>
-                    <SignaturePad label="Customer Signature" onSave={setCustomerSignature} />
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
-                        <input type="text" value={customerFirstName} onChange={(e) => setCustomerFirstName(e.target.value)}
-                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary" placeholder="First name" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
-                        <input type="text" value={customerLastName} onChange={(e) => setCustomerLastName(e.target.value)}
-                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary" placeholder="Last name" />
-                      </div>
-                    </div>
-                  </div>
-                  <div>
-                    <SignaturePad label="Technician Signature" onSave={setTechnicianSignature} />
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
-                        <input type="text" value={technicianFirstName} onChange={(e) => setTechnicianFirstName(e.target.value)}
-                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary" placeholder="First name" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
-                        <input type="text" value={technicianLastName} onChange={(e) => setTechnicianLastName(e.target.value)}
-                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary" placeholder="Last name" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-4 border-t">
-                <button type="button" onClick={onCancel} className="px-6 py-3 border rounded-xl hover:bg-gray-50 font-medium">Cancel</button>
-                <button type="submit" disabled={submitting} className="btn-primary px-8 py-3 text-white rounded-xl font-medium disabled:opacity-50">
-                  {submitting ? 'Submitting...' : 'Submit Service Report'}
-                </button>
-              </div>
-            </form>
+            )}
           </div>
         </div>
       );

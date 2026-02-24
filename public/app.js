@@ -291,6 +291,27 @@ const api = {
       headers: { 'Authorization': `Bearer ${token}` }
     }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
+  completeOnsiteValidation: (token, reportId, data) =>
+    fetch(`${API_URL}/api/service-reports/${reportId}/complete-onsite`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  addOffsiteSegment: (token, reportId, data) =>
+    fetch(`${API_URL}/api/service-reports/${reportId}/offsite-segment`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  submitValidationReport: (token, reportId, formData) =>
+    fetch(`${API_URL}/api/service-reports/${reportId}/submit-validation`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
   getTeamMembers: (token, projectId = null) =>
     fetch(`${API_URL}/api/team-members${projectId ? `?projectId=${projectId}` : ''}`, {
       headers: { 'Authorization': `Bearer ${token}` }
@@ -5018,16 +5039,39 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                 {!isScheduled && (v.segments || []).length > 0 && (
                                   <details className="mt-2">
                                     <summary className="text-xs text-blue-600 cursor-pointer hover:text-blue-800 font-medium">View daily log</summary>
-                                    <div className="mt-2 space-y-2">
-                                      {(v.segments || []).map(seg => (
-                                        <div key={seg.day} className="bg-gray-50 rounded p-2 text-xs">
-                                          <span className="font-medium text-gray-900">Day {seg.day}</span>
-                                          <span className="text-gray-500 ml-2">{seg.date ? new Date(seg.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ''}</span>
-                                          {seg.testsPerformed && <p className="text-gray-700 mt-1"><span className="text-gray-500">Tests:</span> {seg.testsPerformed}</p>}
-                                          {seg.results && <p className="text-gray-700"><span className="text-gray-500">Results:</span> {seg.results}</p>}
-                                          {seg.observations && <p className="text-gray-700"><span className="text-gray-500">Notes:</span> {seg.observations}</p>}
-                                        </div>
-                                      ))}
+                                    <div className="mt-2 space-y-3">
+                                      {(() => {
+                                        const segs = v.segments || [];
+                                        const onsiteSegs = segs.filter(s => !s.phase || s.phase === 'onsite');
+                                        const offsiteSegs = segs.filter(s => s.phase === 'offsite');
+                                        const renderSeg = (seg) => (
+                                          <div key={`${seg.phase}-${seg.day}`} className="bg-gray-50 rounded p-2 text-xs">
+                                            <span className="font-medium text-gray-900">Day {seg.day}</span>
+                                            <span className="text-gray-500 ml-2">{seg.date ? new Date(seg.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ''}</span>
+                                            {seg.testsPerformed && <p className="text-gray-700 mt-1"><span className="text-gray-500">Tests:</span> {seg.testsPerformed}</p>}
+                                            {seg.results && <p className="text-gray-700"><span className="text-gray-500">Results:</span> {seg.results}</p>}
+                                            {seg.trainingCompleted !== undefined && <p className="text-gray-700"><span className="text-gray-500">Training:</span> {seg.trainingCompleted ? 'Yes' : `No${seg.trainingReason ? ` — ${seg.trainingReason}` : ''}`}</p>}
+                                            {(seg.outstandingIssues || seg.observations) && <p className="text-gray-700"><span className="text-gray-500">Outstanding Issues:</span> {seg.outstandingIssues || seg.observations}</p>}
+                                            {seg.finalRecommendations && <p className="text-gray-700"><span className="text-gray-500">Recommendations:</span> {seg.finalRecommendations}</p>}
+                                          </div>
+                                        );
+                                        return (
+                                          <>
+                                            {onsiteSegs.length > 0 && (
+                                              <div>
+                                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">On-Site Days</p>
+                                                <div className="space-y-1">{onsiteSegs.map(renderSeg)}</div>
+                                              </div>
+                                            )}
+                                            {offsiteSegs.length > 0 && (
+                                              <div>
+                                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 mt-2">Off-Site Days</p>
+                                                <div className="space-y-1">{offsiteSegs.map(renderSeg)}</div>
+                                              </div>
+                                            )}
+                                          </>
+                                        );
+                                      })()}
                                     </div>
                                   </details>
                                 )}
