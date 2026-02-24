@@ -9562,9 +9562,6 @@ app.post('/api/service-reports/start-validation', authenticateToken, requireServ
       { clientName: reportData.clientFacilityName, expectedDays: reportData.expectedDays || 'flexible' }
     );
 
-    // Auto-update Phase 8 tasks in matching project
-    await autoUpdatePhase8Tasks(newReport, 'validation_started', req.user.name);
-
     res.json(newReport);
   } catch (error) {
     console.error('Start validation error:', error);
@@ -9742,9 +9739,6 @@ app.put('/api/service-reports/:id/complete-validation', authenticateToken, requi
       { clientName: completedReport.clientFacilityName, daysLogged: segments.length, status: completionStatus }
     );
 
-    // Auto-update Phase 8 tasks in matching project (mark all complete)
-    await autoUpdatePhase8Tasks(completedReport, 'validation_completed', req.user.name);
-
     // Upload to HubSpot if company ID is available
     if (completedReport.hubspotCompanyId && hubspot.isValidRecordId(completedReport.hubspotCompanyId)) {
       try {
@@ -9870,12 +9864,14 @@ app.get('/api/client-portal/validation-progress', authenticateToken, async (req,
     );
 
     const validations = serviceReports.filter(r => {
-      // Include Validations-type reports that are active (not just validation_in_progress)
+      // Include Validations-type reports from the moment of assignment — no date required
       const isValidationType = r.serviceType === 'Validations';
       const hasValidationStatus = r.status === 'validation_in_progress';
       const hasValidationDates = r.validationStartDate || r.validationEndDate;
       const isActiveStatus = ['assigned', 'in_progress', 'validation_in_progress'].includes(r.status);
-      if (!((hasValidationStatus) || (isValidationType && hasValidationDates && isActiveStatus))) return false;
+      // Show as soon as assigned, regardless of whether validation dates are set yet
+      const isAssignedValidation = isValidationType && r.status === 'assigned';
+      if (!((hasValidationStatus) || (isValidationType && hasValidationDates && isActiveStatus) || isAssignedValidation)) return false;
       // Primary: match by clientSlug (most reliable)
       if (r.clientSlug && r.clientSlug === clientSlug) return true;
       // Match by company ID
@@ -9954,7 +9950,7 @@ app.get('/api/projects/:projectId/active-validations', authenticateToken, async 
       return false;
     }).map(r => ({
       id: r.id,
-      technicianName: r.technicianName,
+      technicianName: r.technicianName || r.assignedToName || null,
       analyzerModel: r.analyzerModel,
       analyzerSerialNumber: r.analyzerSerialNumber,
       validationStartDate: r.validationStartDate,

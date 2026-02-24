@@ -290,6 +290,23 @@
           method: 'PUT',
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
           body: JSON.stringify(data)
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      getPollingStatus: (token) =>
+        fetch(`${API_URL}/api/admin/ticket-polling/status`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      dismissPendingReviewTicket: (token, ticketId) =>
+        fetch(`${API_URL}/api/admin/ticket-polling/pending-review/${ticketId}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message })),
+
+      dismissAllPendingReview: (token) =>
+        fetch(`${API_URL}/api/admin/ticket-polling/pending-review`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
         }).then(handleResponse).catch(err => ({ error: err.message }))
     };
 
@@ -1786,21 +1803,28 @@
       // Vendor Management is visible to Managers with Service Portal access
       const canManageVendors = user?.isManager && user?.hasServicePortalAccess && user?.role !== 'admin';
 
+      // Pending Review state
+      const [pendingReviewTickets, setPendingReviewTickets] = useState([]);
+      const [pendingLoading, setPendingLoading] = useState(false);
+      const [dismissingId, setDismissingId] = useState(null);
+      const [dismissingAll, setDismissingAll] = useState(false);
+
       useEffect(() => {
         loadData();
       }, [token]);
 
       const loadData = async () => {
         setLoading(true);
-        const [reportsData, validationData, clientsData, usersData, allClientsData, techniciansData] = await Promise.all([
+        const [reportsData, clientsData, usersData, allClientsData, techniciansData, pollingData] = await Promise.all([
           api.getServiceReports(token),
-          fetch('/api/validation-reports', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).catch(() => []),
           api.getServiceClients(token),
           canManageVendors ? api.getUsers(token) : Promise.resolve([]),
           canManageVendors ? fetch('/api/clients', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).catch(() => []) : Promise.resolve([]),
-          api.getTechnicians(token)
+          api.getTechnicians(token),
+          api.getPollingStatus(token)
         ]);
         if (!techniciansData.error) setTechnicians(techniciansData);
+        if (!pollingData.error) setPendingReviewTickets(pollingData.pendingReviewTickets || []);
         // Load vendors from users
         if (Array.isArray(usersData)) {
           setVendors(usersData.filter(u => u.role === 'vendor'));
@@ -1813,17 +1837,34 @@
           const serviceReportsOnly = reportsData.filter(r => r.serviceType !== 'Validations');
           const validationServiceReports = reportsData.filter(r => r.serviceType === 'Validations');
           setReports(serviceReportsOnly);
-          // Combine validation service reports with dedicated validation reports
-          const allValidationReports = [
-            ...validationServiceReports.map(r => ({ ...r, isServiceReport: true })),
-            ...(Array.isArray(validationData) ? validationData : [])
-          ];
-          setValidationReports(allValidationReports);
-        } else {
-          if (Array.isArray(validationData)) setValidationReports(validationData);
+          // Validation reports tab shows only service reports submitted by techs with serviceType='Validations'
+          setValidationReports(validationServiceReports);
         }
         if (!clientsData.error) setClients(clientsData);
         setLoading(false);
+      };
+
+      const handleDismissPendingTicket = async (ticketId) => {
+        setDismissingId(ticketId);
+        const result = await api.dismissPendingReviewTicket(token, ticketId);
+        if (result.error) {
+          alert('Error: ' + result.error);
+        } else {
+          setPendingReviewTickets(result.pendingReviewTickets || []);
+        }
+        setDismissingId(null);
+      };
+
+      const handleDismissAllPending = async () => {
+        if (!window.confirm('Clear all pending review tickets? This cannot be undone.')) return;
+        setDismissingAll(true);
+        const result = await api.dismissAllPendingReview(token);
+        if (result.error) {
+          alert('Error: ' + result.error);
+        } else {
+          setPendingReviewTickets([]);
+        }
+        setDismissingAll(false);
       };
 
       const handleClientSelect = (clientName, isValidation = false) => {
@@ -2093,9 +2134,9 @@
       if (viewingValidation) {
         const startDate = viewingValidation.validationStartDate || viewingValidation.startDate;
         const endDate = viewingValidation.validationEndDate || viewingValidation.endDate;
-        const daysOnSite = viewingValidation.isServiceReport && startDate && endDate
+        const daysOnSite = startDate && endDate
           ? Math.ceil(Math.abs(new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24)) + 1
-          : viewingValidation.daysOnSite || 1;
+          : viewingValidation.dayEntries?.length || 1;
         return (
           <div className="space-y-6">
             <button onClick={() => setViewingValidation(null)} className="flex items-center gap-2 text-primary hover:text-accent">
@@ -2106,9 +2147,6 @@
               <div className="bg-gradient-to-r from-purple-600 to-purple-800 text-white p-6">
                 <h1 className="text-2xl font-bold">Validation Report Details</h1>
                 <p className="opacity-90">Report ID: {viewingValidation.id}</p>
-                {viewingValidation.isServiceReport && (
-                  <span className="inline-block mt-2 px-2 py-1 bg-white/20 rounded text-sm">Service Portal Submission</span>
-                )}
               </div>
               <div className="p-6">
                 <div className="grid md:grid-cols-3 gap-6 mb-6">
@@ -2181,6 +2219,43 @@
                   <h3 className="font-bold text-accent mb-2">Validation Results</h3>
                   <p className="text-sm bg-gray-50 p-3 rounded-lg whitespace-pre-wrap">{viewingValidation.validationResults || '-'}</p>
                 </div>
+
+                {viewingValidation.descriptionOfWork && (
+                  <div className="mb-6">
+                    <h3 className="font-bold text-accent mb-2">Description of Work</h3>
+                    <p className="text-sm bg-gray-50 p-3 rounded-lg whitespace-pre-wrap">{viewingValidation.descriptionOfWork}</p>
+                  </div>
+                )}
+
+                {viewingValidation.outstandingIssues && (
+                  <div className="mb-6">
+                    <h3 className="font-bold text-accent mb-2">Outstanding Issues / Recommendations</h3>
+                    <p className="text-sm bg-yellow-50 p-3 rounded-lg whitespace-pre-wrap">{viewingValidation.outstandingIssues}</p>
+                  </div>
+                )}
+
+                {/* Day-Over-Day Validation Entries */}
+                {viewingValidation.dayEntries && viewingValidation.dayEntries.length > 0 && (
+                  <div className="mb-6">
+                    <h3 className="font-bold text-accent mb-3">Day-Over-Day Validation Entries ({viewingValidation.dayEntries.length} day{viewingValidation.dayEntries.length !== 1 ? 's' : ''})</h3>
+                    <div className="space-y-2">
+                      {viewingValidation.dayEntries.sort((a, b) => a.dayNumber - b.dayNumber).map((entry, idx) => (
+                        <div key={entry.id || idx} className="bg-gray-50 rounded-lg p-3 border border-gray-200 text-sm">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="w-6 h-6 rounded-full bg-purple-600 text-white flex items-center justify-center text-xs font-bold">{entry.dayNumber}</span>
+                            <span className="font-medium text-gray-900">Day {entry.dayNumber}</span>
+                            <span className="text-gray-400">{entry.date ? new Date(entry.date + 'T12:00:00').toLocaleDateString() : ''}</span>
+                          </div>
+                          {entry.testsPerformed && <p className="text-gray-600 ml-8"><span className="font-medium text-gray-700">Tests:</span> {entry.testsPerformed}</p>}
+                          {entry.readings && <p className="text-gray-600 ml-8"><span className="font-medium text-gray-700">Readings:</span> {entry.readings}</p>}
+                          {entry.results && <p className="text-gray-600 ml-8"><span className="font-medium text-gray-700">Results:</span> {entry.results}</p>}
+                          {entry.notes && <p className="text-gray-500 ml-8"><span className="font-medium">Notes:</span> {entry.notes}</p>}
+                          {entry.issues && <p className="text-orange-600 ml-8"><span className="font-medium">Issues:</span> {entry.issues}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {viewingValidation.validationReportFileName && (
                   <div className="mb-6">
@@ -2419,6 +2494,13 @@
                   Vendors ({vendors.length})
                 </button>
               )}
+              <button onClick={() => setActiveTab('pending_review')}
+                className={`px-6 py-4 font-medium flex items-center gap-2 ${activeTab === 'pending_review' ? 'text-red-600 border-b-2 border-red-600' : 'text-gray-500 hover:text-gray-700'}`}>
+                Pending Review
+                {pendingReviewTickets.length > 0 && (
+                  <span className="px-2 py-0.5 bg-red-100 text-red-600 rounded-full text-xs font-semibold">{pendingReviewTickets.length}</span>
+                )}
+              </button>
             </div>
 
             {/* Reports Tab */}
@@ -2527,17 +2609,17 @@
                           <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Days On-Site</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Analyzers</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Technician</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Status</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200">
                         {validationReports.filter(r => r.clientFacilityName?.toLowerCase().includes(searchTerm.toLowerCase())).map(report => {
-                          // Handle both service-based validations and dedicated validation reports
                           const startDate = report.validationStartDate || report.startDate;
                           const endDate = report.validationEndDate || report.endDate;
-                          const daysOnSite = report.isServiceReport && startDate && endDate
+                          const daysOnSite = startDate && endDate
                             ? Math.ceil(Math.abs(new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24)) + 1
-                            : report.daysOnSite || 1;
+                            : report.dayEntries?.length || 1;
                           return (
                             <tr key={report.id} className="hover:bg-gray-50">
                               <td className="px-4 py-3 text-sm">
@@ -2549,6 +2631,19 @@
                               <td className="px-4 py-3 text-sm">{daysOnSite} days</td>
                               <td className="px-4 py-3 text-sm">{report.analyzersValidated?.length || 0} units</td>
                               <td className="px-4 py-3 text-sm">{report.serviceProviderName || report.technicianName}</td>
+                              <td className="px-4 py-3 text-sm">
+                                {(() => {
+                                  const s = report.status;
+                                  const hasTech = !!report.technicianSignature;
+                                  const hasCust = !!report.customerSignature;
+                                  if (s === 'assigned') return <span className="px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-700">Pending</span>;
+                                  if (s === 'submitted' && hasTech && hasCust) return <span className="px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-700">Complete</span>;
+                                  if (s === 'submitted' && hasTech) return <span className="px-2 py-1 rounded text-xs font-medium bg-orange-100 text-orange-700">Signature Needed</span>;
+                                  if (s === 'submitted') return <span className="px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-700">Submitted</span>;
+                                  if (s === 'completed') return <span className="px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-700">Complete</span>;
+                                  return <span className="px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700">{s || 'Unknown'}</span>;
+                                })()}
+                              </td>
                               <td className="px-4 py-3">
                                 <button onClick={() => setViewingValidation(report)} className="flex items-center gap-1 text-purple-600 hover:text-purple-800">
                                   {Icons.eye} View
@@ -2701,6 +2796,76 @@
                   <div className="text-center py-12 text-gray-500">
                     <p>No external vendors yet</p>
                     <p className="text-sm mt-2">Click "Add Vendor" to create your first vendor account</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Pending Review Tab */}
+            {activeTab === 'pending_review' && (
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">Pending Review</h3>
+                    <p className="text-sm text-gray-500 mt-0.5">HubSpot tickets the polling engine could not auto-assign. Review each one and manually create a service report, then dismiss.</p>
+                  </div>
+                  {pendingReviewTickets.length > 1 && (
+                    <button
+                      onClick={handleDismissAllPending}
+                      disabled={dismissingAll}
+                      className="px-4 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50 transition flex items-center gap-2"
+                    >
+                      {dismissingAll ? (
+                        <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                      ) : Icons.trash}
+                      Clear All
+                    </button>
+                  )}
+                </div>
+
+                {pendingReviewTickets.length === 0 ? (
+                  <div className="text-center py-16 text-gray-400">
+                    <svg className="w-12 h-12 mx-auto mb-3 opacity-40" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    <p className="font-medium text-gray-500">No pending tickets</p>
+                    <p className="text-sm mt-1">All HubSpot tickets have been successfully auto-assigned.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {pendingReviewTickets.map((ticket) => (
+                      <div key={ticket.ticketId} className="bg-white border border-red-100 rounded-xl p-5 flex items-start gap-4 shadow-sm">
+                        <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center text-red-500">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-semibold text-gray-900 text-sm">{ticket.subject || '(No subject)'}</p>
+                              <p className="text-sm text-gray-600 mt-0.5">{ticket.companyName || 'Unknown company'}</p>
+                            </div>
+                            <span className="flex-shrink-0 text-xs text-gray-400 whitespace-nowrap">
+                              {ticket.seenAt ? new Date(ticket.seenAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
+                            </span>
+                          </div>
+                          <div className="mt-2 flex items-center gap-2 flex-wrap">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 text-amber-700 rounded-full text-xs font-medium border border-amber-100">
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/></svg>
+                              {ticket.reason}
+                            </span>
+                            <span className="text-xs text-gray-400">Ticket #{ticket.ticketId}</span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleDismissPendingTicket(ticket.ticketId)}
+                          disabled={dismissingId === ticket.ticketId}
+                          className="flex-shrink-0 px-3 py-1.5 text-xs font-medium text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50 transition"
+                          title="Dismiss this ticket from the pending review list"
+                        >
+                          {dismissingId === ticket.ticketId ? (
+                            <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                          ) : 'Dismiss'}
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
