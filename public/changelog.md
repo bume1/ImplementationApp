@@ -4,6 +4,18 @@
 
 ---
 
+### Version 3.14.0 - February 24, 2026
+
+#### New Features
+- Implement two-phase validation report system
+
+#### Bug Fixes
+- Fix Repository Edit button permissions and Planned Visit backwards compat
+
+#### Improvements
+- Update Phase 8 validation card for onsite_submitted status
+
+
 ### Version 3.13.1 - February 24, 2026
 
 #### Changes
