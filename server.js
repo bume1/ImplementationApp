@@ -8654,14 +8654,26 @@ app.put('/api/service-reports/:id', authenticateToken, requireServiceAccess, asy
   }
 });
 
-// Delete service report (admin only)
-app.delete('/api/service-reports/:id', authenticateToken, requireAdmin, async (req, res) => {
+// Delete service report (admin, or manager who assigned the report)
+app.delete('/api/service-reports/:id', authenticateToken, async (req, res) => {
   try {
+    const isSuperAdmin = req.user.role === config.ROLES.ADMIN;
+    const isManager = req.user.isManager && req.user.hasServicePortalAccess;
+
+    if (!isSuperAdmin && !isManager) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
     let serviceReports = (await db.get('service_reports')) || [];
     const report = serviceReports.find(r => r.id === req.params.id);
 
     if (!report) {
       return res.status(404).json({ error: 'Report not found' });
+    }
+
+    // Managers can only delete reports they assigned
+    if (!isSuperAdmin && String(report.assignedById) !== String(req.user.id)) {
+      return res.status(403).json({ error: 'You can only delete reports you assigned' });
     }
 
     serviceReports = serviceReports.filter(r => r.id !== req.params.id);
@@ -8679,11 +8691,12 @@ app.delete('/api/service-reports', authenticateToken, async (req, res) => {
   try {
     const { reportIds } = req.body;
     const isSuperAdmin = req.user.role === config.ROLES.ADMIN;
-    const isServiceTechnician = req.user.role === config.ROLES.VENDOR || req.user.hasServicePortalAccess;
+    const isManager = req.user.isManager && req.user.hasServicePortalAccess;
+    const isServiceTechnician = (req.user.role === config.ROLES.VENDOR || req.user.hasServicePortalAccess) && !isManager;
 
-    // Only Super Admins and Service Technicians can delete
-    if (!isSuperAdmin && !isServiceTechnician) {
-      return res.status(403).json({ error: 'Access denied. Only Super Admins and Service Technicians can delete reports.' });
+    // Only Super Admins, Managers, and Service Technicians can delete
+    if (!isSuperAdmin && !isManager && !isServiceTechnician) {
+      return res.status(403).json({ error: 'Access denied. Only Super Admins, Managers, and Service Technicians can delete reports.' });
     }
 
     if (!reportIds || !Array.isArray(reportIds) || reportIds.length === 0) {
@@ -8694,12 +8707,21 @@ app.delete('/api/service-reports', authenticateToken, async (req, res) => {
     const idsToDelete = new Set(reportIds);
     const initialCount = serviceReports.length;
 
-    // For service technicians, only allow deleting their own reports
+    // Scope deletion based on role
     if (!isSuperAdmin) {
       const reportsToDelete = serviceReports.filter(r => idsToDelete.has(r.id));
-      const unauthorizedReports = reportsToDelete.filter(r => r.technicianId !== req.user.id);
-      if (unauthorizedReports.length > 0) {
-        return res.status(403).json({ error: 'You can only delete your own reports.' });
+      if (isManager) {
+        // Managers can only delete reports they assigned
+        const unauthorized = reportsToDelete.filter(r => String(r.assignedById) !== String(req.user.id));
+        if (unauthorized.length > 0) {
+          return res.status(403).json({ error: 'You can only delete reports you assigned.' });
+        }
+      } else {
+        // Technicians can only delete their own reports
+        const unauthorized = reportsToDelete.filter(r => r.technicianId !== req.user.id);
+        if (unauthorized.length > 0) {
+          return res.status(403).json({ error: 'You can only delete your own reports.' });
+        }
       }
     }
 
