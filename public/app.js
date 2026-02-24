@@ -4996,19 +4996,26 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                         <div className="p-4 space-y-3">
                           {activeValidations.length > 0 ? activeValidations.map(v => {
                             const isScheduled = v.status === 'assigned';
-                            const daysLogged = v.daysLogged || 0;
+                            const isOnsiteSubmitted = v.status === 'onsite_submitted';
+                            const onsiteDays = v.onsiteDaysLogged || 0;
+                            const offsiteDays = v.offsiteDaysLogged || 0;
+                            const daysLogged = (onsiteDays + offsiteDays) || v.daysLogged || 0;
                             const expected = v.expectedDays;
                             const pct = expected ? Math.min(100, Math.round((daysLogged / expected) * 100)) : null;
                             const scheduledStart = v.validationStartDate
                               ? new Date(v.validationStartDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
                               : null;
+                            const onsiteSegsAll = (v.segments || []).filter(s => !s.phase || s.phase === 'onsite');
+                            const offsiteSegsAll = (v.segments || []).filter(s => s.phase === 'offsite');
                             return (
-                              <div key={v.id} className={`border rounded-lg p-3 transition ${isScheduled ? 'bg-amber-50 border-amber-200' : 'hover:bg-gray-50'}`}>
+                              <div key={v.id} className={`border rounded-lg p-3 transition ${isScheduled ? 'bg-amber-50 border-amber-200' : isOnsiteSubmitted ? 'bg-blue-50 border-blue-200' : 'hover:bg-gray-50'}`}>
                                 <div className="flex items-center justify-between">
                                   <div>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 flex-wrap">
                                       <p className="font-medium text-gray-900">{v.analyzerModel || 'Biolis AU480'} {v.analyzerSerialNumber ? `(${v.analyzerSerialNumber})` : ''}</p>
                                       {isScheduled && <span className="text-xs px-1.5 py-0.5 rounded bg-amber-200 text-amber-800 font-medium">Scheduled</span>}
+                                      {isOnsiteSubmitted && <span className="text-xs px-1.5 py-0.5 rounded bg-green-200 text-green-800 font-medium">On-Site Complete</span>}
+                                      {isOnsiteSubmitted && <span className="text-xs px-1.5 py-0.5 rounded bg-blue-200 text-blue-800 font-medium animate-pulse">Off-Site In Progress</span>}
                                     </div>
                                     {isScheduled ? (
                                       <p className="text-sm text-gray-500">
@@ -5016,14 +5023,22 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                         {scheduledStart ? ` · Starts ${scheduledStart}` : ''}
                                         {expected ? ` · ${expected} day${expected !== 1 ? 's' : ''} planned` : ''}
                                       </p>
+                                    ) : isOnsiteSubmitted ? (
+                                      <p className="text-sm text-gray-600">
+                                        Technician: {v.technicianName || '—'} · On-Site: {onsiteDays} day{onsiteDays !== 1 ? 's' : ''} · Off-Site: {offsiteDays} day{offsiteDays !== 1 ? 's' : ''}
+                                      </p>
                                     ) : (
                                       <p className="text-sm text-gray-600">Technician: {v.technicianName || '—'} · {daysLogged} day{daysLogged !== 1 ? 's' : ''} logged</p>
                                     )}
                                   </div>
                                   {!isScheduled && (
-                                    <div className="flex items-center gap-1">
-                                      {(v.segments || []).map((s, i) => (
-                                        <div key={i} className={`w-2.5 h-2.5 rounded-full ${s.status === 'complete' ? 'bg-green-500' : 'bg-yellow-400'}`} title={`Day ${s.day}`}></div>
+                                    <div className="flex items-center gap-1 flex-wrap">
+                                      {onsiteSegsAll.map((s, i) => (
+                                        <div key={`on-${i}`} className={`w-2.5 h-2.5 rounded-full ${s.status === 'complete' ? 'bg-green-500' : 'bg-yellow-400'}`} title={`On-Site Day ${s.day || i + 1}`}></div>
+                                      ))}
+                                      {offsiteSegsAll.length > 0 && <div className="w-px h-2.5 bg-gray-400 mx-0.5"></div>}
+                                      {offsiteSegsAll.map((s, i) => (
+                                        <div key={`off-${i}`} className={`w-2.5 h-2.5 rounded-full border border-blue-400 ${s.status === 'complete' ? 'bg-blue-500' : 'bg-blue-200'}`} title={`Off-Site Day ${s.day || i + 1}`}></div>
                                       ))}
                                     </div>
                                   )}
