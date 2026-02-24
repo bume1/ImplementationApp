@@ -2473,146 +2473,137 @@
                   <p className="text-sm text-gray-500">Service Type</p>
                   <p className="font-medium">{report.serviceType}</p>
                 </div>
-                {report.serviceType === 'Validations' ? (
-                  <>
-                    {/* Date Range */}
-                    <div className="grid md:grid-cols-3 gap-4">
-                      <div>
-                        <p className="text-sm text-gray-500">Start Date</p>
-                        <p className="font-medium">{report.validationStartDate || '-'}</p>
+                {report.serviceType === 'Validations' ? (() => {
+                  const segments = Array.isArray(report.validationSegments) ? report.validationSegments : [];
+                  const onsiteSegs = segments.filter(s => !s.phase || s.phase === 'onsite');
+                  const offsiteSegs = segments.filter(s => s.phase === 'offsite');
+                  const isOnsiteSubmitted = report.status === 'onsite_submitted';
+                  const isFullySubmitted = report.status === 'submitted';
+
+                  const SegDay = ({ seg, index, label }) => (
+                    <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center text-white text-xs font-bold">{index + 1}</div>
+                          <span className="font-semibold text-sm text-accent">{label} — Day {index + 1}</span>
+                        </div>
+                        {seg.date && <span className="text-xs text-gray-400">{new Date(seg.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</span>}
                       </div>
-                      <div>
-                        <p className="text-sm text-gray-500">End Date</p>
-                        <p className="font-medium">{report.validationEndDate || '-'}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-500">Days On-Site</p>
-                        <p className="font-medium">
-                          {report.validationStartDate && report.validationEndDate
-                            ? Math.ceil(Math.abs(new Date(report.validationEndDate) - new Date(report.validationStartDate)) / (1000 * 60 * 60 * 24)) + 1
-                            : '-'}
-                        </p>
+                      <div className="space-y-2 text-sm">
+                        {seg.testsPerformed && <div><span className="text-gray-500 font-medium">Tests Performed: </span><span className="whitespace-pre-wrap">{seg.testsPerformed}</span></div>}
+                        {seg.results && <div><span className="text-gray-500 font-medium">Results / Readings: </span><span className="whitespace-pre-wrap">{seg.results}</span></div>}
+                        {seg.outstandingIssues && <div><span className="text-gray-500 font-medium">Outstanding Issues: </span><span className="whitespace-pre-wrap">{seg.outstandingIssues}</span></div>}
+                        {seg.finalRecommendations && <div><span className="text-gray-500 font-medium">Recommendations: </span><span className="whitespace-pre-wrap">{seg.finalRecommendations}</span></div>}
+                        <div>
+                          <span className="text-gray-500 font-medium">Training Completed: </span>
+                          <span className={seg.trainingCompleted ? 'text-green-700 font-medium' : 'text-red-600 font-medium'}>{seg.trainingCompleted ? 'Yes' : 'No'}</span>
+                          {seg.trainingCompleted === false && seg.trainingReason && <span className="text-gray-500"> — {seg.trainingReason}</span>}
+                        </div>
+                        {seg.attachments && seg.attachments.length > 0 && (
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            {seg.attachments.map((a, ai) => (
+                              <a key={ai} href={a.url} target="_blank" rel="noopener noreferrer" className="text-xs px-2 py-1 bg-white border rounded-lg text-blue-600 hover:underline">{a.filename || (a.type === 'photo' ? `Photo ${ai+1}` : `File ${ai+1}`)}</a>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
+                  );
 
-                    {/* Analyzers Validated */}
-                    {report.analyzersValidated && report.analyzersValidated.length > 0 && (
-                      <div>
-                        <p className="text-sm text-gray-500 mb-2">Analyzers Validated</p>
-                        <div className="bg-gray-50 rounded-lg overflow-hidden">
-                          <table className="w-full text-sm">
-                            <thead className="bg-gray-100">
-                              <tr>
-                                <th className="px-3 py-2 text-left font-medium text-gray-600">Model</th>
-                                <th className="px-3 py-2 text-left font-medium text-gray-600">Serial Number</th>
-                                <th className="px-3 py-2 text-left font-medium text-gray-600">Status</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-200">
-                              {report.analyzersValidated.map((analyzer, idx) => (
-                                <tr key={idx}>
-                                  <td className="px-3 py-2">{analyzer.model || '-'}</td>
-                                  <td className="px-3 py-2">{analyzer.serialNumber || '-'}</td>
-                                  <td className="px-3 py-2">
-                                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                                      analyzer.status === 'Passed' ? 'bg-green-100 text-green-700' :
-                                      analyzer.status === 'Failed' ? 'bg-red-100 text-red-700' :
-                                      'bg-yellow-100 text-yellow-700'
-                                    }`}>
-                                      {analyzer.status}
-                                    </span>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                  return (
+                    <>
+                      {/* Date Range */}
+                      <div className="grid md:grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-sm text-gray-500">Proposed Start Date</p>
+                          <p className="font-medium">{report.validationStartDate || '-'}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-500">Proposed End Date</p>
+                          <p className="font-medium">{report.validationEndDate || '-'}</p>
                         </div>
                       </div>
-                    )}
 
-                    {/* Test Procedures */}
-                    <div>
-                      <p className="text-sm text-gray-500">Test Procedures</p>
-                      <p className="font-medium whitespace-pre-wrap bg-gray-50 p-3 rounded-lg">{report.testProcedures || '-'}</p>
-                    </div>
-
-                    {/* Training Provided */}
-                    <div>
-                      <p className="text-sm text-gray-500">Training Provided</p>
-                      <p className="font-medium whitespace-pre-wrap bg-gray-50 p-3 rounded-lg">{report.trainingProvided || '-'}</p>
-                    </div>
-
-                    {/* Validation Results */}
-                    <div>
-                      <p className="text-sm text-gray-500">Validation Results</p>
-                      <p className="font-medium whitespace-pre-wrap bg-gray-50 p-3 rounded-lg">{report.validationResults || '-'}</p>
-                    </div>
-
-                    {/* Validation Report File */}
-                    {report.validationReportFileName && (
-                      <div>
-                        <p className="text-sm text-gray-500">Validation Report File</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                          </svg>
-                          {report.validationReportFile ? (
-                            <a href={report.validationReportFile} download={report.validationReportFileName} className="text-primary hover:underline font-medium">
-                              {report.validationReportFileName}
-                            </a>
-                          ) : (
-                            <span className="font-medium">{report.validationReportFileName}</span>
-                          )}
+                      {/* Phase 1: On-Site */}
+                      <div className="border border-gray-200 rounded-xl overflow-hidden">
+                        <div className={`px-4 py-3 flex items-center gap-3 border-b ${onsiteSegs.length > 0 || isOnsiteSubmitted || isFullySubmitted ? 'bg-green-50 border-green-100' : 'bg-gray-50'}`}>
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold ${onsiteSegs.length > 0 || isOnsiteSubmitted || isFullySubmitted ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-500'}`}>1</div>
+                          <div>
+                            <p className="font-bold text-sm text-accent">Phase 1: On-Site Validation</p>
+                            <p className="text-xs text-gray-500">{onsiteSegs.length} day{onsiteSegs.length !== 1 ? 's' : ''} logged{(isOnsiteSubmitted || isFullySubmitted) ? ' · Submitted' : ''}</p>
+                          </div>
+                          {(isOnsiteSubmitted || isFullySubmitted) && <span className="ml-auto text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full font-medium">Complete</span>}
                         </div>
-                      </div>
-                    )}
-
-                    {/* Daily Validation Log */}
-                    {Array.isArray(report.validationSegments) && report.validationSegments.length > 0 && (
-                      <div>
-                        <p className="text-sm text-gray-500 mb-2">Daily Validation Log ({report.validationSegments.length} day{report.validationSegments.length !== 1 ? 's' : ''} logged)</p>
-                        <div className="space-y-3">
-                          {report.validationSegments.map((seg, idx) => (
-                            <div key={idx} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                              <div className="flex items-center justify-between mb-2">
-                                <h4 className="font-semibold text-sm text-accent">Day {seg.day || idx + 1}</h4>
-                                <div className="flex items-center gap-2">
-                                  {seg.date && <span className="text-xs text-gray-500">{new Date(seg.date).toLocaleDateString()}</span>}
-                                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                                    seg.status === 'complete' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                                  }`}>{seg.status === 'complete' ? 'Complete' : seg.status || 'Logged'}</span>
-                                </div>
-                              </div>
-                              <div className="grid gap-2 text-sm">
-                                <div>
-                                  <span className="text-gray-500">Tests Performed:</span>
-                                  <p className="whitespace-pre-wrap mt-0.5">{seg.testsPerformed || '-'}</p>
-                                </div>
-                                {seg.results && (
-                                  <div>
-                                    <span className="text-gray-500">Results / Readings:</span>
-                                    <p className="whitespace-pre-wrap mt-0.5">{seg.results}</p>
+                        <div className="p-4 space-y-3">
+                          {onsiteSegs.length > 0
+                            ? onsiteSegs.map((seg, i) => <SegDay key={i} seg={seg} index={i} label="On-Site" />)
+                            : <p className="text-sm text-gray-400 text-center py-3">No on-site days logged yet.</p>
+                          }
+                          {(report.onsiteTechnicianSignature || report.onsiteCustomerSignature) && (
+                            <div className="pt-3 border-t border-gray-100">
+                              <p className="text-xs font-medium text-gray-500 mb-2">Signatures</p>
+                              <div className="grid md:grid-cols-2 gap-3">
+                                {report.onsiteTechnicianSignature && (
+                                  <div className="bg-gray-50 rounded-xl p-3 text-center border">
+                                    <p className="text-xs text-gray-500 mb-1">Technician</p>
+                                    <img src={report.onsiteTechnicianSignature} className="h-12 object-contain mx-auto" alt="Technician signature" />
+                                    {report.onsiteTechnicianFirstName && <p className="text-xs text-gray-600 mt-1">{report.onsiteTechnicianFirstName} {report.onsiteTechnicianLastName}</p>}
                                   </div>
                                 )}
-                                {seg.observations && (
-                                  <div>
-                                    <span className="text-gray-500">Observations / Notes:</span>
-                                    <p className="whitespace-pre-wrap mt-0.5">{seg.observations}</p>
+                                {report.onsiteCustomerSignature && (
+                                  <div className="bg-gray-50 rounded-xl p-3 text-center border">
+                                    <p className="text-xs text-gray-500 mb-1">Customer</p>
+                                    <img src={report.onsiteCustomerSignature} className="h-12 object-contain mx-auto" alt="Customer signature" />
+                                    {report.onsiteCustomerFirstName && <p className="text-xs text-gray-600 mt-1">{report.onsiteCustomerFirstName} {report.onsiteCustomerLastName}</p>}
                                   </div>
                                 )}
                               </div>
                             </div>
-                          ))}
+                          )}
                         </div>
                       </div>
-                    )}
 
-                    {/* Recommendations */}
-                    <div>
-                      <p className="text-sm text-gray-500">Recommendations</p>
-                      <p className="font-medium whitespace-pre-wrap bg-gray-50 p-3 rounded-lg">{report.recommendations || '-'}</p>
-                    </div>
-                  </>
+                      {/* Phase 2: Off-Site */}
+                      <div className="border border-gray-200 rounded-xl overflow-hidden">
+                        <div className={`px-4 py-3 flex items-center gap-3 border-b ${isFullySubmitted ? 'bg-green-50 border-green-100' : isOnsiteSubmitted ? 'bg-blue-50 border-blue-100' : 'bg-gray-50'}`}>
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold ${isFullySubmitted ? 'bg-green-500 text-white' : isOnsiteSubmitted ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-500'}`}>2</div>
+                          <div>
+                            <p className="font-bold text-sm text-accent">Phase 2: Off-Site Validation</p>
+                            <p className="text-xs text-gray-500">{offsiteSegs.length} day{offsiteSegs.length !== 1 ? 's' : ''} logged{isFullySubmitted ? ' · Submitted' : ''}</p>
+                          </div>
+                          {isFullySubmitted && <span className="ml-auto text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full font-medium">Complete</span>}
+                          {isOnsiteSubmitted && !isFullySubmitted && <span className="ml-auto text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full font-medium">In Progress</span>}
+                          {!isOnsiteSubmitted && !isFullySubmitted && <span className="ml-auto text-xs px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full font-medium">Pending Phase 1</span>}
+                        </div>
+                        <div className="p-4 space-y-3">
+                          {offsiteSegs.length > 0
+                            ? offsiteSegs.map((seg, i) => <SegDay key={i} seg={seg} index={i} label="Off-Site" />)
+                            : <p className="text-sm text-gray-400 text-center py-3">{isOnsiteSubmitted ? 'No off-site days logged yet.' : 'Off-site phase begins after on-site submission.'}</p>
+                          }
+                        </div>
+                      </div>
+
+                      {/* Validation Report File */}
+                      {report.validationReportFileName && (
+                        <div>
+                          <p className="text-sm text-gray-500">Validation Report File</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <svg className="w-5 h-5 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                            {report.validationReportFile ? (
+                              <a href={report.validationReportFile} download={report.validationReportFileName} className="text-primary-500 hover:underline font-medium">
+                                {report.validationReportFileName}
+                              </a>
+                            ) : (
+                              <span className="font-medium">{report.validationReportFileName}</span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
                 ) : (
                   <>
                     <div>
@@ -2658,11 +2649,16 @@
                     <p className="font-medium">
                       <span className={`px-2 py-1 rounded text-xs font-medium ${
                         report.status === 'assigned' ? 'bg-yellow-100 text-yellow-700' :
+                        report.status === 'onsite_submitted' ? 'bg-blue-100 text-blue-700' :
                         report.status === 'validation_in_progress' ? 'bg-blue-100 text-blue-700' :
                         report.status === 'signature_needed' ? 'bg-orange-100 text-orange-700' :
                         report.status === 'submitted' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
                       }`}>
-                        {report.status === 'assigned' ? 'Pending' : report.status === 'validation_in_progress' ? 'Validation In Progress' : report.status === 'signature_needed' ? 'Signature Needed' : report.status === 'submitted' ? 'Complete' : report.status}
+                        {report.status === 'assigned' ? 'Pending' :
+                         report.status === 'onsite_submitted' ? 'On-Site Complete · Off-Site In Progress' :
+                         report.status === 'validation_in_progress' ? 'Validation In Progress' :
+                         report.status === 'signature_needed' ? 'Signature Needed' :
+                         report.status === 'submitted' ? 'Complete' : report.status}
                       </span>
                     </p>
                   </div>
