@@ -8498,7 +8498,7 @@ app.get('/api/service-reports/active-validations', authenticateToken, requireSer
       const isValidationType = r.serviceType === 'Validations';
       const hasValidationStatus = r.status === 'validation_in_progress';
       const hasValidationDates = r.validationStartDate || r.validationEndDate;
-      const isActiveStatus = ['assigned', 'in_progress', 'validation_in_progress'].includes(r.status);
+      const isActiveStatus = ['assigned', 'in_progress', 'validation_in_progress', 'onsite_submitted'].includes(r.status);
       // Also include signature_needed validations (submitted but not yet finalized)
       const isAwaitingFinalization = isValidationType && r.status === 'signature_needed';
       if (!((hasValidationStatus) || (isValidationType && hasValidationDates && isActiveStatus) || isAwaitingFinalization)) return false;
@@ -9928,10 +9928,11 @@ app.get('/api/client-portal/validation-progress', authenticateToken, async (req,
       const isValidationType = r.serviceType === 'Validations';
       const hasValidationStatus = r.status === 'validation_in_progress';
       const hasValidationDates = r.validationStartDate || r.validationEndDate;
-      const isActiveStatus = ['assigned', 'in_progress', 'validation_in_progress'].includes(r.status);
+      const isActiveStatus = ['assigned', 'in_progress', 'validation_in_progress', 'onsite_submitted'].includes(r.status);
       // Show as soon as assigned, regardless of whether validation dates are set yet
       const isAssignedValidation = isValidationType && r.status === 'assigned';
-      if (!((hasValidationStatus) || (isValidationType && hasValidationDates && isActiveStatus) || isAssignedValidation)) return false;
+      const isOnsiteSubmitted = isValidationType && r.status === 'onsite_submitted';
+      if (!((hasValidationStatus) || (isValidationType && hasValidationDates && isActiveStatus) || isAssignedValidation || isOnsiteSubmitted)) return false;
       // Primary: match by clientSlug (most reliable)
       if (r.clientSlug && r.clientSlug === clientSlug) return true;
       // Match by company ID
@@ -9942,30 +9943,43 @@ app.get('/api/client-portal/validation-progress', authenticateToken, async (req,
       const reportClient = (r.clientFacilityName || '').toLowerCase().trim();
       if (reportClient && uniqueClientNames.some(name => reportClient.includes(name) || name.includes(reportClient))) return true;
       return false;
-    }).map(r => ({
-      id: r.id,
-      technicianName: r.technicianName || r.assignedToName || 'Scheduled',
-      analyzerModel: r.analyzerModel,
-      analyzerSerialNumber: r.analyzerSerialNumber,
-      validationStartDate: r.validationStartDate,
-      validationEndDate: r.validationEndDate,
-      expectedDays: r.expectedDays || (r.validationStartDate && r.validationEndDate
-        ? Math.ceil(Math.abs(new Date(r.validationEndDate) - new Date(r.validationStartDate)) / (1000 * 60 * 60 * 24)) + 1
-        : null),
-      status: r.status,
-      serviceType: r.serviceType,
-      daysLogged: Array.isArray(r.validationSegments) ? r.validationSegments.length : 0,
-      segments: (Array.isArray(r.validationSegments) ? r.validationSegments : []).map(s => ({
-        day: s.day,
-        date: s.date,
-        testsPerformed: s.testsPerformed,
-        results: s.results,
-        observations: s.observations,
-        status: s.status
-      })),
-      createdAt: r.createdAt,
-      updatedAt: r.updatedAt
-    }));
+    }).map(r => {
+      const allSegments = Array.isArray(r.validationSegments) ? r.validationSegments : [];
+      const onsiteSegments = allSegments.filter(s => !s.phase || s.phase === 'onsite');
+      const offsiteSegments = allSegments.filter(s => s.phase === 'offsite');
+      return {
+        id: r.id,
+        technicianName: r.technicianName || r.assignedToName || 'Scheduled',
+        analyzerModel: r.analyzerModel,
+        analyzerSerialNumber: r.analyzerSerialNumber,
+        validationStartDate: r.validationStartDate,
+        validationEndDate: r.validationEndDate,
+        expectedDays: r.expectedDays || (r.validationStartDate && r.validationEndDate
+          ? Math.ceil(Math.abs(new Date(r.validationEndDate) - new Date(r.validationStartDate)) / (1000 * 60 * 60 * 24)) + 1
+          : null),
+        status: r.status,
+        serviceType: r.serviceType,
+        onsiteComplete: r.status === 'onsite_submitted' || r.status === 'submitted',
+        onsiteDaysLogged: onsiteSegments.length,
+        offsiteDaysLogged: offsiteSegments.length,
+        daysLogged: allSegments.length,
+        segments: allSegments.map(s => ({
+          day: s.day,
+          phase: s.phase || 'onsite',
+          date: s.date,
+          testsPerformed: s.testsPerformed,
+          results: s.results,
+          outstandingIssues: s.outstandingIssues || s.observations || '',
+          observations: s.observations || s.outstandingIssues || '',
+          trainingCompleted: s.trainingCompleted,
+          trainingReason: s.trainingReason || '',
+          finalRecommendations: s.finalRecommendations || '',
+          status: s.status
+        })),
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt
+      };
+    });
 
     res.json(validations);
   } catch (error) {
@@ -9996,8 +10010,8 @@ app.get('/api/projects/:projectId/active-validations', authenticateToken, async 
       const hasValidationStatus = r.status === 'validation_in_progress';
       const hasValidationDates = r.validationStartDate || r.validationEndDate;
       const isActiveStatus = ['assigned', 'in_progress', 'validation_in_progress'].includes(r.status);
-      // Also include signature_needed and submitted Validations for visibility
-      const isValidationReport = isValidationType && ['assigned', 'in_progress', 'validation_in_progress', 'signature_needed', 'submitted'].includes(r.status);
+      // Also include onsite_submitted, signature_needed and submitted Validations for visibility
+      const isValidationReport = isValidationType && ['assigned', 'in_progress', 'validation_in_progress', 'onsite_submitted', 'signature_needed', 'submitted'].includes(r.status);
       if (!((hasValidationStatus) || (isValidationType && hasValidationDates && isActiveStatus) || isValidationReport)) return false;
       // Primary: match by clientSlug (most reliable)
       if (r.clientSlug && projectSlug && r.clientSlug === projectSlug) return true;
@@ -10008,30 +10022,353 @@ app.get('/api/projects/:projectId/active-validations', authenticateToken, async 
       const reportClient = (r.clientFacilityName || '').toLowerCase().trim();
       if (clientName && reportClient && (reportClient.includes(clientName) || clientName.includes(reportClient))) return true;
       return false;
-    }).map(r => ({
-      id: r.id,
-      technicianName: r.technicianName || r.assignedToName || null,
-      analyzerModel: r.analyzerModel,
-      analyzerSerialNumber: r.analyzerSerialNumber,
-      validationStartDate: r.validationStartDate,
-      expectedDays: r.expectedDays,
-      daysLogged: Array.isArray(r.validationSegments) ? r.validationSegments.length : 0,
-      segments: (Array.isArray(r.validationSegments) ? r.validationSegments : []).map(s => ({
-        day: s.day,
-        date: s.date,
-        testsPerformed: s.testsPerformed,
-        results: s.results,
-        observations: s.observations,
-        status: s.status
-      })),
-      status: r.status,
-      createdAt: r.createdAt,
-      updatedAt: r.updatedAt
-    }));
+    }).map(r => {
+      const allSegments = Array.isArray(r.validationSegments) ? r.validationSegments : [];
+      const onsiteSegments = allSegments.filter(s => !s.phase || s.phase === 'onsite');
+      const offsiteSegments = allSegments.filter(s => s.phase === 'offsite');
+      return {
+        id: r.id,
+        technicianName: r.technicianName || r.assignedToName || null,
+        analyzerModel: r.analyzerModel,
+        analyzerSerialNumber: r.analyzerSerialNumber,
+        validationStartDate: r.validationStartDate,
+        validationEndDate: r.validationEndDate,
+        expectedDays: r.expectedDays,
+        onsiteComplete: r.status === 'onsite_submitted' || r.status === 'submitted',
+        onsiteDaysLogged: onsiteSegments.length,
+        offsiteDaysLogged: offsiteSegments.length,
+        daysLogged: allSegments.length,
+        segments: allSegments.map(s => ({
+          day: s.day,
+          phase: s.phase || 'onsite',
+          date: s.date,
+          testsPerformed: s.testsPerformed,
+          results: s.results,
+          outstandingIssues: s.outstandingIssues || s.observations || '',
+          observations: s.observations || s.outstandingIssues || '',
+          trainingCompleted: s.trainingCompleted,
+          trainingReason: s.trainingReason || '',
+          finalRecommendations: s.finalRecommendations || '',
+          status: s.status
+        })),
+        status: r.status,
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt
+      };
+    });
 
     res.json(validations);
   } catch (error) {
     console.error('Get project active validations error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ===== TWO-PHASE ASSIGNED VALIDATION ENDPOINTS =====
+
+// Phase 1: Complete the on-site visit for an assigned validation report
+app.put('/api/service-reports/:id/complete-onsite', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+    if (reportIndex === -1) return res.status(404).json({ error: 'Report not found' });
+
+    const report = serviceReports[reportIndex];
+
+    const isOwner = String(report.technicianId) === String(req.user.id) ||
+                    String(report.assignedToId) === String(req.user.id);
+    if (!isOwner && req.user.role !== config.ROLES.ADMIN && !req.user.isManager) {
+      return res.status(403).json({ error: 'Not authorized to update this report' });
+    }
+
+    if (report.status !== 'assigned') {
+      return res.status(400).json({ error: 'Report must be in assigned status to complete on-site phase' });
+    }
+
+    const {
+      validationStartDate, validationEndDate, analyzerSerialNumber, materialsAvailable,
+      onsiteSegments,
+      technicianSignature, technicianSignatureDate, technicianFirstName, technicianLastName,
+      customerSignature, customerSignatureDate, customerFirstName, customerLastName
+    } = req.body;
+
+    if (!technicianSignature) {
+      return res.status(400).json({ error: 'Technician signature is required' });
+    }
+
+    // Stamp each on-site segment with phase
+    const stampedOnsiteSegments = Array.isArray(onsiteSegments)
+      ? onsiteSegments.map((seg, idx) => ({
+          day: seg.day || idx + 1,
+          phase: 'onsite',
+          date: seg.date || new Date().toISOString().split('T')[0],
+          testsPerformed: seg.testsPerformed || '',
+          trainingCompleted: seg.trainingCompleted !== undefined ? seg.trainingCompleted : true,
+          trainingReason: seg.trainingReason || '',
+          results: seg.results || '',
+          outstandingIssues: seg.outstandingIssues || '',
+          finalRecommendations: seg.finalRecommendations || '',
+          attachments: seg.attachments || [],
+          status: 'complete',
+          submittedAt: new Date().toISOString()
+        }))
+      : [];
+
+    serviceReports[reportIndex] = {
+      ...report,
+      status: 'onsite_submitted',
+      validationStartDate: validationStartDate || report.validationStartDate || '',
+      validationEndDate: validationEndDate || report.validationEndDate || '',
+      analyzerSerialNumber: analyzerSerialNumber || report.analyzerSerialNumber || '',
+      materialsAvailable: materialsAvailable || '',
+      validationSegments: stampedOnsiteSegments,
+      technicianSignature,
+      technicianSignatureDate: technicianSignatureDate || new Date().toISOString().split('T')[0],
+      technicianFirstName: technicianFirstName || req.user.name.split(' ')[0],
+      technicianLastName: technicianLastName || req.user.name.split(' ').slice(1).join(' '),
+      customerSignature: customerSignature || '',
+      customerSignatureDate: customerSignatureDate || '',
+      customerFirstName: customerFirstName || '',
+      customerLastName: customerLastName || '',
+      technicianId: req.user.id,
+      technicianName: req.user.name,
+      onsiteSubmittedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    await db.set('service_reports', serviceReports);
+
+    await logActivity(
+      req.user.id, req.user.name, 'onsite_phase_completed', 'service_report', report.id,
+      { clientName: report.clientFacilityName, onsiteDays: stampedOnsiteSegments.length }
+    );
+
+    res.json(serviceReports[reportIndex]);
+  } catch (error) {
+    console.error('Complete onsite validation error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Phase 2: Add an off-site day segment to an onsite_submitted validation
+app.put('/api/service-reports/:id/offsite-segment', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+    if (reportIndex === -1) return res.status(404).json({ error: 'Report not found' });
+
+    const report = serviceReports[reportIndex];
+
+    const isOwner = String(report.technicianId) === String(req.user.id) ||
+                    String(report.assignedToId) === String(req.user.id);
+    if (!isOwner && req.user.role !== config.ROLES.ADMIN && !req.user.isManager) {
+      return res.status(403).json({ error: 'Not authorized to update this validation' });
+    }
+
+    if (report.status !== 'onsite_submitted') {
+      return res.status(400).json({ error: 'Report must be in onsite_submitted status to add off-site days' });
+    }
+
+    const { day, date, testsPerformed, trainingCompleted, trainingReason, results, outstandingIssues, finalRecommendations, attachments } = req.body;
+
+    if (!testsPerformed) {
+      return res.status(400).json({ error: 'Tests performed is required' });
+    }
+
+    const segments = Array.isArray(report.validationSegments) ? report.validationSegments : [];
+    const offsiteSegments = segments.filter(s => s.phase === 'offsite');
+
+    const newSegment = {
+      day: day || offsiteSegments.length + 1,
+      phase: 'offsite',
+      date: date || new Date().toISOString().split('T')[0],
+      testsPerformed,
+      trainingCompleted: trainingCompleted !== undefined ? trainingCompleted : true,
+      trainingReason: trainingReason || '',
+      results: results || '',
+      outstandingIssues: outstandingIssues || '',
+      finalRecommendations: finalRecommendations || '',
+      attachments: attachments || [],
+      status: 'complete',
+      submittedAt: new Date().toISOString()
+    };
+
+    segments.push(newSegment);
+    serviceReports[reportIndex].validationSegments = segments;
+    serviceReports[reportIndex].updatedAt = new Date().toISOString();
+
+    await db.set('service_reports', serviceReports);
+
+    await logActivity(
+      req.user.id, req.user.name, 'offsite_day_logged', 'service_report', report.id,
+      { clientName: report.clientFacilityName, day: newSegment.day, totalOffsite: offsiteSegments.length + 1 }
+    );
+
+    res.json(serviceReports[reportIndex]);
+  } catch (error) {
+    console.error('Add offsite segment error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Phase 2: Submit the full validation report with uploaded document
+app.put('/api/service-reports/:id/submit-validation', authenticateToken, requireServiceAccess, upload.single('validationReportDocument'), async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+    if (reportIndex === -1) return res.status(404).json({ error: 'Report not found' });
+
+    const report = serviceReports[reportIndex];
+
+    const isOwner = String(report.technicianId) === String(req.user.id) ||
+                    String(report.assignedToId) === String(req.user.id);
+    if (!isOwner && req.user.role !== config.ROLES.ADMIN && !req.user.isManager) {
+      return res.status(403).json({ error: 'Not authorized to submit this validation' });
+    }
+
+    if (report.status !== 'onsite_submitted') {
+      return res.status(400).json({ error: 'Report must be in onsite_submitted status to submit validation' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'Validation report document is required' });
+    }
+
+    const allSegments = Array.isArray(report.validationSegments) ? report.validationSegments : [];
+    const offsiteSegments = allSegments.filter(s => s.phase === 'offsite');
+    if (offsiteSegments.length === 0) {
+      return res.status(400).json({ error: 'At least one off-site day must be logged before submitting' });
+    }
+
+    // Upload validation document to Google Drive
+    let validationReportDocument = null;
+    try {
+      const docFileName = req.file.originalname || `Validation_Document_${report.id}.pdf`;
+      const driveDocResult = await googledrive.uploadServiceReportPDF(
+        report.clientFacilityName || 'Unknown Client',
+        docFileName,
+        req.file.buffer
+      );
+      validationReportDocument = {
+        filename: docFileName,
+        driveFileId: driveDocResult.fileId,
+        driveWebViewLink: driveDocResult.webViewLink,
+        driveWebContentLink: driveDocResult.webContentLink,
+        uploadedAt: new Date().toISOString()
+      };
+    } catch (driveDocError) {
+      console.error('Validation document Drive upload error (non-blocking):', driveDocError.message);
+      validationReportDocument = {
+        filename: req.file.originalname || 'validation_document',
+        uploadedAt: new Date().toISOString()
+      };
+    }
+
+    serviceReports[reportIndex] = {
+      ...report,
+      status: 'submitted',
+      validationReportDocument,
+      serviceCompletionDate: new Date().toISOString().split('T')[0],
+      submittedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    await db.set('service_reports', serviceReports);
+
+    const completedReport = serviceReports[reportIndex];
+
+    await logActivity(
+      req.user.id, req.user.name, 'validation_submitted', 'service_report', report.id,
+      { clientName: report.clientFacilityName, totalDays: allSegments.length }
+    );
+
+    // Generate final PDF (both phases)
+    try {
+      const reportDate = new Date(completedReport.serviceCompletionDate || completedReport.createdAt).toLocaleDateString();
+      const pdfBuffer = await pdfGenerator.generateServiceReportPDF(completedReport, req.user.name);
+      const pdfFileName = `Validation_Report_${(completedReport.clientFacilityName || 'Client').replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate.replace(/\//g, '-')}.pdf`;
+
+      // Upload PDF to HubSpot
+      if (completedReport.hubspotCompanyId && hubspot.isValidRecordId(completedReport.hubspotCompanyId)) {
+        try {
+          const noteText = `Validation Report Submitted\n\nClient: ${completedReport.clientFacilityName}\nTechnician: ${req.user.name}\nOn-site days: ${allSegments.filter(s => !s.phase || s.phase === 'onsite').length}\nOff-site days: ${offsiteSegments.length}`;
+          const uploadResult = await hubspot.uploadFileAndAttachToRecord(
+            completedReport.hubspotCompanyId,
+            pdfBuffer.toString('base64'),
+            pdfFileName,
+            noteText,
+            { recordType: 'companies', folderPath: '/service-reports', notePrefix: '[Service Portal]', isBase64: true }
+          );
+          serviceReports[reportIndex].hubspotFileId = uploadResult.fileId;
+          serviceReports[reportIndex].hubspotNoteId = uploadResult.noteId;
+          await db.set('service_reports', serviceReports);
+        } catch (hubspotError) {
+          console.error('HubSpot PDF upload error (non-blocking):', hubspotError.message);
+        }
+      }
+
+      // Upload PDF to Google Drive
+      try {
+        const driveResult = await googledrive.uploadServiceReportPDF(
+          completedReport.clientFacilityName || 'Unknown Client',
+          pdfFileName,
+          pdfBuffer
+        );
+        serviceReports[reportIndex].driveFileId = driveResult.fileId;
+        serviceReports[reportIndex].driveWebViewLink = driveResult.webViewLink;
+        serviceReports[reportIndex].driveWebContentLink = driveResult.webContentLink;
+        await db.set('service_reports', serviceReports);
+      } catch (driveError) {
+        console.error('Google Drive PDF upload error (non-blocking):', driveError.message);
+      }
+
+      // Auto-add to client's Files section (triggers download availability in client portal)
+      try {
+        const users = (await db.get('users')) || [];
+        const clientFacility = (completedReport.clientFacilityName || '').toLowerCase();
+        const reportCompanyId = completedReport.hubspotCompanyId || '';
+
+        const client = users.find(u => {
+          if (u.role !== config.ROLES.CLIENT) return false;
+          if (reportCompanyId && u.hubspotCompanyId && String(u.hubspotCompanyId) === String(reportCompanyId)) return true;
+          if (clientFacility && u.practiceName?.toLowerCase() === clientFacility) return true;
+          if (clientFacility && u.name?.toLowerCase() === clientFacility) return true;
+          return false;
+        });
+
+        if (client && client.slug) {
+          const clientDocuments = (await db.get('client_documents')) || [];
+          const alreadyAdded = clientDocuments.some(d => d.serviceReportId === completedReport.id);
+          if (!alreadyAdded) {
+            const docDate = new Date(completedReport.serviceCompletionDate || completedReport.createdAt).toLocaleDateString();
+            clientDocuments.push({
+              id: uuidv4(),
+              slug: client.slug,
+              title: `Validation Report - ${docDate}`,
+              description: `${allSegments.length}-day validation (${allSegments.filter(s => !s.phase || s.phase === 'onsite').length} on-site, ${offsiteSegments.length} off-site) · ${completedReport.technicianName || req.user.name}`,
+              category: 'Service Reports',
+              serviceReportId: completedReport.id,
+              serviceType: 'Validations',
+              driveWebViewLink: serviceReports[reportIndex].driveWebViewLink || null,
+              driveWebContentLink: serviceReports[reportIndex].driveWebContentLink || null,
+              createdAt: new Date().toISOString(),
+              uploadedBy: 'system',
+              uploadedByName: 'Thrive 365 Labs'
+            });
+            await db.set('client_documents', clientDocuments);
+          }
+        }
+      } catch (clientDocError) {
+        console.error('Client document auto-add error (non-blocking):', clientDocError.message);
+      }
+    } catch (pdfError) {
+      console.error('PDF generation error (non-blocking):', pdfError.message);
+    }
+
+    res.json(serviceReports[reportIndex]);
+  } catch (error) {
+    console.error('Submit validation error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });

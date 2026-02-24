@@ -796,6 +796,40 @@
       const groupedByPhase = organizeTasksByPhaseAndStage(tasks, PHASE_ORDER, dynamicPhases);
 
       const ValidationProgressCard = () => {
+        const renderSegmentCard = (seg, dayLabel) => (
+          <div key={`${seg.phase || 'onsite'}-${seg.day}`} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+            <div className="flex items-center gap-2 mb-2">
+              <div className={`w-5 h-5 rounded-full flex items-center justify-center text-white text-xs ${seg.status === 'complete' ? 'bg-green-500' : 'bg-yellow-400'}`}>
+                {seg.status === 'complete' ? '✓' : '…'}
+              </div>
+              <span className="font-medium text-gray-900 text-sm">
+                {dayLabel}{seg.date ? ` — ${new Date(seg.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}` : ''}
+              </span>
+            </div>
+            {seg.testsPerformed && (
+              <div className="mb-1"><span className="text-xs font-medium text-gray-500">Tests Performed:</span> <span className="text-sm text-gray-700">{seg.testsPerformed}</span></div>
+            )}
+            {seg.results && (
+              <div className="mb-1"><span className="text-xs font-medium text-gray-500">Results/Readings:</span> <span className="text-sm text-gray-700">{seg.results}</span></div>
+            )}
+            <div className="mb-1">
+              <span className="text-xs font-medium text-gray-500">Training Completed:</span>{' '}
+              <span className={`text-sm font-medium ${seg.trainingCompleted === true || seg.trainingCompleted === 'Yes' ? 'text-green-600' : 'text-red-500'}`}>
+                {seg.trainingCompleted === true || seg.trainingCompleted === 'Yes' ? 'Yes' : 'No'}
+              </span>
+              {(seg.trainingCompleted === false || seg.trainingCompleted === 'No') && seg.trainingReason && (
+                <span className="text-sm text-gray-600 ml-1">— {seg.trainingReason}</span>
+              )}
+            </div>
+            {(seg.outstandingIssues || seg.observations) && (
+              <div className="mb-1"><span className="text-xs font-medium text-gray-500">Outstanding Issues/Items:</span> <span className="text-sm text-gray-700">{seg.outstandingIssues || seg.observations}</span></div>
+            )}
+            {seg.finalRecommendations && (
+              <div><span className="text-xs font-medium text-gray-500">Final Recommendations:</span> <span className="text-sm text-gray-700">{seg.finalRecommendations}</span></div>
+            )}
+          </div>
+        );
+
         return (
           <div className="space-y-4 mb-8">
             {validationProgress.length === 0 ? (
@@ -819,64 +853,100 @@
             ) : null}
             {validationProgress.map(v => {
               const isScheduled = v.status === 'assigned';
-              const daysLogged = v.daysLogged || 0;
+              const isOnsiteSubmitted = v.status === 'onsite_submitted';
+              const isSubmitted = v.status === 'submitted';
+              const onsiteDays = v.onsiteDaysLogged || 0;
+              const offsiteDays = v.offsiteDaysLogged || 0;
+              const totalDaysLogged = (onsiteDays + offsiteDays) || v.daysLogged || 0;
               const expected = v.expectedDays;
-              const progressPct = expected ? Math.min(100, Math.round((daysLogged / expected) * 100)) : null;
+              const onsiteSegs = (v.segments || []).filter(s => !s.phase || s.phase === 'onsite');
+              const offsiteSegs = (v.segments || []).filter(s => s.phase === 'offsite');
               const scheduledStart = v.validationStartDate
                 ? new Date(v.validationStartDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
                 : null;
+              const reportDocUrl = v.reportDocumentUrl || v.validationReportDocumentUrl;
+
+              const headerClass = isSubmitted
+                ? 'bg-gradient-to-r from-green-600 to-green-700'
+                : isScheduled
+                  ? 'bg-gradient-to-r from-amber-500 to-amber-600'
+                  : 'bg-gradient-to-r from-blue-600 to-blue-700';
+              const borderClass = isSubmitted ? 'border-green-200' : isScheduled ? 'border-amber-200' : 'border-blue-200';
+              const statusTitle = isSubmitted ? 'Validation Complete' : isScheduled ? 'Validation Scheduled' : 'Active Validation';
+              const statusBadge = isSubmitted ? 'Complete' : isOnsiteSubmitted ? 'On-Site Complete' : isScheduled ? 'Scheduled' : 'In Progress';
+
               return (
-                <div key={v.id} className={`bg-white rounded-xl shadow-sm border-2 ${isScheduled ? 'border-amber-200' : 'border-blue-200'} overflow-hidden`}>
-                  <div className={`${isScheduled ? 'bg-gradient-to-r from-amber-500 to-amber-600' : 'bg-gradient-to-r from-blue-600 to-blue-700'} p-4 text-white`}>
+                <div key={v.id} className={`bg-white rounded-xl shadow-sm border-2 ${borderClass} overflow-hidden`}>
+                  <div className={`${headerClass} p-4 text-white`}>
                     <div className="flex items-center justify-between">
                       <div>
                         <h3 className="font-bold text-lg flex items-center gap-2">
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082"/></svg>
-                          {isScheduled ? 'Validation Scheduled' : 'Active Validation'}
+                          {statusTitle}
                         </h3>
-                        <p className={`${isScheduled ? 'text-amber-100' : 'text-blue-100'} text-sm mt-1`}>
+                        <p className="text-sm mt-1 opacity-80">
                           {v.analyzerModel || 'Biolis AU480'} {v.analyzerSerialNumber ? `· ${v.analyzerSerialNumber}` : ''}
                           {v.technicianName ? ` · Technician: ${v.technicianName}` : ''}
                         </p>
                       </div>
-                      {isScheduled ? (
-                        <div className="text-right">
-                          <div className="text-xs px-2 py-1 rounded-full font-medium bg-amber-400/30">Scheduled</div>
-                          {scheduledStart && <div className="text-xs text-amber-100 mt-1">{scheduledStart}</div>}
-                        </div>
-                      ) : (
-                        <div className="text-right">
-                          <div className="text-2xl font-bold">{daysLogged}</div>
-                          <div className="text-xs text-blue-100">day{daysLogged !== 1 ? 's' : ''} logged</div>
-                        </div>
-                      )}
+                      <div className="text-right">
+                        <div className="text-xs px-2 py-1 rounded-full font-medium bg-white/20">{statusBadge}</div>
+                        {isScheduled && scheduledStart && <div className="text-xs opacity-80 mt-1">{scheduledStart}</div>}
+                        {!isScheduled && (
+                          <>
+                            <div className="text-2xl font-bold mt-1">{totalDaysLogged}</div>
+                            <div className="text-xs opacity-80">day{totalDaysLogged !== 1 ? 's' : ''} logged</div>
+                          </>
+                        )}
+                      </div>
                     </div>
-                    {!isScheduled && expected && progressPct !== null && (
+                    {!isScheduled && !isSubmitted && expected && (
                       <div className="mt-3">
                         <div className="w-full bg-white/20 rounded-full h-2 overflow-hidden">
-                          <div className={`h-full rounded-full transition-all duration-500 ${progressPct >= 100 ? 'bg-green-300' : 'bg-white'}`} style={{ width: `${progressPct}%` }} />
+                          <div className="h-full rounded-full transition-all duration-500 bg-white" style={{ width: `${Math.min(100, Math.round((totalDaysLogged / expected) * 100))}%` }} />
                         </div>
-                        <p className="text-xs text-blue-100 mt-1">{daysLogged} of {expected} expected days · {progressPct}%</p>
+                        <p className="text-xs opacity-80 mt-1">{totalDaysLogged} of {expected} expected days</p>
                       </div>
                     )}
                     {isScheduled && expected && (
                       <div className="mt-2">
-                        <p className="text-xs text-amber-100">{expected} day{expected !== 1 ? 's' : ''} planned · Validation not yet started</p>
+                        <p className="text-xs opacity-80">{expected} day{expected !== 1 ? 's' : ''} planned · Validation not yet started</p>
+                      </div>
+                    )}
+                    {isOnsiteSubmitted && (
+                      <div className="mt-3 flex items-center gap-3 flex-wrap">
+                        <div className="flex items-center gap-1.5 bg-green-500/30 rounded-full px-2 py-0.5">
+                          <div className="w-1.5 h-1.5 rounded-full bg-green-300"></div>
+                          <span className="text-xs text-white font-medium">On-Site Complete ({onsiteDays} day{onsiteDays !== 1 ? 's' : ''})</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 bg-blue-500/30 rounded-full px-2 py-0.5">
+                          <div className="w-1.5 h-1.5 rounded-full bg-yellow-300 animate-pulse"></div>
+                          <span className="text-xs text-white font-medium">Off-Site In Progress ({offsiteDays} day{offsiteDays !== 1 ? 's' : ''})</span>
+                        </div>
                       </div>
                     )}
                   </div>
                   <div className="p-4">
+                    {isScheduled && (
+                      <p className="text-sm text-gray-500 text-center py-2">
+                        Your technician has been assigned. Daily validation progress will appear here once work begins.
+                      </p>
+                    )}
                     {!isScheduled && (
                       <>
-                        <div className="flex items-center gap-2 mb-3">
-                          {(v.segments || []).map((s, i) => (
-                            <div key={i} className={`w-3 h-3 rounded-full ${s.status === 'complete' ? 'bg-green-500' : 'bg-yellow-400'}`} title={`Day ${s.day}: ${s.status}`}></div>
+                        <div className="flex items-center gap-2 mb-3 flex-wrap">
+                          {onsiteSegs.map((s, i) => (
+                            <div key={`on-${i}`} className={`w-3 h-3 rounded-full ${s.status === 'complete' ? 'bg-green-500' : 'bg-yellow-400'}`} title={`On-Site Day ${s.day || i + 1}: ${s.status}`}></div>
                           ))}
-                          {expected && Array.from({ length: Math.max(0, expected - daysLogged) }).map((_, i) => (
+                          {offsiteSegs.length > 0 && <div className="w-px h-3 bg-gray-300 mx-0.5"></div>}
+                          {offsiteSegs.map((s, i) => (
+                            <div key={`off-${i}`} className={`w-3 h-3 rounded-full border-2 border-blue-400 ${s.status === 'complete' ? 'bg-blue-500' : 'bg-blue-200'}`} title={`Off-Site Day ${s.day || i + 1}: ${s.status}`}></div>
+                          ))}
+                          {expected && totalDaysLogged < expected && Array.from({ length: Math.max(0, expected - totalDaysLogged) }).map((_, i) => (
                             <div key={`pending-${i}`} className="w-3 h-3 rounded-full bg-gray-200" title="Pending"></div>
                           ))}
                         </div>
-                        {daysLogged > 0 && (
+                        {(onsiteSegs.length > 0 || offsiteSegs.length > 0) && (
                           <button
                             onClick={() => setShowValidationDetails(!showValidationDetails)}
                             className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1 mb-2"
@@ -886,46 +956,54 @@
                           </button>
                         )}
                         {showValidationDetails && (
-                          <div className="mt-1 space-y-3">
-                            {(v.segments || []).map(seg => (
-                              <div key={seg.day} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                          <div className="mt-1 space-y-4">
+                            {onsiteSegs.length > 0 && (
+                              <div>
                                 <div className="flex items-center gap-2 mb-2">
-                                  <div className={`w-5 h-5 rounded-full flex items-center justify-center text-white text-xs ${seg.status === 'complete' ? 'bg-green-500' : 'bg-yellow-400'}`}>
-                                    {seg.status === 'complete' ? '✓' : '...'}
-                                  </div>
-                                  <span className="font-medium text-gray-900 text-sm">Day {seg.day} — {seg.date ? new Date(seg.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ''}</span>
+                                  <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                                  <span className="text-xs font-semibold text-green-700 uppercase tracking-wide">On-Site Days</span>
                                 </div>
-                                {seg.testsPerformed && (
-                                  <div className="mb-1"><span className="text-xs font-medium text-gray-500">Tests:</span> <span className="text-sm text-gray-700">{seg.testsPerformed}</span></div>
-                                )}
-                                {seg.results && (
-                                  <div className="mb-1"><span className="text-xs font-medium text-gray-500">Results:</span> <span className="text-sm text-gray-700">{seg.results}</span></div>
-                                )}
-                                {seg.observations && (
-                                  <div><span className="text-xs font-medium text-gray-500">Notes:</span> <span className="text-sm text-gray-700">{seg.observations}</span></div>
-                                )}
+                                <div className="space-y-2">
+                                  {onsiteSegs.map((seg, idx) => renderSegmentCard(seg, `On-Site Day ${seg.day || idx + 1}`))}
+                                </div>
                               </div>
-                            ))}
-                            {expected && daysLogged < expected && (
+                            )}
+                            {offsiteSegs.length > 0 && (
+                              <div>
+                                <div className="flex items-center gap-2 mb-2">
+                                  <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                                  <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Off-Site Days</span>
+                                </div>
+                                <div className="space-y-2">
+                                  {offsiteSegs.map((seg, idx) => renderSegmentCard(seg, `Off-Site Day ${seg.day || idx + 1}`))}
+                                </div>
+                              </div>
+                            )}
+                            {expected && totalDaysLogged < expected && (
                               <div className="bg-gray-50 rounded-lg p-3 border border-dashed border-gray-300 text-center text-sm text-gray-400">
-                                {expected - daysLogged} more day{expected - daysLogged > 1 ? 's' : ''} remaining
+                                {expected - totalDaysLogged} more day{expected - totalDaysLogged > 1 ? 's' : ''} remaining
                               </div>
                             )}
                           </div>
                         )}
-                        <button
-                          onClick={() => onNavigate && onNavigate('files')}
-                          className="mt-3 text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
-                          View Onsite Report →
-                        </button>
+                        {isSubmitted && reportDocUrl && (
+                          <a
+                            href={reportDocUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-3 inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+                            Download Validation Report
+                          </a>
+                        )}
+                        {isSubmitted && !reportDocUrl && (
+                          <p className="mt-3 text-sm text-green-700 font-medium flex items-center gap-2">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            Validation report complete
+                          </p>
+                        )}
                       </>
-                    )}
-                    {isScheduled && (
-                      <p className="text-sm text-gray-500 text-center py-2">
-                        Your technician has been assigned. Daily validation progress will appear here once work begins.
-                      </p>
                     )}
                   </div>
                 </div>

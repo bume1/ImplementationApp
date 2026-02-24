@@ -291,6 +291,27 @@ const api = {
       headers: { 'Authorization': `Bearer ${token}` }
     }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
+  completeOnsiteValidation: (token, reportId, data) =>
+    fetch(`${API_URL}/api/service-reports/${reportId}/complete-onsite`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  addOffsiteSegment: (token, reportId, data) =>
+    fetch(`${API_URL}/api/service-reports/${reportId}/offsite-segment`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  submitValidationReport: (token, reportId, formData) =>
+    fetch(`${API_URL}/api/service-reports/${reportId}/submit-validation`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
   getTeamMembers: (token, projectId = null) =>
     fetch(`${API_URL}/api/team-members${projectId ? `?projectId=${projectId}` : ''}`, {
       headers: { 'Authorization': `Bearer ${token}` }
@@ -4975,19 +4996,26 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                         <div className="p-4 space-y-3">
                           {activeValidations.length > 0 ? activeValidations.map(v => {
                             const isScheduled = v.status === 'assigned';
-                            const daysLogged = v.daysLogged || 0;
+                            const isOnsiteSubmitted = v.status === 'onsite_submitted';
+                            const onsiteDays = v.onsiteDaysLogged || 0;
+                            const offsiteDays = v.offsiteDaysLogged || 0;
+                            const daysLogged = (onsiteDays + offsiteDays) || v.daysLogged || 0;
                             const expected = v.expectedDays;
                             const pct = expected ? Math.min(100, Math.round((daysLogged / expected) * 100)) : null;
                             const scheduledStart = v.validationStartDate
                               ? new Date(v.validationStartDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
                               : null;
+                            const onsiteSegsAll = (v.segments || []).filter(s => !s.phase || s.phase === 'onsite');
+                            const offsiteSegsAll = (v.segments || []).filter(s => s.phase === 'offsite');
                             return (
-                              <div key={v.id} className={`border rounded-lg p-3 transition ${isScheduled ? 'bg-amber-50 border-amber-200' : 'hover:bg-gray-50'}`}>
+                              <div key={v.id} className={`border rounded-lg p-3 transition ${isScheduled ? 'bg-amber-50 border-amber-200' : isOnsiteSubmitted ? 'bg-blue-50 border-blue-200' : 'hover:bg-gray-50'}`}>
                                 <div className="flex items-center justify-between">
                                   <div>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 flex-wrap">
                                       <p className="font-medium text-gray-900">{v.analyzerModel || 'Biolis AU480'} {v.analyzerSerialNumber ? `(${v.analyzerSerialNumber})` : ''}</p>
                                       {isScheduled && <span className="text-xs px-1.5 py-0.5 rounded bg-amber-200 text-amber-800 font-medium">Scheduled</span>}
+                                      {isOnsiteSubmitted && <span className="text-xs px-1.5 py-0.5 rounded bg-green-200 text-green-800 font-medium">On-Site Complete</span>}
+                                      {isOnsiteSubmitted && <span className="text-xs px-1.5 py-0.5 rounded bg-blue-200 text-blue-800 font-medium animate-pulse">Off-Site In Progress</span>}
                                     </div>
                                     {isScheduled ? (
                                       <p className="text-sm text-gray-500">
@@ -4995,14 +5023,22 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                         {scheduledStart ? ` · Starts ${scheduledStart}` : ''}
                                         {expected ? ` · ${expected} day${expected !== 1 ? 's' : ''} planned` : ''}
                                       </p>
+                                    ) : isOnsiteSubmitted ? (
+                                      <p className="text-sm text-gray-600">
+                                        Technician: {v.technicianName || '—'} · On-Site: {onsiteDays} day{onsiteDays !== 1 ? 's' : ''} · Off-Site: {offsiteDays} day{offsiteDays !== 1 ? 's' : ''}
+                                      </p>
                                     ) : (
                                       <p className="text-sm text-gray-600">Technician: {v.technicianName || '—'} · {daysLogged} day{daysLogged !== 1 ? 's' : ''} logged</p>
                                     )}
                                   </div>
                                   {!isScheduled && (
-                                    <div className="flex items-center gap-1">
-                                      {(v.segments || []).map((s, i) => (
-                                        <div key={i} className={`w-2.5 h-2.5 rounded-full ${s.status === 'complete' ? 'bg-green-500' : 'bg-yellow-400'}`} title={`Day ${s.day}`}></div>
+                                    <div className="flex items-center gap-1 flex-wrap">
+                                      {onsiteSegsAll.map((s, i) => (
+                                        <div key={`on-${i}`} className={`w-2.5 h-2.5 rounded-full ${s.status === 'complete' ? 'bg-green-500' : 'bg-yellow-400'}`} title={`On-Site Day ${s.day || i + 1}`}></div>
+                                      ))}
+                                      {offsiteSegsAll.length > 0 && <div className="w-px h-2.5 bg-gray-400 mx-0.5"></div>}
+                                      {offsiteSegsAll.map((s, i) => (
+                                        <div key={`off-${i}`} className={`w-2.5 h-2.5 rounded-full border border-blue-400 ${s.status === 'complete' ? 'bg-blue-500' : 'bg-blue-200'}`} title={`Off-Site Day ${s.day || i + 1}`}></div>
                                       ))}
                                     </div>
                                   )}
@@ -5018,16 +5054,39 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                 {!isScheduled && (v.segments || []).length > 0 && (
                                   <details className="mt-2">
                                     <summary className="text-xs text-blue-600 cursor-pointer hover:text-blue-800 font-medium">View daily log</summary>
-                                    <div className="mt-2 space-y-2">
-                                      {(v.segments || []).map(seg => (
-                                        <div key={seg.day} className="bg-gray-50 rounded p-2 text-xs">
-                                          <span className="font-medium text-gray-900">Day {seg.day}</span>
-                                          <span className="text-gray-500 ml-2">{seg.date ? new Date(seg.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ''}</span>
-                                          {seg.testsPerformed && <p className="text-gray-700 mt-1"><span className="text-gray-500">Tests:</span> {seg.testsPerformed}</p>}
-                                          {seg.results && <p className="text-gray-700"><span className="text-gray-500">Results:</span> {seg.results}</p>}
-                                          {seg.observations && <p className="text-gray-700"><span className="text-gray-500">Notes:</span> {seg.observations}</p>}
-                                        </div>
-                                      ))}
+                                    <div className="mt-2 space-y-3">
+                                      {(() => {
+                                        const segs = v.segments || [];
+                                        const onsiteSegs = segs.filter(s => !s.phase || s.phase === 'onsite');
+                                        const offsiteSegs = segs.filter(s => s.phase === 'offsite');
+                                        const renderSeg = (seg) => (
+                                          <div key={`${seg.phase}-${seg.day}`} className="bg-gray-50 rounded p-2 text-xs">
+                                            <span className="font-medium text-gray-900">Day {seg.day}</span>
+                                            <span className="text-gray-500 ml-2">{seg.date ? new Date(seg.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ''}</span>
+                                            {seg.testsPerformed && <p className="text-gray-700 mt-1"><span className="text-gray-500">Tests:</span> {seg.testsPerformed}</p>}
+                                            {seg.results && <p className="text-gray-700"><span className="text-gray-500">Results:</span> {seg.results}</p>}
+                                            {seg.trainingCompleted !== undefined && <p className="text-gray-700"><span className="text-gray-500">Training:</span> {seg.trainingCompleted ? 'Yes' : `No${seg.trainingReason ? ` — ${seg.trainingReason}` : ''}`}</p>}
+                                            {(seg.outstandingIssues || seg.observations) && <p className="text-gray-700"><span className="text-gray-500">Outstanding Issues:</span> {seg.outstandingIssues || seg.observations}</p>}
+                                            {seg.finalRecommendations && <p className="text-gray-700"><span className="text-gray-500">Recommendations:</span> {seg.finalRecommendations}</p>}
+                                          </div>
+                                        );
+                                        return (
+                                          <>
+                                            {onsiteSegs.length > 0 && (
+                                              <div>
+                                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">On-Site Days</p>
+                                                <div className="space-y-1">{onsiteSegs.map(renderSeg)}</div>
+                                              </div>
+                                            )}
+                                            {offsiteSegs.length > 0 && (
+                                              <div>
+                                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 mt-2">Off-Site Days</p>
+                                                <div className="space-y-1">{offsiteSegs.map(renderSeg)}</div>
+                                              </div>
+                                            )}
+                                          </>
+                                        );
+                                      })()}
                                     </div>
                                   </details>
                                 )}
