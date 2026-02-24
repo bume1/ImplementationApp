@@ -57,7 +57,7 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect, useLayoutEffect, useRef } = React;
+    const { useState, useEffect, useRef } = React;
 
     const API_URL = window.location.origin;
 
@@ -933,12 +933,13 @@
       const [hasSignature, setHasSignature] = useState(!!initialValue);
       const hasDrawnRef = useRef(false);
 
-      useLayoutEffect(() => {
+      useEffect(() => {
         if (initialValue && canvasRef.current) {
-          const ctx = canvasRef.current.getContext('2d');
+          const canvas = canvasRef.current;
+          const ctx = canvas.getContext('2d');
           const img = new Image();
           img.onload = () => {
-            ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.drawImage(img, 0, 0);
           };
           img.src = initialValue;
