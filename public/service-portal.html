@@ -4530,15 +4530,17 @@
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Planned Visit Date</label>
-                  <input
-                    type="date"
-                    value={formData.plannedVisitDate}
-                    onChange={(e) => setFormData({...formData, plannedVisitDate: e.target.value})}
-                    className="input-modern w-full px-4 py-3"
-                  />
-                </div>
+                {formData.serviceType !== 'Validations' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Planned Visit Date</label>
+                    <input
+                      type="date"
+                      value={formData.plannedVisitDate}
+                      onChange={(e) => setFormData({...formData, plannedVisitDate: e.target.value})}
+                      className="input-modern w-full px-4 py-3"
+                    />
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Analyzer Model</label>
                   <input
