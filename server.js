@@ -8415,13 +8415,13 @@ app.get('/api/service-reports', authenticateToken, requireServiceAccess, async (
 
     if (dateFrom) {
       serviceReports = serviceReports.filter(r =>
-        new Date(r.serviceCompletionDate || r.createdAt) >= new Date(dateFrom)
+        new Date(r.serviceCompletionDate || r.plannedVisitDate || r.createdAt) >= new Date(dateFrom)
       );
     }
 
     if (dateTo) {
       serviceReports = serviceReports.filter(r =>
-        new Date(r.serviceCompletionDate || r.createdAt) <= new Date(dateTo)
+        new Date(r.serviceCompletionDate || r.plannedVisitDate || r.createdAt) <= new Date(dateTo)
       );
     }
 
@@ -8494,13 +8494,14 @@ app.get('/api/service-reports/active-validations', authenticateToken, requireSer
   try {
     const serviceReports = (await db.get('service_reports')) || [];
     const activeValidations = serviceReports.filter(r => {
-      // Show Validations-type reports that are actively in progress
-      // (includes assigned/in_progress with validation dates, not just validation_in_progress)
+      // Show Validations-type reports that are in-progress, assigned, or awaiting finalization
       const isValidationType = r.serviceType === 'Validations';
       const hasValidationStatus = r.status === 'validation_in_progress';
       const hasValidationDates = r.validationStartDate || r.validationEndDate;
       const isActiveStatus = ['assigned', 'in_progress', 'validation_in_progress'].includes(r.status);
-      if (!((hasValidationStatus) || (isValidationType && hasValidationDates && isActiveStatus))) return false;
+      // Also include signature_needed validations (submitted but not yet finalized)
+      const isAwaitingFinalization = isValidationType && r.status === 'signature_needed';
+      if (!((hasValidationStatus) || (isValidationType && hasValidationDates && isActiveStatus) || isAwaitingFinalization)) return false;
       // Show to admin and managers, or to the technician who owns it
       if (req.user.role === config.ROLES.ADMIN || req.user.isManager) return true;
       return String(r.technicianId) === String(req.user.id) ||
@@ -8766,7 +8767,7 @@ app.get('/api/hubspot/ticket/:ticketId/map-to-service-report', authenticateToken
       hubspotTicketNumber: ticket.id,
       hubspotCompanyId: ticket.companyId || '',
       managerNotes: tempReport.managerNotes,
-      serviceCompletionDate: new Date().toISOString().split('T')[0], // Today's date
+      plannedVisitDate: '', // Manager sets the planned visit date
 
       // Additional info
       hubspotOwnerNotMatched: ticket.ownerId && !assignedToId,
@@ -8805,6 +8806,7 @@ app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
       managerNotes,
       photos,
       clientFiles,
+      plannedVisitDate,
       serviceCompletionDate,
       validationStartDate,
       validationEndDate,
@@ -8854,7 +8856,8 @@ app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
       hubspotTicketNumber: hubspotTicketNumber || '',
       hubspotCompanyId: hubspotCompanyId || '',
       hubspotDealId: hubspotDealId || '',
-      serviceCompletionDate: serviceCompletionDate || '',
+      plannedVisitDate: plannedVisitDate || serviceCompletionDate || '', // Scheduled/planned visit date (set by manager)
+      serviceCompletionDate: '', // Blank until service is actually completed
       // Manager-only fields
       managerNotes: managerNotes || '',
       photos: photos || [], // Array of { id, url, name, uploadedAt }
