@@ -65,33 +65,47 @@
     // Helper function to handle fetch responses properly
     const handleResponse = async (response) => {
       if (!response.ok) {
-        // Auto-redirect to login on auth failure (expired/invalid token)
-        if (response.status === 401 || response.status === 403) {
-          try {
-            const errData = await response.clone().json();
-            if (errData.error === 'Invalid token' || errData.error === 'User not found' || response.status === 401) {
-              localStorage.removeItem('portal_token');
-              localStorage.removeItem('portal_user');
-              localStorage.removeItem('unified_token');
-              localStorage.removeItem('unified_user');
-              window.location.href = '/';
-              throw new Error('Session expired. Redirecting to login...');
-            }
-          } catch (redirectErr) {
-            if (redirectErr.message.includes('Session expired')) throw redirectErr;
-          }
-        }
-        // Try to parse error message from response
+        let errorData;
         try {
-          const errorData = await response.json();
-          throw new Error(errorData.error || `HTTP error ${response.status}`);
-        } catch (e) {
-          if (e.message.includes('Session expired')) throw e;
-          // If parsing fails, throw generic error
-          throw new Error(`HTTP error ${response.status}`);
+          errorData = await response.json();
+        } catch (_) {
+          // Response body not valid JSON
         }
+
+        // Auto-redirect to login on auth failure (expired/invalid token)
+        if (response.status === 401 || (response.status === 403 &&
+            (errorData?.error === 'Invalid token' || errorData?.error === 'User not found'))) {
+          localStorage.removeItem('portal_token');
+          localStorage.removeItem('portal_user');
+          localStorage.removeItem('unified_token');
+          localStorage.removeItem('unified_user');
+          localStorage.removeItem('admin_token');
+          localStorage.removeItem('admin_user');
+          window.location.href = '/login';
+          throw new Error('Session expired. Redirecting to login...');
+        }
+
+        throw new Error(errorData?.error || `HTTP error ${response.status}`);
       }
       return response.json();
+    };
+
+    // Helper to download a PDF via Authorization header instead of token in URL
+    const openPdfSecurely = async (url, token) => {
+      try {
+        const response = await fetch(url, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        window.open(blobUrl, '_blank');
+        // Revoke after a delay to allow the browser to load it
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+      } catch (err) {
+        console.error('PDF download failed:', err);
+        alert('Failed to download PDF. Please try again.');
+      }
     };
 
     const api = {
@@ -116,11 +130,18 @@
       getPortalSettings: () =>
         fetch(`${API_URL}/api/portal-settings`).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
-      getAnnouncements: () =>
-        fetch(`${API_URL}/api/announcements`).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+      getAnnouncements: (token) =>
+        fetch(`${API_URL}/api/announcements`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
       getClientDocuments: (slug, token) =>
         fetch(`${API_URL}/api/client-documents/${slug}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+      getValidationProgress: (token) =>
+        fetch(`${API_URL}/api/client-portal/validation-progress`, {
           headers: { 'Authorization': `Bearer ${token}` }
         }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' }))
     };
@@ -164,8 +185,8 @@
             <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full opacity-10" style={{background: 'radial-gradient(circle, #00205A 0%, transparent 70%)'}}></div>
           </div>
 
-          <div className="glass-card p-8 rounded-2xl shadow-xl w-full max-w-md animate-fade-in relative border border-white/50">
-            <div className="text-center mb-8">
+          <div className="glass-card p-5 sm:p-8 rounded-2xl shadow-xl w-full max-w-md animate-fade-in relative border border-white/50">
+            <div className="text-center mb-6 sm:mb-8">
               <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-12 mx-auto mb-4" />
               <h1 className="text-xl font-semibold text-gray-900">Client Portal</h1>
               <p className="text-gray-500 mt-1 text-sm">Sign in to access your portal</p>
@@ -438,6 +459,13 @@
             </nav>
             
             <div className="absolute bottom-0 left-0 right-0 p-4 border-t space-y-2">
+              <button
+                onClick={() => { window.location.href = '/knowledge'; }}
+                className="w-full text-left px-4 py-2 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg flex items-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/></svg>
+                <span>Knowledge Hub</span>
+              </button>
               {isAdmin && (
                 <button
                   onClick={() => { window.location.href = '/'; }}
@@ -453,7 +481,9 @@
                   localStorage.removeItem('portal_user');
                   localStorage.removeItem('unified_token');
                   localStorage.removeItem('unified_user');
-                  window.location.href = '/';
+                  localStorage.removeItem('admin_token');
+                  localStorage.removeItem('admin_user');
+                  window.location.href = '/login';
                 }}
                 className="w-full text-left px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2"
               >
@@ -550,7 +580,7 @@
             </h2>
               {data?.activities && data.activities.length > 0 ? (
                 <div className="space-y-2">
-                  {data.activities.slice(0, 5).map((act, idx) => {
+                  {data.activities.slice(0, 10).map((act, idx) => {
                     const getIcon = () => {
                       if (act.action === 'inventory_submitted') return { icon: Icons.clipboard, color: 'text-blue-500' };
                       if (act.action === 'hubspot_file_upload') return { icon: Icons.folder, color: 'text-green-500' };
@@ -559,17 +589,29 @@
                       if (act.action === 'phase_completed') return { icon: Icons.target, color: 'text-yellow-500' };
                       if (act.action === 'stage_completed') return { icon: Icons.target, color: 'text-orange-500' };
                       if (act.action === 'task_completed') return { icon: Icons.target, color: 'text-green-500' };
+                      if (act.action === 'document_added') return { icon: Icons.folder, color: 'text-primary' };
+                      if (act.action === 'service_report_client_signed') return { icon: Icons.check, color: 'text-green-600' };
+                      if (act.action === 'service_report_created') return { icon: Icons.clipboard, color: 'text-blue-600' };
+                      if (act.action === 'service_report_completed') return { icon: Icons.check, color: 'text-green-600' };
+                      if (act.action === 'service_report_pending_signature') return { icon: Icons.warning, color: 'text-orange-500' };
+                      if (act.action === 'inventory_submissions_deleted') return { icon: Icons.clipboard, color: 'text-red-500' };
                       return { icon: Icons.activity, color: 'text-gray-500' };
                     };
                     const getLabel = () => {
                       if (act.action === 'inventory_submitted') return `Inventory submitted (${act.details?.itemCount || 0} items)`;
-                      if (act.action === 'hubspot_file_upload') return `File uploaded: ${act.details || 'Document'}`;
+                      if (act.action === 'hubspot_file_upload') return `File uploaded: ${typeof act.details === 'string' ? act.details : 'Document'}`;
                       if (act.action === 'support_ticket_submitted') return 'Support ticket submitted';
                       if (act.action === 'form_submitted') return `Form submitted: ${act.formType || 'Unknown'}`;
                       if (act.action === 'phase_completed') return `Phase completed: ${act.details?.phase || ''}`;
                       if (act.action === 'stage_completed') return `Stage completed: ${act.details?.stage || ''}`;
                       if (act.action === 'task_completed') return act.details?.taskTitle || 'Task completed';
-                      return act.details || 'Activity recorded';
+                      if (act.action === 'document_added') return `New document: ${act.details?.documentTitle || 'File shared'}`;
+                      if (act.action === 'service_report_client_signed') return `Service report signed: ${act.details?.serviceType || 'Report'}`;
+                      if (act.action === 'service_report_created') return `New service report: ${act.details?.serviceType || 'Service'} - ${act.details?.clientName || ''}`;
+                      if (act.action === 'service_report_completed') return `Service report completed: ${act.details?.serviceType || 'Report'}`;
+                      if (act.action === 'service_report_pending_signature') return `Service report requires your signature`;
+                      if (act.action === 'inventory_submissions_deleted') return `Inventory submissions removed`;
+                      return typeof act.details === 'string' ? act.details : 'Activity recorded';
                     };
                     const { icon, color } = getIcon();
                     return (
@@ -590,19 +632,19 @@
             )}
           </div>
 
-          <div className="grid md:grid-cols-3 gap-4">
-            <button onClick={() => onNavigate('inventory')} className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center cursor-pointer w-full">
-              <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.package, { className: 'w-10 h-10' })}</div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <button onClick={() => onNavigate('inventory')} className="bg-white p-4 sm:p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center cursor-pointer w-full">
+              <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.package, { className: 'w-8 h-8 sm:w-10 sm:h-10' })}</div>
               <h3 className="font-semibold text-gray-800">Inventory Management</h3>
               <p className="text-sm text-gray-500 mt-1">Submit inventory requests</p>
             </button>
-            <button onClick={() => onNavigate('support')} className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center cursor-pointer w-full">
-              <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.chat, { className: 'w-10 h-10' })}</div>
+            <button onClick={() => onNavigate('support')} className="bg-white p-4 sm:p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center cursor-pointer w-full">
+              <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.chat, { className: 'w-8 h-8 sm:w-10 sm:h-10' })}</div>
               <h3 className="font-semibold text-gray-800">Customer Support</h3>
               <p className="text-sm text-gray-500 mt-1">Get help from our team</p>
             </button>
-            <button onClick={() => onNavigate('files')} className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center cursor-pointer w-full">
-              <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.folder, { className: 'w-10 h-10' })}</div>
+            <button onClick={() => onNavigate('files')} className="bg-white p-4 sm:p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow text-center cursor-pointer w-full">
+              <div className="flex justify-center mb-2 text-primary">{React.cloneElement(Icons.folder, { className: 'w-8 h-8 sm:w-10 sm:h-10' })}</div>
               <h3 className="font-semibold text-gray-800">Files</h3>
               <p className="text-sm text-gray-500 mt-1">Upload and view documents</p>
             </button>
@@ -611,12 +653,41 @@
       );
     };
     
-    const MilestonesPage = ({ data, onNavigate }) => {
+    const MilestonesPage = ({ data, onNavigate, token, currentUser }) => {
       const project = data?.projects?.[0];
       const allTasks = project?.tasks || [];
       const tasks = allTasks.filter(t => t.showToClient !== false);
       const [viewType, setViewType] = useState('list');
-      
+      const [validationProgress, setValidationProgress] = useState([]);
+      const [showValidationDetails, setShowValidationDetails] = useState(false);
+      const [collapsedPhases, setCollapsedPhases] = useState([]);
+
+      // Get current client user's email for ownership comparison
+      const clientUserEmail = currentUser?.email || '';
+
+      // Check if a task is owned by the current client user
+      const isClientOwnedTask = (task) => {
+        if (!clientUserEmail || !task.owner) return false;
+        return task.owner.toLowerCase() === clientUserEmail.toLowerCase();
+      };
+
+      const togglePhaseCollapse = (phase) => {
+        setCollapsedPhases(prev =>
+          prev.includes(phase) ? prev.filter(p => p !== phase) : [...prev, phase]
+        );
+      };
+
+      // Fetch active validation progress
+      useEffect(() => {
+        if (token) {
+          api.getValidationProgress(token).then(result => {
+            if (!result.error && Array.isArray(result)) {
+              setValidationProgress(result);
+            }
+          });
+        }
+      }, [token]);
+
       // Phase name mappings for full display titles
       const phaseNames = {
         'Phase 1': 'Contract & Initial Setup',
@@ -724,28 +795,144 @@
       // Use dynamic phase organization
       const groupedByPhase = organizeTasksByPhaseAndStage(tasks, PHASE_ORDER, dynamicPhases);
 
+      const ValidationProgressCard = () => {
+        return (
+          <div className="space-y-4 mb-8">
+            {validationProgress.length === 0 ? (
+              <div className="bg-white rounded-xl shadow-sm border-2 border-gray-200 overflow-hidden">
+                <div className="bg-gradient-to-r from-gray-500 to-gray-600 p-4 text-white">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-bold text-lg flex items-center gap-2">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082"/></svg>
+                        Validation Tracking
+                      </h3>
+                      <p className="text-gray-200 text-sm mt-1">Multi-day analyzer validation progress</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-4 text-center">
+                  <p className="text-sm text-gray-500">No active validations at this time.</p>
+                  <p className="text-xs text-gray-400 mt-1">When your analyzer validation begins, daily progress will appear here.</p>
+                </div>
+              </div>
+            ) : null}
+            {validationProgress.map(v => {
+              const daysLogged = v.daysLogged || 0;
+              const expected = v.expectedDays;
+              const progressPct = expected ? Math.min(100, Math.round((daysLogged / expected) * 100)) : null;
+              return (
+                <div key={v.id} className="bg-white rounded-xl shadow-sm border-2 border-blue-200 overflow-hidden">
+                  <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-4 text-white">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="font-bold text-lg flex items-center gap-2">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082"/></svg>
+                          Active Validation
+                        </h3>
+                        <p className="text-blue-100 text-sm mt-1">
+                          {v.analyzerModel || 'Biolis AU480'} {v.analyzerSerialNumber ? `· ${v.analyzerSerialNumber}` : ''}
+                          {v.technicianName ? ` · Technician: ${v.technicianName}` : ''}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-2xl font-bold">{daysLogged}</div>
+                        <div className="text-xs text-blue-100">day{daysLogged !== 1 ? 's' : ''} logged</div>
+                      </div>
+                    </div>
+                    {expected && progressPct !== null && (
+                      <div className="mt-3">
+                        <div className="w-full bg-white/20 rounded-full h-2 overflow-hidden">
+                          <div className={`h-full rounded-full transition-all duration-500 ${progressPct >= 100 ? 'bg-green-300' : 'bg-white'}`} style={{ width: `${progressPct}%` }} />
+                        </div>
+                        <p className="text-xs text-blue-100 mt-1">{daysLogged} of {expected} expected days · {progressPct}%</p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      {(v.segments || []).map((s, i) => (
+                        <div key={i} className={`w-3 h-3 rounded-full ${s.status === 'complete' ? 'bg-green-500' : 'bg-yellow-400'}`} title={`Day ${s.day}: ${s.status}`}></div>
+                      ))}
+                      {expected && Array.from({ length: Math.max(0, expected - daysLogged) }).map((_, i) => (
+                        <div key={`pending-${i}`} className="w-3 h-3 rounded-full bg-gray-200" title="Pending"></div>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => setShowValidationDetails(!showValidationDetails)}
+                      className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
+                    >
+                      {showValidationDetails ? 'Hide' : 'View'} Daily Details
+                      <svg className={`w-4 h-4 transition-transform ${showValidationDetails ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>
+                    </button>
+                    {showValidationDetails && (
+                      <div className="mt-3 space-y-3">
+                        {(v.segments || []).map(seg => (
+                          <div key={seg.day} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                            <div className="flex items-center gap-2 mb-2">
+                              <div className={`w-5 h-5 rounded-full flex items-center justify-center text-white text-xs ${seg.status === 'complete' ? 'bg-green-500' : 'bg-yellow-400'}`}>
+                                {seg.status === 'complete' ? '✓' : '...'}
+                              </div>
+                              <span className="font-medium text-gray-900 text-sm">Day {seg.day} — {seg.date ? new Date(seg.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ''}</span>
+                            </div>
+                            {seg.testsPerformed && (
+                              <div className="mb-1"><span className="text-xs font-medium text-gray-500">Tests:</span> <span className="text-sm text-gray-700">{seg.testsPerformed}</span></div>
+                            )}
+                            {seg.results && (
+                              <div className="mb-1"><span className="text-xs font-medium text-gray-500">Results:</span> <span className="text-sm text-gray-700">{seg.results}</span></div>
+                            )}
+                            {seg.observations && (
+                              <div><span className="text-xs font-medium text-gray-500">Notes:</span> <span className="text-sm text-gray-700">{seg.observations}</span></div>
+                            )}
+                          </div>
+                        ))}
+                        {expected && daysLogged < expected && (
+                          <div className="bg-gray-50 rounded-lg p-3 border border-dashed border-gray-300 text-center text-sm text-gray-400">
+                            {expected - daysLogged} more day{expected - daysLogged > 1 ? 's' : ''} remaining
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      };
+
       const ListView = () => (
         <div className="space-y-8">
+          <ValidationProgressCard />
           {PHASE_ORDER.map((phase, phaseIndex) => {
+            const isCollapsed = collapsedPhases.includes(phase);
             const phaseTasks = Object.values(groupedByPhase[phase] || {}).flat();
             const phaseCompleted = phaseTasks.filter(t => t.completed).length;
             const phaseTotal = phaseTasks.length;
             const phasePercent = phaseTotal > 0 ? Math.round((phaseCompleted / phaseTotal) * 100) : 0;
             return (
             <div key={phase} className="space-y-4">
-              <div className={`${getPhaseGradient(phase, phaseIndex)} p-4 rounded-lg text-white shadow-md`}>
+              <div
+                className={`${getPhaseGradient(phase, phaseIndex)} p-4 rounded-lg text-white shadow-md cursor-pointer hover:opacity-90 transition-opacity`}
+                onClick={() => togglePhaseCollapse(phase)}
+              >
                 <div className="flex items-center justify-between">
-                  <div>
+                  <div className="flex-1">
                     <h2 className="text-lg font-bold">{dynamicPhases[phase]?.name || phase.replace(/^Phase\s*\d+\s*:\s*/i, '')}</h2>
                     <p className="text-sm opacity-90 mt-1">
                       {phaseTotal > 0 ? `${phaseCompleted} of ${phaseTotal} complete` : 'No tasks assigned yet'}
                     </p>
                   </div>
-                  {phaseTotal > 0 && (
-                    <div className="text-right">
-                      <div className="text-2xl font-bold">{phasePercent}%</div>
+                  <div className="flex items-center gap-3">
+                    {phaseTotal > 0 && (
+                      <div className="text-right">
+                        <div className="text-2xl font-bold">{phasePercent}%</div>
+                      </div>
+                    )}
+                    <div className="text-2xl">
+                      {isCollapsed ? '▶' : '▼'}
                     </div>
-                  )}
+                  </div>
                 </div>
                 {phaseTotal > 0 && (
                   <div className="mt-3 w-full bg-white/20 rounded-full h-2 overflow-hidden">
@@ -753,7 +940,7 @@
                   </div>
                 )}
               </div>
-              {Object.entries(groupedByPhase[phase] || {}).map(([stageName, stageTasks]) => {
+              {!isCollapsed && Object.entries(groupedByPhase[phase] || {}).map(([stageName, stageTasks]) => {
                 const dueDates = stageTasks.filter(t => t.dueDate).map(t => t.dueDate).sort();
                 const targetDate = dueDates.length > 0 ? dueDates[dueDates.length - 1] : null;
                 return (
@@ -777,34 +964,44 @@
                     <div className="divide-y divide-gray-200">
                       {stageTasks.length === 0 ? (
                         <div className="p-4 text-gray-400 text-sm italic">No tasks in this stage</div>
-                      ) : stageTasks.map(task => (
+                      ) : stageTasks.map(task => {
+                        const clientOwns = isClientOwnedTask(task);
+                        const clientVisibleSubtasks = (task.subtasks || []).filter(st => st.showToClient !== false);
+                        const completedSubtasks = clientVisibleSubtasks.filter(s => s.completed || s.notApplicable || s.status === 'Complete' || s.status === 'N/A').length;
+                        return (
                         <div key={task.id} className="p-4">
                           <div className="flex items-start gap-3">
                             <div className="mt-1">
                               {task.completed ? (
-                                <div className="w-5 h-5 bg-green-600 rounded-full flex items-center justify-center text-white text-xs">✓</div>
+                                <div className="w-6 h-6 bg-green-600 rounded-full flex items-center justify-center text-white text-xs">✓</div>
                               ) : (
-                                <div className="w-5 h-5 border-2 border-gray-300 rounded-full" />
+                                <div className="w-6 h-6 border-2 border-gray-300 rounded-full" />
                               )}
                             </div>
-                            <div className="flex-1">
-                              <h3 className={`font-medium ${task.completed ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
+                            <div className="flex-1 min-w-0">
+                              <h3 className={`font-medium break-words ${task.completed ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
                                 {task.clientName || task.taskTitle}
                                 {(task.files || []).length > 0 && (
                                   <span className="ml-2 text-gray-400" title={`${task.files.length} file${task.files.length > 1 ? 's' : ''} attached`}>📎</span>
                                 )}
                               </h3>
-                              {(task.dateCompleted || task.dueDate) && (
-                                <p className="text-sm text-gray-600 mt-1">
-                                  {task.dueDate && !task.completed && (
-                                    <span className={new Date(task.dueDate) < new Date() ? 'text-red-600' : 'text-blue-600'}>
-                                      Due: {new Date(task.dueDate + 'T12:00:00').toLocaleDateString()}
-                                    </span>
-                                  )}
-                                  {task.dueDate && !task.completed && task.dateCompleted && <span className="mx-2">•</span>}
-                                  {task.dateCompleted && <span className="text-green-600">Completed: {formatDateForDisplay(task.dateCompleted)}</span>}
+                              {clientOwns && task.ownerDisplayName && (
+                                <p className="mt-1 text-xs sm:text-sm text-gray-600">
+                                  <span className="font-medium">Assigned to:</span> {task.ownerDisplayName}
                                 </p>
                               )}
+                              <div className="mt-1 flex items-center gap-2 sm:gap-4 flex-wrap text-sm text-gray-600">
+                                {task.dueDate && !task.completed && (
+                                  <span className={new Date(task.dueDate) < new Date() ? 'text-red-600' : 'text-blue-600'}>
+                                    <span className="font-medium">Due:</span> {formatDateForDisplay(task.dueDate)}
+                                  </span>
+                                )}
+                                {task.completed && task.dateCompleted && (
+                                  <span className="text-green-600">
+                                    Completed: {formatDateForDisplay(task.dateCompleted)}
+                                  </span>
+                                )}
+                              </div>
                               {task.description && (
                                 <div className="mt-2 p-2 bg-gray-50 rounded-md border-l-2 border-primary">
                                   <p className="text-sm text-gray-700">{task.description}</p>
@@ -823,9 +1020,9 @@
                                         className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-primary text-xs rounded hover:bg-blue-100 border border-blue-200"
                                       >
                                         <span>
-                                          {file.mimeType?.includes('pdf') ? '📄' : 
-                                           file.mimeType?.includes('image') ? '🖼️' : 
-                                           file.mimeType?.includes('word') ? '📝' : 
+                                          {file.mimeType?.includes('pdf') ? '📄' :
+                                           file.mimeType?.includes('image') ? '🖼️' :
+                                           file.mimeType?.includes('word') ? '📝' :
                                            file.mimeType?.includes('excel') || file.mimeType?.includes('spreadsheet') ? '📊' : '📎'}
                                         </span>
                                         {file.name}
@@ -834,10 +1031,18 @@
                                   </div>
                                 </div>
                               )}
+                              {clientVisibleSubtasks.length > 0 && (
+                                <div className="mt-2">
+                                  <span className="text-xs sm:text-sm text-purple-600">
+                                    Subtasks ({completedSubtasks}/{clientVisibleSubtasks.length})
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 );
@@ -849,8 +1054,9 @@
       );
 
       const TimelineView = () => (
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <h2 className="text-2xl font-bold mb-6 text-accent">Project Timeline</h2>
+        <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6">
+          <h2 className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6 text-accent">Project Timeline</h2>
+          <ValidationProgressCard />
           <div className="space-y-8">
             {PHASE_ORDER.map((phase, phaseIndex) => {
               const phaseData = groupedByPhase[phase] || {};
@@ -880,9 +1086,13 @@
                             {targetDate && <span className="text-xs bg-blue-100 text-primary px-2 py-1 rounded">Target Due Date: {targetDate}</span>}
                           </div>
                           <div className="space-y-2">
-                            {stageTasks.map(task => (
+                            {stageTasks.map(task => {
+                              const clientOwns = isClientOwnedTask(task);
+                              const clientVisibleSubtasks = (task.subtasks || []).filter(st => st.showToClient !== false);
+                              const completedSubs = clientVisibleSubtasks.filter(s => s.completed || s.notApplicable || s.status === 'Complete' || s.status === 'N/A').length;
+                              return (
                               <div key={task.id} className={`flex items-start gap-3 p-3 rounded-lg ${task.completed ? 'bg-green-50' : 'bg-white'} border border-gray-200`}>
-                                <div className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${task.completed ? 'bg-green-500 text-white' : 'border-2 border-gray-300'}`}>
+                                <div className={`mt-0.5 w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${task.completed ? 'bg-green-500 text-white' : 'border-2 border-gray-300'}`}>
                                   {task.completed && <span className="text-xs">✓</span>}
                                 </div>
                                 <div className="flex-1 min-w-0">
@@ -892,11 +1102,23 @@
                                       <span className="ml-2 text-gray-400" title={`${task.files.length} file${task.files.length > 1 ? 's' : ''} attached`}>📎</span>
                                     )}
                                   </h5>
-                                  {task.dateCompleted && (
+                                  {clientOwns && task.ownerDisplayName && (
                                     <p className="mt-1 text-xs text-gray-600">
-                                      <span className="text-green-600">Completed: {formatDateForDisplay(task.dateCompleted)}</span>
+                                      <span className="font-medium">Assigned to:</span> {task.ownerDisplayName}
                                     </p>
                                   )}
+                                  <div className="mt-1 flex items-center gap-2 sm:gap-4 flex-wrap text-xs text-gray-600">
+                                    {task.dueDate && !task.completed && (
+                                      <span className={new Date(task.dueDate) < new Date() ? 'text-red-600' : 'text-blue-600'}>
+                                        <span className="font-medium">Due:</span> {formatDateForDisplay(task.dueDate)}
+                                      </span>
+                                    )}
+                                    {task.completed && task.dateCompleted && (
+                                      <span className="text-green-600">
+                                        Completed: {formatDateForDisplay(task.dateCompleted)}
+                                      </span>
+                                    )}
+                                  </div>
                                   {task.description && (
                                     <div className="mt-2 p-2 bg-gray-50 rounded-md border-l-2 border-primary">
                                       <p className="text-sm text-gray-700">{task.description}</p>
@@ -915,9 +1137,9 @@
                                             className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-primary text-xs rounded hover:bg-blue-100 border border-blue-200"
                                           >
                                             <span>
-                                              {file.mimeType?.includes('pdf') ? '📄' : 
-                                               file.mimeType?.includes('image') ? '🖼️' : 
-                                               file.mimeType?.includes('word') ? '📝' : 
+                                              {file.mimeType?.includes('pdf') ? '📄' :
+                                               file.mimeType?.includes('image') ? '🖼️' :
+                                               file.mimeType?.includes('word') ? '📝' :
                                                file.mimeType?.includes('excel') || file.mimeType?.includes('spreadsheet') ? '📊' : '📎'}
                                             </span>
                                             {file.name}
@@ -926,9 +1148,17 @@
                                       </div>
                                     </div>
                                   )}
+                                  {clientVisibleSubtasks.length > 0 && (
+                                    <div className="mt-2">
+                                      <span className="text-xs text-purple-600">
+                                        Subtasks ({completedSubs}/{clientVisibleSubtasks.length})
+                                      </span>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       );
@@ -958,27 +1188,27 @@
           return tasks.filter(t => t.dueDate === dateStr || t.dateCompleted === dateStr);
         };
         return (
-          <div className="bg-white rounded-lg shadow-sm p-6">
+          <div className="bg-white rounded-lg shadow-sm p-3 sm:p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-bold text-accent">{monthNames[month]} {year}</h2>
+              <h2 className="text-lg sm:text-2xl font-bold text-accent">{monthNames[month]} {year}</h2>
               <div className="flex gap-1">
                 <button onClick={() => setSelectedDate(new Date(year, month - 1, 1))} className="p-2 hover:bg-gray-100 rounded-lg">←</button>
                 <button onClick={() => setSelectedDate(new Date())} className="px-3 py-1 text-sm text-primary hover:underline">Today</button>
                 <button onClick={() => setSelectedDate(new Date(year, month + 1, 1))} className="p-2 hover:bg-gray-100 rounded-lg">→</button>
               </div>
             </div>
-            <div className="grid grid-cols-7 gap-2 mb-2">
-              {dayNames.map(day => (<div key={day} className="text-center text-sm font-semibold text-gray-600 py-2">{day}</div>))}
+            <div className="grid grid-cols-7 gap-1 sm:gap-2 mb-2">
+              {dayNames.map(day => (<div key={day} className="text-center text-xs sm:text-sm font-semibold text-gray-600 py-1 sm:py-2">{day}</div>))}
             </div>
-            <div className="grid grid-cols-7 gap-2">
+            <div className="grid grid-cols-7 gap-1 sm:gap-2">
               {[...Array(startingDayOfWeek)].map((_, idx) => (<div key={`empty-${idx}`} className="aspect-square"></div>))}
               {[...Array(daysInMonth)].map((_, idx) => {
                 const day = idx + 1;
                 const dayTasks = getTasksForDay(day);
                 const isToday = new Date().getDate() === day && new Date().getMonth() === month && new Date().getFullYear() === year;
                 return (
-                  <div key={day} className={`min-h-[80px] border rounded-lg p-2 ${isToday ? 'border-primary bg-blue-50' : 'border-gray-200'}`}>
-                    <div className={`text-sm font-semibold mb-1 ${isToday ? 'text-primary' : 'text-gray-700'}`}>{day}</div>
+                  <div key={day} className={`min-h-[50px] sm:min-h-[80px] border rounded-lg p-1 sm:p-2 ${isToday ? 'border-primary bg-blue-50' : 'border-gray-200'}`}>
+                    <div className={`text-xs sm:text-sm font-semibold mb-1 ${isToday ? 'text-primary' : 'text-gray-700'}`}>{day}</div>
                     <div className="space-y-1">
                       {dayTasks.slice(0, 2).map(task => (
                         <div key={task.id} className={`text-xs px-1 py-0.5 rounded truncate ${task.completed ? 'bg-green-200 text-green-800' : 'bg-blue-100 text-primary'}`} title={task.clientName || task.taskTitle}>
@@ -1090,6 +1320,9 @@
       const [showAddItem, setShowAddItem] = useState(false);
       const [newItemCategory, setNewItemCategory] = useState('');
       const [newItemName, setNewItemName] = useState('');
+      const [showImport, setShowImport] = useState(false);
+      const [importMessage, setImportMessage] = useState('');
+      const [importing, setImporting] = useState(false);
 
       useEffect(() => { loadInventory(); }, []);
 
@@ -1105,7 +1338,7 @@
           const normalized = {};
           Object.entries(latestData.data || {}).forEach(([key, value]) => {
             if (value.batches) { normalized[key] = value; }
-            else { normalized[key] = { batches: [value] }; }
+            else { normalized[key] = { batches: [value || {}] }; }
           });
           setInventoryData(normalized);
           setLastSubmitted(latestData.submittedAt);
@@ -1163,12 +1396,17 @@
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ slug, data: inventoryData })
           });
+          if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            setMessage(errData.error || 'Failed to submit inventory');
+            return;
+          }
           const result = await response.json();
           if (result.success) {
             setMessage('Inventory submitted successfully!');
             setLastSubmitted(new Date().toISOString());
             setTimeout(() => setMessage(''), 5000);
-          } else { setMessage('Failed to submit inventory'); }
+          } else { setMessage(result.error || 'Failed to submit inventory'); }
         } catch (err) { setMessage('Error submitting inventory'); }
         finally { setSaving(false); }
       };
@@ -1187,6 +1425,90 @@
           setNewItemName('');
           setShowAddItem(false);
         } catch (err) { console.error('Failed to add custom item:', err); }
+      };
+
+      const handleImportCSV = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        setImporting(true);
+        setImportMessage('');
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          try {
+            const text = evt.target.result;
+            const lines = text.split(/\r?\n/).filter(l => l.trim());
+            if (lines.length < 2) { setImportMessage('File is empty or missing data rows.'); setImporting(false); return; }
+            // Parse header row (case-insensitive)
+            const rawHeaders = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim().toLowerCase());
+            const colIdx = {
+              category: rawHeaders.findIndex(h => h.includes('category')),
+              itemName: rawHeaders.findIndex(h => h.includes('item')),
+              lotNumber: rawHeaders.findIndex(h => h.includes('lot')),
+              expiry: rawHeaders.findIndex(h => h.includes('expiry') || h.includes('expiration')),
+              openQty: rawHeaders.findIndex(h => h.includes('open qty') || h.includes('open_qty') || (h.includes('open') && h.includes('qty'))),
+              openDate: rawHeaders.findIndex(h => h.includes('open date') || h.includes('open_date')),
+              closedQty: rawHeaders.findIndex(h => h.includes('closed qty') || h.includes('closed_qty') || (h.includes('closed') && h.includes('qty'))),
+              notes: rawHeaders.findIndex(h => h.includes('notes')),
+            };
+            if (colIdx.category === -1 || colIdx.itemName === -1) {
+              setImportMessage('Missing required columns: "Category" and "Item Name" must be present.');
+              setImporting(false); return;
+            }
+            // CSV field parser (handles quoted fields)
+            const parseRow = (line) => {
+              const fields = [];
+              let cur = '', inQ = false;
+              for (let i = 0; i < line.length; i++) {
+                const ch = line[i];
+                if (ch === '"') { inQ = !inQ; }
+                else if (ch === ',' && !inQ) { fields.push(cur.trim()); cur = ''; }
+                else { cur += ch; }
+              }
+              fields.push(cur.trim());
+              return fields;
+            };
+            const get = (fields, idx) => idx >= 0 && idx < fields.length ? fields[idx].replace(/^"|"$/g, '').trim() : '';
+            let imported = 0, skipped = 0;
+            const newData = {};
+            for (let i = 1; i < lines.length; i++) {
+              const fields = parseRow(lines[i]);
+              const category = get(fields, colIdx.category);
+              const itemName = get(fields, colIdx.itemName);
+              if (!category || !itemName) { skipped++; continue; }
+              const key = `${category}|${itemName}`;
+              const batch = {
+                lotNumber: get(fields, colIdx.lotNumber),
+                expiry: get(fields, colIdx.expiry),
+                openQty: get(fields, colIdx.openQty),
+                openDate: get(fields, colIdx.openDate),
+                closedQty: get(fields, colIdx.closedQty),
+                notes: get(fields, colIdx.notes),
+              };
+              if (!newData[key]) { newData[key] = { batches: [] }; }
+              newData[key].batches.push(batch);
+              imported++;
+            }
+            setInventoryData(prev => {
+              const merged = { ...prev };
+              Object.entries(newData).forEach(([key, val]) => {
+                if (merged[key]) {
+                  merged[key] = { batches: [...(merged[key].batches || []), ...val.batches] };
+                } else {
+                  merged[key] = val;
+                }
+              });
+              return merged;
+            });
+            setImportMessage(`Imported ${imported} row${imported !== 1 ? 's' : ''}${skipped ? `, skipped ${skipped} empty` : ''}. Review and submit when ready.`);
+            setShowImport(false);
+          } catch (err) {
+            setImportMessage('Failed to parse file. Please use the provided template.');
+          } finally {
+            setImporting(false);
+            e.target.value = '';
+          }
+        };
+        reader.readAsText(file);
       };
 
       const toggleCategory = (category) => {
@@ -1238,9 +1560,16 @@
                 <p className="text-gray-600 mt-1">Update your weekly inventory counts</p>
                 {lastSubmitted && <p className="text-sm text-gray-500 mt-2">Last submitted: {new Date(lastSubmitted).toLocaleString()}</p>}
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2 items-center">
                 <button onClick={() => setShowAddItem(true)} className="px-4 py-2 border border-primary text-primary rounded-lg font-medium hover:bg-primary hover:text-white transition">+ Add Item</button>
-                <button onClick={handleSubmit} disabled={saving} className="px-6 py-2 bg-primary text-white rounded-lg font-medium hover:bg-accent transition disabled:opacity-50">{saving ? 'Saving...' : 'Submit Inventory'}</button>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setShowImport(true)} className="px-4 py-2 border border-gray-400 text-gray-700 rounded-lg font-medium hover:bg-gray-100 transition flex items-center gap-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.75"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 12v9m0-9l-3 3m3-3l3 3M12 3v9" /></svg>
+                    Import Items
+                  </button>
+                  <a href={`${API_URL}/api/inventory/import-template`} download="inventory_import_template.csv" className="text-xs text-primary underline hover:text-accent whitespace-nowrap" title="Download Excel/CSV template">Template</a>
+                </div>
+                <button onClick={handleSubmit} disabled={saving} className="px-6 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-lg font-medium hover:opacity-90 transition disabled:opacity-50">{saving ? 'Saving...' : 'Submit Inventory'}</button>
               </div>
             </div>
             {message && <div className={`mt-4 p-3 rounded-lg ${message.includes('success') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{message}</div>}
@@ -1263,11 +1592,65 @@
                   <input type="text" value={newItemName} onChange={(e) => setNewItemName(e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="Enter item name" />
                 </div>
                 <div className="flex items-end gap-2">
-                  <button onClick={addCustomItem} className="px-4 py-2 bg-primary text-white rounded-lg">Add</button>
+                  <button onClick={addCustomItem} className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-lg">Add</button>
                   <button onClick={() => setShowAddItem(false)} className="px-4 py-2 border rounded-lg">Cancel</button>
                 </div>
               </div>
             </div>
+          )}
+
+          {showImport && (
+            <div className="bg-white p-6 rounded-xl shadow-sm border-2 border-gray-300">
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <h3 className="font-bold text-lg">Import Inventory from CSV</h3>
+                  <p className="text-sm text-gray-500 mt-1">Upload a CSV file matching the required column format. Imported rows will be merged into the current inventory for review before submission.</p>
+                </div>
+                <button onClick={() => { setShowImport(false); setImportMessage(''); }} className="text-gray-400 hover:text-gray-600 ml-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.75"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-4 mb-4 text-sm">
+                <p className="font-medium text-gray-700 mb-2">Required CSV columns (in order):</p>
+                <div className="overflow-x-auto">
+                  <table className="text-xs border-collapse w-full">
+                    <thead>
+                      <tr className="bg-gray-200">
+                        {['Category','Item Name','Lot Number','Expiry Date (YYYY-MM-DD)','Open Qty','Open Date (YYYY-MM-DD)','Closed Qty','Notes'].map(h => (
+                          <th key={h} className="border border-gray-300 px-2 py-1 text-left font-semibold text-gray-700">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="bg-white">
+                        {['Reagent','Glucose - R1','LOT12345','2026-12-31','10','2026-01-15','2','Example notes'].map((v, i) => (
+                          <td key={i} className="border border-gray-300 px-2 py-1 text-gray-500 italic">{v}</td>
+                        ))}
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p className="mt-2 text-gray-500">Each row represents one lot/batch. Multiple rows with the same Category + Item Name will be added as separate batch lots.</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <label className={`flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-lg font-medium cursor-pointer hover:opacity-90 transition ${importing ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.75"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 12v9m0-9l-3 3m3-3l3 3M12 3v9" /></svg>
+                  {importing ? 'Importing...' : 'Choose CSV File'}
+                  <input type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportCSV} disabled={importing} />
+                </label>
+                <a href={`${API_URL}/api/inventory/import-template`} download="inventory_import_template.csv" className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-1">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.75"><path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V19a2 2 0 002 2h14a2 2 0 002-2v-2M16 6l-4-4-4 4" /></svg>
+                  Download Template
+                </a>
+              </div>
+              {importMessage && (
+                <div className={`mt-3 p-3 rounded-lg text-sm ${importMessage.includes('Imported') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{importMessage}</div>
+              )}
+            </div>
+          )}
+
+          {importMessage && !showImport && (
+            <div className="bg-green-50 border border-green-200 p-3 rounded-lg text-sm text-green-700">{importMessage}</div>
           )}
 
           {allCategories.map(cat => {
@@ -1334,7 +1717,7 @@
           )}
 
           <div className="bg-white p-6 rounded-xl shadow-sm text-center">
-            <button onClick={handleSubmit} disabled={saving} className="px-8 py-3 bg-primary text-white rounded-lg font-medium hover:bg-accent transition disabled:opacity-50">{saving ? 'Saving...' : 'Submit Weekly Inventory'}</button>
+            <button onClick={handleSubmit} disabled={saving} className="px-8 py-3 bg-gradient-to-r from-primary to-accent text-white rounded-lg font-medium hover:opacity-90 transition disabled:opacity-50">{saving ? 'Saving...' : 'Submit Weekly Inventory'}</button>
           </div>
         </div>
       );
@@ -1349,7 +1732,7 @@
 
       useEffect(() => {
         fetch(`${API_URL}/api/inventory/report/${slug}`, { headers: { 'Authorization': `Bearer ${token}` } })
-          .then(r => r.json())
+          .then(r => { if (!r.ok) throw new Error(`HTTP error ${r.status}`); return r.json(); })
           .then(data => { setReport(data); setLoading(false); })
           .catch(err => { console.error(err); setLoading(false); });
       }, []);
@@ -1402,7 +1785,7 @@
       );
 
       const handleDownload = () => {
-        window.open(`${API_URL}/api/inventory/export/${slug}?token=${token}`, '_blank');
+        openPdfSecurely(`${API_URL}/api/inventory/export/${slug}`, token);
       };
 
       return (
@@ -1425,7 +1808,7 @@
                 <p className="text-gray-600 mt-1">View alerts and current stock levels</p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <button onClick={handleDownload} className="bg-primary text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-accent transition-colors flex items-center gap-1">
+                <button onClick={handleDownload} className="bg-gradient-to-r from-primary to-accent text-white px-3 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-colors flex items-center gap-1">
                   {Icons.download} Download CSV
                 </button>
                 <button onClick={() => setShowGuide(!showGuide)} className="text-primary hover:text-accent text-sm flex items-center gap-1">
@@ -1534,7 +1917,7 @@
                 {/* Category filter chips */}
                 <div className="flex flex-wrap gap-2 mb-3">
                   {categories.map(cat => (
-                    <button key={cat} onClick={() => setCategoryFilter(cat)} className={`px-3 py-1 rounded-full text-xs font-medium transition ${categoryFilter === cat ? 'bg-primary text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{cat}</button>
+                    <button key={cat} onClick={() => setCategoryFilter(cat)} className={`px-3 py-1 rounded-full text-xs font-medium transition ${categoryFilter === cat ? 'bg-gradient-to-r from-primary to-accent text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{cat}</button>
                   ))}
                 </div>
 
@@ -1585,13 +1968,13 @@
 
       useEffect(() => {
         fetch(`${API_URL}/api/inventory/report-all`, { headers: { 'Authorization': `Bearer ${token}` } })
-          .then(r => r.json())
+          .then(r => { if (!r.ok) throw new Error(`HTTP error ${r.status}`); return r.json(); })
           .then(data => { setReport(data); setLoading(false); })
           .catch(err => { console.error(err); setLoading(false); });
       }, []);
 
       const handleDownloadAll = () => {
-        window.open(`${API_URL}/api/inventory/export-all?token=${token}`, '_blank');
+        openPdfSecurely(`${API_URL}/api/inventory/export-all`, token);
       };
 
       if (loading) {
@@ -1610,7 +1993,7 @@
               <p className="text-gray-600 mt-1">Aggregated inventory metrics across all client sites</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button onClick={handleDownloadAll} className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-accent transition-colors flex items-center gap-2">
+              <button onClick={handleDownloadAll} className="bg-gradient-to-r from-primary to-accent text-white px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-colors flex items-center gap-2">
                 {Icons.download} Download All CSV
               </button>
               <button onClick={() => onNavigate('submission_history')} className="border border-primary text-primary px-4 py-2 rounded-lg font-medium hover:bg-primary/10 transition-colors flex items-center gap-2">
@@ -1806,11 +2189,12 @@
       const loadSubmissions = async (clientSlug) => {
         setLoading(true);
         try {
-          const response = await fetch(`${API_URL}/api/inventory/submissions/${clientSlug}`, { 
-            headers: { 'Authorization': `Bearer ${token}` } 
+          const response = await fetch(`${API_URL}/api/inventory/submissions/${clientSlug}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
           });
+          if (!response.ok) throw new Error(`HTTP error ${response.status}`);
           const data = await response.json();
-          const sorted = data.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
+          const sorted = (Array.isArray(data) ? data : []).sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
           setSubmissions(sorted);
           
           // Flatten into item rows
@@ -1888,18 +2272,21 @@
         const headers = ['Date', 'Submitted By', 'Item Name', 'Category', 'Lot Number', 'Expiry Date', 'Open Qty', 'Closed Qty', 'Total Qty', 'Notes'];
         const csvContent = [
           headers.join(','),
-          ...rowsToExport.map(row => [
-            row.submissionDate.toLocaleDateString(),
-            `"${row.submittedBy}"`,
-            `"${row.itemName}"`,
-            `"${row.category}"`,
-            `"${row.lotNumber}"`,
-            row.expiry ? new Date(row.expiry).toLocaleDateString() : '',
-            row.openQty,
-            row.closedQty,
-            row.totalQty,
-            `"${row.notes}"`
-          ].join(','))
+          ...rowsToExport.map(row => {
+            const esc = (v) => `"${String(v || '').replace(/"/g, '""')}"`;
+            return [
+              esc(row.submissionDate.toLocaleDateString()),
+              esc(row.submittedBy),
+              esc(row.itemName),
+              esc(row.category),
+              esc(row.lotNumber),
+              esc(row.expiry ? new Date(row.expiry).toLocaleDateString() : ''),
+              row.openQty,
+              row.closedQty,
+              row.totalQty,
+              esc(row.notes)
+            ].join(',');
+          })
         ].join('\n');
 
         const blob = new Blob([csvContent], { type: 'text/csv' });
@@ -2146,7 +2533,7 @@
                   )}
                   <button
                     onClick={handleDownloadFiltered}
-                    className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-accent transition-colors flex items-center gap-2 text-sm"
+                    className="bg-gradient-to-r from-primary to-accent text-white px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-colors flex items-center gap-2 text-sm"
                   >
                     {Icons.download} {selectedRows.size > 0 ? `Download Selected (${selectedRows.size})` : 'Download All'}
                   </button>
@@ -2236,13 +2623,404 @@
       );
     };
 
-    const SupportPage = ({ settings, token, userData, activeTab: propActiveTab, onTabChange }) => {
+    // Signature Pad Component for Client Portal
+    const SignaturePad = ({ onSave, label, initialValue }) => {
+      const canvasRef = useRef(null);
+      const [isDrawing, setIsDrawing] = useState(false);
+      const [hasSignature, setHasSignature] = useState(!!initialValue);
+
+      useEffect(() => {
+        if (initialValue && canvasRef.current) {
+          const canvas = canvasRef.current;
+          const ctx = canvas.getContext('2d');
+          // Clear existing content before drawing new signature
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          const img = new Image();
+          img.onload = () => { ctx.drawImage(img, 0, 0); };
+          img.src = initialValue;
+        }
+      }, [initialValue]);
+
+      const startDrawing = (e) => {
+        e.preventDefault();
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        const rect = canvas.getBoundingClientRect();
+        const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
+        const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        setIsDrawing(true);
+      };
+
+      const draw = (e) => {
+        if (!isDrawing) return;
+        e.preventDefault();
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        const rect = canvas.getBoundingClientRect();
+        const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
+        const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = '#000';
+        ctx.lineTo(x, y);
+        ctx.stroke();
+      };
+
+      const stopDrawing = () => {
+        if (isDrawing) {
+          setIsDrawing(false);
+          setHasSignature(true);
+          if (onSave) onSave(canvasRef.current.toDataURL());
+        }
+      };
+
+      const clearSignature = () => {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        setHasSignature(false);
+        if (onSave) onSave('');
+      };
+
+      return (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
+          <canvas
+            ref={canvasRef}
+            width={400}
+            height={100}
+            style={{ border: '2px dashed #d1d5db', background: '#f9fafb', touchAction: 'none' }}
+            className={`w-full rounded-lg cursor-crosshair ${hasSignature ? 'border-green-400' : ''}`}
+            onMouseDown={startDrawing}
+            onMouseMove={draw}
+            onMouseUp={stopDrawing}
+            onMouseLeave={stopDrawing}
+            onTouchStart={startDrawing}
+            onTouchMove={draw}
+            onTouchEnd={stopDrawing}
+          />
+          <button type="button" onClick={clearSignature} className="mt-2 text-sm text-red-600 hover:text-red-800">
+            Clear Signature
+          </button>
+        </div>
+      );
+    };
+
+    // Service Report Detail View for Client Portal (read-only view + signing)
+    const ServiceReportDetail = ({ report, token, onBack, onSigned, backLabel }) => {
+      const [signing, setSigning] = useState(false);
+      const [customerSignature, setCustomerSignature] = useState('');
+      const [submitting, setSubmitting] = useState(false);
+      const [signError, setSignError] = useState(null);
+      const [signSuccess, setSignSuccess] = useState(false);
+
+      const formatDate = (dateStr) => {
+        if (!dateStr) return '-';
+        return new Date(dateStr).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+      };
+
+      const needsSignature = report.status === 'signature_needed';
+
+      const handleSign = async () => {
+        if (!customerSignature || !customerSignature.startsWith('data:image')) {
+          setSignError('Please provide your signature before submitting.');
+          return;
+        }
+        setSubmitting(true);
+        setSignError(null);
+        try {
+          const response = await fetch(`${API_URL}/api/client/service-reports/${report.id}/sign`, {
+            method: 'PUT',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              customerSignature,
+              customerSignatureDate: new Date().toISOString().split('T')[0]
+            })
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            setSignError(data.error || 'Failed to submit signature');
+          } else {
+            setSignSuccess(true);
+            if (onSigned) onSigned(report.id);
+          }
+        } catch (err) {
+          console.error('Error signing report:', err);
+          setSignError('Network error. Please try again.');
+        } finally {
+          setSubmitting(false);
+        }
+      };
+
+      const isValidation = (report.serviceType || '').toLowerCase().includes('validation');
+
+      return (
+        <div className="space-y-6">
+          {/* Back button */}
+          <button onClick={onBack} className="flex items-center gap-2 text-primary hover:text-accent font-medium text-sm">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
+            {backLabel || 'Back'}
+          </button>
+
+          {/* Report Header */}
+          <div className={`rounded-xl overflow-hidden shadow-sm border ${needsSignature ? 'border-orange-300' : 'border-green-300'}`}>
+            <div className={`p-5 ${needsSignature ? 'bg-orange-50' : 'bg-green-50'}`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">{report.serviceType || 'Service Report'}</h2>
+                  <p className="text-sm text-gray-600 mt-1">{report.clientFacilityName}</p>
+                </div>
+                <span className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
+                  needsSignature ? 'bg-orange-100 text-orange-700 border border-orange-300' : 'bg-green-100 text-green-700 border border-green-300'
+                }`}>
+                  {needsSignature ? 'Signature Needed' : 'Complete'}
+                </span>
+              </div>
+            </div>
+
+            {/* Service Info */}
+            <div className="p-5 border-b">
+              <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Service Information</h3>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-gray-500">Technician</p>
+                  <p className="font-medium text-gray-900">{report.technicianName || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Service Date</p>
+                  <p className="font-medium text-gray-900">{formatDate(report.serviceCompletionDate || report.completedAt)}</p>
+                </div>
+                {report.analyzerModel && (
+                  <div>
+                    <p className="text-xs text-gray-500">Analyzer Model</p>
+                    <p className="font-medium text-gray-900">{report.analyzerModel}</p>
+                  </div>
+                )}
+                {report.analyzerSerialNumber && (
+                  <div>
+                    <p className="text-xs text-gray-500">Serial Number</p>
+                    <p className="font-medium text-gray-900">{report.analyzerSerialNumber}</p>
+                  </div>
+                )}
+                {report.ticketNumber && (
+                  <div>
+                    <p className="text-xs text-gray-500">Ticket #</p>
+                    <p className="font-medium text-primary">{report.ticketNumber}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Work Details */}
+            <div className="p-5 border-b">
+              <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Work Performed</h3>
+              <div className="space-y-4">
+                {report.descriptionOfWork && (
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Description of Work</p>
+                    <p className="text-sm text-gray-800 whitespace-pre-wrap bg-gray-50 p-3 rounded-lg">{report.descriptionOfWork}</p>
+                  </div>
+                )}
+                {report.materialsUsed && (
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Materials Used</p>
+                    <p className="text-sm text-gray-800 whitespace-pre-wrap bg-gray-50 p-3 rounded-lg">{report.materialsUsed}</p>
+                  </div>
+                )}
+                {report.solution && (
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Solution Provided</p>
+                    <p className="text-sm text-gray-800 whitespace-pre-wrap bg-gray-50 p-3 rounded-lg">{report.solution}</p>
+                  </div>
+                )}
+                {report.outstandingIssues && (
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Outstanding Issues / Recommendations</p>
+                    <p className="text-sm text-gray-800 whitespace-pre-wrap bg-gray-50 p-3 rounded-lg">{report.outstandingIssues}</p>
+                  </div>
+                )}
+
+                {/* Validation-specific fields */}
+                {isValidation && (
+                  <>
+                    {(report.validationStartDate || report.validationEndDate) && (
+                      <div className="grid md:grid-cols-2 gap-4">
+                        {report.validationStartDate && (
+                          <div>
+                            <p className="text-xs text-gray-500 mb-1">Validation Start Date</p>
+                            <p className="text-sm font-medium">{formatDate(report.validationStartDate)}</p>
+                          </div>
+                        )}
+                        {report.validationEndDate && (
+                          <div>
+                            <p className="text-xs text-gray-500 mb-1">Validation End Date</p>
+                            <p className="text-sm font-medium">{formatDate(report.validationEndDate)}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {report.testProcedures && (
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Test Procedures</p>
+                        <p className="text-sm text-gray-800 whitespace-pre-wrap bg-gray-50 p-3 rounded-lg">{report.testProcedures}</p>
+                      </div>
+                    )}
+                    {report.trainingProvided && (
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Training Provided</p>
+                        <p className="text-sm text-gray-800 whitespace-pre-wrap bg-gray-50 p-3 rounded-lg">{report.trainingProvided}</p>
+                      </div>
+                    )}
+                    {report.validationResults && (
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Validation Results</p>
+                        <p className="text-sm text-gray-800 whitespace-pre-wrap bg-gray-50 p-3 rounded-lg">{report.validationResults}</p>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {report.recommendations && (
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Recommendations</p>
+                    <p className="text-sm text-gray-800 whitespace-pre-wrap bg-gray-50 p-3 rounded-lg">{report.recommendations}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Signatures */}
+            <div className="p-5">
+              <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Signatures</h3>
+              <div className="grid md:grid-cols-2 gap-6">
+                {/* Technician Signature (always shown) */}
+                <div>
+                  <p className="text-xs text-gray-500 mb-2">Technician Signature</p>
+                  {report.technicianSignature ? (
+                    <div className="border rounded-lg p-3 bg-gray-50">
+                      <img src={report.technicianSignature} alt="Technician Signature" className="max-h-20" />
+                      <p className="text-xs text-gray-500 mt-2">Signed: {formatDate(report.technicianSignatureDate)}</p>
+                    </div>
+                  ) : (
+                    <p className="text-gray-400 italic text-sm">No signature</p>
+                  )}
+                </div>
+
+                {/* Customer Signature */}
+                <div>
+                  <p className="text-xs text-gray-500 mb-2">Customer Signature</p>
+                  {report.customerSignature ? (
+                    <div className="border rounded-lg p-3 bg-gray-50">
+                      <img src={report.customerSignature} alt="Customer Signature" className="max-h-20" />
+                      <p className="text-xs text-gray-500 mt-2">Signed: {formatDate(report.customerSignatureDate)}</p>
+                    </div>
+                  ) : needsSignature ? (
+                    <div className="border-2 border-dashed border-orange-300 rounded-lg p-4 bg-orange-50 text-center">
+                      <p className="text-sm text-orange-700 font-medium">Your signature is required</p>
+                      <p className="text-xs text-orange-600 mt-1">Please sign below to complete this service report</p>
+                    </div>
+                  ) : (
+                    <p className="text-gray-400 italic text-sm">No signature</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Client Signing Section */}
+              {needsSignature && !signSuccess && (
+                <div className="mt-6 p-5 bg-orange-50 border border-orange-200 rounded-xl">
+                  <h4 className="font-semibold text-orange-800 mb-1">Action Required: Sign This Service Report</h4>
+                  <p className="text-sm text-orange-700 mb-4">
+                    Your technician has completed the service work. Please review the report above and provide your signature below to confirm.
+                  </p>
+
+                  {!signing ? (
+                    <button
+                      onClick={() => setSigning(true)}
+                      className="px-6 py-2.5 bg-gradient-to-r from-primary to-accent text-white rounded-lg font-medium hover:opacity-90 transition-colors"
+                    >
+                      Sign Service Report
+                    </button>
+                  ) : (
+                    <div className="space-y-4">
+                      <SignaturePad
+                        label="Your Signature"
+                        onSave={(sig) => setCustomerSignature(sig)}
+                      />
+
+                      {signError && (
+                        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{signError}</div>
+                      )}
+
+                      <div className="flex gap-3">
+                        <button
+                          onClick={handleSign}
+                          disabled={submitting || !customerSignature}
+                          className="px-6 py-2.5 bg-gradient-to-r from-primary to-accent text-white rounded-lg font-medium hover:opacity-90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                        >
+                          {submitting ? (
+                            <><div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div> Submitting...</>
+                          ) : (
+                            <>
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                              Submit Signature
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => { setSigning(false); setCustomerSignature(''); setSignError(null); }}
+                          className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Success message */}
+              {signSuccess && (
+                <div className="mt-6 p-5 bg-green-50 border border-green-200 rounded-xl text-center">
+                  <svg className="w-12 h-12 text-green-500 mx-auto mb-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  <h4 className="font-semibold text-green-800 text-lg">Signature Submitted Successfully</h4>
+                  <p className="text-sm text-green-700 mt-1">This service report is now complete. Thank you!</p>
+                  <button onClick={onBack} className="mt-4 px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-lg font-medium hover:opacity-90 text-sm">
+                    {backLabel ? `Return to ${backLabel.replace('Back to ', '')}` : 'Return'}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    const SupportPage = ({ settings, token, userData, documents, activeTab: propActiveTab, onTabChange, onNavigateToFile }) => {
       const [tickets, setTickets] = useState([]);
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState(null);
       const [localActiveTab, setLocalActiveTab] = useState(propActiveTab || 'history');
       const [expandedTicket, setExpandedTicket] = useState(null);
       const [statusFilter, setStatusFilter] = useState('all');
+      const [reportSort, setReportSort] = useState('date_desc');
+      const [reportStatusFilter, setReportStatusFilter] = useState('');
+
+      // Submit-ticket form state
+      const [formSubject, setFormSubject] = useState('');
+      const [formDescription, setFormDescription] = useState('');
+      const [formPriority, setFormPriority] = useState('Low');
+      const [formName, setFormName] = useState('');
+      const [formIssueCategory, setFormIssueCategory] = useState('');
+      const [formSubmitting, setFormSubmitting] = useState(false);
+      const [formMessage, setFormMessage] = useState(null);
+
+      // Derive service visit log from client_documents (slug-based, no separate API needed)
+      const serviceReportDocs = (documents || []).filter(doc => doc.serviceReportId && doc.category === 'Service Reports');
 
       const activeTab = propActiveTab || localActiveTab;
       const setActiveTab = (tab) => {
@@ -2289,6 +3067,49 @@
         });
       };
 
+      const handleSubmitTicket = async (e) => {
+        e.preventDefault();
+        if (!formSubject.trim()) return;
+        setFormSubmitting(true);
+        setFormMessage(null);
+        try {
+          const response = await fetch(`${API_URL}/api/client/submit-ticket`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subject: formSubject.trim(), description: formDescription.trim(), priority: formPriority, submittedBy: formName.trim(), issueCategory: formIssueCategory })
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok || data.error) {
+            setFormMessage({ type: 'error', text: data.error || 'Failed to submit ticket. Please try again.' });
+          } else {
+            setFormMessage({ type: 'success', text: 'Your ticket has been submitted! Our team will respond within 24-48 hours.' });
+            setFormSubject('');
+            setFormDescription('');
+            setFormPriority('Low');
+            setFormName('');
+            setFormIssueCategory('');
+            // Append the new ticket to the local list so it shows immediately
+            if (data.ticket) {
+              setTickets(prev => [{
+                id: data.ticket.id,
+                subject: data.ticket.subject,
+                description: data.ticket.description,
+                status: 'Open',
+                createdAt: data.ticket.submittedAt,
+                closedAt: null,
+                priority: data.ticket.priority,
+                source: 'client_submitted',
+                serviceReport: null
+              }, ...prev]);
+            }
+          }
+        } catch (err) {
+          setFormMessage({ type: 'error', text: 'Failed to submit ticket. Please try again.' });
+        } finally {
+          setFormSubmitting(false);
+        }
+      };
+
       const filteredTickets = statusFilter === 'all' ? tickets
         : tickets.filter(t => t.status === statusFilter);
 
@@ -2310,14 +3131,29 @@
 
           {/* Tab Navigation */}
           <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-            <div className="grid grid-cols-2 border-b">
+            <div className="grid grid-cols-3 border-b">
               <button
                 onClick={() => setActiveTab('history')}
                 style={activeTab === 'history' ? {backgroundColor: '#045E9F', color: 'white'} : {}}
                 className={`py-4 px-4 font-medium transition flex items-center justify-center gap-2 ${activeTab === 'history' ? '' : 'text-gray-600 hover:bg-gray-50 border-r'}`}
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
-                <span>Support Tickets</span>
+                <span className="hidden sm:inline">Service History</span>
+                <span className="sm:hidden">History</span>
+                {serviceReportDocs.length > 0 && (
+                  <span className="ml-1 w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center bg-gradient-to-r from-primary to-accent text-white">
+                    {serviceReportDocs.length}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setActiveTab('tickets')}
+                style={activeTab === 'tickets' ? {backgroundColor: '#045E9F', color: 'white'} : {}}
+                className={`py-4 px-4 font-medium transition flex items-center justify-center gap-2 ${activeTab === 'tickets' ? '' : 'text-gray-600 hover:bg-gray-50 border-r'}`}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" /></svg>
+                <span className="hidden sm:inline">Support Tickets</span>
+                <span className="sm:hidden">Tickets</span>
               </button>
               <button
                 onClick={() => setActiveTab('submit')}
@@ -2325,13 +3161,79 @@
                 className={`py-4 px-4 font-medium transition flex items-center justify-center gap-2 ${activeTab === 'submit' ? '' : 'text-gray-600 hover:bg-gray-50'}`}
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                <span>Submit a Ticket</span>
+                <span className="hidden sm:inline">Submit a Ticket</span>
+                <span className="sm:hidden">Ticket</span>
               </button>
             </div>
 
             <div className="p-6">
-              {/* Support Tickets Tab */}
+              {/* Service History Tab - powered by client_documents, no separate API */}
               {activeTab === 'history' && (
+                <div>
+                  <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <h2 className="text-lg font-semibold text-gray-800">Your Service History</h2>
+                    {serviceReportDocs.length > 1 && (
+                      <div className="flex items-center gap-2">
+                        <select value={reportSort} onChange={e => setReportSort(e.target.value)} className="text-xs border rounded-lg px-2 py-1.5 text-gray-600 focus:ring-1 focus:ring-primary">
+                          <option value="date_desc">Newest First</option>
+                          <option value="date_asc">Oldest First</option>
+                          <option value="title_asc">Name A-Z</option>
+                        </select>
+                        <select value={reportStatusFilter} onChange={e => setReportStatusFilter(e.target.value)} className="text-xs border rounded-lg px-2 py-1.5 text-gray-600 focus:ring-1 focus:ring-primary">
+                          <option value="">All</option>
+                          <option value="signature_needed">Needs Signature</option>
+                          <option value="submitted">Signed</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  {serviceReportDocs.length === 0 ? (
+                    <div className="text-center py-12 text-gray-500">
+                      <div className="flex justify-center mb-4">
+                        <svg className="w-16 h-16 text-gray-300" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                      </div>
+                      <p className="font-medium">No service visits yet</p>
+                      <p className="text-sm mt-2">Service reports will appear here after visits are completed.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {serviceReportDocs
+                        .filter(d => !reportStatusFilter || d.reportStatus === reportStatusFilter)
+                        .sort((a, b) => {
+                          if (reportSort === 'date_asc') return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
+                          if (reportSort === 'title_asc') return (a.title || '').localeCompare(b.title || '');
+                          return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+                        })
+                        .map(doc => (
+                        <div key={doc.id} className="border border-gray-200 rounded-lg p-4 flex items-center justify-between hover:bg-gray-50 transition">
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <div className="flex-shrink-0 w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center">
+                              <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-medium text-gray-800 truncate">{doc.title || 'Service Report'}</p>
+                              <p className="text-sm text-gray-500 mt-0.5">{formatDate(doc.createdAt)}</p>
+                            </div>
+                          </div>
+                          {onNavigateToFile && (
+                            <button
+                              onClick={() => onNavigateToFile(doc.serviceReportId)}
+                              className="ml-4 flex-shrink-0 flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-primary hover:text-accent hover:bg-primary/5 rounded-lg transition"
+                            >
+                              View Report
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Support Tickets Tab */}
+              {activeTab === 'tickets' && (
                 <div>
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-lg font-semibold text-gray-800">Your Support Tickets</h2>
@@ -2379,6 +3281,9 @@
                               <div className="flex flex-wrap items-center gap-3 mt-1 text-sm text-gray-500">
                                 <span>Opened: {formatDate(ticket.createdAt)}</span>
                                 {ticket.closedAt && <span>Closed: {formatDate(ticket.closedAt)}</span>}
+                                {ticket.source === 'client_submitted' && (
+                                  <span className="text-xs bg-blue-50 text-blue-600 border border-blue-200 px-2 py-0.5 rounded-full font-medium">Submitted by you</span>
+                                )}
                                 {ticket.serviceReport && (
                                   <span className="text-primary font-medium flex items-center gap-1">
                                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
@@ -2421,26 +3326,9 @@
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          fetch(`${API_URL}/api/client/service-reports/${ticket.serviceReport.id}/pdf`, {
-                                            headers: { 'Authorization': `Bearer ${token}` }
-                                          })
-                                          .then(resp => {
-                                            if (!resp.ok) throw new Error('Download failed');
-                                            return resp.blob();
-                                          })
-                                          .then(blob => {
-                                            const url = window.URL.createObjectURL(blob);
-                                            const a = document.createElement('a');
-                                            a.href = url;
-                                            a.download = `Service_Report_${ticket.serviceReport.serviceType || 'Report'}.pdf`;
-                                            document.body.appendChild(a);
-                                            a.click();
-                                            window.URL.revokeObjectURL(url);
-                                            a.remove();
-                                          })
-                                          .catch(err => alert('Failed to download report: ' + err.message));
+                                          openPdfSecurely(`${API_URL}/api/client/service-reports/${ticket.serviceReport.id}/pdf`, token);
                                         }}
-                                        className="ml-3 flex items-center gap-1 px-3 py-1.5 bg-primary text-white text-xs font-medium rounded-lg hover:bg-accent transition whitespace-nowrap"
+                                        className="ml-3 flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-primary to-accent text-white text-xs font-medium rounded-lg hover:opacity-90 transition whitespace-nowrap"
                                       >
                                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                                         Download PDF
@@ -2460,10 +3348,10 @@
 
               {/* Submit Ticket Tab */}
               {activeTab === 'submit' && (
-                <div className="grid md:grid-cols-2 gap-8 items-stretch min-h-[500px]">
+                <div className="grid md:grid-cols-2 gap-6 sm:gap-8 items-stretch min-h-0 sm:min-h-[500px]">
                   {/* Left Side - Header */}
-                  <div className="bg-white rounded-xl flex flex-col justify-center items-center text-center p-8">
-                    <h2 className="text-4xl font-bold text-gray-800 mb-6">Submit a Ticket</h2>
+                  <div className="bg-white rounded-xl flex flex-col justify-center items-center text-center p-5 sm:p-8">
+                    <h2 className="text-2xl sm:text-4xl font-bold text-gray-800 mb-4 sm:mb-6">Submit a Ticket</h2>
                     <p className="text-gray-500 text-lg">
                       <span className="italic">or</span> email us at{' '}
                       <a href="mailto:support@thrive365labs.com" className="text-primary hover:text-accent font-semibold">
@@ -2472,24 +3360,86 @@
                     </p>
                   </div>
 
-                  {/* Right Side - Form */}
+                  {/* Right Side - Native Form */}
                   <div className="bg-white rounded-xl shadow-sm border p-6">
                     <p className="text-gray-500 text-sm text-center mb-4">Agent response within 24-48 hours</p>
-                    <div
-                      className="hs-form-frame"
-                      data-region="na1"
-                      data-form-id="089d904f-4acb-4ff7-8c61-53ee99e12345"
-                      data-portal-id="49020024"
-                      ref={(el) => {
-                        if (el && !document.getElementById('hs-form-script')) {
-                          const script = document.createElement('script');
-                          script.id = 'hs-form-script';
-                          script.src = 'https://js.hsforms.net/forms/embed/49020024.js';
-                          script.defer = true;
-                          document.body.appendChild(script);
-                        }
-                      }}
-                    ></div>
+                    {formMessage && (
+                      <div className={`mb-4 p-3 rounded-lg text-sm ${formMessage.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+                        {formMessage.text}
+                      </div>
+                    )}
+                    <form onSubmit={handleSubmitTicket} className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">First &amp; Last Name <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          value={formName}
+                          onChange={e => setFormName(e.target.value)}
+                          required
+                          maxLength={100}
+                          placeholder="Your full name"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Issue Category <span className="text-red-500">*</span></label>
+                        <select
+                          value={formIssueCategory}
+                          onChange={e => setFormIssueCategory(e.target.value)}
+                          required
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                        >
+                          <option value="">Select a category…</option>
+                          <option value="Analyzer Hardware">Analyzer Hardware</option>
+                          <option value="Inventory">Inventory</option>
+                          <option value="LIS/EMR">LIS/EMR</option>
+                          <option value="Billing &amp; Fees">Billing &amp; Fees</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Subject <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          value={formSubject}
+                          onChange={e => setFormSubject(e.target.value)}
+                          required
+                          maxLength={200}
+                          placeholder="Brief description of your issue"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                        <textarea
+                          value={formDescription}
+                          onChange={e => setFormDescription(e.target.value)}
+                          rows={4}
+                          maxLength={2000}
+                          placeholder="Please provide as much detail as possible..."
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                        <select
+                          value={formPriority}
+                          onChange={e => setFormPriority(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                        >
+                          <option value="Low">Low</option>
+                          <option value="Medium">Medium</option>
+                          <option value="High">High</option>
+                        </select>
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={formSubmitting || !formSubject.trim() || !formName.trim() || !formIssueCategory}
+                        className="w-full py-2.5 px-4 bg-gradient-to-r from-primary to-accent text-white font-medium rounded-lg hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                      >
+                        {formSubmitting ? 'Submitting…' : 'Submit Ticket'}
+                      </button>
+                    </form>
                   </div>
                 </div>
               )}
@@ -2500,19 +3450,24 @@
       );
     };
     
-    const FilesPage = ({ settings, documents: initialDocuments, token, projects, userData }) => {
+    const FilesPage = ({ settings, documents: initialDocuments, token, projects, userData, highlightServiceReportId }) => {
       const [documents, setDocuments] = useState(initialDocuments || []);
       const [selectedFile, setSelectedFile] = useState(null);
       const [category, setCategory] = useState('');
       const [note, setNote] = useState('');
       const [uploading, setUploading] = useState(false);
       const [uploadMessage, setUploadMessage] = useState(null);
-      
+      const [viewingReport, setViewingReport] = useState(null);
+      const [fetchingReport, setFetchingReport] = useState(false);
+      const [reportSort, setReportSort] = useState('date_desc');
+      const [reportStatusFilter, setReportStatusFilter] = useState('');
+      const highlightRef = useRef(null);
+
       const slug = localStorage.getItem('portal_user') ? JSON.parse(localStorage.getItem('portal_user')).slug : null;
-      
+
       // Check if user has any HubSpot IDs configured for uploads
       const hasHubSpotConfig = userData?.hubspotCompanyId || userData?.hubspotDealId || userData?.hubspotContactId;
-      
+
       const refreshDocuments = async () => {
         if (!slug) return;
         try {
@@ -2525,7 +3480,69 @@
           console.error('Failed to refresh documents:', err);
         }
       };
-      
+
+      // Open full service report view (for review + sign or just viewing)
+      const openReportView = async (serviceReportId) => {
+        setFetchingReport(true);
+        try {
+          const response = await fetch(`${API_URL}/api/client/service-reports/${serviceReportId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (!response.ok) {
+            const err = await response.json();
+            alert(err.error || 'Failed to load report');
+            return;
+          }
+          const report = await response.json();
+          setViewingReport(report);
+        } catch (err) {
+          console.error('Error fetching report:', err);
+          alert('Failed to load service report. Please try again.');
+        } finally {
+          setFetchingReport(false);
+        }
+      };
+
+      // Called after client signs the report within ServiceReportDetail
+      const handleReportSigned = async (reportId) => {
+        setDocuments(prev => prev.map(d => d.serviceReportId === reportId ? { ...d, reportStatus: 'submitted' } : d));
+        refreshDocuments();
+        // Auto-download the now-signed report PDF
+        try {
+          const pdfResp = await fetch(`${API_URL}/api/client/service-reports/${reportId}/pdf`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (pdfResp.ok) {
+            const blob = await pdfResp.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'Service_Report.pdf';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            a.remove();
+          }
+        } catch (dlErr) {
+          console.error('Auto-download after signing failed:', dlErr);
+        }
+      };
+
+      // When navigating from Service History, auto-open the report view
+      useEffect(() => {
+        if (highlightServiceReportId) {
+          if (highlightRef.current) {
+            setTimeout(() => {
+              highlightRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 300);
+          }
+          const doc = (documents || []).find(d => d.serviceReportId === highlightServiceReportId);
+          if (doc) {
+            openReportView(doc.serviceReportId);
+          }
+        }
+      }, [highlightServiceReportId]);
+
       const adminDocs = (documents || []).filter(doc => doc.uploadedBy !== 'client');
       const clientUploads = (documents || []).filter(doc => doc.uploadedBy === 'client');
       
@@ -2560,9 +3577,8 @@
             body: formData
           });
           
-          const result = await response.json();
-          
           if (response.ok) {
+            const result = await response.json();
             setUploadMessage({ type: 'success', text: result.message || 'File uploaded successfully!' });
             setSelectedFile(null);
             setNote('');
@@ -2570,7 +3586,9 @@
             document.getElementById('clientFileInput').value = '';
             refreshDocuments();
           } else {
-            setUploadMessage({ type: 'error', text: result.error || 'Upload failed' });
+            let errorMsg = 'Upload failed';
+            try { const errData = await response.json(); errorMsg = errData.error || errorMsg; } catch (_) {}
+            setUploadMessage({ type: 'error', text: errorMsg });
           }
         } catch (error) {
           setUploadMessage({ type: 'error', text: 'Failed to upload file. Please try again.' });
@@ -2597,53 +3615,100 @@
                     <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">{cat}</h3>
                     <div className="space-y-2">
                       {docs.map(doc => {
-                        const downloadUrl = doc.serviceReportId
-                          ? `${API_URL}/api/client/service-reports/${doc.serviceReportId}/pdf`
-                          : doc.url;
-                        const handleDownload = (e) => {
+                        const reportStatus = doc.serviceReportId ? doc.reportStatus : null;
+                        const needsSignature = reportStatus === 'signature_needed';
+                        const isSigned = reportStatus === 'submitted';
+                        const isHighlighted = highlightServiceReportId && doc.serviceReportId === highlightServiceReportId;
+
+                        const handleDocDownload = (e) => {
+                          e.preventDefault();
                           if (doc.serviceReportId) {
-                            e.preventDefault();
-                            fetch(`${API_URL}/api/client/service-reports/${doc.serviceReportId}/pdf`, {
-                              headers: { 'Authorization': `Bearer ${token}` }
-                            })
-                            .then(resp => {
-                              if (!resp.ok) throw new Error('Download failed');
-                              return resp.blob();
-                            })
-                            .then(blob => {
-                              const url = window.URL.createObjectURL(blob);
-                              const a = document.createElement('a');
-                              a.href = url;
-                              a.download = doc.title.replace(/[^a-zA-Z0-9\s-]/g, '') + '.pdf';
-                              document.body.appendChild(a);
-                              a.click();
-                              window.URL.revokeObjectURL(url);
-                              a.remove();
-                            })
-                            .catch(err => alert('Failed to download report: ' + err.message));
+                            openPdfSecurely(`${API_URL}/api/client/service-reports/${doc.serviceReportId}/pdf`, token);
                           }
                         };
+
+                        // Non-service-report documents: simple download/view link
+                        if (!doc.serviceReportId) {
+                          const isCloudLink = !doc.isUploadedFile && doc.url && doc.url.startsWith('http');
+                          return (
+                            <a
+                              key={doc.id}
+                              href={doc.url || '#'}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-3 p-3 rounded-lg border hover:bg-gray-50 transition group cursor-pointer"
+                            >
+                              <span className="text-2xl">📄</span>
+                              <div className="flex-1">
+                                <p className="font-medium text-gray-800 group-hover:text-primary">{doc.title}</p>
+                                {doc.description && <p className="text-sm text-gray-500">{doc.description}</p>}
+                              </div>
+                              <span className="text-primary text-sm font-medium flex items-center gap-1">
+                                {isCloudLink ? (
+                                  <><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                  View & Download</>
+                                ) : (
+                                  <><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                  Download</>
+                                )}
+                              </span>
+                            </a>
+                          );
+                        }
+
+                        // Service report documents: signature-aware rendering
                         return (
-                          <a
+                          <div
                             key={doc.id}
-                            href={downloadUrl || '#'}
-                            target={doc.serviceReportId ? undefined : '_blank'}
-                            rel={doc.serviceReportId ? undefined : 'noopener noreferrer'}
-                            onClick={handleDownload}
-                            className="flex items-center gap-3 p-3 rounded-lg border hover:bg-gray-50 transition group cursor-pointer"
+                            ref={isHighlighted ? highlightRef : null}
+                            className={`flex items-center gap-3 p-3 rounded-lg border transition ${
+                              isHighlighted ? 'ring-2 ring-primary bg-primary/5 border-primary/30' :
+                              needsSignature ? 'border-orange-200 bg-orange-50/50' :
+                              'hover:bg-gray-50'
+                            }`}
                           >
-                            <span className="text-2xl">{doc.serviceReportId ? '📋' : '📄'}</span>
-                            <div className="flex-1">
-                              <p className="font-medium text-gray-800 group-hover:text-primary">{doc.title}</p>
-                              {doc.description && (
-                                <p className="text-sm text-gray-500">{doc.description}</p>
+                            <span className="text-2xl">📋</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-gray-800">{doc.title}</p>
+                              {doc.description && <p className="text-sm text-gray-500">{doc.description}</p>}
+                              {needsSignature && (
+                                <p className="text-xs text-orange-600 font-medium mt-1">Review and signature required before download</p>
                               )}
                             </div>
-                            <span className="text-primary text-sm font-medium flex items-center gap-1">
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                              Download PDF
-                            </span>
-                          </a>
+                            {needsSignature ? (
+                              <button
+                                onClick={(e) => { e.preventDefault(); openReportView(doc.serviceReportId); }}
+                                disabled={fetchingReport}
+                                className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 transition whitespace-nowrap disabled:opacity-50"
+                              >
+                                {fetchingReport ? (
+                                  <><div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div> Loading...</>
+                                ) : (
+                                  <><svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                  Review & Sign</>
+                                )}
+                              </button>
+                            ) : (
+                              <div className="flex-shrink-0 flex items-center gap-2">
+                                {isSigned && <span className="text-green-600 text-xs font-semibold">✓ Signed</span>}
+                                <button
+                                  onClick={(e) => { e.preventDefault(); openReportView(doc.serviceReportId); }}
+                                  disabled={fetchingReport}
+                                  className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-gray-600 rounded-lg hover:bg-gray-100 transition whitespace-nowrap"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                                  View
+                                </button>
+                                <button
+                                  onClick={handleDocDownload}
+                                  className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-primary rounded-lg hover:bg-gray-100 transition whitespace-nowrap"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                  Download
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         );
                       })}
                     </div>
@@ -2742,7 +3807,7 @@
                 <button
                   type="submit"
                   disabled={uploading || !selectedFile}
-                  className="w-full bg-primary text-white py-2 px-4 rounded-lg font-medium hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full bg-gradient-to-r from-primary to-accent text-white py-2 px-4 rounded-lg font-medium hover:opacity-90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {uploading ? 'Uploading...' : 'Upload File'}
                 </button>
@@ -2756,14 +3821,48 @@
                 <span>📝</span> Additional Upload Options
               </h2>
               <div dangerouslySetInnerHTML={{ __html: (() => {
-                // Sanitize embed HTML: strip script tags and event handlers
-                let html = settings.filesFormEmbed;
-                html = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-                html = html.replace(/\son\w+\s*=\s*["'][^"']*["']/gi, '');
-                html = html.replace(/\son\w+\s*=\s*[^\s>]*/gi, '');
-                html = html.replace(/javascript\s*:/gi, '');
-                return html;
+                // Sanitize embed HTML using DOM-based approach for robust XSS prevention
+                const ALLOWED_TAGS = new Set(['iframe', 'form', 'input', 'select', 'option', 'textarea', 'button', 'label', 'div', 'span', 'p', 'a', 'br', 'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'table', 'tr', 'td', 'th', 'thead', 'tbody', 'img', 'strong', 'em', 'b', 'i']);
+                const ALLOWED_ATTRS = new Set(['src', 'href', 'target', 'rel', 'class', 'id', 'style', 'width', 'height', 'frameborder', 'allowfullscreen', 'allow', 'name', 'value', 'type', 'placeholder', 'action', 'method', 'enctype', 'alt', 'title', 'loading', 'referrerpolicy', 'sandbox']);
+                const DANGEROUS_PROTOCOLS = /^\s*(javascript|data|vbscript)\s*:/i;
+                try {
+                  const doc = new DOMParser().parseFromString(settings.filesFormEmbed, 'text/html');
+                  const sanitize = (node) => {
+                    const walker = doc.createTreeWalker(node, NodeFilter.SHOW_ELEMENT);
+                    const toRemove = [];
+                    while (walker.nextNode()) {
+                      const el = walker.currentNode;
+                      if (!ALLOWED_TAGS.has(el.tagName.toLowerCase())) { toRemove.push(el); continue; }
+                      [...el.attributes].forEach(attr => {
+                        const name = attr.name.toLowerCase();
+                        if (name.startsWith('on') || !ALLOWED_ATTRS.has(name)) { el.removeAttribute(attr.name); return; }
+                        if ((name === 'src' || name === 'href' || name === 'action') && DANGEROUS_PROTOCOLS.test(attr.value)) { el.removeAttribute(attr.name); }
+                      });
+                    }
+                    toRemove.forEach(el => el.remove());
+                  };
+                  sanitize(doc.body);
+                  return doc.body.innerHTML;
+                } catch (e) { return ''; }
               })() }} />
+            </div>
+          )}
+
+          {/* Full Report View overlay for reviewing + signing service reports */}
+          {viewingReport && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
+                <ServiceReportDetail
+                  report={viewingReport}
+                  token={token}
+                  backLabel="Back to Files"
+                  onBack={() => setViewingReport(null)}
+                  onSigned={(reportId) => {
+                    handleReportSigned(reportId);
+                    setTimeout(() => setViewingReport(null), 2000);
+                  }}
+                />
+              </div>
             </div>
           )}
         </div>
@@ -2780,7 +3879,7 @@
           try {
             const [clientsRes, announcementsRes] = await Promise.all([
               fetch(`${API_URL}/api/users`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()),
-              fetch(`${API_URL}/api/announcements`).then(r => r.json())
+              fetch(`${API_URL}/api/announcements`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json())
             ]);
             setStats({
               clients: Array.isArray(clientsRes) ? clientsRes.filter(u => u.role === 'client').length : 0,
@@ -2812,16 +3911,16 @@
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-500 text-sm">Client Users</p>
-                  <p className="text-3xl font-bold text-accent">{stats.clients}</p>
+                  <p className="text-2xl sm:text-3xl font-bold text-accent">{stats.clients}</p>
                 </div>
-                <div className="text-primary opacity-50">{React.cloneElement(AdminIcons.users, { className: 'w-12 h-12' })}</div>
+                <div className="text-primary opacity-50">{React.cloneElement(AdminIcons.users, { className: 'w-10 h-10 sm:w-12 sm:h-12' })}</div>
               </div>
             </div>
-            <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-green-500">
+            <div className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border-l-4 border-green-500">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-500 text-sm">Announcements</p>
-                  <p className="text-3xl font-bold text-accent">{stats.announcements}</p>
+                  <p className="text-2xl sm:text-3xl font-bold text-accent">{stats.announcements}</p>
                 </div>
                 <div className="text-green-500 opacity-50">{React.cloneElement(Icons.megaphone, { className: 'w-12 h-12' })}</div>
               </div>
@@ -2861,7 +3960,9 @@
     const AdminSettingsPage = ({ token, settings, onSettingsChange }) => {
       const [formData, setFormData] = useState({
         filesFormEmbed: settings?.filesFormEmbed || '',
-        supportUrl: settings?.supportUrl || ''
+        supportUrl: settings?.supportUrl || '',
+        supportFormId: settings?.supportFormId || '',
+        hubspotPortalId: settings?.hubspotPortalId || ''
       });
       const [saving, setSaving] = useState(false);
       const [message, setMessage] = useState('');
@@ -2923,11 +4024,35 @@
                 placeholder="https://support.example.com"
               />
             </div>
-            
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">HubSpot Portal ID</label>
+              <input
+                type="text"
+                value={formData.hubspotPortalId}
+                onChange={(e) => setFormData({ ...formData, hubspotPortalId: e.target.value })}
+                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
+                placeholder="49020024"
+              />
+              <p className="text-xs text-gray-400 mt-1">Used for the HubSpot support form embed on the Support page</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">HubSpot Support Form ID</label>
+              <input
+                type="text"
+                value={formData.supportFormId}
+                onChange={(e) => setFormData({ ...formData, supportFormId: e.target.value })}
+                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
+                placeholder="089d904f-4acb-4ff7-8c61-53ee99e12345"
+              />
+              <p className="text-xs text-gray-400 mt-1">The form ID from your HubSpot support ticket form</p>
+            </div>
+
             <button
               onClick={handleSave}
               disabled={saving}
-              className="bg-primary text-white px-6 py-2 rounded-lg font-medium hover:bg-accent transition disabled:opacity-50"
+              className="bg-gradient-to-r from-primary to-accent text-white px-6 py-2 rounded-lg font-medium hover:opacity-90 transition disabled:opacity-50"
             >
               {saving ? 'Saving...' : 'Save Settings'}
             </button>
@@ -2956,7 +4081,7 @@
 
       const loadAnnouncements = async () => {
         try {
-          const res = await fetch(`${API_URL}/api/announcements`);
+          const res = await fetch(`${API_URL}/api/announcements`, { headers: { 'Authorization': `Bearer ${token}` } });
           const data = await res.json();
           setAnnouncements(Array.isArray(data) ? data : []);
         } catch (err) {
@@ -3052,7 +4177,7 @@
             </div>
             <button
               onClick={() => { setShowForm(true); setEditingId(null); setFormData({ title: '', content: '', type: 'info', priority: false, pinned: false, targetAll: true, targetClients: [], attachmentUrl: '', attachmentName: '' }); }}
-              className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-accent transition flex items-center gap-2"
+              className="bg-gradient-to-r from-primary to-accent text-white px-4 py-2 rounded-lg font-medium hover:opacity-90 transition flex items-center gap-2"
             >
               <span>+</span> New Announcement
             </button>
@@ -3197,7 +4322,7 @@
                 </div>
 
                 <div className="flex gap-2 pt-2">
-                  <button onClick={handleSave} className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-accent">
+                  <button onClick={handleSave} className="bg-gradient-to-r from-primary to-accent text-white px-4 py-2 rounded-lg font-medium hover:opacity-90">
                     {editingId ? 'Update' : 'Create'}
                   </button>
                   <button onClick={() => { setShowForm(false); setEditingId(null); }} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg">
@@ -3434,7 +4559,7 @@
                 </h2>
                 <button
                   onClick={() => setShowForm(true)}
-                  className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-accent transition"
+                  className="bg-gradient-to-r from-primary to-accent text-white px-4 py-2 rounded-lg font-medium hover:opacity-90 transition"
                 >
                   + Add Document
                 </button>
@@ -3533,7 +4658,7 @@
                     <button 
                       onClick={handleAdd} 
                       disabled={uploading}
-                      className="bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-accent disabled:opacity-50"
+                      className="bg-gradient-to-r from-primary to-accent text-white px-4 py-2 rounded-lg font-medium hover:opacity-90 disabled:opacity-50"
                     >
                       {uploading ? 'Adding...' : 'Add'}
                     </button>
@@ -3592,11 +4717,13 @@
       const [saving, setSaving] = useState(false);
       const [message, setMessage] = useState(null);
       const [showCreateForm, setShowCreateForm] = useState(false);
+      const [addToExisting, setAddToExisting] = useState(false);
       const [createForm, setCreateForm] = useState({
         email: '',
         name: '',
         password: '',
         practiceName: '',
+        existingPortalSlug: '',
         logo: '',
         hubspotCompanyId: '',
         hubspotDealId: '',
@@ -3697,8 +4824,18 @@
         setMessage(null);
 
         // Validate required fields
-        if (!createForm.email || !createForm.name || !createForm.password || !createForm.practiceName) {
-          setMessage({ type: 'error', text: 'Email, name, password, and practice name are required' });
+        if (!createForm.email || !createForm.name || !createForm.password) {
+          setMessage({ type: 'error', text: 'Email, name, and password are required' });
+          setSaving(false);
+          return;
+        }
+        if (addToExisting && !createForm.existingPortalSlug) {
+          setMessage({ type: 'error', text: 'Please select an existing portal' });
+          setSaving(false);
+          return;
+        }
+        if (!addToExisting && !createForm.practiceName) {
+          setMessage({ type: 'error', text: 'Practice name is required for new portals' });
           setSaving(false);
           return;
         }
@@ -3722,11 +4859,13 @@
             await loadClients();
             // Reset and close form
             setShowCreateForm(false);
+            setAddToExisting(false);
             setCreateForm({
               email: '',
               name: '',
               password: '',
               practiceName: '',
+              existingPortalSlug: '',
               logo: '',
               hubspotCompanyId: '',
               hubspotDealId: '',
@@ -3752,7 +4891,7 @@
             </div>
             <button
               onClick={() => setShowCreateForm(true)}
-              className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-accent font-medium flex items-center gap-2"
+              className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-lg hover:opacity-90 font-medium flex items-center gap-2"
             >
               <span>+</span> Add Client User
             </button>
@@ -3779,6 +4918,7 @@
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Practice Name</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Portal URL</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">HubSpot IDs</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Status</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                     </tr>
                   </thead>
@@ -3807,6 +4947,23 @@
                             <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded">Not linked</span>
                           )}
                         </td>
+                        <td className="px-4 py-3 text-center">
+                          <button
+                            onClick={async () => {
+                              const newStatus = c.accountStatus === 'inactive' ? 'active' : 'inactive';
+                              try {
+                                await fetch(`${API_URL}/api/client-portal/clients/${c.id}`, {
+                                  method: 'PUT',
+                                  headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ accountStatus: newStatus })
+                                });
+                                loadClients();
+                              } catch (err) { console.error('Toggle status error:', err); }
+                            }}
+                            className={`px-2.5 py-1 text-xs rounded-full font-medium ${c.accountStatus === 'inactive' ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}
+                            title="Click to toggle active/inactive"
+                          >{c.accountStatus === 'inactive' ? 'Inactive' : 'Active'}</button>
+                        </td>
                         <td className="px-4 py-3 text-sm">
                           <button
                             onClick={() => handleEdit(c)}
@@ -3829,9 +4986,48 @@
               <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
                 <div className="p-6 border-b">
                   <h2 className="text-xl font-bold text-accent">Add New Client User</h2>
-                  <p className="text-sm text-gray-500 mt-1">Create a new client portal account (syncs with Admin Hub)</p>
+                  <p className="text-sm text-gray-500 mt-1">Create a new account or add a user to an existing portal</p>
                 </div>
                 <div className="p-6 space-y-4">
+                  {/* Portal mode toggle */}
+                  <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm font-medium">
+                    <button
+                      type="button"
+                      onClick={() => { setAddToExisting(false); setCreateForm(f => ({...f, existingPortalSlug: ''})); }}
+                      className={`flex-1 py-2 transition-colors ${!addToExisting ? 'bg-gradient-to-r from-primary to-accent text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                    >
+                      New Portal
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAddToExisting(true)}
+                      className={`flex-1 py-2 transition-colors ${addToExisting ? 'bg-gradient-to-r from-primary to-accent text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                    >
+                      Add to Existing Portal
+                    </button>
+                  </div>
+
+                  {/* Portal picker (existing mode only) */}
+                  {addToExisting && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Select Portal <span className="text-red-500">*</span></label>
+                      <select
+                        value={createForm.existingPortalSlug}
+                        onChange={(e) => setCreateForm({...createForm, existingPortalSlug: e.target.value})}
+                        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      >
+                        <option value="">-- Select a portal --</option>
+                        {clients.reduce((acc, c) => {
+                          if (c.slug && !acc.find(p => p.slug === c.slug)) acc.push(c);
+                          return acc;
+                        }, []).map(p => (
+                          <option key={p.slug} value={p.slug}>{p.practiceName || p.slug} — /portal/{p.slug}</option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-400 mt-1">The new user will share access to this portal and inherit its settings</p>
+                    </div>
+                  )}
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Email <span className="text-red-500">*</span></label>
                     <input
@@ -3866,76 +5062,84 @@
                     />
                     <p className="text-xs text-gray-400 mt-1">User will be required to change password on first login</p>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Practice Name <span className="text-red-500">*</span></label>
-                    <input
-                      type="text"
-                      value={createForm.practiceName}
-                      onChange={(e) => setCreateForm({...createForm, practiceName: e.target.value})}
-                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                      placeholder="e.g., ABC Medical Labs"
-                      required
-                    />
-                    <p className="text-xs text-gray-400 mt-1">Will auto-generate portal URL slug</p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Practice Logo</label>
-                    <div className="flex items-center gap-4">
-                      {createForm.logo && <img src={createForm.logo} alt="Logo" className="h-16 w-16 object-contain border rounded" />}
-                      <input type="file" ref={createLogoInputRef} accept="image/png,image/jpeg" onChange={(e) => handleLogoUpload(e, 'create')} className="hidden" />
-                      <button type="button" onClick={() => createLogoInputRef.current?.click()}
-                        className="px-4 py-2 border border-primary text-primary rounded-lg hover:bg-primary hover:text-white transition flex items-center gap-2 text-sm font-medium">
-                        {Icons.upload} Upload Logo
-                      </button>
-                      {createForm.logo && <button type="button" onClick={() => setCreateForm({...createForm, logo: ''})} className="text-red-600 text-sm hover:text-red-800">Remove</button>}
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">Max 2MB, PNG or JPEG</p>
-                  </div>
-                  <div className="border-t pt-4">
-                    <p className="text-sm font-medium text-gray-700 mb-3">HubSpot Integration IDs (Optional)</p>
-                    <div className="space-y-3">
+
+                  {/* New portal fields (hidden when adding to existing) */}
+                  {!addToExisting && (
+                    <>
                       <div>
-                        <label className="block text-xs text-gray-500 mb-1">Company ID</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Practice Name <span className="text-red-500">*</span></label>
                         <input
                           type="text"
-                          value={createForm.hubspotCompanyId}
-                          onChange={(e) => setCreateForm({...createForm, hubspotCompanyId: e.target.value})}
-                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
-                          placeholder="e.g., 12345678"
+                          value={createForm.practiceName}
+                          onChange={(e) => setCreateForm({...createForm, practiceName: e.target.value})}
+                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                          placeholder="e.g., ABC Medical Labs"
+                          required
                         />
+                        <p className="text-xs text-gray-400 mt-1">Will auto-generate portal URL slug</p>
                       </div>
                       <div>
-                        <label className="block text-xs text-gray-500 mb-1">Deal ID</label>
-                        <input
-                          type="text"
-                          value={createForm.hubspotDealId}
-                          onChange={(e) => setCreateForm({...createForm, hubspotDealId: e.target.value})}
-                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
-                          placeholder="e.g., 87654321"
-                        />
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Practice Logo</label>
+                        <div className="flex items-center gap-4">
+                          {createForm.logo && <img src={createForm.logo} alt="Logo" className="h-16 w-16 object-contain border rounded" />}
+                          <input type="file" ref={createLogoInputRef} accept="image/png,image/jpeg" onChange={(e) => handleLogoUpload(e, 'create')} className="hidden" />
+                          <button type="button" onClick={() => createLogoInputRef.current?.click()}
+                            className="px-4 py-2 border border-primary text-primary rounded-lg hover:bg-primary hover:text-white transition flex items-center gap-2 text-sm font-medium">
+                            {Icons.upload} Upload Logo
+                          </button>
+                          {createForm.logo && <button type="button" onClick={() => setCreateForm({...createForm, logo: ''})} className="text-red-600 text-sm hover:text-red-800">Remove</button>}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">Max 2MB, PNG or JPEG</p>
                       </div>
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Contact ID</label>
-                        <input
-                          type="text"
-                          value={createForm.hubspotContactId}
-                          onChange={(e) => setCreateForm({...createForm, hubspotContactId: e.target.value})}
-                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
-                          placeholder="e.g., 11223344"
-                        />
+                      <div className="border-t pt-4">
+                        <p className="text-sm font-medium text-gray-700 mb-3">HubSpot Integration IDs (Optional)</p>
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Company ID</label>
+                            <input
+                              type="text"
+                              value={createForm.hubspotCompanyId}
+                              onChange={(e) => setCreateForm({...createForm, hubspotCompanyId: e.target.value})}
+                              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                              placeholder="e.g., 12345678"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Deal ID</label>
+                            <input
+                              type="text"
+                              value={createForm.hubspotDealId}
+                              onChange={(e) => setCreateForm({...createForm, hubspotDealId: e.target.value})}
+                              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                              placeholder="e.g., 87654321"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Contact ID</label>
+                            <input
+                              type="text"
+                              value={createForm.hubspotContactId}
+                              onChange={(e) => setCreateForm({...createForm, hubspotContactId: e.target.value})}
+                              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+                              placeholder="e.g., 11223344"
+                            />
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
+                    </>
+                  )}
                 </div>
                 <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
                   <button
                     onClick={() => {
                       setShowCreateForm(false);
+                      setAddToExisting(false);
                       setCreateForm({
                         email: '',
                         name: '',
                         password: '',
                         practiceName: '',
+                        existingPortalSlug: '',
                         logo: '',
                         hubspotCompanyId: '',
                         hubspotDealId: '',
@@ -3950,7 +5154,7 @@
                   <button
                     onClick={handleCreate}
                     disabled={saving}
-                    className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-accent font-medium disabled:opacity-50"
+                    className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-lg hover:opacity-90 font-medium disabled:opacity-50"
                   >
                     {saving ? 'Creating...' : 'Create Client User'}
                   </button>
@@ -4039,7 +5243,7 @@
                   <button
                     onClick={handleSave}
                     disabled={saving}
-                    className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-accent font-medium disabled:opacity-50"
+                    className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-lg hover:opacity-90 font-medium disabled:opacity-50"
                   >
                     {saving ? 'Saving...' : 'Save Changes'}
                   </button>
@@ -4094,12 +5298,19 @@
       const [documents, setDocuments] = useState([]);
       const [loading, setLoading] = useState(true);
       const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+      const [highlightServiceReportId, setHighlightServiceReportId] = useState(null);
 
       // Navigate with URL update
       const navigateTo = (page, tab = null) => {
         setActivePage(page);
         setActiveSubTab(tab);
         updateUrl(page, tab);
+      };
+
+      // Navigate from Service History to Files with a specific report highlighted
+      const navigateToFile = (serviceReportId) => {
+        setHighlightServiceReportId(serviceReportId || null);
+        navigateTo('files');
       };
 
       // Handle browser back/forward
@@ -4127,7 +5338,7 @@
             const [portalData, portalSettings, announcementsData, docsData] = await Promise.all([
               api.getPortalData(token),
               api.getPortalSettings(),
-              api.getAnnouncements(),
+              api.getAnnouncements(token),
               api.getClientDocuments(slug, token)
             ]);
             setData(portalData);
@@ -4173,12 +5384,12 @@
 
         // Client pages
         if (activePage === 'home') return <HomePage data={data} announcements={announcements} onNavigate={navigateTo} />;
-        if (activePage === 'milestones') return <MilestonesPage data={data} onNavigate={navigateTo} />;
+        if (activePage === 'milestones') return <MilestonesPage data={data} onNavigate={navigateTo} token={token} currentUser={user} />;
         if (activePage === 'inventory') return <InventoryPage token={token} slug={slug} />;
         if (activePage === 'reports') return <ReportsPage token={token} slug={slug} onNavigate={navigateTo} />;
         if (activePage === 'submission_history') return <SubmissionHistoryPage token={token} slug={slug} isAdmin={false} onNavigate={navigateTo} currentUser={user} />;
-        if (activePage === 'support') return <SupportPage settings={settings} token={token} userData={data?.user} activeTab={activeSubTab} onTabChange={(tab) => navigateTo('support', tab)} />;
-        if (activePage === 'files') return <FilesPage settings={settings} documents={documents} token={token} projects={data?.projects || []} userData={data?.user} />;
+        if (activePage === 'support') return <SupportPage settings={settings} token={token} userData={data?.user} documents={documents} activeTab={activeSubTab} onTabChange={(tab) => navigateTo('support', tab)} onNavigateToFile={navigateToFile} />;
+        if (activePage === 'files') return <FilesPage settings={settings} documents={documents} token={token} projects={data?.projects || []} userData={data?.user} highlightServiceReportId={highlightServiceReportId} />;
         
         return null;
       };
@@ -4204,6 +5415,30 @@
           />
           
           <main className="flex-1 lg:ml-64 p-4 lg:p-8 mt-16 lg:mt-0 max-w-7xl">
+            {/* Signature Required Banner */}
+            {!isAdmin && (() => {
+              const unsignedCount = (documents || []).filter(d => d.serviceReportId && d.reportStatus === 'signature_needed').length;
+              if (unsignedCount === 0) return null;
+              return (
+                <div className="mb-6 bg-red-50 border border-red-300 rounded-xl p-4 flex items-center gap-4 shadow-sm">
+                  <div className="flex-shrink-0 w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                    <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-red-800">
+                      {unsignedCount} service report{unsignedCount > 1 ? 's' : ''} requires your signature
+                    </p>
+                    <p className="text-sm text-red-600">Please review and sign your service report{unsignedCount > 1 ? 's' : ''} to download.</p>
+                  </div>
+                  <button
+                    onClick={() => navigateToFile(null)}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors text-sm whitespace-nowrap"
+                  >
+                    Go to Files
+                  </button>
+                </div>
+              );
+            })()}
             {renderPage()}
             
             <footer className="mt-12 text-center text-sm text-gray-500">

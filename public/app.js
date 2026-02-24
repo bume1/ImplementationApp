@@ -286,6 +286,11 @@ const api = {
       headers: { 'Authorization': `Bearer ${token}` }
     }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
+  getProjectActiveValidations: (token, projectId) =>
+    fetch(`${API_URL}/api/projects/${projectId}/active-validations`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
   getTeamMembers: (token, projectId = null) =>
     fetch(`${API_URL}/api/team-members${projectId ? `?projectId=${projectId}` : ''}`, {
       headers: { 'Authorization': `Bearer ${token}` }
@@ -420,8 +425,10 @@ const api = {
       body: JSON.stringify(settings)
     }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
   
-  getAnnouncements: () =>
-    fetch(`${API_URL}/api/announcements`).then(r => r.json()),
+  getAnnouncements: (token) =>
+    fetch(`${API_URL}/api/announcements`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => r.json()),
   
   createAnnouncement: (token, announcement) =>
     fetch(`${API_URL}/api/announcements`, {
@@ -622,7 +629,92 @@ const api = {
     fetch(`${API_URL}/api/projects/${projectId}/tasks/${taskId}/files/${fileId}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json())
+    }).then(r => r.json()),
+
+  // Notification queue endpoints
+  getNotificationQueue: (token) =>
+    fetch(`${API_URL}/api/admin/notifications/queue`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  getNotificationLog: (token, limit) =>
+    fetch(`${API_URL}/api/admin/notifications/log?limit=${limit || 50}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  getNotificationStats: (token) =>
+    fetch(`${API_URL}/api/admin/notifications/stats`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  cancelNotification: (token, id) =>
+    fetch(`${API_URL}/api/admin/notifications/cancel/${id}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  retryNotification: (token, id) =>
+    fetch(`${API_URL}/api/admin/notifications/retry/${id}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  processNotificationQueue: (token) =>
+    fetch(`${API_URL}/api/admin/notifications/process`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  triggerNotificationScan: (token) =>
+    fetch(`${API_URL}/api/admin/reminders/trigger`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  // Email sending
+  sendEmail: (token, data) =>
+    fetch(`${API_URL}/api/email/send`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  sendProgressUpdate: (token, projectId, data) =>
+    fetch(`${API_URL}/api/email/send-progress-update/${projectId}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(data || {})
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  getEmailHistory: (token, projectId) =>
+    fetch(`${API_URL}/api/email/history${projectId ? '?projectId=' + projectId : ''}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  // Notification/Reminder settings
+  getNotificationSettings: (token) =>
+    fetch(`${API_URL}/api/admin/notification-settings`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  updateNotificationSettings: (token, data) =>
+    fetch(`${API_URL}/api/admin/notification-settings`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  getReminderSettings: (token) =>
+    fetch(`${API_URL}/api/admin/reminder-settings`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
+  updateReminderSettings: (token, data) =>
+    fetch(`${API_URL}/api/admin/reminder-settings`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' }))
 };
 
 // ============== SHARED HEADER COMPONENT ==============
@@ -631,7 +723,7 @@ const AppHeader = ({ user, onLogout, children }) => {
     <>
       {/* Top Bar - Dark Navy */}
       <div className="bg-[#00205A] text-white text-sm">
-        <div className="max-w-6xl mx-auto px-6 py-2 flex justify-between items-center">
+        <div className="max-w-6xl mx-auto px-3 sm:px-6 py-2 flex justify-between items-center">
           <div className="flex items-center gap-4">
             <a href="https://www.linkedin.com/company/thrive-365-labs" target="_blank" rel="noopener noreferrer" className="hover:text-blue-300">
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/></svg>
@@ -642,34 +734,34 @@ const AppHeader = ({ user, onLogout, children }) => {
           </div>
           <a href="tel:+17707629269" className="flex items-center gap-2 hover:text-blue-300">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
-            <span>(770) 762-9269</span>
+            <span className="hidden sm:inline">(770) 762-9269</span>
           </a>
         </div>
       </div>
-      
+
       {/* Main Header - White */}
       <div className="bg-white border-b shadow-sm">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-12" />
+        <div className="max-w-6xl mx-auto px-3 sm:px-6 py-3 sm:py-4 flex justify-between items-center">
+          <div className="flex items-center gap-2 sm:gap-4">
+            <img src="/thrive365-logo.webp" alt="Thrive 365 Labs" className="h-8 sm:h-12" />
           </div>
-          <nav className="flex items-center gap-6">
-            {children}
-            <div className="h-6 w-px bg-gray-300"></div>
-            <div className="flex items-center gap-3">
-              <span className="text-gray-600 text-sm">
+          <nav className="flex items-center gap-2 sm:gap-6">
+            <div className="hidden sm:contents">{children}</div>
+            <div className="hidden sm:block h-6 w-px bg-gray-300"></div>
+            <div className="flex items-center gap-2 sm:gap-3">
+              <span className="text-gray-600 text-xs sm:text-sm hidden sm:inline">
                 {user.name}
                 {user.role === 'admin' && <span className="ml-1 text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded">ADMIN</span>}
               </span>
               <a
                 href="/"
-                className="text-gray-500 hover:text-primary text-sm"
+                className="text-gray-500 hover:text-primary text-xs sm:text-sm"
               >
                 Portal Hub
               </a>
               <button
                 onClick={onLogout}
-                className="text-gray-500 hover:text-red-600 text-sm"
+                className="text-gray-500 hover:text-red-600 text-xs sm:text-sm"
               >
                 Logout
               </button>
@@ -908,7 +1000,7 @@ const AuthScreen = ({ onLogin }) => {
           <button
             onClick={handleSubmit}
             disabled={loading}
-            className="w-full bg-primary text-white py-2 rounded-md hover:bg-accent disabled:bg-gray-400"
+            className="w-full bg-gradient-to-r from-primary to-accent text-white py-2 rounded-md hover:opacity-90 disabled:bg-gray-400"
           >
             {loading ? 'Please wait...' : mode === 'login' ? 'Login' : mode === 'signup' ? 'Create Account' : 'Request Password Reset'}
           </button>
@@ -986,8 +1078,10 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
     projectManager: '',
     hubspotRecordId: '',
     hubspotDealStage: '',
+    hubspotPipelineId: '',
     template: ''
   });
+  const [hubspotStages, setHubspotStages] = useState([]);
 
   const loadActivityLog = async () => {
     if (user.role !== 'admin') return;
@@ -1007,10 +1101,19 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
     }
   };
 
+  const loadHubSpotStages = async () => {
+    const result = await api.getHubSpotPipelines(token);
+    if (!result.error && Array.isArray(result)) {
+      const stages = result.flatMap(p => p.stages.map(s => ({ id: s.id, label: s.label, pipelineId: p.id })));
+      setHubspotStages(stages);
+    }
+  };
+
   useEffect(() => {
     loadProjects();
     loadTemplates();
     loadClientPortalDomain();
+    loadHubSpotStages();
   }, []);
 
   const loadClientPortalDomain = async () => {
@@ -1082,6 +1185,9 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
         alert(result.error);
         return;
       }
+      if (result.hubspotSyncStatus === 'failed') {
+        alert('Project created successfully, but HubSpot stage sync failed. Check your HubSpot Record ID and connection.');
+      }
       setShowCreate(false);
       setNewProject({
         name: '',
@@ -1089,6 +1195,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
         projectManager: '',
         hubspotRecordId: '',
         hubspotDealStage: '',
+        hubspotPipelineId: '',
         template: ''
       });
       loadProjects();
@@ -1250,15 +1357,15 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
         </button>
       </AppHeader>
 
-      <div className="p-6">
+      <div className="p-3 sm:p-6">
       <div className="max-w-6xl mx-auto">
 
         {showHelpGuide && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
             <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-              <div className="p-6 border-b bg-gradient-to-r from-primary to-accent text-white">
+              <div className="p-4 sm:p-6 border-b bg-gradient-to-r from-primary to-accent text-white">
                 <div className="flex justify-between items-center">
-                  <h2 className="text-2xl font-bold">Help Guide</h2>
+                  <h2 className="text-xl sm:text-2xl font-bold">Help Guide</h2>
                   <button onClick={() => setShowHelpGuide(false)} className="text-white hover:text-blue-200 text-2xl">&times;</button>
                 </div>
               </div>
@@ -1438,15 +1545,25 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
                     <label className="block text-sm font-medium mb-1">Deal Stage</label>
                     <select
                       value={newProject.hubspotDealStage}
-                      onChange={(e) => setNewProject({...newProject, hubspotDealStage: e.target.value})}
+                      onChange={(e) => {
+                        const selected = hubspotStages.find(s => s.id === e.target.value);
+                        setNewProject({...newProject, hubspotDealStage: e.target.value, hubspotPipelineId: selected ? selected.pipelineId : ''});
+                      }}
                       className="w-full px-3 py-2 border rounded-md"
                     >
                       <option value="">Select stage...</option>
-                      <option value="contract_signed">Contract Signed</option>
-                      <option value="pre_launch">Pre-Launch</option>
-                      <option value="implementation">Implementation</option>
-                      <option value="go_live">Go-Live</option>
-                      <option value="post_launch">Post-Launch</option>
+                      {hubspotStages.length > 0
+                        ? hubspotStages.map(s => (
+                            <option key={s.id} value={s.id}>{s.label}</option>
+                          ))
+                        : <>
+                            <option value="contract_signed">Contract Signed</option>
+                            <option value="pre_launch">Pre-Launch</option>
+                            <option value="implementation">Implementation</option>
+                            <option value="go_live">Go-Live</option>
+                            <option value="post_launch">Post-Launch</option>
+                          </>
+                      }
                     </select>
                   </div>
                 </div>
@@ -1454,7 +1571,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
               <div className="flex gap-2">
                 <button
                   onClick={handleCreate}
-                  className="bg-primary text-white px-4 py-2 rounded-md hover:bg-accent"
+                  className="bg-gradient-to-r from-primary to-accent text-white px-4 py-2 rounded-md hover:opacity-90"
                 >
                   Create Project with Template
                 </button>
@@ -1858,9 +1975,9 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
           const getCalendarEntries = (dateStr) => calendarEntriesMap[dateStr] || [];
           
           return (
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-2 sm:p-4">
             <div className="bg-white rounded-xl shadow-2xl w-full h-full max-w-7xl max-h-[95vh] overflow-auto">
-              <div className="bg-gradient-to-r from-primary to-accent text-white px-6 py-4 sticky top-0 z-10">
+              <div className="bg-gradient-to-r from-primary to-accent text-white px-3 sm:px-6 py-3 sm:py-4 sticky top-0 z-10">
                 <div className="flex items-center justify-between">
                   <button
                     onClick={() => {
@@ -2137,7 +2254,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
                 <div className="space-y-2">
                   <button
                     onClick={() => onSelectProject(project)}
-                    className="w-full bg-primary text-white py-2 rounded-md hover:bg-accent"
+                    className="w-full bg-gradient-to-r from-primary to-accent text-white py-2 rounded-md hover:opacity-90"
                   >
                     Open Tracker
                   </button>
@@ -2200,7 +2317,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
               <div className="flex gap-2 mt-6">
                 <button
                   onClick={saveClientPortalDomain}
-                  className="flex-1 bg-primary text-white py-2 rounded-md hover:bg-accent"
+                  className="flex-1 bg-gradient-to-r from-primary to-accent text-white py-2 rounded-md hover:opacity-90"
                 >
                   Save Domain
                 </button>
@@ -2305,7 +2422,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
               <div className="flex gap-2 mt-6">
                 <button
                   onClick={handleEditProject}
-                  className="flex-1 bg-primary text-white py-2 rounded-md hover:bg-accent"
+                  className="flex-1 bg-gradient-to-r from-primary to-accent text-white py-2 rounded-md hover:opacity-90"
                 >
                   Save Changes
                 </button>
@@ -3047,12 +3164,12 @@ const SoftPilotChecklist = ({ token, project, tasks, teamMembers, onClose, onSub
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="p-6 border-b bg-gradient-to-r from-primary to-accent text-white">
+        <div className="p-4 sm:p-6 border-b bg-gradient-to-r from-primary to-accent text-white">
           <div className="flex justify-between items-center">
             <div>
-              <h2 className="text-2xl font-bold">Soft-Pilot Checklist</h2>
+              <h2 className="text-xl sm:text-2xl font-bold">Soft-Pilot Checklist</h2>
               <p className="text-blue-100">{project.name} - {project.clientName}</p>
             </div>
             <button onClick={onClose} className="text-white hover:text-blue-200 text-2xl">&times;</button>
@@ -3191,7 +3308,7 @@ const SoftPilotChecklist = ({ token, project, tasks, teamMembers, onClose, onSub
             <button
               onClick={handleSubmit}
               disabled={submitting || !project.hubspotRecordId}
-              className="px-6 py-2 bg-primary text-white rounded-md hover:bg-accent disabled:bg-gray-400"
+              className="px-6 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90 disabled:bg-gray-400"
             >
               {submitting ? 'Submitting...' : isResubmission ? 'Resubmit & Upload' : 'Submit & Upload'}
             </button>
@@ -3246,6 +3363,12 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
   const [showNotesLog, setShowNotesLog] = useState(false);
   const [showEditProject, setShowEditProject] = useState(false);
   const [collapsedPhases, setCollapsedPhases] = useState([]);
+  const [activeValidations, setActiveValidations] = useState([]);
+  const [showEmailComposer, setShowEmailComposer] = useState(false);
+  const [emailForm, setEmailForm] = useState({ to: [], subject: '', message: '' });
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailHistory, setEmailHistory] = useState([]);
+  const [showEmailHistory, setShowEmailHistory] = useState(false);
 
   const isAdmin = user.role === 'admin';
   const userAccessLevel = isAdmin ? 'edit' : ((user.projectAccessLevels || {})[project.id] || 'edit');
@@ -3380,7 +3503,10 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
   const loadTasks = async () => {
     setLoading(true);
     try {
-      const data = await api.getTasks(token, project.id);
+      const [data, validationsData] = await Promise.all([
+        api.getTasks(token, project.id),
+        api.getProjectActiveValidations(token, project.id)
+      ]);
       if (Array.isArray(data)) {
         setTasks(data);
       } else if (data && data.error) {
@@ -3388,6 +3514,9 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
         setTasks([]);
       } else {
         setTasks([]);
+      }
+      if (Array.isArray(validationsData)) {
+        setActiveValidations(validationsData);
       }
     } catch (err) {
       console.error('Failed to load tasks:', err);
@@ -4255,8 +4384,8 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
         </button>
       </AppHeader>
 
-      <div className="p-6">
-      <div className="max-w-7xl mx-auto">
+      <div className="p-3 sm:p-6">
+      <div className="max-w-7xl mx-auto overflow-x-hidden">
         {!canEdit && (
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 flex items-center gap-2">
             <span className="text-amber-600">👁</span>
@@ -4264,10 +4393,10 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
             <span className="text-amber-700 text-sm">- You can view this project but cannot make changes</span>
           </div>
         )}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <div className="flex justify-between items-start mb-4">
+        <div className="bg-white rounded-lg shadow-sm p-3 sm:p-6 mb-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start mb-4 gap-3">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">{project.name}</h1>
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{project.name}</h1>
               <p className="text-gray-600">{project.clientName}</p>
             </div>
             <div className="flex gap-2 flex-wrap">
@@ -4275,7 +4404,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                 onClick={() => setViewMode('internal')}
                 className={`px-3 py-1.5 rounded-md text-sm ${
                   viewMode === 'internal'
-                    ? 'bg-primary text-white'
+                    ? 'bg-gradient-to-r from-primary to-accent text-white'
                     : 'bg-gray-200 text-gray-700'
                 }`}
               >
@@ -4285,7 +4414,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                 onClick={() => setViewMode('client')}
                 className={`px-3 py-1.5 rounded-md text-sm ${
                   viewMode === 'client'
-                    ? 'bg-primary text-white'
+                    ? 'bg-gradient-to-r from-primary to-accent text-white'
                     : 'bg-gray-200 text-gray-700'
                 }`}
               >
@@ -4298,7 +4427,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                 onClick={() => setViewType('list')}
                 className={`px-3 py-1.5 rounded-md text-sm ${
                   viewType === 'list'
-                    ? 'bg-purple-600 text-white'
+                    ? 'bg-gradient-to-r from-primary to-accent text-white'
                     : 'bg-gray-200 text-gray-700'
                 }`}
               >
@@ -4308,7 +4437,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                 onClick={() => setViewType('timeline')}
                 className={`px-3 py-1.5 rounded-md text-sm ${
                   viewType === 'timeline'
-                    ? 'bg-purple-600 text-white'
+                    ? 'bg-gradient-to-r from-primary to-accent text-white'
                     : 'bg-gray-200 text-gray-700'
                 }`}
               >
@@ -4318,7 +4447,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                 onClick={() => setViewType('calendar')}
                 className={`px-3 py-1.5 rounded-md text-sm ${
                   viewType === 'calendar'
-                    ? 'bg-purple-600 text-white'
+                    ? 'bg-gradient-to-r from-primary to-accent text-white'
                     : 'bg-gray-200 text-gray-700'
                 }`}
               >
@@ -4331,7 +4460,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                   <button
                     onClick={handleCreateTemplate}
                     disabled={creatingTemplate || tasks.length === 0}
-                    className="px-3 py-1.5 rounded-md text-sm bg-green-600 text-white hover:bg-green-700 disabled:bg-gray-400"
+                    className="px-3 py-1.5 rounded-md text-sm bg-gradient-to-r from-primary to-accent text-white hover:opacity-90 disabled:bg-gray-400"
                     title="Create a reusable template from this board's tasks"
                   >
                     {creatingTemplate ? 'Creating...' : 'Create Template'}
@@ -4413,6 +4542,28 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                     className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded hover:bg-gray-200"
                   >
                     Edit Project Settings
+                  </button>
+                )}
+                {isAdmin && (
+                  <button
+                    onClick={() => setShowEmailComposer(true)}
+                    className="px-2 py-1 bg-[#045E9F] text-white text-xs rounded hover:bg-[#00205A]"
+                  >
+                    Send Email
+                  </button>
+                )}
+                {isAdmin && (
+                  <button
+                    onClick={async () => {
+                      if (confirm('Send a progress update email to all client users for this project?')) {
+                        const result = await api.sendProgressUpdate(token, project.id);
+                        if (result.error) { alert(result.error); return; }
+                        alert(`Progress update queued for ${result.queued} recipient(s)`);
+                      }
+                    }}
+                    className="px-2 py-1 bg-gradient-to-r from-primary to-accent text-white text-xs rounded hover:opacity-90"
+                  >
+                    Send Progress Update
                   </button>
                 )}
               </div>
@@ -4637,7 +4788,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                         <label className="block text-xs text-gray-500 mb-1">&nbsp;</label>
                         <button
                           onClick={() => handleBulkComplete(true)}
-                          className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm"
+                          className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90 text-sm"
                         >
                           Mark {selectedTasks.length} Complete
                         </button>
@@ -4688,14 +4839,14 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                     <label className="block text-xs text-gray-500 mb-1">&nbsp;</label>
                     <button
                       onClick={() => setShowAddTask(true)}
-                      className="px-4 py-2 bg-primary text-white rounded-md hover:bg-accent text-sm"
+                      className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90 text-sm"
                     >
                       + Add Task
                     </button>
                   </div>
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">&nbsp;</label>
-                    <label className="cursor-pointer px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 text-sm inline-block">
+                    <label className="cursor-pointer px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90 text-sm inline-block">
                       Import CSV
                       <input
                         type="file"
@@ -4768,7 +4919,14 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
-                      <h2 className="text-lg font-bold">{phaseNames[phase] || phase}</h2>
+                      <h2 className="text-lg font-bold flex items-center gap-2">
+                        {phaseNames[phase] || phase}
+                        {phase === 'Phase 8' && activeValidations.length > 0 && (
+                          <span className="px-2 py-0.5 bg-blue-500/30 text-white text-xs rounded-full font-medium animate-pulse">
+                            {activeValidations.length} validation{activeValidations.length > 1 ? 's' : ''} in progress
+                          </span>
+                        )}
+                      </h2>
                       <p className="text-sm opacity-80">
                         {Object.values(groupedByPhase[phase] || {}).flat().filter(t => t.completed).length} of {Object.values(groupedByPhase[phase] || {}).flat().length} complete
                       </p>
@@ -4780,6 +4938,76 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                 </div>
                 {!isCollapsed && (
                 <>
+                {/* Active Validation Progress Card for Phase 8 */}
+                {phase === 'Phase 8' && (
+                  <div className={`bg-white rounded-xl shadow-sm border-2 ${activeValidations.length > 0 ? 'border-blue-200' : 'border-gray-200'} overflow-hidden`}>
+                    <div className={`${activeValidations.length > 0 ? 'bg-gradient-to-r from-blue-600 to-blue-700' : 'bg-gradient-to-r from-gray-500 to-gray-600'} p-4 text-white`}>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="font-bold flex items-center gap-2">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5"/></svg>
+                            {activeValidations.length > 0
+                              ? `Active Validation${activeValidations.length > 1 ? 's' : ''} In Progress`
+                              : 'Validation Tracking'}
+                          </h3>
+                          <p className={`${activeValidations.length > 0 ? 'text-blue-100' : 'text-gray-200'} text-sm mt-1`}>Phase 8 tasks auto-update as validation progresses</p>
+                        </div>
+                        <span className={`px-3 py-1 ${activeValidations.length > 0 ? 'bg-blue-500/30' : 'bg-gray-400/30'} rounded-full text-sm font-medium`}>{activeValidations.length} active</span>
+                      </div>
+                    </div>
+                    <div className="p-4 space-y-3">
+                      {activeValidations.length > 0 ? activeValidations.map(v => {
+                        const daysLogged = v.daysLogged || 0;
+                        const expected = v.expectedDays;
+                        const pct = expected ? Math.min(100, Math.round((daysLogged / expected) * 100)) : null;
+                        return (
+                          <div key={v.id} className="border rounded-lg p-3 hover:bg-gray-50 transition">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="font-medium text-gray-900">{v.analyzerModel || 'Biolis AU480'} {v.analyzerSerialNumber ? `(${v.analyzerSerialNumber})` : ''}</p>
+                                <p className="text-sm text-gray-600">Technician: {v.technicianName} · {daysLogged} day{daysLogged !== 1 ? 's' : ''} logged</p>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                {(v.segments || []).map((s, i) => (
+                                  <div key={i} className={`w-2.5 h-2.5 rounded-full ${s.status === 'complete' ? 'bg-green-500' : 'bg-yellow-400'}`} title={`Day ${s.day}`}></div>
+                                ))}
+                              </div>
+                            </div>
+                            {expected && pct !== null && (
+                              <div className="mt-2">
+                                <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                                  <div className={`h-full rounded-full transition-all ${pct >= 100 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${pct}%` }} />
+                                </div>
+                                <p className="text-xs text-gray-500 mt-0.5">{daysLogged} of {expected} days · {pct}%</p>
+                              </div>
+                            )}
+                            {(v.segments || []).length > 0 && (
+                              <details className="mt-2">
+                                <summary className="text-xs text-blue-600 cursor-pointer hover:text-blue-800 font-medium">View daily log</summary>
+                                <div className="mt-2 space-y-2">
+                                  {(v.segments || []).map(seg => (
+                                    <div key={seg.day} className="bg-gray-50 rounded p-2 text-xs">
+                                      <span className="font-medium text-gray-900">Day {seg.day}</span>
+                                      <span className="text-gray-500 ml-2">{seg.date ? new Date(seg.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ''}</span>
+                                      {seg.testsPerformed && <p className="text-gray-700 mt-1"><span className="text-gray-500">Tests:</span> {seg.testsPerformed}</p>}
+                                      {seg.results && <p className="text-gray-700"><span className="text-gray-500">Results:</span> {seg.results}</p>}
+                                      {seg.observations && <p className="text-gray-700"><span className="text-gray-500">Notes:</span> {seg.observations}</p>}
+                                    </div>
+                                  ))}
+                                </div>
+                              </details>
+                            )}
+                          </div>
+                        );
+                      }) : (
+                        <div className="text-center py-4 text-gray-500">
+                          <p className="text-sm">No active validations for this project.</p>
+                          <p className="text-xs mt-1">When a technician starts a multi-day validation in the Service Portal, progress will appear here and tasks will auto-complete.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {Object.entries(groupedByPhase[phase] || {}).map(([stageName, stageTasks]) => (
                   <div key={stageName} className={`bg-white rounded-lg shadow-sm overflow-hidden border-l-4 ${getPhaseColor(phase)}`}>
                     {stageName !== 'Tasks' && (
@@ -4812,7 +5040,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                         {viewMode === 'internal' && stageName === 'Sprint 3: Soft-Pilot' && (
                           <button
                             onClick={() => setShowSoftPilotChecklist(true)}
-                            className="px-3 py-1 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700"
+                            className="px-3 py-1 bg-gradient-to-r from-primary to-accent text-white text-sm rounded-md hover:opacity-90"
                           >
                             View & Complete Checklist
                           </button>
@@ -4856,8 +5084,8 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                       {stageTasks.length === 0 ? (
                         <div className="p-4 text-gray-400 text-sm italic">No tasks in this stage</div>
                       ) : stageTasks.map(task => (
-                    <div key={task.id} id={`task-${task.id}`} className={`p-4 ${viewMode === 'internal' && isOverdue(task) ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'} ${selectedTasks.includes(task.id) ? 'bg-blue-50' : ''}`}>
-                      <div className="flex items-start gap-4">
+                    <div key={task.id} id={`task-${task.id}`} className={`p-3 sm:p-4 overflow-hidden ${viewMode === 'internal' && isOverdue(task) ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'} ${selectedTasks.includes(task.id) ? 'bg-blue-50' : ''}`}>
+                      <div className="flex items-start gap-2 sm:gap-4">
                         {viewMode === 'internal' && bulkMode && (
                           <input
                             type="checkbox"
@@ -4874,7 +5102,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                               title={hasIncompleteDependencies(task) ? 'Complete dependencies first' : ''}
                             >
                               {task.completed ? (
-                                <div className="w-6 h-6 bg-green-600 rounded-full flex items-center justify-center text-white text-sm">
+                                <div className="w-6 h-6 bg-gradient-to-r from-primary to-accent rounded-full flex items-center justify-center text-white text-sm">
                                   ✓
                                 </div>
                               ) : hasIncompleteDependencies(task) ? (
@@ -4888,7 +5116,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                           ) : (
                             <div className="mt-1 flex-shrink-0">
                               {task.completed ? (
-                                <div className="w-6 h-6 bg-green-600 rounded-full flex items-center justify-center text-white text-sm">
+                                <div className="w-6 h-6 bg-gradient-to-r from-primary to-accent rounded-full flex items-center justify-center text-white text-sm">
                                   ✓
                                 </div>
                               ) : (
@@ -4900,7 +5128,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                         {viewMode === 'client' && (
                           <div className="mt-1 flex-shrink-0">
                             {task.completed ? (
-                              <div className="w-6 h-6 bg-green-600 rounded-full flex items-center justify-center text-white text-sm">
+                              <div className="w-6 h-6 bg-gradient-to-r from-primary to-accent rounded-full flex items-center justify-center text-white text-sm">
                                 ✓
                               </div>
                             ) : (
@@ -4908,7 +5136,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                             )}
                           </div>
                         )}
-                        <div className="flex-1">
+                        <div className="flex-1 min-w-0">
                           {editingTask?.id === task.id ? (
                             <div className="space-y-3">
                               <input
@@ -4919,7 +5147,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                 className="w-full px-3 py-2 border rounded-md"
                                 placeholder="Task Title"
                               />
-                              <div className="grid grid-cols-2 gap-3">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 {isAdmin && (
                                   <>
                                     <div>
@@ -5103,7 +5331,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                         }}
                                         className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${
                                           isSelected 
-                                            ? 'bg-primary text-white border-primary' 
+                                            ? 'bg-gradient-to-r from-primary to-accent text-white border-primary' 
                                             : 'bg-gray-50 text-gray-600 border-gray-300 hover:bg-gray-100'
                                         }`}
                                       >
@@ -5128,7 +5356,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                 <div className="flex gap-2">
                                   <button
                                     onClick={handleSaveEdit}
-                                    className="px-4 py-2 bg-green-600 text-white rounded-md"
+                                    className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md"
                                   >
                                     Save
                                   </button>
@@ -5166,9 +5394,9 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                             </div>
                           ) : (
                             <div>
-                              <div className="flex items-start justify-between gap-4">
+                              <div className="flex items-start justify-between gap-2 sm:gap-4">
                                 <h3
-                                  className={`font-medium ${
+                                  className={`font-medium min-w-0 break-words ${
                                     task.completed
                                       ? 'text-gray-500 line-through'
                                       : 'text-gray-900'
@@ -5179,11 +5407,11 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                     <span className="ml-2 text-gray-400" title={`${task.files.length} file${task.files.length > 1 ? 's' : ''} attached`}>📎</span>
                                   )}
                                 </h3>
-                                <div className="flex gap-2 flex-shrink-0">
+                                <div className="flex gap-1 sm:gap-2 flex-shrink-0">
                                   {viewMode === 'internal' && canEdit && (isAdmin || task.createdBy === user.id || !task.createdBy) && (
                                     <button
                                       onClick={() => handleEditTask(task.id)}
-                                      className="text-gray-400 hover:text-primary"
+                                      className="text-gray-400 hover:text-primary text-sm"
                                     >
                                       {isAdmin ? 'Edit' : (task.createdBy === user.id ? 'Edit' : 'Update Status')}
                                     </button>
@@ -5191,7 +5419,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                   {viewMode === 'internal' && canEdit && (isAdmin || (task.createdBy && task.createdBy === user.id)) && (
                                     <button
                                       onClick={() => handleDeleteProjectTask(task.id)}
-                                      className="text-gray-400 hover:text-red-600"
+                                      className="text-gray-400 hover:text-red-600 text-sm"
                                     >
                                       Delete
                                     </button>
@@ -5199,14 +5427,14 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                 </div>
                               </div>
                               {viewMode === 'internal' && (
-                                <div className="mt-2 space-y-1 text-sm text-gray-600">
-                                  <p>
-                                    <span className="font-medium">Primary:</span> {getOwnerName(task.owner)}{task.secondaryOwner && <span className="ml-2"><span className="font-medium">Secondary:</span> {getOwnerName(task.secondaryOwner)}</span>}
+                                <div className="mt-2 space-y-1 text-xs sm:text-sm text-gray-600">
+                                  <p className="break-words">
+                                    <span className="font-medium">Primary:</span> {getOwnerName(task.owner)}{task.secondaryOwner && <span className="sm:ml-2 block sm:inline"><span className="font-medium">Secondary:</span> {getOwnerName(task.secondaryOwner)}</span>}
                                     {!isAdmin && task.owner && (
                                       <span className="text-xs text-gray-400 ml-2">(Admin only can edit)</span>
                                     )}
                                   </p>
-                                  <div className="flex items-center gap-4 flex-wrap">
+                                  <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
                                     {task.startDate && (
                                       <span>
                                         <span className="font-medium">Start:</span> {task.startDate}
@@ -5297,20 +5525,20 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                 </div>
                               )}
                               {viewMode === 'internal' && (
-                                <div className="mt-3 flex flex-wrap gap-4">
+                                <div className="mt-3 flex flex-wrap gap-2 sm:gap-4 items-center">
                                   <button
                                     onClick={() => setExpandedTaskId(expandedTaskId === task.id ? null : task.id)}
-                                    className={`text-sm px-3 py-1 rounded ${expandedTaskId === task.id ? 'bg-primary text-white' : 'bg-blue-100 text-primary hover:bg-blue-200'}`}
+                                    className={`text-xs sm:text-sm px-2 sm:px-3 py-1.5 rounded ${expandedTaskId === task.id ? 'bg-gradient-to-r from-primary to-accent text-white' : 'bg-blue-100 text-primary hover:bg-blue-200'}`}
                                   >
                                     {expandedTaskId === task.id ? '▼ Hide Notes' : `+ Notes (${(task.notes || []).length})`}
                                   </button>
-                                  <span className="text-sm text-purple-600">
+                                  <span className="text-xs sm:text-sm text-purple-600">
                                     Subtasks ({(task.subtasks || []).filter(s => s.completed || s.notApplicable || s.status === 'Complete' || s.status === 'N/A').length}/{(task.subtasks || []).length})
                                   </span>
                                   {canEdit && (
                                     <button
                                       onClick={() => setNewSubtask({ taskId: task.id, title: '', owner: '', dueDate: '' })}
-                                      className="text-sm text-green-600 hover:underline"
+                                      className="text-xs sm:text-sm text-green-600 hover:underline"
                                     >
                                       + Add Subtask
                                     </button>
@@ -5342,7 +5570,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                               <div className="flex gap-2">
                                                 <button
                                                   onClick={() => handleUpdateNote(task.id, note.id)}
-                                                  className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
+                                                  className="px-2 py-1 bg-gradient-to-r from-primary to-accent text-white text-xs rounded hover:opacity-90"
                                                 >
                                                   Save
                                                 </button>
@@ -5395,7 +5623,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                       />
                                       <button
                                         onClick={() => handleAddNote(task.id)}
-                                        className="px-3 py-2 bg-primary text-white rounded-md text-sm hover:bg-accent"
+                                        className="px-3 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md text-sm hover:opacity-90"
                                       >
                                         Add
                                       </button>
@@ -5473,17 +5701,17 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                     ) : (
                                       (task.subtasks || []).map(subtask => (
                                         editingSubtask?.taskId === task.id && editingSubtask?.subtaskId === subtask.id ? (
-                                          <div key={subtask.id} className="flex items-center gap-2 bg-blue-50 p-2 rounded border-2 border-blue-300 text-sm">
+                                          <div key={subtask.id} className="flex flex-wrap items-center gap-2 bg-blue-50 p-2 rounded border-2 border-blue-300 text-sm">
                                             <input
                                               value={editingSubtask.title}
                                               onChange={(e) => setEditingSubtask({...editingSubtask, title: e.target.value})}
-                                              className="flex-1 px-2 py-1 border rounded text-sm"
+                                              className="flex-1 min-w-0 w-full sm:w-auto px-2 py-1.5 border rounded text-sm"
                                               placeholder="Subtask title"
                                             />
                                             <select
                                               value={editingSubtask.owner}
                                               onChange={(e) => setEditingSubtask({...editingSubtask, owner: e.target.value})}
-                                              className="px-2 py-1 border rounded text-xs"
+                                              className="px-2 py-1.5 border rounded text-xs flex-1 sm:flex-none"
                                             >
                                               <option value="">No owner</option>
                                               {allOwners.map(owner => (
@@ -5494,28 +5722,30 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                               type="date"
                                               value={editingSubtask.dueDate || ''}
                                               onChange={(e) => setEditingSubtask({...editingSubtask, dueDate: e.target.value})}
-                                              className="text-xs px-2 py-1 border rounded"
+                                              className="text-xs px-2 py-1.5 border rounded"
                                             />
-                                            <button
-                                              onClick={handleSaveSubtaskEdit}
-                                              className="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700"
-                                            >
-                                              Save
-                                            </button>
-                                            <button
-                                              onClick={() => setEditingSubtask(null)}
-                                              className="px-2 py-1 bg-gray-300 rounded text-xs hover:bg-gray-400"
-                                            >
-                                              Cancel
-                                            </button>
+                                            <div className="flex gap-2">
+                                              <button
+                                                onClick={handleSaveSubtaskEdit}
+                                                className="px-3 py-1.5 bg-gradient-to-r from-primary to-accent text-white rounded text-xs hover:opacity-90"
+                                              >
+                                                Save
+                                              </button>
+                                              <button
+                                                onClick={() => setEditingSubtask(null)}
+                                                className="px-3 py-1.5 bg-gray-300 rounded text-xs hover:bg-gray-400"
+                                              >
+                                                Cancel
+                                              </button>
+                                            </div>
                                           </div>
                                         ) : (
-                                          <div key={subtask.id} className="flex items-center gap-2 bg-white p-2 rounded border text-sm">
+                                          <div key={subtask.id} className="flex flex-wrap items-center gap-1.5 sm:gap-2 bg-white p-2 rounded border text-sm">
                                             {canEdit ? (
                                               <select
                                                 value={getSubtaskStatus(subtask)}
                                                 onChange={(e) => handleSubtaskStatusChange(task.id, subtask.id, e.target.value)}
-                                                className={`px-2 py-1 border rounded text-xs ${
+                                                className={`px-1.5 sm:px-2 py-1 border rounded text-xs flex-shrink-0 ${
                                                   getSubtaskStatus(subtask) === 'completed' ? 'bg-green-100 text-green-700' :
                                                   getSubtaskStatus(subtask) === 'not_applicable' ? 'bg-gray-100 text-gray-600' :
                                                   'bg-yellow-50 text-yellow-700'
@@ -5526,53 +5756,55 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                                 <option value="not_applicable">N/A</option>
                                               </select>
                                             ) : (
-                                              <span className={`px-2 py-1 border rounded text-xs ${
+                                              <span className={`px-1.5 sm:px-2 py-1 border rounded text-xs flex-shrink-0 ${
                                                 getSubtaskStatus(subtask) === 'completed' ? 'bg-green-100 text-green-700' :
                                                 getSubtaskStatus(subtask) === 'not_applicable' ? 'bg-gray-100 text-gray-600' :
                                                 'bg-yellow-50 text-yellow-700'
                                               }`}>
-                                                {getSubtaskStatus(subtask) === 'completed' ? 'Complete' : 
+                                                {getSubtaskStatus(subtask) === 'completed' ? 'Complete' :
                                                  getSubtaskStatus(subtask) === 'not_applicable' ? 'N/A' : 'Pending'}
                                               </span>
                                             )}
-                                            <span className={getSubtaskStatus(subtask) !== 'pending' ? 'line-through text-gray-400 flex-1' : 'flex-1'}>
+                                            <span className={`min-w-0 break-words ${getSubtaskStatus(subtask) !== 'pending' ? 'line-through text-gray-400 flex-1' : 'flex-1'}`}>
                                               {subtask.title}
                                             </span>
-                                            {canEdit ? (
-                                              <input
-                                                type="date"
-                                                value={subtask.dueDate || ''}
-                                                onChange={(e) => handleSubtaskDueDateChange(task.id, subtask.id, e.target.value)}
-                                                className={`text-xs px-2 py-1 border rounded ${
-                                                  subtask.dueDate && new Date(subtask.dueDate) < new Date() && getSubtaskStatus(subtask) === 'pending'
-                                                    ? 'border-red-300 bg-red-50 text-red-700'
-                                                    : 'border-gray-200'
-                                                }`}
-                                                title="Due Date"
-                                              />
-                                            ) : subtask.dueDate && (
-                                              <span className="text-xs text-gray-500">{subtask.dueDate}</span>
-                                            )}
-                                            {subtask.owner && (
-                                              <span className="text-xs text-gray-500">{getOwnerName(subtask.owner)}</span>
-                                            )}
-                                            {canEdit && canEditSubtask(subtask) && (
-                                              <button
-                                                onClick={() => handleEditSubtask(task.id, subtask)}
-                                                className="text-blue-500 hover:text-blue-700 text-xs"
-                                                title="Edit subtask"
-                                              >
-                                                ✎
-                                              </button>
-                                            )}
-                                            {canEdit && isAdmin && (
-                                              <button
-                                                onClick={() => handleDeleteSubtask(task.id, subtask.id)}
-                                                className="text-red-400 hover:text-red-600 text-xs"
-                                              >
-                                                x
-                                              </button>
-                                            )}
+                                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                                              {canEdit ? (
+                                                <input
+                                                  type="date"
+                                                  value={subtask.dueDate || ''}
+                                                  onChange={(e) => handleSubtaskDueDateChange(task.id, subtask.id, e.target.value)}
+                                                  className={`text-xs px-1.5 sm:px-2 py-1 border rounded ${
+                                                    subtask.dueDate && new Date(subtask.dueDate) < new Date() && getSubtaskStatus(subtask) === 'pending'
+                                                      ? 'border-red-300 bg-red-50 text-red-700'
+                                                      : 'border-gray-200'
+                                                  }`}
+                                                  title="Due Date"
+                                                />
+                                              ) : subtask.dueDate && (
+                                                <span className="text-xs text-gray-500">{subtask.dueDate}</span>
+                                              )}
+                                              {subtask.owner && (
+                                                <span className="text-xs text-gray-500 hidden sm:inline">{getOwnerName(subtask.owner)}</span>
+                                              )}
+                                              {canEdit && canEditSubtask(subtask) && (
+                                                <button
+                                                  onClick={() => handleEditSubtask(task.id, subtask)}
+                                                  className="text-blue-500 hover:text-blue-700 text-xs p-1"
+                                                  title="Edit subtask"
+                                                >
+                                                  ✎
+                                                </button>
+                                              )}
+                                              {canEdit && isAdmin && (
+                                                <button
+                                                  onClick={() => handleDeleteSubtask(task.id, subtask.id)}
+                                                  className="text-red-400 hover:text-red-600 text-xs p-1"
+                                                >
+                                                  x
+                                                </button>
+                                              )}
+                                            </div>
                                           </div>
                                         )
                                       ))
@@ -5588,7 +5820,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                       value={newSubtask.title}
                                       onChange={(e) => setNewSubtask({...newSubtask, title: e.target.value})}
                                       placeholder="Subtask title..."
-                                      className="flex-1 min-w-48 px-3 py-2 border rounded-md text-sm"
+                                      className="flex-1 min-w-0 w-full sm:w-auto px-3 py-2 border rounded-md text-sm"
                                     />
                                     <select
                                       value={newSubtask.owner}
@@ -5609,7 +5841,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                                     />
                                     <button
                                       onClick={() => handleAddSubtask(task.id)}
-                                      className="px-3 py-2 bg-green-600 text-white rounded-md text-sm hover:bg-green-700"
+                                      className="px-3 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md text-sm hover:opacity-90"
                                     >
                                       Add
                                     </button>
@@ -5771,7 +6003,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                   </button>
                   <button
                     onClick={handleCreateTask}
-                    className="px-4 py-2 bg-primary text-white rounded-md hover:bg-accent"
+                    className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90"
                   >
                     Create Task
                   </button>
@@ -5878,6 +6110,77 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
         )}
 
         {/* Edit Project Modal */}
+        {/* Email Composer Modal */}
+        {showEmailComposer && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold">Send Email</h2>
+                <button onClick={() => setShowEmailComposer(false)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Recipients (comma-separated emails)</label>
+                  <input
+                    value={emailForm.to.join(', ')}
+                    onChange={(e) => setEmailForm({...emailForm, to: e.target.value.split(',').map(s => s.trim()).filter(Boolean)})}
+                    placeholder="email@example.com, another@example.com"
+                    className="w-full px-3 py-2 border rounded-md text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Subject</label>
+                  <input
+                    value={emailForm.subject}
+                    onChange={(e) => setEmailForm({...emailForm, subject: e.target.value})}
+                    placeholder="Email subject"
+                    className="w-full px-3 py-2 border rounded-md text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Message</label>
+                  <textarea
+                    value={emailForm.message}
+                    onChange={(e) => setEmailForm({...emailForm, message: e.target.value})}
+                    placeholder="Email body..."
+                    rows={6}
+                    className="w-full px-3 py-2 border rounded-md text-sm"
+                  />
+                </div>
+                <div className="flex gap-3 justify-end">
+                  <button
+                    onClick={() => setShowEmailComposer(false)}
+                    className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!emailForm.to.length || !emailForm.subject || !emailForm.message) { alert('Please fill in all fields'); return; }
+                      setEmailSending(true);
+                      const result = await api.sendEmail(token, {
+                        to: emailForm.to,
+                        subject: emailForm.subject,
+                        message: emailForm.message,
+                        projectId: project.id
+                      });
+                      setEmailSending(false);
+                      if (result.error) { alert(result.error); return; }
+                      alert(`${result.queued} email(s) queued for delivery`);
+                      setShowEmailComposer(false);
+                      setEmailForm({ to: [], subject: '', message: '' });
+                    }}
+                    disabled={emailSending}
+                    className="px-4 py-2 text-sm text-white bg-[#045E9F] rounded-md hover:bg-[#00205A] disabled:opacity-50"
+                  >
+                    {emailSending ? 'Sending...' : 'Queue Email'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {showEditProject && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-lg shadow-xl max-w-lg w-full p-6">
@@ -5970,7 +6273,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                       alert('Failed to update project');
                     }
                   }}
-                  className="px-4 py-2 bg-primary text-white rounded-md hover:bg-accent"
+                  className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90"
                 >
                   Save Changes
                 </button>
@@ -6252,10 +6555,10 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
         )}
       </AppHeader>
 
-      <div className="p-6">
+      <div className="p-3 sm:p-6">
       <div className="max-w-6xl mx-auto">
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">
+        <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-6">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
             {selectedTemplate ? (
               editingName ? (
                 <div className="flex items-center gap-2">
@@ -6291,7 +6594,7 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
             <div className="flex justify-end mb-4">
               <button
                 onClick={() => setShowCreateTemplate(true)}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90"
               >
                 + Create New Template
               </button>
@@ -6323,7 +6626,7 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
                     <button
                       onClick={handleCreateTemplate}
                       disabled={saving}
-                      className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+                      className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90 disabled:opacity-50"
                     >
                       {saving ? 'Creating...' : 'Create Template'}
                     </button>
@@ -6399,7 +6702,7 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
           <div className="space-y-4">
             <div className="flex justify-between items-center mb-4">
               <div className="flex items-center gap-2">
-                <label className="cursor-pointer px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700">
+                <label className="cursor-pointer px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90">
                   Import CSV
                   <input
                     type="file"
@@ -6419,7 +6722,7 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
               <button
                 onClick={handleAddTask}
                 disabled={saving}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+                className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90 disabled:opacity-50"
               >
                 + Add Task to Template
               </button>
@@ -6794,7 +7097,7 @@ const HubSpotSettings = ({ token, user, onBack, onLogout }) => {
                         <button
                           onClick={handleSave}
                           disabled={saving || !selectedPipeline}
-                          className="bg-primary text-white px-6 py-2 rounded-lg hover:bg-accent disabled:opacity-50"
+                          className="bg-gradient-to-r from-primary to-accent text-white px-6 py-2 rounded-lg hover:opacity-90 disabled:opacity-50"
                         >
                           {saving ? 'Saving...' : 'Save Mapping'}
                         </button>
@@ -6945,10 +7248,10 @@ const Reporting = ({ token, user, onBack, onLogout }) => {
         </button>
       </AppHeader>
 
-      <div className="p-6">
+      <div className="p-3 sm:p-6">
       <div className="max-w-6xl mx-auto">
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Launch Reports</h1>
+        <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-6">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Launch Reports</h1>
           <p className="text-gray-600 mb-4">Portal - Thrive 365 Labs</p>
 
           {/* Summary Stats */}
@@ -7325,7 +7628,7 @@ const PortalSettings = ({ token, user, onBack, onLogout }) => {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="px-6 py-2 bg-primary text-white rounded-md hover:bg-accent disabled:opacity-50"
+                className="px-6 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90 disabled:opacity-50"
               >
                 {saving ? 'Saving...' : 'Save Settings'}
               </button>
@@ -7375,7 +7678,7 @@ const AnnouncementsManager = ({ token, user, onBack, onLogout }) => {
 
   const loadAnnouncements = async () => {
     try {
-      const data = await api.getAnnouncements();
+      const data = await api.getAnnouncements(token);
       setAnnouncements(data);
     } catch (err) {
       console.error('Failed to load announcements:', err);
@@ -7440,7 +7743,7 @@ const AnnouncementsManager = ({ token, user, onBack, onLogout }) => {
           </div>
           <button
             onClick={() => { setShowAdd(true); setEditing(null); setForm({ title: '', content: '', type: 'info' }); }}
-            className="px-4 py-2 bg-primary text-white rounded-md hover:bg-accent"
+            className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90"
           >
             + New Announcement
           </button>
@@ -7484,7 +7787,7 @@ const AnnouncementsManager = ({ token, user, onBack, onLogout }) => {
               <div className="flex gap-2">
                 <button
                   onClick={editing ? handleUpdate : handleCreate}
-                  className="px-4 py-2 bg-primary text-white rounded-md hover:bg-accent"
+                  className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90"
                 >
                   {editing ? 'Save Changes' : 'Create'}
                 </button>
@@ -7612,7 +7915,7 @@ const ClientDocumentsManager = ({ token, user, onBack, onLogout }) => {
           </div>
           <button
             onClick={() => setShowAdd(true)}
-            className="px-4 py-2 bg-primary text-white rounded-md hover:bg-accent"
+            className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90"
           >
             + Add Document
           </button>
@@ -7677,7 +7980,7 @@ const ClientDocumentsManager = ({ token, user, onBack, onLogout }) => {
               </div>
             </div>
             <div className="flex gap-2 mt-4">
-              <button onClick={handleCreate} className="px-4 py-2 bg-primary text-white rounded-md hover:bg-accent">
+              <button onClick={handleCreate} className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90">
                 Add Document
               </button>
               <button onClick={() => setShowAdd(false)} className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400">

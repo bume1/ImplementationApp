@@ -475,7 +475,7 @@ Configure via Admin Hub > Settings > Client Portal Domain.
 
 ## Version History
 
-### Current Version: 2.7.5 (January 2026)
+### Current Version: 3.0.0 (February 2026)
 
 #### Highlights
 - Allow managers to add client users from Client Portal admin view
