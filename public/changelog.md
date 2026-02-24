@@ -4,6 +4,23 @@
 
 ---
 
+### Version 3.13.0 - February 24, 2026
+
+#### New Features
+- Add Pending Review tab to Service Portal in admin hub
+- Add missing validation fields to CompleteAssignmentPage form
+
+#### Bug Fixes
+- Harden polling engine: remove webhook, fix concurrency + data gaps
+- Fix admin hub Validation Reports to show only tech-submitted reports
+- Fix service report bugs: day-over-day validation entries, signature status, client portal visibility, PDF download
+
+#### Changes
+- Show validation tracking from moment of assignment, not just when onsite report is submitted
+- Streamline validation report flow and restructure Section 4
+- Wire up validation day-over-day entries end-to-end in service portal
+
+
 ### Version 3.12.0 - February 23, 2026
 
 #### New Features
