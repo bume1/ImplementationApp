@@ -8415,13 +8415,13 @@ app.get('/api/service-reports', authenticateToken, requireServiceAccess, async (
 
     if (dateFrom) {
       serviceReports = serviceReports.filter(r =>
-        new Date(r.serviceCompletionDate || r.createdAt) >= new Date(dateFrom)
+        new Date(r.serviceCompletionDate || r.plannedVisitDate || r.createdAt) >= new Date(dateFrom)
       );
     }
 
     if (dateTo) {
       serviceReports = serviceReports.filter(r =>
-        new Date(r.serviceCompletionDate || r.createdAt) <= new Date(dateTo)
+        new Date(r.serviceCompletionDate || r.plannedVisitDate || r.createdAt) <= new Date(dateTo)
       );
     }
 
@@ -8494,13 +8494,14 @@ app.get('/api/service-reports/active-validations', authenticateToken, requireSer
   try {
     const serviceReports = (await db.get('service_reports')) || [];
     const activeValidations = serviceReports.filter(r => {
-      // Show Validations-type reports that are actively in progress
-      // (includes assigned/in_progress with validation dates, not just validation_in_progress)
+      // Show Validations-type reports that are in-progress, assigned, or awaiting finalization
       const isValidationType = r.serviceType === 'Validations';
       const hasValidationStatus = r.status === 'validation_in_progress';
       const hasValidationDates = r.validationStartDate || r.validationEndDate;
       const isActiveStatus = ['assigned', 'in_progress', 'validation_in_progress'].includes(r.status);
-      if (!((hasValidationStatus) || (isValidationType && hasValidationDates && isActiveStatus))) return false;
+      // Also include signature_needed validations (submitted but not yet finalized)
+      const isAwaitingFinalization = isValidationType && r.status === 'signature_needed';
+      if (!((hasValidationStatus) || (isValidationType && hasValidationDates && isActiveStatus) || isAwaitingFinalization)) return false;
       // Show to admin and managers, or to the technician who owns it
       if (req.user.role === config.ROLES.ADMIN || req.user.isManager) return true;
       return String(r.technicianId) === String(req.user.id) ||
@@ -8766,7 +8767,7 @@ app.get('/api/hubspot/ticket/:ticketId/map-to-service-report', authenticateToken
       hubspotTicketNumber: ticket.id,
       hubspotCompanyId: ticket.companyId || '',
       managerNotes: tempReport.managerNotes,
-      serviceCompletionDate: new Date().toISOString().split('T')[0], // Today's date
+      plannedVisitDate: '', // Manager sets the planned visit date
 
       // Additional info
       hubspotOwnerNotMatched: ticket.ownerId && !assignedToId,
@@ -8805,6 +8806,7 @@ app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
       managerNotes,
       photos,
       clientFiles,
+      plannedVisitDate,
       serviceCompletionDate,
       validationStartDate,
       validationEndDate,
@@ -8854,7 +8856,8 @@ app.post('/api/service-reports/assign', authenticateToken, async (req, res) => {
       hubspotTicketNumber: hubspotTicketNumber || '',
       hubspotCompanyId: hubspotCompanyId || '',
       hubspotDealId: hubspotDealId || '',
-      serviceCompletionDate: serviceCompletionDate || '',
+      plannedVisitDate: plannedVisitDate || serviceCompletionDate || '', // Scheduled/planned visit date (set by manager)
+      serviceCompletionDate: '', // Blank until service is actually completed
       // Manager-only fields
       managerNotes: managerNotes || '',
       photos: photos || [], // Array of { id, url, name, uploadedAt }
@@ -9141,49 +9144,77 @@ app.post('/api/service-reports/:id/photos', authenticateToken, upload.array('pho
     const report = serviceReports[reportIndex];
     const photos = report.photos || [];
     const clientName = report.clientFacilityName || 'Unknown Client';
+    const reportId = req.params.id;
 
-    // Upload photos to Google Drive for persistent storage
-    for (const file of req.files) {
+    // Prepare metadata and keep buffers in memory for background Drive upload
+    const pendingUploads = req.files.map(file => {
       const fileId = uuidv4();
       const ext = path.extname(file.originalname) || '.jpg';
-      const fileName = `${fileId}${ext}`;
-
-      try {
-        const driveResult = await googledrive.uploadServiceReportAttachment(
-          clientName, fileName, file.buffer, file.mimetype || 'image/jpeg'
-        );
-
-        photos.push({
-          id: fileId,
-          name: file.originalname,
-          mimeType: file.mimetype || 'image/jpeg',
-          url: driveResult.webContentLink,
-          webViewLink: driveResult.webViewLink,
-          thumbnailLink: driveResult.thumbnailLink,
-          driveFileId: driveResult.fileId,
-          uploadedAt: new Date().toISOString(),
-          uploadedBy: req.user.name
-        });
-      } catch (driveErr) {
-        console.error('Google Drive photo upload failed, skipping:', driveErr.message);
-        // Still record the photo metadata even if Drive upload fails
-        photos.push({
+      return {
+        meta: {
           id: fileId,
           name: file.originalname,
           mimeType: file.mimetype || 'image/jpeg',
           url: null,
-          uploadError: driveErr.message,
+          driveStatus: 'pending',
           uploadedAt: new Date().toISOString(),
           uploadedBy: req.user.name
-        });
-      }
-    }
+        },
+        buffer: file.buffer,
+        fileName: `${fileId}${ext}`
+      };
+    });
 
+    // Save metadata to DB immediately (no blocking on Drive)
+    pendingUploads.forEach(u => photos.push(u.meta));
     serviceReports[reportIndex].photos = photos;
     serviceReports[reportIndex].updatedAt = new Date().toISOString();
     await db.set('service_reports', serviceReports);
 
+    // Respond immediately so the frontend is not blocked
     res.json({ photos: serviceReports[reportIndex].photos });
+
+    // Upload to Drive in background (fire-and-forget)
+    (async () => {
+      for (const { meta, buffer, fileName } of pendingUploads) {
+        try {
+          const driveResult = await googledrive.uploadServiceReportAttachment(
+            clientName, fileName, buffer, meta.mimeType
+          );
+          const reports = (await db.get('service_reports')) || [];
+          const rIdx = reports.findIndex(r => r.id === reportId);
+          if (rIdx !== -1) {
+            const pIdx = (reports[rIdx].photos || []).findIndex(p => p.id === meta.id);
+            if (pIdx !== -1) {
+              Object.assign(reports[rIdx].photos[pIdx], {
+                url: driveResult.webContentLink,
+                webViewLink: driveResult.webViewLink,
+                thumbnailLink: driveResult.thumbnailLink,
+                driveFileId: driveResult.fileId,
+                driveStatus: 'uploaded'
+              });
+              await db.set('service_reports', reports);
+            }
+          }
+        } catch (driveErr) {
+          console.error('Background Drive photo upload failed:', driveErr.message);
+          try {
+            const reports = (await db.get('service_reports')) || [];
+            const rIdx = reports.findIndex(r => r.id === reportId);
+            if (rIdx !== -1) {
+              const pIdx = (reports[rIdx].photos || []).findIndex(p => p.id === meta.id);
+              if (pIdx !== -1) {
+                reports[rIdx].photos[pIdx].driveStatus = 'failed';
+                reports[rIdx].photos[pIdx].uploadError = driveErr.message;
+                await db.set('service_reports', reports);
+              }
+            }
+          } catch (dbErr) {
+            console.error('Failed to update photo status after Drive error:', dbErr.message);
+          }
+        }
+      }
+    })();
   } catch (error) {
     console.error('Upload photos error:', error);
     res.status(500).json({ error: 'Server error' });
@@ -9212,47 +9243,76 @@ app.post('/api/service-reports/:id/files', authenticateToken, upload.array('file
     const report = serviceReports[reportIndex];
     const clientFiles = report.clientFiles || [];
     const clientName = report.clientFacilityName || 'Unknown Client';
+    const reportId = req.params.id;
 
-    // Upload files to Google Drive for persistent storage
-    for (const file of req.files) {
+    // Prepare metadata and keep buffers in memory for background Drive upload
+    const pendingUploads = req.files.map(file => {
       const fileId = uuidv4();
       const ext = path.extname(file.originalname) || '';
-      const fileName = `${fileId}${ext}`;
-
-      try {
-        const driveResult = await googledrive.uploadServiceReportAttachment(
-          clientName, fileName, file.buffer, file.mimetype || 'application/octet-stream'
-        );
-
-        clientFiles.push({
-          id: fileId,
-          name: file.originalname,
-          mimeType: file.mimetype || 'application/octet-stream',
-          url: driveResult.webContentLink,
-          webViewLink: driveResult.webViewLink,
-          driveFileId: driveResult.fileId,
-          uploadedAt: new Date().toISOString(),
-          uploadedBy: req.user.name
-        });
-      } catch (driveErr) {
-        console.error('Google Drive file upload failed, skipping:', driveErr.message);
-        clientFiles.push({
+      return {
+        meta: {
           id: fileId,
           name: file.originalname,
           mimeType: file.mimetype || 'application/octet-stream',
           url: null,
-          uploadError: driveErr.message,
+          driveStatus: 'pending',
           uploadedAt: new Date().toISOString(),
           uploadedBy: req.user.name
-        });
-      }
-    }
+        },
+        buffer: file.buffer,
+        fileName: `${fileId}${ext}`
+      };
+    });
 
+    // Save metadata to DB immediately (no blocking on Drive)
+    pendingUploads.forEach(u => clientFiles.push(u.meta));
     serviceReports[reportIndex].clientFiles = clientFiles;
     serviceReports[reportIndex].updatedAt = new Date().toISOString();
     await db.set('service_reports', serviceReports);
 
+    // Respond immediately so the frontend is not blocked
     res.json({ clientFiles: serviceReports[reportIndex].clientFiles });
+
+    // Upload to Drive in background (fire-and-forget)
+    (async () => {
+      for (const { meta, buffer, fileName } of pendingUploads) {
+        try {
+          const driveResult = await googledrive.uploadServiceReportAttachment(
+            clientName, fileName, buffer, meta.mimeType
+          );
+          const reports = (await db.get('service_reports')) || [];
+          const rIdx = reports.findIndex(r => r.id === reportId);
+          if (rIdx !== -1) {
+            const fIdx = (reports[rIdx].clientFiles || []).findIndex(f => f.id === meta.id);
+            if (fIdx !== -1) {
+              Object.assign(reports[rIdx].clientFiles[fIdx], {
+                url: driveResult.webContentLink,
+                webViewLink: driveResult.webViewLink,
+                driveFileId: driveResult.fileId,
+                driveStatus: 'uploaded'
+              });
+              await db.set('service_reports', reports);
+            }
+          }
+        } catch (driveErr) {
+          console.error('Background Drive file upload failed:', driveErr.message);
+          try {
+            const reports = (await db.get('service_reports')) || [];
+            const rIdx = reports.findIndex(r => r.id === reportId);
+            if (rIdx !== -1) {
+              const fIdx = (reports[rIdx].clientFiles || []).findIndex(f => f.id === meta.id);
+              if (fIdx !== -1) {
+                reports[rIdx].clientFiles[fIdx].driveStatus = 'failed';
+                reports[rIdx].clientFiles[fIdx].uploadError = driveErr.message;
+                await db.set('service_reports', reports);
+              }
+            }
+          } catch (dbErr) {
+            console.error('Failed to update file status after Drive error:', dbErr.message);
+          }
+        }
+      }
+    })();
   } catch (error) {
     console.error('Upload client files error:', error);
     res.status(500).json({ error: 'Server error' });

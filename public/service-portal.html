@@ -557,8 +557,8 @@
         });
 
       const sortedAssigned = [...assignedReports].sort((a, b) => {
-        const dateA = new Date(a.serviceCompletionDate || a.assignedAt || a.createdAt);
-        const dateB = new Date(b.serviceCompletionDate || b.assignedAt || b.createdAt);
+        const dateA = new Date(a.plannedVisitDate || a.validationStartDate || a.assignedAt || a.createdAt);
+        const dateB = new Date(b.plannedVisitDate || b.validationStartDate || b.assignedAt || b.createdAt);
         if (assignedSort === 'date_desc') return dateB - dateA;
         if (assignedSort === 'date_asc') return dateA - dateB;
         if (assignedSort === 'client_asc') return (a.clientFacilityName || '').localeCompare(b.clientFacilityName || '');
@@ -611,7 +611,7 @@
                         <p className="font-semibold text-gray-900">{report.clientFacilityName}</p>
                         <div className="flex flex-wrap items-center gap-2 mt-1 text-sm text-gray-600">
                           {report.serviceType && <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">{report.serviceType}</span>}
-                          {report.serviceCompletionDate && <span>Due: {new Date(report.serviceCompletionDate).toLocaleDateString()}</span>}
+                          {(report.plannedVisitDate || report.validationStartDate) && <span className="text-xs text-blue-600">Planned: {new Date((report.plannedVisitDate || report.validationStartDate) + 'T12:00:00').toLocaleDateString()}</span>}
                         </div>
                         {report.managerNotes && (
                           <p className="text-xs text-gray-500 mt-2 line-clamp-1">Note: {report.managerNotes}</p>
@@ -631,6 +631,90 @@
               </div>
             </div>
           )}
+
+          {/* Active Validations Section */}
+          <div className={`card-modern p-6 border-l-4 ${activeValidations.length > 0 ? 'border-blue-500 bg-blue-50/30' : 'border-gray-300 bg-gray-50/30'}`}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${activeValidations.length > 0 ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-400'}`}>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5"/></svg>
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Active Validations</h2>
+                <p className="text-sm text-gray-600">
+                  {activeValidations.length > 0
+                    ? `You have ${activeValidations.length} in-progress validation${activeValidations.length > 1 ? 's' : ''}`
+                    : 'No active multi-day validations'}
+                </p>
+              </div>
+            </div>
+            {activeValidations.length > 0 ? (
+              <div className="space-y-3">
+                {activeValidations.map(v => {
+                  const segments = Array.isArray(v.validationSegments) ? v.validationSegments : [];
+                  const daysLogged = segments.length;
+                  const expectedDays = v.expectedDays;
+                  const progressPercent = expectedDays ? Math.min(100, Math.round((daysLogged / expectedDays) * 100)) : null;
+                  const startDate = v.validationStartDate || segments[0]?.date;
+                  const isAwaitingFinalization = v.status === 'signature_needed';
+                  const allDaysLogged = expectedDays && daysLogged >= expectedDays;
+                  return (
+                    <div key={v.id} className={`bg-white rounded-xl p-4 border transition ${isAwaitingFinalization ? 'border-amber-200 hover:border-amber-300 bg-amber-50/30' : 'border-blue-100 hover:border-blue-200'}`}>
+                      <div className="flex items-center justify-between flex-wrap gap-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="font-semibold text-gray-900">{v.clientFacilityName}</p>
+                            {isAwaitingFinalization && <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-medium">Awaiting Finalization</span>}
+                            {allDaysLogged && !isAwaitingFinalization && <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full font-medium">All Days Logged</span>}
+                          </div>
+                          <p className="text-sm text-gray-600 mt-0.5">{v.analyzerModel || 'Biolis AU480'} {v.analyzerSerialNumber ? `· ${v.analyzerSerialNumber}` : ''}</p>
+                          <div className="flex items-center gap-2 mt-2">
+                            <div className="flex gap-0.5">
+                              {Array.from({ length: expectedDays || daysLogged + 1 }, (_, i) => (
+                                <div key={i} className={`w-2.5 h-2.5 rounded-full ${i < daysLogged ? 'bg-green-500' : i === daysLogged && !isAwaitingFinalization ? 'bg-gray-200 border border-blue-400 animate-pulse' : 'bg-gray-200'}`} title={`Day ${i + 1}`}></div>
+                              ))}
+                            </div>
+                            <span className="text-xs text-gray-500">{daysLogged} day{daysLogged !== 1 ? 's' : ''} logged</span>
+                            {startDate && <span className="text-xs text-gray-400">· Started {new Date(startDate + 'T12:00:00').toLocaleDateString()}</span>}
+                          </div>
+                          {expectedDays && progressPercent !== null && (
+                            <div className="mt-2 w-full max-w-xs">
+                              <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                                <div className={`h-full rounded-full transition-all duration-500 ${progressPercent >= 100 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${progressPercent}%` }} />
+                              </div>
+                              <p className="text-xs text-gray-400 mt-0.5">{daysLogged} of {expectedDays} expected days · {progressPercent}%</p>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          {isAwaitingFinalization ? (
+                            <button
+                              onClick={() => onContinueValidation(v)}
+                              className="px-4 py-2 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 transition text-sm flex items-center gap-2"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                              Finalize Validation
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => onContinueValidation(v)}
+                              className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition text-sm flex items-center gap-2"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11.35 3.836c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m8.9-4.414c.376.023.75.05 1.124.08 1.131.094 1.976 1.057 1.976 2.192V16.5A2.25 2.25 0 0118 18.75h-2.25m-7.5-10.5H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V18.75m-7.5-10.5h6.375c.621 0 1.125.504 1.125 1.125v9.375"/></svg>
+                              Complete On-Site Service Report
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-4">
+                <p className="text-sm text-gray-500">Start a multi-day validation from the New Service Report form by selecting "Validations" and setting a date range spanning multiple days.</p>
+              </div>
+            )}
+          </div>
 
           {/* Quick Actions */}
           <div className={`grid ${user?.role === 'admin' || user?.isManager ? 'md:grid-cols-2' : 'md:grid-cols-3'} gap-5`}>
@@ -695,73 +779,6 @@
                   </div>
                 </div>
               </button>
-            )}
-          </div>
-
-          {/* Active Validations Section */}
-          <div className={`card-modern p-6 border-l-4 ${activeValidations.length > 0 ? 'border-blue-500 bg-blue-50/30' : 'border-gray-300 bg-gray-50/30'}`}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${activeValidations.length > 0 ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-400'}`}>
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5"/></svg>
-              </div>
-              <div>
-                <h2 className="text-lg font-bold text-gray-900">Active Validations</h2>
-                <p className="text-sm text-gray-600">
-                  {activeValidations.length > 0
-                    ? `You have ${activeValidations.length} in-progress validation${activeValidations.length > 1 ? 's' : ''}`
-                    : 'No active multi-day validations'}
-                </p>
-              </div>
-            </div>
-            {activeValidations.length > 0 ? (
-              <div className="space-y-3">
-                {activeValidations.map(v => {
-                  const segments = Array.isArray(v.validationSegments) ? v.validationSegments : [];
-                  const daysLogged = segments.length;
-                  const expectedDays = v.expectedDays;
-                  const progressPercent = expectedDays ? Math.min(100, Math.round((daysLogged / expectedDays) * 100)) : null;
-                  const startDate = v.validationStartDate || segments[0]?.date;
-                  return (
-                    <div key={v.id} className="bg-white rounded-xl p-4 border border-blue-100 hover:border-blue-200 transition">
-                      <div className="flex items-center justify-between flex-wrap gap-3">
-                        <div className="flex-1">
-                          <p className="font-semibold text-gray-900">{v.clientFacilityName}</p>
-                          <p className="text-sm text-gray-600">{v.analyzerModel || 'Biolis AU480'} {v.analyzerSerialNumber ? `· ${v.analyzerSerialNumber}` : ''}</p>
-                          <div className="flex items-center gap-2 mt-2">
-                            <div className="flex gap-0.5">
-                              {segments.map((s, i) => (
-                                <div key={i} className="w-2.5 h-2.5 rounded-full bg-green-500" title={`Day ${s.day}`}></div>
-                              ))}
-                              <div className="w-2.5 h-2.5 rounded-full bg-gray-200 border border-blue-400 animate-pulse" title="Next day"></div>
-                            </div>
-                            <span className="text-xs text-gray-500">{daysLogged} day{daysLogged !== 1 ? 's' : ''} logged</span>
-                            {startDate && <span className="text-xs text-gray-400">· Started {new Date(startDate + 'T12:00:00').toLocaleDateString()}</span>}
-                          </div>
-                          {expectedDays && progressPercent !== null && (
-                            <div className="mt-2 w-full max-w-xs">
-                              <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
-                                <div className={`h-full rounded-full transition-all duration-500 ${progressPercent >= 100 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${progressPercent}%` }} />
-                              </div>
-                              <p className="text-xs text-gray-400 mt-0.5">{daysLogged} of {expectedDays} days · {progressPercent}%</p>
-                            </div>
-                          )}
-                        </div>
-                        <button
-                          onClick={() => onContinueValidation(v)}
-                          className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition text-sm flex items-center gap-2"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
-                          Add Day {daysLogged + 1}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="text-center py-4">
-                <p className="text-sm text-gray-500">Start a multi-day validation from the New Service Report form by selecting "Validations" and setting a date range spanning multiple days.</p>
-              </div>
             )}
           </div>
 
@@ -1921,8 +1938,8 @@
         if (statusFilter && report.status !== statusFilter) return false;
         return true;
       }).sort((a, b) => {
-        const dateA = new Date(a.serviceCompletionDate || a.createdAt);
-        const dateB = new Date(b.serviceCompletionDate || b.createdAt);
+        const dateA = new Date(a.serviceCompletionDate || a.plannedVisitDate || a.createdAt);
+        const dateB = new Date(b.serviceCompletionDate || b.plannedVisitDate || b.createdAt);
         if (sortBy === 'date_desc') return dateB - dateA;
         if (sortBy === 'date_asc') return dateA - dateB;
         if (sortBy === 'client_asc') return (a.clientFacilityName || '').localeCompare(b.clientFacilityName || '');
@@ -2131,7 +2148,9 @@
                       </th>
                     )}
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Date</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Planned Visit</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Assigned</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Completed</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Client</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Service Type</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Technician</th>
@@ -2167,7 +2186,17 @@
                         </span>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-900">
-                        {new Date(report.serviceCompletionDate || report.createdAt).toLocaleDateString()}
+                        {(report.plannedVisitDate || report.validationStartDate)
+                          ? new Date((report.plannedVisitDate || report.validationStartDate) + 'T12:00:00').toLocaleDateString()
+                          : <span className="text-gray-400">—</span>}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-500">
+                        {report.assignedAt ? new Date(report.assignedAt).toLocaleDateString() : <span className="text-gray-400">—</span>}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-900">
+                        {report.serviceCompletionDate
+                          ? new Date(report.serviceCompletionDate + 'T12:00:00').toLocaleDateString()
+                          : <span className="text-gray-400">—</span>}
                       </td>
                       <td className="px-6 py-4">
                         <div className="text-sm font-medium text-gray-900">{report.clientFacilityName}</div>
@@ -2247,10 +2276,17 @@
     const ViewReportPage = ({ report, onBack, onEdit, user }) => {
       const token = localStorage.getItem('service_token') || localStorage.getItem('token') || localStorage.getItem('unified_token');
 
-      // Check if user can edit this report (admin or manager)
+      // Check if user can edit this report:
+      // - Admins can always edit
+      // - Technicians/vendors can edit reports they own
+      // - Managers and clients are view-only
+      const isOwner = report && (
+        String(report.technicianId) === String(user?.id) ||
+        String(report.assignedToId) === String(user?.id)
+      );
       const canEdit = user && (
         user.role === 'admin' ||
-        user.isManager
+        ((user.role === 'vendor' || user.hasServicePortalAccess) && isOwner && !user.isManager)
       );
 
       const handleDownloadPDF = () => {
@@ -3596,7 +3632,7 @@
       const [formData, setFormData] = useState({
         assignedToId: '', clientFacilityName: '', customerName: '', address: '',
         serviceType: '', analyzerModel: '', analyzerSerialNumber: '',
-        hubspotTicketNumber: '', serviceCompletionDate: '', managerNotes: '',
+        hubspotTicketNumber: '', plannedVisitDate: '', managerNotes: '',
         validationStartDate: '', validationEndDate: '', expectedDays: ''
       });
 
@@ -3706,7 +3742,7 @@
           setFormData({
             assignedToId: '', clientFacilityName: '', customerName: '', address: '',
             serviceType: '', analyzerModel: '', analyzerSerialNumber: '',
-            hubspotTicketNumber: '', serviceCompletionDate: '', managerNotes: '',
+            hubspotTicketNumber: '', plannedVisitDate: '', managerNotes: '',
             validationStartDate: '', validationEndDate: '', expectedDays: ''
           });
           setPhotos([]);
@@ -3796,7 +3832,7 @@
             analyzerModel: formData.analyzerModel, // Keep existing
             analyzerSerialNumber: data.analyzerSerialNumber || '',
             hubspotTicketNumber: data.hubspotTicketNumber || '',
-            serviceCompletionDate: data.serviceCompletionDate || '',
+            plannedVisitDate: data.plannedVisitDate || data.serviceCompletionDate || '',
             managerNotes: data.managerNotes || ''
           });
 
@@ -4035,11 +4071,11 @@
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Target Completion Date</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Planned Visit Date</label>
                   <input
                     type="date"
-                    value={formData.serviceCompletionDate}
-                    onChange={(e) => setFormData({...formData, serviceCompletionDate: e.target.value})}
+                    value={formData.plannedVisitDate}
+                    onChange={(e) => setFormData({...formData, plannedVisitDate: e.target.value})}
                     className="input-modern w-full px-4 py-3"
                   />
                 </div>
@@ -4243,7 +4279,7 @@
                   setFormData({
                     assignedToId: '', clientFacilityName: '', customerName: '', address: '',
                     serviceType: '', analyzerModel: '', analyzerSerialNumber: '',
-                    hubspotTicketNumber: '', serviceCompletionDate: '', managerNotes: '',
+                    hubspotTicketNumber: '', plannedVisitDate: '', managerNotes: '',
                     validationStartDate: '', validationEndDate: '', expectedDays: ''
                   });
                   setPhotos([]);
@@ -4355,15 +4391,17 @@
 
     // Continue Validation Page - Multi-day validation daily segment form
     const ContinueValidationPage = ({ token, user, validation, onSuccess, onBack }) => {
+      const [liveValidation, setLiveValidation] = useState(validation);
       const [loading, setLoading] = useState(false);
       const [saving, setSaving] = useState(false);
       const [error, setError] = useState('');
       const [expandedDays, setExpandedDays] = useState(new Set());
-      const [showCompletionForm, setShowCompletionForm] = useState(false);
+      // Show completion form directly if status is signature_needed (awaiting finalization)
+      const [showCompletionForm, setShowCompletionForm] = useState(validation?.status === 'signature_needed');
       const [editingExpectedDays, setEditingExpectedDays] = useState(false);
       const [expectedDaysInput, setExpectedDaysInput] = useState(validation?.expectedDays || '');
 
-      const segments = Array.isArray(validation?.validationSegments) ? validation.validationSegments : [];
+      const segments = Array.isArray(liveValidation?.validationSegments) ? liveValidation.validationSegments : [];
       const nextDay = segments.length + 1;
 
       // New day form state
@@ -4374,20 +4412,46 @@
         date: new Date().toISOString().split('T')[0]
       });
 
-      // Completion form state
+      // Completion form — pre-populate from existing report data if present
       const [completionForm, setCompletionForm] = useState({
-        validationResults: '',
-        trainingProvided: '',
-        recommendations: '',
+        validationResults: validation?.validationResults || '',
+        trainingProvided: validation?.trainingProvided || '',
+        recommendations: validation?.recommendations || '',
         technicianSignature: '',
         technicianSignatureDate: new Date().toISOString().split('T')[0],
-        technicianFirstName: user?.name?.split(' ')[0] || '',
-        technicianLastName: user?.name?.split(' ').slice(1).join(' ') || '',
+        technicianFirstName: validation?.technicianFirstName || user?.name?.split(' ')[0] || '',
+        technicianLastName: validation?.technicianLastName || user?.name?.split(' ').slice(1).join(' ') || '',
         customerSignature: '',
         customerSignatureDate: '',
-        customerFirstName: '',
-        customerLastName: ''
+        customerFirstName: validation?.customerFirstName || '',
+        customerLastName: validation?.customerLastName || ''
       });
+
+      // Load fresh data on mount so real-time day entries are visible immediately
+      useEffect(() => {
+        const loadFresh = async () => {
+          if (!validation?.id) return;
+          setLoading(true);
+          const result = await api.getServiceReport(token, validation.id);
+          if (!result.error) {
+            setLiveValidation(result);
+            setExpectedDaysInput(result.expectedDays || '');
+            // Keep completion form pre-population up to date
+            setCompletionForm(prev => ({
+              ...prev,
+              validationResults: result.validationResults || prev.validationResults,
+              trainingProvided: result.trainingProvided || prev.trainingProvided,
+              recommendations: result.recommendations || prev.recommendations,
+              technicianFirstName: result.technicianFirstName || prev.technicianFirstName,
+              technicianLastName: result.technicianLastName || prev.technicianLastName,
+              customerFirstName: result.customerFirstName || prev.customerFirstName,
+              customerLastName: result.customerLastName || prev.customerLastName,
+            }));
+          }
+          setLoading(false);
+        };
+        loadFresh();
+      }, []);
 
       const toggleDay = (day) => {
         const next = new Set(expandedDays);
@@ -4395,10 +4459,21 @@
         setExpandedDays(next);
       };
 
-      // Progress bar calculation
-      const expectedDays = validation?.expectedDays;
+      // Progress bar calculation (use liveValidation expectedDays)
+      const expectedDays = liveValidation?.expectedDays;
       const daysLogged = segments.length;
       const progressPercent = expectedDays ? Math.min(100, Math.round((daysLogged / expectedDays) * 100)) : null;
+      const allDaysLogged = expectedDays && daysLogged >= expectedDays;
+
+      // Reload validation data in place (stay on this page)
+      const reloadValidation = async () => {
+        const result = await api.getServiceReport(token, liveValidation.id);
+        if (!result.error) {
+          setLiveValidation(result);
+          setExpectedDaysInput(result.expectedDays || '');
+        }
+        return result;
+      };
 
       const handleSaveDay = async () => {
         if (!dayForm.testsPerformed.trim()) {
@@ -4408,21 +4483,24 @@
         setSaving(true);
         setError('');
 
-        const result = await api.addValidationSegment(token, validation.id, {
+        const result = await api.addValidationSegment(token, liveValidation.id, {
           day: nextDay,
           date: dayForm.date,
           testsPerformed: dayForm.testsPerformed,
           results: dayForm.results,
           observations: dayForm.observations,
           status: 'complete',
-          expectedDays: expectedDaysInput ? parseInt(expectedDaysInput) : validation?.expectedDays
+          expectedDays: expectedDaysInput ? parseInt(expectedDaysInput) : liveValidation?.expectedDays
         });
 
         if (result.error) {
           setError(result.error);
           setSaving(false);
         } else {
-          if (onSuccess) onSuccess(result);
+          // Stay on this page — reload data in place, clear the day form
+          await reloadValidation();
+          setDayForm({ testsPerformed: '', results: '', observations: '', date: new Date().toISOString().split('T')[0] });
+          setSaving(false);
         }
       };
 
@@ -4431,7 +4509,7 @@
         // Save the expected days update via a no-op segment update (update last segment)
         if (segments.length > 0) {
           const lastSeg = segments[segments.length - 1];
-          await api.addValidationSegment(token, validation.id, {
+          await api.addValidationSegment(token, liveValidation.id, {
             day: lastSeg.day,
             date: lastSeg.date,
             testsPerformed: lastSeg.testsPerformed,
@@ -4442,7 +4520,7 @@
           });
         }
         setEditingExpectedDays(false);
-        if (onSuccess) onSuccess();
+        await reloadValidation();
       };
 
       const handleCompleteValidation = async () => {
@@ -4457,7 +4535,7 @@
         setSaving(true);
         setError('');
 
-        const result = await api.completeValidation(token, validation.id, { ...completionForm, validationSegments: segments });
+        const result = await api.completeValidation(token, liveValidation.id, { ...completionForm, validationSegments: segments });
         if (result.error) {
           setError(result.error);
           setSaving(false);
@@ -4474,6 +4552,17 @@
         } catch { return dateStr; }
       };
 
+      if (loading) {
+        return (
+          <div className="flex items-center justify-center py-20">
+            <div className="text-center">
+              <svg className="animate-spin w-8 h-8 text-primary-500 mx-auto mb-3" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+              <p className="text-gray-500 text-sm">Loading validation data...</p>
+            </div>
+          </div>
+        );
+      }
+
       return (
         <div className="space-y-6 animate-fade-in">
           {/* Header */}
@@ -4482,10 +4571,10 @@
               <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"/></svg>
             </button>
             <div>
-              <h1 className="text-2xl font-bold text-accent">Validation: {validation?.clientFacilityName}</h1>
+              <h1 className="text-2xl font-bold text-accent">Validation: {liveValidation?.clientFacilityName}</h1>
               <p className="text-sm text-gray-600">
-                {validation?.analyzerModel || 'Biolis AU480'} {validation?.analyzerSerialNumber ? `(${validation.analyzerSerialNumber})` : ''}
-                {validation?.validationStartDate && ` · Started ${formatDate(validation.validationStartDate)}`}
+                {liveValidation?.analyzerModel || 'Biolis AU480'} {liveValidation?.analyzerSerialNumber ? `(${liveValidation.analyzerSerialNumber})` : ''}
+                {liveValidation?.validationStartDate && ` · Started ${formatDate(liveValidation.validationStartDate)}`}
               </p>
             </div>
           </div>
@@ -4500,15 +4589,16 @@
                 <div>
                   <p className="font-semibold text-gray-900">{daysLogged} day{daysLogged !== 1 ? 's' : ''} logged</p>
                   {expectedDays && !editingExpectedDays && (
-                    <p className="text-sm text-gray-500">
-                      {daysLogged} of {expectedDays} expected days
+                    <p className={`text-sm ${allDaysLogged ? 'text-green-600 font-medium' : 'text-gray-500'}`}>
+                      {daysLogged} of {expectedDays} planned days
+                      {allDaysLogged && <span className="ml-1">✓ All days logged</span>}
                       <button onClick={() => setEditingExpectedDays(true)} className="ml-2 text-blue-500 hover:text-blue-700 text-xs">(edit)</button>
                     </p>
                   )}
                   {!expectedDays && !editingExpectedDays && (
                     <p className="text-sm text-gray-500">
                       Flexible duration
-                      <button onClick={() => setEditingExpectedDays(true)} className="ml-2 text-blue-500 hover:text-blue-700 text-xs">(set expected days)</button>
+                      <button onClick={() => setEditingExpectedDays(true)} className="ml-2 text-blue-500 hover:text-blue-700 text-xs">(set planned days)</button>
                     </p>
                   )}
                 </div>
@@ -4595,6 +4685,15 @@
               ))}
             </div>
 
+            {/* Days alignment warning */}
+            {!showCompletionForm && allDaysLogged && (
+              <div className="flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-xl mb-2">
+                <svg className="w-5 h-5 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <p className="text-sm text-green-700">All {expectedDays} planned days have been logged. You can finalize the validation or add additional days if needed.</p>
+                <button onClick={() => setShowCompletionForm(true)} className="ml-auto px-3 py-1.5 bg-green-600 text-white text-xs rounded-lg font-medium hover:bg-green-700 whitespace-nowrap">Finalize Now</button>
+              </div>
+            )}
+
             {/* New day form */}
             {!showCompletionForm && (
               <div className="border-2 border-blue-200 rounded-xl p-5 bg-blue-50/30">
@@ -4663,7 +4762,7 @@
                         className="px-4 py-2.5 bg-gradient-to-r from-primary to-accent text-white rounded-xl font-medium hover:opacity-90 flex items-center gap-2"
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                        Complete Validation
+                        Finalize Validation
                       </button>
                     )}
                   </div>
@@ -4677,14 +4776,20 @@
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                    <h3 className="text-lg font-bold text-gray-900">Complete Validation</h3>
+                    <h3 className="text-lg font-bold text-gray-900">Finalize Validation</h3>
                   </div>
-                  <button onClick={() => setShowCompletionForm(false)} className="text-sm text-gray-500 hover:text-gray-700">
-                    ← Back to daily log
-                  </button>
+                  {liveValidation?.status !== 'signature_needed' && (
+                    <button onClick={() => setShowCompletionForm(false)} className="text-sm text-gray-500 hover:text-gray-700">
+                      ← Back to daily log
+                    </button>
+                  )}
                 </div>
 
-                <p className="text-sm text-gray-600 mb-4">All {segments.length} days logged. Provide the overall summary and signatures below.</p>
+                <p className="text-sm text-gray-600 mb-4">
+                  {liveValidation?.status === 'signature_needed'
+                    ? 'This validation is awaiting finalization. Review the details below and add signatures.'
+                    : `${segments.length} day${segments.length !== 1 ? 's' : ''} logged. Provide the overall summary and signatures to complete.`}
+                </p>
 
                 <div className="space-y-4">
                   <div>
@@ -4760,8 +4865,8 @@
                       className="flex-1 px-4 py-2.5 bg-gradient-to-r from-primary to-accent text-white rounded-xl font-medium hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
                     >
                       {saving ? (
-                        <><svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> Completing...</>
-                      ) : 'Submit'}
+                        <><svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> Finalizing...</>
+                      ) : 'Finalize Validation'}
                     </button>
                   </div>
                 </div>
