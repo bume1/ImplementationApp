@@ -2186,9 +2186,13 @@
                         </span>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-900">
-                        {(report.plannedVisitDate || report.validationStartDate)
-                          ? new Date((report.plannedVisitDate || report.validationStartDate) + 'T12:00:00').toLocaleDateString()
-                          : <span className="text-gray-400">—</span>}
+                        {(() => {
+                          // plannedVisitDate (new field) → validationStartDate → serviceCompletionDate on assigned records (backwards compat with old data)
+                          const planned = report.plannedVisitDate || report.validationStartDate || (report.status === 'assigned' ? report.serviceCompletionDate : null);
+                          return planned
+                            ? new Date(planned + (planned.includes('T') ? '' : 'T12:00:00')).toLocaleDateString()
+                            : <span className="text-gray-400">—</span>;
+                        })()}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500">
                         {report.assignedAt ? new Date(report.assignedAt).toLocaleDateString() : <span className="text-gray-400">—</span>}
@@ -2216,7 +2220,7 @@
                             {Icons.eye}
                             <span className="text-sm">View</span>
                           </button>
-                          {onEditReport && currentUser && (currentUser.role === 'admin' || currentUser.isManager) && (
+                          {onEditReport && currentUser && (currentUser.role === 'admin' || ((currentUser.role === 'vendor' || currentUser.hasServicePortalAccess) && !currentUser.isManager)) && (
                             <button
                               onClick={() => onEditReport(report)}
                               className="text-amber-600 hover:text-amber-800 flex items-center gap-1"
