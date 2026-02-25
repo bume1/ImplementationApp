@@ -1956,10 +1956,22 @@
       const isServiceTechnician = (currentUser?.role === 'vendor' || currentUser?.hasServicePortalAccess) && !isManager;
       const canDeleteAny = isSuperAdmin || isManager || isServiceTechnician;
 
+      // Returns true if a validation report has day 1 log data saved by the technician
+      const validationHasDay1Data = (report) => {
+        const isValidationType = report.serviceType === 'Validations';
+        const hasSegments = Array.isArray(report.validationSegments) && report.validationSegments.length > 0;
+        const technicianStarted = ['validation_in_progress', 'onsite_submitted', 'signature_needed', 'submitted'].includes(report.status);
+        return isValidationType && (hasSegments || technicianStarted);
+      };
+
       // Check if current user can delete a specific report
       const canDeleteReport = (report) => {
         if (isSuperAdmin) return true;
-        if (isManager && String(report.assignedById) === String(currentUser?.id)) return true;
+        if (isManager && String(report.assignedById) === String(currentUser?.id)) {
+          // Managers cannot delete validation reports once technician has saved day 1 data
+          if (validationHasDay1Data(report)) return false;
+          return true;
+        }
         if (isServiceTechnician && report.technicianId === currentUser?.id) return true;
         return false;
       };
@@ -3411,7 +3423,10 @@
       const offsiteSegs = segments.filter(s => s.phase === 'offsite');
       const isOnsiteSubmitted = assignment.status === 'onsite_submitted';
       const isFullySubmitted = assignment.status === 'submitted';
-      const canEdit = !isFullySubmitted;
+      // Managers cannot edit after technician has saved day 1 log data
+      const hasDay1Data = segments.length > 0 || isOnsiteSubmitted;
+      const managerBlocked = user?.isManager && !isFullySubmitted && hasDay1Data;
+      const canEdit = !isFullySubmitted && !managerBlocked;
 
       const statusLabel = isFullySubmitted ? 'Completed' : isOnsiteSubmitted ? 'Off-Site In Progress' : 'On-Site In Progress';
       const statusColor = isFullySubmitted ? 'bg-green-100 text-green-700' : isOnsiteSubmitted ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700';
