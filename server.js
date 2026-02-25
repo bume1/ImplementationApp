@@ -10064,7 +10064,10 @@ app.get('/api/client-portal/validation-progress', authenticateToken, async (req,
       // Show as soon as assigned, regardless of whether validation dates are set yet
       const isAssignedValidation = isValidationType && r.status === 'assigned';
       const isOnsiteSubmitted = isValidationType && r.status === 'onsite_submitted';
-      if (!((hasValidationStatus) || (isValidationType && hasValidationDates && isActiveStatus) || isAssignedValidation || isOnsiteSubmitted)) return false;
+      // Also show reports awaiting client signature or already submitted so clients can see/sign them
+      const isSignatureNeeded = isValidationType && r.status === 'signature_needed';
+      const isSubmitted = isValidationType && r.status === 'submitted';
+      if (!((hasValidationStatus) || (isValidationType && hasValidationDates && isActiveStatus) || isAssignedValidation || isOnsiteSubmitted || isSignatureNeeded || isSubmitted)) return false;
       // Primary: match by clientSlug (most reliable)
       if (clientSlug && r.clientSlug && r.clientSlug === clientSlug) return true;
       // Match by company ID
@@ -10092,9 +10095,11 @@ app.get('/api/client-portal/validation-progress', authenticateToken, async (req,
         status: r.status,
         serviceType: r.serviceType,
         onsiteComplete: r.status === 'onsite_submitted' || r.status === 'submitted',
+        hasCustomerSignature: !!(r.customerSignature && r.customerSignature.startsWith('data:image') && r.customerSignature.length > 7000),
         onsiteDaysLogged: onsiteSegments.length,
         offsiteDaysLogged: offsiteSegments.length,
         daysLogged: allSegments.length,
+        reportDocumentUrl: r.driveWebViewLink || (r.validationReportDocument && r.validationReportDocument.driveWebViewLink) || null,
         segments: allSegments.map(s => ({
           day: s.day,
           phase: s.phase || 'onsite',
@@ -10422,12 +10427,25 @@ app.put('/api/service-reports/:id/submit-validation', authenticateToken, require
     const allSegmentDates = allSegments.map(s => s.date).filter(Boolean).sort();
     const lastSegmentDate = allSegmentDates.length > 0 ? allSegmentDates[allSegmentDates.length - 1] : new Date().toISOString().split('T')[0];
 
+    // Check for customer signature (same logic as complete-validation endpoint)
+    const { customerSignature, customerSignatureDate, customerFirstName, customerLastName } = req.body;
+    const hasNewCustomerSignature = customerSignature && typeof customerSignature === 'string'
+      && customerSignature.startsWith('data:image') && customerSignature.length > 7000;
+    const hasExistingCustomerSignature = report.customerSignature && typeof report.customerSignature === 'string'
+      && report.customerSignature.startsWith('data:image') && report.customerSignature.length > 7000;
+    const hasCustomerSignature = hasNewCustomerSignature || hasExistingCustomerSignature;
+    const completionStatus = hasCustomerSignature ? 'submitted' : 'signature_needed';
+
     serviceReports[reportIndex] = {
       ...report,
-      status: 'submitted',
+      status: completionStatus,
       validationReportDocument,
       serviceCompletionDate: lastSegmentDate,
-      submittedAt: new Date().toISOString(),
+      customerSignature: customerSignature || report.customerSignature || '',
+      customerSignatureDate: customerSignatureDate || report.customerSignatureDate || '',
+      customerFirstName: customerFirstName || report.customerFirstName || '',
+      customerLastName: customerLastName || report.customerLastName || '',
+      submittedAt: hasCustomerSignature ? new Date().toISOString() : null,
       completedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -10437,8 +10455,10 @@ app.put('/api/service-reports/:id/submit-validation', authenticateToken, require
     const completedReport = serviceReports[reportIndex];
 
     await logActivity(
-      req.user.id, req.user.name, 'validation_submitted', 'service_report', report.id,
-      { clientName: report.clientFacilityName, totalDays: allSegments.length }
+      req.user.id, req.user.name,
+      hasCustomerSignature ? 'validation_submitted' : 'validation_pending_signature',
+      'service_report', report.id,
+      { clientName: report.clientFacilityName, totalDays: allSegments.length, status: completionStatus }
     );
 
     // Generate final PDF (both phases)
