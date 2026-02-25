@@ -6,6 +6,20 @@
 const PDFDocument = require('pdfkit');
 const { PDFDocument: PDFLib } = require('pdf-lib');
 
+/**
+ * Fetch a URL with a timeout so hung external requests (e.g. dead Google Drive
+ * links or old photo storage URLs) never block PDF generation indefinitely.
+ */
+async function fetchWithTimeout(url, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { redirect: 'follow', signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Color constants
 const COLORS = {
   primary: '#045E9F',
@@ -37,7 +51,7 @@ async function fetchPhotoBuffer(photo) {
   if (!url) return null;
 
   try {
-    const response = await fetch(url, { redirect: 'follow' });
+    const response = await fetchWithTimeout(url, 8000);
     if (!response.ok) return null;
     const arrayBuffer = await response.arrayBuffer();
     return Buffer.from(arrayBuffer);
@@ -48,19 +62,18 @@ async function fetchPhotoBuffer(photo) {
 }
 
 /**
- * Pre-fetch all photo buffers for a report
+ * Pre-fetch all photo buffers for a report (concurrent for speed)
  */
 async function fetchReportPhotos(photos) {
   if (!photos || photos.length === 0) return [];
 
-  const results = [];
-  for (const photo of photos) {
-    const buffer = await fetchPhotoBuffer(photo);
-    if (buffer && buffer.length > 0) {
-      results.push({ ...photo, buffer });
-    }
-  }
-  return results;
+  const settled = await Promise.all(
+    photos.map(async (photo) => {
+      const buffer = await fetchPhotoBuffer(photo);
+      return buffer && buffer.length > 0 ? { ...photo, buffer } : null;
+    })
+  );
+  return settled.filter(Boolean);
 }
 
 /**
@@ -770,7 +783,7 @@ async function generateValidationReportPDF(reportData, technicianName) {
 async function fetchAttachmentBuffer(url) {
   if (!url) return null;
   try {
-    const response = await fetch(url, { redirect: 'follow' });
+    const response = await fetchWithTimeout(url, 10000);
     if (!response.ok) return null;
     const arrayBuffer = await response.arrayBuffer();
     return Buffer.from(arrayBuffer);
