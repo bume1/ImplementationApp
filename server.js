@@ -10286,11 +10286,14 @@ app.put('/api/service-reports/:id/submit-validation', authenticateToken, require
       };
     }
 
+    const allSegmentDates = allSegments.map(s => s.date).filter(Boolean).sort();
+    const lastSegmentDate = allSegmentDates.length > 0 ? allSegmentDates[allSegmentDates.length - 1] : new Date().toISOString().split('T')[0];
+
     serviceReports[reportIndex] = {
       ...report,
       status: 'submitted',
       validationReportDocument,
-      serviceCompletionDate: new Date().toISOString().split('T')[0],
+      serviceCompletionDate: lastSegmentDate,
       submittedAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
