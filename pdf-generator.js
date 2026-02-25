@@ -801,26 +801,31 @@ async function mergePDFBuffers(pdfBuffers) {
 }
 
 /**
- * Generate a service/validation report PDF and append any uploaded attachments.
+ * Generate a service/validation report PDF and append any uploaded PDF attachments.
  * Returns a single merged PDF buffer.
  *
  * Attachment sources checked (in order):
- *  1. report.validationReportDocument  – uploaded validation document
+ *  1. report.validationReportDocument  – uploaded validation document (final submission)
+ *  2. report.clientFiles[]             – PDF files uploaded by admins/managers
  */
 async function generateServiceReportWithAttachments(reportData, technicianName) {
   const reportBuffer = await generateServiceReportPDF(reportData, technicianName);
 
   const attachmentBuffers = [];
 
-  // 1. Validation report document
+  // Helper: resolve a Drive file object to a download URL
+  const driveUrl = (fileObj) => {
+    if (!fileObj) return null;
+    if (fileObj.driveFileId) return `https://drive.google.com/uc?id=${fileObj.driveFileId}&export=download`;
+    if (fileObj.driveWebContentLink) return fileObj.driveWebContentLink;
+    if (fileObj.webContentLink) return fileObj.webContentLink;
+    return null;
+  };
+
+  // 1. Validation report document (uploaded when submitting validation)
   const vrd = reportData.validationReportDocument;
   if (vrd) {
-    let url = null;
-    if (vrd.driveFileId) {
-      url = `https://drive.google.com/uc?id=${vrd.driveFileId}&export=download`;
-    } else if (vrd.driveWebContentLink) {
-      url = vrd.driveWebContentLink;
-    }
+    const url = driveUrl(vrd);
     if (url) {
       console.log(`📎 Fetching validation document for merge: ${vrd.filename || url}`);
       const buf = await fetchAttachmentBuffer(url);
@@ -830,6 +835,27 @@ async function generateServiceReportWithAttachments(reportData, technicianName) 
       } else {
         console.warn(`⚠️  Could not fetch validation document from ${url}`);
       }
+    }
+  }
+
+  // 2. Client files (PDF only) uploaded by admins/managers
+  const clientFiles = Array.isArray(reportData.clientFiles) ? reportData.clientFiles : [];
+  for (const file of clientFiles) {
+    const isPDF = (file.mimeType || '').toLowerCase().includes('pdf') ||
+                  (file.name || '').toLowerCase().endsWith('.pdf');
+    if (!isPDF) continue;
+    if (file.driveStatus === 'failed' || file.driveStatus === 'pending') continue;
+
+    const url = driveUrl(file);
+    if (!url) continue;
+
+    console.log(`📎 Fetching client file for merge: ${file.name || url}`);
+    const buf = await fetchAttachmentBuffer(url);
+    if (buf) {
+      attachmentBuffers.push(buf);
+      console.log(`✅ Client file fetched (${buf.length} bytes): ${file.name}`);
+    } else {
+      console.warn(`⚠️  Could not fetch client file from ${url}`);
     }
   }
 
