@@ -4,6 +4,19 @@
 
 ---
 
+### Version 3.14.2 - February 24, 2026
+
+#### Bug Fixes
+- Fix signature persistence, remove duplicate header, route validations to ViewValidationPage
+- Fix Edit Report button color and Download PDF button visibility
+
+#### Improvements
+- Update ViewReportPage validation section to two-phase format
+
+#### Changes
+- Hide Planned Visit Date field when service type is Validations
+
+
 ### Version 3.14.1 - February 24, 2026
 
 #### Bug Fixes
