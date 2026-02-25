@@ -660,8 +660,8 @@
                           onClick={() => onViewValidation(report)}
                           className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition text-sm flex items-center gap-2"
                         >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11.35 3.836c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m8.9-4.414c.376.023.75.05 1.124.08 1.131.094 1.976 1.057 1.976 2.192V16.5A2.25 2.25 0 0118 18.75h-2.25m-7.5-10.5H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V18.75m-7.5-10.5h6.375c.621 0 1.125.504 1.125 1.125v9.375"/></svg>
-                          View Details
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"/></svg>
+                          Complete Report
                         </button>
                       ) : (
                         <button
@@ -764,22 +764,13 @@
                               View Details
                             </button>
                           ) : (
-                            <>
-                              <button
-                                onClick={handleValidationClick}
-                                className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition text-sm flex items-center gap-2"
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11.35 3.836c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m8.9-4.414c.376.023.75.05 1.124.08 1.131.094 1.976 1.057 1.976 2.192V16.5A2.25 2.25 0 0118 18.75h-2.25m-7.5-10.5H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V18.75m-7.5-10.5h6.375c.621 0 1.125.504 1.125 1.125v9.375"/></svg>
-                                View Details
-                              </button>
-                              <button
-                                onClick={() => onEditAssignment(v)}
-                                className="px-4 py-2 bg-gray-600 text-white rounded-lg font-medium hover:bg-gray-700 transition text-sm flex items-center gap-2"
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"/></svg>
-                                Edit Report
-                              </button>
-                            </>
+                            <button
+                              onClick={handleValidationClick}
+                              className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition text-sm flex items-center gap-2"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11.35 3.836c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m8.9-4.414c.376.023.75.05 1.124.08 1.131.094 1.976 1.057 1.976 2.192V16.5A2.25 2.25 0 0118 18.75h-2.25m-7.5-10.5H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V18.75m-7.5-10.5h6.375c.621 0 1.125.504 1.125 1.125v9.375"/></svg>
+                              View Details
+                            </button>
                           )}
                         </div>
                       </div>
@@ -3378,7 +3369,7 @@
     };
 
     // Shared daily log section used by both Phase 1 and Phase 2
-    const DailyLogSection = ({ token, reportId, savedDays, onSaveDay, onSubmitClick, submitLabel, showSubmit, isSubmitting }) => {
+    const DailyLogSection = ({ token, reportId, savedDays, onSaveDay, onUpdateDay, onSubmitClick, submitLabel, showSubmit, isSubmitting }) => {
       const blankDay = { date: new Date().toISOString().split('T')[0], testsPerformed: '', trainingCompleted: true, trainingReason: '', results: '', outstandingIssues: '', finalRecommendations: '' };
       const [dayForm, setDayForm] = React.useState(blankDay);
       const [savingDay, setSavingDay] = React.useState(false);
@@ -3386,34 +3377,79 @@
       const [dayPhotoUrls, setDayPhotoUrls] = React.useState([]);
       const [dayFiles, setDayFiles] = React.useState([]);
       const [dayFileNames, setDayFileNames] = React.useState([]);
+      const [editingIndex, setEditingIndex] = React.useState(null);
       const dayPhotoRef = React.useRef(null);
       const dayFileRef = React.useRef(null);
       const currentDayNum = savedDays.length + 1;
 
+      const startEdit = (index) => {
+        const d = savedDays[index];
+        setDayForm({
+          date: d.date || new Date().toISOString().split('T')[0],
+          testsPerformed: d.testsPerformed || '',
+          trainingCompleted: d.trainingCompleted !== false,
+          trainingReason: d.trainingReason || '',
+          results: d.results || '',
+          outstandingIssues: d.outstandingIssues || '',
+          finalRecommendations: d.finalRecommendations || ''
+        });
+        setDayPhotos([]); setDayPhotoUrls([]); setDayFiles([]); setDayFileNames([]);
+        setEditingIndex(index);
+      };
+
+      const cancelEdit = () => {
+        setEditingIndex(null);
+        setDayForm(blankDay);
+        setDayPhotos([]); setDayPhotoUrls([]); setDayFiles([]); setDayFileNames([]);
+      };
+
       const handleSave = async () => {
         if (!dayForm.testsPerformed.trim()) { alert('Tests Performed is required'); return; }
         setSavingDay(true);
-        await onSaveDay({ ...dayForm, day: currentDayNum }, dayPhotos, dayFiles);
-        dayPhotoUrls.forEach(u => URL.revokeObjectURL(u));
-        setDayForm(blankDay);
-        setDayPhotos([]); setDayPhotoUrls([]); setDayFiles([]); setDayFileNames([]);
+        if (editingIndex !== null) {
+          await onUpdateDay(editingIndex, { ...dayForm, day: savedDays[editingIndex].day }, dayPhotos, dayFiles);
+          dayPhotoUrls.forEach(u => URL.revokeObjectURL(u));
+          setDayForm(blankDay);
+          setDayPhotos([]); setDayPhotoUrls([]); setDayFiles([]); setDayFileNames([]);
+          setEditingIndex(null);
+        } else {
+          await onSaveDay({ ...dayForm, day: currentDayNum }, dayPhotos, dayFiles);
+          dayPhotoUrls.forEach(u => URL.revokeObjectURL(u));
+          setDayForm(blankDay);
+          setDayPhotos([]); setDayPhotoUrls([]); setDayFiles([]); setDayFileNames([]);
+        }
         setSavingDay(false);
       };
 
       return (
         <div className="space-y-3">
           {savedDays.map((d, i) => (
+            editingIndex === i ? null : (
             <div key={i} className="flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-xl">
               <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
                 <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
               </div>
               <span className="font-semibold text-gray-800 text-sm">Day {d.day}</span>
               {d.date && <span className="text-gray-500 text-sm">— {new Date(d.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>}
+              {onUpdateDay && (
+                <button
+                  type="button"
+                  onClick={() => startEdit(i)}
+                  disabled={editingIndex !== null}
+                  title="Edit this day"
+                  className="ml-auto p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition disabled:opacity-30"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/></svg>
+                </button>
+              )}
             </div>
+            )
           ))}
 
-          <div className="border-2 border-blue-200 rounded-xl p-5 bg-blue-50/20">
-            <h4 className="font-semibold text-gray-800 mb-4 text-sm">Day {currentDayNum}</h4>
+          <div className={`border-2 rounded-xl p-5 ${editingIndex !== null ? 'border-yellow-300 bg-yellow-50/20' : 'border-blue-200 bg-blue-50/20'}`}>
+            <h4 className="font-semibold text-gray-800 mb-4 text-sm">
+              {editingIndex !== null ? `Edit Day ${savedDays[editingIndex].day}` : `Day ${currentDayNum}`}
+            </h4>
             <div className="space-y-4">
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
@@ -3465,9 +3501,14 @@
             </div>
             <div className="flex gap-3 mt-5">
               <button type="button" onClick={handleSave} disabled={savingDay} className="btn-primary px-5 py-2.5 text-white rounded-xl font-medium disabled:opacity-50 text-sm">
-                {savingDay ? 'Saving...' : `Save Day ${currentDayNum}`}
+                {savingDay ? 'Saving...' : editingIndex !== null ? `Update Day ${savedDays[editingIndex].day}` : `Save Day ${currentDayNum}`}
               </button>
-              {showSubmit && (
+              {editingIndex !== null && (
+                <button type="button" onClick={cancelEdit} className="px-5 py-2.5 border-2 border-gray-300 text-gray-600 hover:bg-gray-50 rounded-xl font-medium text-sm transition">
+                  Cancel
+                </button>
+              )}
+              {showSubmit && editingIndex === null && (
                 <button type="button" onClick={onSubmitClick} disabled={isSubmitting} className="px-5 py-2.5 border-2 border-primary text-primary-600 hover:bg-primary-50 rounded-xl font-medium text-sm disabled:opacity-50 transition">
                   {isSubmitting ? 'Submitting...' : submitLabel}
                 </button>
@@ -3707,6 +3748,19 @@
         setOnsiteDays(prev => [...prev, savedDay]);
       };
 
+      const handleUpdateOnsiteDay = async (index, dayData, photos, files) => {
+        let attachments = [...(onsiteDays[index].attachments || [])];
+        if (photos.length > 0) {
+          const r = await api.uploadTechnicianPhotos(token, localAssignment.id, photos);
+          if (!r.error && Array.isArray(r)) attachments = [...attachments, ...r.map(p => ({...p, type: 'photo'}))];
+        }
+        if (files.length > 0) {
+          const r = await api.uploadTechnicianFiles(token, localAssignment.id, files);
+          if (!r.error && Array.isArray(r)) attachments = [...attachments, ...r.map(f => ({...f, type: 'file'}))];
+        }
+        setOnsiteDays(prev => prev.map((d, i) => i === index ? { ...dayData, attachments } : d));
+      };
+
       const handleOnsiteSubmit = async () => {
         if (!technicianSignature) { alert('Technician signature is required'); return; }
         setSubmittingOnsite(true);
@@ -3931,7 +3985,7 @@
 
           <div className="card-modern overflow-hidden">
             {/* Card header */}
-            <div className="bg-gradient-to-r from-red-600 to-red-700 text-white p-6">
+            <div className="bg-gradient-to-r from-[#045E9F] to-[#00205A] text-white p-6">
               <div className="flex items-center gap-3 mb-2">
                 <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082"/></svg>
@@ -3985,6 +4039,7 @@
                     reportId={localAssignment.id}
                     savedDays={onsiteDays}
                     onSaveDay={handleSaveOnsiteDay}
+                    onUpdateDay={handleUpdateOnsiteDay}
                     onSubmitClick={() => setShowSignatures(true)}
                     submitLabel="Submit Daily Log"
                     showSubmit={onsiteDays.length > 0}

@@ -8403,14 +8403,16 @@ app.get('/api/service-reports', authenticateToken, requireServiceAccess, async (
   try {
     let serviceReports = (await db.get('service_reports')) || [];
 
-    // For non-admin/manager users, compute the set of client slugs where they have
-    // a pending (status === 'assigned') assignment BEFORE query filters narrow the list.
-    // This lets them see the full report history for any client they're actively visiting.
-    let pendingClientSlugs = new Set();
+    // For non-admin/manager users, compute the set of client facility names where they
+    // have an active (status === 'assigned') assignment BEFORE query filters narrow the
+    // list.  This grants access to the full report history for any client they are
+    // currently visiting.  Access is automatically revoked once they submit — status
+    // leaves 'assigned' — so no separate admin lever is required.
+    let pendingClientFacilityNames = new Set();
     if (req.user.role !== config.ROLES.ADMIN && !req.user.isManager) {
       serviceReports.forEach(r => {
-        if (String(r.assignedToId || '') === String(req.user.id) && r.status === 'assigned' && r.clientSlug) {
-          pendingClientSlugs.add(r.clientSlug);
+        if (String(r.assignedToId || '') === String(req.user.id) && r.status === 'assigned' && r.clientFacilityName) {
+          pendingClientFacilityNames.add(r.clientFacilityName);
         }
       });
     }
@@ -8450,15 +8452,15 @@ app.get('/api/service-reports', authenticateToken, requireServiceAccess, async (
       serviceReports = serviceReports.filter(r => r.technicianId === technicianId);
     }
 
-    // Scope non-admins/non-managers: always show own reports plus all reports for any
-    // client slug where they currently have a pending (status === 'assigned') assignment.
-    // Once they submit (status changes), that slug drops out of pendingClientSlugs
-    // automatically — no extra cleanup required.
+    // Scope non-admins/non-managers to: their own submitted reports, any report
+    // directly assigned to them, and all historical reports for any client where they
+    // currently hold an active assignment.  The third condition collapses automatically
+    // once they submit (pendingClientFacilityNames will no longer contain that client).
     if (req.user.role !== config.ROLES.ADMIN && !req.user.isManager) {
       serviceReports = serviceReports.filter(r =>
         r.technicianId === req.user.id ||
         String(r.assignedToId || '') === String(req.user.id) ||
-        (r.clientSlug && pendingClientSlugs.has(r.clientSlug))
+        (r.clientFacilityName && pendingClientFacilityNames.has(r.clientFacilityName))
       );
     }
 
@@ -8563,18 +8565,19 @@ app.get('/api/service-reports/:id', authenticateToken, requireServiceAccess, asy
     }
 
     // Non-admins/managers can access a report if:
-    // - they created it or were assigned to it, OR
-    // - the report belongs to a client where they have a pending (status === 'assigned') assignment
+    // - they created it or were directly assigned to it, OR
+    // - they have an active (status === 'assigned') assignment for the same client
+    //   facility name (grants history access during the visit; revoked on submission)
     if (req.user.role !== config.ROLES.ADMIN && !req.user.isManager) {
       const isOwnReport =
         report.technicianId === req.user.id ||
         String(report.assignedToId || '') === String(req.user.id);
 
       if (!isOwnReport) {
-        const hasPendingAssignment = report.clientSlug && serviceReports.some(r =>
+        const hasPendingAssignment = report.clientFacilityName && serviceReports.some(r =>
           String(r.assignedToId || '') === String(req.user.id) &&
           r.status === 'assigned' &&
-          r.clientSlug === report.clientSlug
+          r.clientFacilityName === report.clientFacilityName
         );
         if (!hasPendingAssignment) {
           return res.status(403).json({ error: 'Access denied' });
@@ -10416,11 +10419,14 @@ app.put('/api/service-reports/:id/submit-validation', authenticateToken, require
       };
     }
 
+    const allSegmentDates = allSegments.map(s => s.date).filter(Boolean).sort();
+    const lastSegmentDate = allSegmentDates.length > 0 ? allSegmentDates[allSegmentDates.length - 1] : new Date().toISOString().split('T')[0];
+
     serviceReports[reportIndex] = {
       ...report,
       status: 'submitted',
       validationReportDocument,
-      serviceCompletionDate: new Date().toISOString().split('T')[0],
+      serviceCompletionDate: lastSegmentDate,
       submittedAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
