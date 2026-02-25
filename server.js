@@ -8198,14 +8198,22 @@ app.post('/api/service-reports', authenticateToken, requireServiceAccess, async 
 
     // Resolve clientSlug if not already provided
     const resolvedSlug = reportData.clientSlug || await resolveClientSlug(reportData.clientFacilityName, reportData.hubspotCompanyId);
+
+    // Determine status based on customer signature (same logic as /complete endpoint)
+    // A blank canvas toDataURL() is ~6000 chars; require > 7000 to ensure actual drawing content
+    const hasCustomerSignature = reportData.customerSignature && typeof reportData.customerSignature === 'string'
+      && reportData.customerSignature.startsWith('data:image') && reportData.customerSignature.length > 7000;
+    const reportStatus = hasCustomerSignature ? 'submitted' : 'signature_needed';
+
     const newReport = {
       id: uuidv4(),
       ...reportData,
+      status: reportStatus,
       clientSlug: resolvedSlug,
       technicianId: req.user.id,
       technicianName: req.user.name,
       createdAt: new Date().toISOString(),
-      submittedAt: new Date().toISOString(),
+      submittedAt: hasCustomerSignature ? new Date().toISOString() : null,
       updatedAt: new Date().toISOString()
     };
 
@@ -10406,9 +10414,11 @@ app.get('/api/service-portal/technicians', authenticateToken, async (req, res) =
 
     const users = (await db.get('users')) || [];
 
-    // Filter users with service portal access
+    // Filter users with service portal access, excluding admins and managers
     const technicians = users.filter(u =>
-      u.role === config.ROLES.VENDOR || u.role === config.ROLES.ADMIN || u.hasServicePortalAccess
+      (u.role === config.ROLES.VENDOR || u.hasServicePortalAccess) &&
+      u.role !== config.ROLES.ADMIN &&
+      !u.isManager
     ).map(u => ({
       id: u.id,
       name: u.name,
