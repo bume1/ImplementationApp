@@ -5776,7 +5776,9 @@ app.get('/api/client/service-reports/:id/pdf', authenticateToken, async (req, re
     // but verify the link is reachable — if 404, fall through to on-the-fly generation
     if (report.driveWebContentLink && !isPreviewOnly) {
       try {
-        const driveCheck = await fetch(report.driveWebContentLink, { method: 'HEAD', redirect: 'follow' });
+        const driveController = new AbortController();
+        const driveTimer = setTimeout(() => driveController.abort(), 5000);
+        const driveCheck = await fetch(report.driveWebContentLink, { method: 'HEAD', redirect: 'follow', signal: driveController.signal }).finally(() => clearTimeout(driveTimer));
         if (driveCheck.ok || driveCheck.status === 302 || driveCheck.status === 301) {
           return res.redirect(report.driveWebContentLink);
         }
