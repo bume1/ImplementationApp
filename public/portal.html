@@ -653,7 +653,7 @@
       );
     };
     
-    const MilestonesPage = ({ data, onNavigate, token, currentUser }) => {
+    const MilestonesPage = ({ data, onNavigate, token, currentUser, onNavigateToFile }) => {
       const project = data?.projects?.[0];
       const allTasks = project?.tasks || [];
       const tasks = allTasks.filter(t => t.showToClient !== false);
@@ -855,6 +855,7 @@
               const isScheduled = v.status === 'assigned';
               const isOnsiteSubmitted = v.status === 'onsite_submitted';
               const isSubmitted = v.status === 'submitted';
+              const isSignatureNeeded = v.status === 'signature_needed';
               const onsiteDays = v.onsiteDaysLogged || 0;
               const offsiteDays = v.offsiteDaysLogged || 0;
               const totalDaysLogged = (onsiteDays + offsiteDays) || v.daysLogged || 0;
@@ -868,12 +869,14 @@
 
               const headerClass = isSubmitted
                 ? 'bg-gradient-to-r from-green-600 to-green-700'
-                : isScheduled
-                  ? 'bg-gradient-to-r from-amber-500 to-amber-600'
-                  : 'bg-gradient-to-r from-blue-600 to-blue-700';
-              const borderClass = isSubmitted ? 'border-green-200' : isScheduled ? 'border-amber-200' : 'border-blue-200';
-              const statusTitle = isSubmitted ? 'Validation Complete' : isScheduled ? 'Validation Scheduled' : 'Active Validation';
-              const statusBadge = isSubmitted ? 'Complete' : isOnsiteSubmitted ? 'On-Site Complete' : isScheduled ? 'Scheduled' : 'In Progress';
+                : isSignatureNeeded
+                  ? 'bg-gradient-to-r from-orange-500 to-orange-600'
+                  : isScheduled
+                    ? 'bg-gradient-to-r from-amber-500 to-amber-600'
+                    : 'bg-gradient-to-r from-blue-600 to-blue-700';
+              const borderClass = isSubmitted ? 'border-green-200' : isSignatureNeeded ? 'border-orange-300' : isScheduled ? 'border-amber-200' : 'border-blue-200';
+              const statusTitle = isSubmitted ? 'Validation Complete' : isSignatureNeeded ? 'Signature Required' : isScheduled ? 'Validation Scheduled' : 'Active Validation';
+              const statusBadge = isSubmitted ? 'Complete' : isSignatureNeeded ? 'Awaiting Signature' : isOnsiteSubmitted ? 'On-Site Complete' : isScheduled ? 'Scheduled' : 'In Progress';
 
               return (
                 <div key={v.id} className={`bg-white rounded-xl shadow-sm border-2 ${borderClass} overflow-hidden`}>
@@ -900,7 +903,7 @@
                         )}
                       </div>
                     </div>
-                    {!isScheduled && !isSubmitted && expected && (
+                    {!isScheduled && !isSubmitted && !isSignatureNeeded && expected && (
                       <div className="mt-3">
                         <div className="w-full bg-white/20 rounded-full h-2 overflow-hidden">
                           <div className="h-full rounded-full transition-all duration-500 bg-white" style={{ width: `${Math.min(100, Math.round((totalDaysLogged / expected) * 100))}%` }} />
@@ -983,6 +986,24 @@
                               <div className="bg-gray-50 rounded-lg p-3 border border-dashed border-gray-300 text-center text-sm text-gray-400">
                                 {expected - totalDaysLogged} more day{expected - totalDaysLogged > 1 ? 's' : ''} remaining
                               </div>
+                            )}
+                          </div>
+                        )}
+                        {isSignatureNeeded && (
+                          <div className="mt-3 bg-orange-50 border border-orange-200 rounded-lg p-4">
+                            <p className="text-sm font-semibold text-orange-800 flex items-center gap-2 mb-1">
+                              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+                              Your signature is required
+                            </p>
+                            <p className="text-xs text-orange-700 mb-3">The validation report has been completed by your technician and is awaiting your signature to be finalized.</p>
+                            {onNavigateToFile && (
+                              <button
+                                onClick={() => onNavigateToFile(v.id)}
+                                className="inline-flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"/></svg>
+                                View &amp; Sign Report
+                              </button>
                             )}
                           </div>
                         )}
@@ -5496,7 +5517,7 @@
 
         // Client pages
         if (activePage === 'home') return <HomePage data={data} announcements={announcements} onNavigate={navigateTo} />;
-        if (activePage === 'milestones') return <MilestonesPage data={data} onNavigate={navigateTo} token={token} currentUser={user} />;
+        if (activePage === 'milestones') return <MilestonesPage data={data} onNavigate={navigateTo} token={token} currentUser={user} onNavigateToFile={navigateToFile} />;
         if (activePage === 'inventory') return <InventoryPage token={token} slug={slug} />;
         if (activePage === 'reports') return <ReportsPage token={token} slug={slug} onNavigate={navigateTo} />;
         if (activePage === 'submission_history') return <SubmissionHistoryPage token={token} slug={slug} isAdmin={false} onNavigate={navigateTo} currentUser={user} />;
