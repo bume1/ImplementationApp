@@ -4,6 +4,7 @@
  */
 
 const PDFDocument = require('pdfkit');
+const { PDFDocument: PDFLib } = require('pdf-lib');
 
 // Color constants
 const COLORS = {
@@ -763,7 +764,112 @@ async function generateValidationReportPDF(reportData, technicianName) {
   });
 }
 
+/**
+ * Fetch a PDF buffer from a URL (Google Drive or other)
+ */
+async function fetchAttachmentBuffer(url) {
+  if (!url) return null;
+  try {
+    const response = await fetch(url, { redirect: 'follow' });
+    if (!response.ok) return null;
+    const arrayBuffer = await response.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+  } catch (e) {
+    console.error(`Failed to fetch attachment from ${url}: ${e.message}`);
+    return null;
+  }
+}
+
+/**
+ * Merge multiple PDF buffers into a single PDF buffer using pdf-lib.
+ * Non-PDF or unreadable buffers are silently skipped.
+ */
+async function mergePDFBuffers(pdfBuffers) {
+  const merged = await PDFLib.create();
+  for (const buf of pdfBuffers) {
+    if (!buf || buf.length === 0) continue;
+    try {
+      const doc = await PDFLib.load(buf, { ignoreEncryption: true });
+      const pages = await merged.copyPages(doc, doc.getPageIndices());
+      pages.forEach(p => merged.addPage(p));
+    } catch (e) {
+      console.error('Skipping unreadable PDF during merge:', e.message);
+    }
+  }
+  const bytes = await merged.save();
+  return Buffer.from(bytes);
+}
+
+/**
+ * Generate a service/validation report PDF and append any uploaded PDF attachments.
+ * Returns a single merged PDF buffer.
+ *
+ * Attachment sources checked (in order):
+ *  1. report.validationReportDocument  – uploaded validation document (final submission)
+ *  2. report.clientFiles[]             – PDF files uploaded by admins/managers
+ */
+async function generateServiceReportWithAttachments(reportData, technicianName) {
+  const reportBuffer = await generateServiceReportPDF(reportData, technicianName);
+
+  const attachmentBuffers = [];
+
+  // Helper: resolve a Drive file object to a download URL
+  const driveUrl = (fileObj) => {
+    if (!fileObj) return null;
+    if (fileObj.driveFileId) return `https://drive.google.com/uc?id=${fileObj.driveFileId}&export=download`;
+    if (fileObj.driveWebContentLink) return fileObj.driveWebContentLink;
+    if (fileObj.webContentLink) return fileObj.webContentLink;
+    return null;
+  };
+
+  // 1. Validation report document (uploaded when submitting validation)
+  const vrd = reportData.validationReportDocument;
+  if (vrd) {
+    const url = driveUrl(vrd);
+    if (url) {
+      console.log(`📎 Fetching validation document for merge: ${vrd.filename || url}`);
+      const buf = await fetchAttachmentBuffer(url);
+      if (buf) {
+        attachmentBuffers.push(buf);
+        console.log(`✅ Validation document fetched (${buf.length} bytes)`);
+      } else {
+        console.warn(`⚠️  Could not fetch validation document from ${url}`);
+      }
+    }
+  }
+
+  // 2. Client files (PDF only) uploaded by admins/managers
+  const clientFiles = Array.isArray(reportData.clientFiles) ? reportData.clientFiles : [];
+  for (const file of clientFiles) {
+    const isPDF = (file.mimeType || '').toLowerCase().includes('pdf') ||
+                  (file.name || '').toLowerCase().endsWith('.pdf');
+    if (!isPDF) continue;
+    if (file.driveStatus === 'failed' || file.driveStatus === 'pending') continue;
+
+    const url = driveUrl(file);
+    if (!url) continue;
+
+    console.log(`📎 Fetching client file for merge: ${file.name || url}`);
+    const buf = await fetchAttachmentBuffer(url);
+    if (buf) {
+      attachmentBuffers.push(buf);
+      console.log(`✅ Client file fetched (${buf.length} bytes): ${file.name}`);
+    } else {
+      console.warn(`⚠️  Could not fetch client file from ${url}`);
+    }
+  }
+
+  if (attachmentBuffers.length === 0) {
+    // Nothing to merge, return the original report
+    return reportBuffer;
+  }
+
+  console.log(`📄 Merging service report with ${attachmentBuffers.length} attachment(s)`);
+  return mergePDFBuffers([reportBuffer, ...attachmentBuffers]);
+}
+
 module.exports = {
   generateServiceReportPDF,
-  generateValidationReportPDF
+  generateValidationReportPDF,
+  generateServiceReportWithAttachments
 };

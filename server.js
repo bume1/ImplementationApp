@@ -5786,8 +5786,11 @@ app.get('/api/client/service-reports/:id/pdf', authenticateToken, async (req, re
       }
     }
 
-    // Generate PDF on-the-fly
-    const pdfBuffer = await pdfGenerator.generateServiceReportPDF(report, report.technicianName || report.serviceProviderName || 'N/A');
+    // Generate PDF and merge any attached documents (e.g. validation report document)
+    // For preview-only (unsigned) reports, skip attachment merging to keep response fast
+    const pdfBuffer = isPreviewOnly
+      ? await pdfGenerator.generateServiceReportPDF(report, report.technicianName || report.serviceProviderName || 'N/A')
+      : await pdfGenerator.generateServiceReportWithAttachments(report, report.technicianName || report.serviceProviderName || 'N/A');
 
     const reportDate = new Date(report.serviceCompletionDate || report.createdAt || Date.now()).toLocaleDateString().replace(/\//g, '-');
     const fileName = `Service_Report_${(report.clientFacilityName || 'Report').replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate}.pdf`;
@@ -8525,8 +8528,8 @@ app.get('/api/service-reports/:id/pdf', authenticateToken, requireServiceAccess,
       return res.status(404).json({ error: 'Report not found' });
     }
 
-    // Generate PDF
-    const pdfBuffer = await pdfGenerator.generateServiceReportPDF(report, report.technicianName || report.serviceProviderName || 'N/A');
+    // Generate PDF and merge any attached documents (e.g. validation report document)
+    const pdfBuffer = await pdfGenerator.generateServiceReportWithAttachments(report, report.technicianName || report.serviceProviderName || 'N/A');
 
     const reportDate = new Date(report.serviceCompletionDate || report.createdAt || Date.now()).toLocaleDateString().replace(/\//g, '-');
     const fileName = `Service_Report_${(report.clientFacilityName || 'Report').replace(/[^a-zA-Z0-9]/g, '_')}_${reportDate}.pdf`;
