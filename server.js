@@ -8600,6 +8600,16 @@ app.put('/api/service-reports/:id', authenticateToken, requireServiceAccess, asy
       return res.status(403).json({ error: 'Not authorized to edit this report' });
     }
 
+    // Managers cannot edit Validations-type reports once the technician has saved day 1 log data
+    if (isManagerUser && req.user.role !== config.ROLES.ADMIN) {
+      const isValidationType = existingReport.serviceType === 'Validations';
+      const hasDay1Data = Array.isArray(existingReport.validationSegments) && existingReport.validationSegments.length > 0;
+      const technicianStarted = ['validation_in_progress', 'onsite_submitted', 'signature_needed', 'submitted'].includes(existingReport.status);
+      if (isValidationType && (hasDay1Data || technicianStarted)) {
+        return res.status(403).json({ error: 'Managers cannot edit validation reports after the technician has started logging data.' });
+      }
+    }
+
     // Check 30-minute edit window for submitted reports (admins and managers can always edit)
     if (req.user.role !== config.ROLES.ADMIN && !isManagerUser && existingReport.submittedAt) {
       const submittedTime = new Date(existingReport.submittedAt);
@@ -8676,6 +8686,16 @@ app.delete('/api/service-reports/:id', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'You can only delete reports you assigned' });
     }
 
+    // Managers cannot delete Validations-type reports once the technician has saved day 1 log data
+    if (!isSuperAdmin && isManager) {
+      const isValidationType = report.serviceType === 'Validations';
+      const hasDay1Data = Array.isArray(report.validationSegments) && report.validationSegments.length > 0;
+      const technicianStarted = ['validation_in_progress', 'onsite_submitted', 'signature_needed', 'submitted'].includes(report.status);
+      if (isValidationType && (hasDay1Data || technicianStarted)) {
+        return res.status(403).json({ error: 'Managers cannot delete validation reports after the technician has started logging data.' });
+      }
+    }
+
     serviceReports = serviceReports.filter(r => r.id !== req.params.id);
     await db.set('service_reports', serviceReports);
 
@@ -8715,6 +8735,16 @@ app.delete('/api/service-reports', authenticateToken, async (req, res) => {
         const unauthorized = reportsToDelete.filter(r => String(r.assignedById) !== String(req.user.id));
         if (unauthorized.length > 0) {
           return res.status(403).json({ error: 'You can only delete reports you assigned.' });
+        }
+        // Managers cannot delete Validations-type reports once the technician has saved day 1 log data
+        const protectedReports = reportsToDelete.filter(r => {
+          const isValidationType = r.serviceType === 'Validations';
+          const hasDay1Data = Array.isArray(r.validationSegments) && r.validationSegments.length > 0;
+          const technicianStarted = ['validation_in_progress', 'onsite_submitted', 'signature_needed', 'submitted'].includes(r.status);
+          return isValidationType && (hasDay1Data || technicianStarted);
+        });
+        if (protectedReports.length > 0) {
+          return res.status(403).json({ error: 'Managers cannot delete validation reports after the technician has started logging data.' });
         }
       } else {
         // Technicians can only delete their own reports
@@ -9733,6 +9763,66 @@ app.put('/api/service-reports/:id/segment', authenticateToken, requireServiceAcc
   }
 });
 
+// Save a single day's progress without changing status (used by assigned-flow for live progress display)
+app.put('/api/service-reports/:id/save-day-progress', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+    if (reportIndex === -1) return res.status(404).json({ error: 'Report not found' });
+
+    const report = serviceReports[reportIndex];
+
+    const isOwner = String(report.technicianId) === String(req.user.id) ||
+                    String(report.assignedToId) === String(req.user.id);
+    if (!isOwner && req.user.role !== config.ROLES.ADMIN && !req.user.isManager) {
+      return res.status(403).json({ error: 'Not authorized to update this report' });
+    }
+
+    const allowedStatuses = ['assigned', 'in_progress', 'validation_in_progress', 'onsite_submitted'];
+    if (!allowedStatuses.includes(report.status)) {
+      return res.status(400).json({ error: 'Cannot save day progress for a completed report' });
+    }
+
+    const { day, date, phase, testsPerformed, trainingCompleted, trainingReason, results, outstandingIssues, finalRecommendations, attachments } = req.body;
+    if (!testsPerformed) {
+      return res.status(400).json({ error: 'Tests performed is required' });
+    }
+
+    const segmentPhase = phase || 'onsite';
+    const newSegment = {
+      day: day,
+      phase: segmentPhase,
+      date: date || new Date().toISOString().split('T')[0],
+      testsPerformed,
+      trainingCompleted: trainingCompleted !== undefined ? trainingCompleted : true,
+      trainingReason: trainingReason || '',
+      results: results || '',
+      outstandingIssues: outstandingIssues || '',
+      finalRecommendations: finalRecommendations || '',
+      attachments: attachments || [],
+      status: 'complete',
+      submittedAt: new Date().toISOString()
+    };
+
+    const segments = Array.isArray(report.validationSegments) ? [...report.validationSegments] : [];
+    const existingIndex = segments.findIndex(s => s.day === newSegment.day && s.phase === newSegment.phase);
+    if (existingIndex >= 0) {
+      segments[existingIndex] = { ...segments[existingIndex], ...newSegment };
+    } else {
+      segments.push(newSegment);
+    }
+
+    serviceReports[reportIndex].validationSegments = segments;
+    serviceReports[reportIndex].updatedAt = new Date().toISOString();
+
+    await db.set('service_reports', serviceReports);
+    res.json(serviceReports[reportIndex]);
+  } catch (error) {
+    console.error('Save day progress error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Complete a multi-day validation (transition from validation_in_progress to submitted/signature_needed)
 app.put('/api/service-reports/:id/complete-validation', authenticateToken, requireServiceAccess, async (req, res) => {
   try {
@@ -9919,29 +10009,35 @@ app.get('/api/client-portal/validation-progress', authenticateToken, async (req,
       return res.status(403).json({ error: 'Client access required' });
     }
 
-    const clientSlug = req.user.slug;
-    if (!clientSlug) {
-      return res.json([]);
-    }
+    const clientSlug = req.user.slug || '';
 
     // Find service reports matching this client
-    const serviceReports = (await db.get('service_reports')) || [];
-    const users = (await db.get('users')) || [];
+    const [serviceReports, users, allProjects, clientDocuments] = await Promise.all([
+      db.get('service_reports').then(r => r || []),
+      db.get('users').then(u => u || []),
+      getProjects(),
+      db.get('client_documents').then(d => d || [])
+    ]);
     const clientUser = users.find(u => u.id === req.user.id);
-    const clientFacility = (clientUser?.practiceName || clientUser?.name || '').toLowerCase().trim();
     const clientCompanyId = clientUser?.hubspotCompanyId || '';
 
-    // Build list of names to match against (same pattern as client service reports endpoint)
+    // Build list of names to match against: practice name, user name, and assigned project client names
     const clientNames = [clientUser?.practiceName, clientUser?.name]
       .map(n => (n || '').toLowerCase().trim())
       .filter(Boolean);
+    // Also include client names from assigned projects
+    if (Array.isArray(clientUser?.assignedProjects)) {
+      const assignedProjectNames = allProjects
+        .filter(p => clientUser.assignedProjects.map(String).includes(String(p.id)) && p.clientName)
+        .map(p => p.clientName.toLowerCase().trim());
+      assignedProjectNames.forEach(n => { if (n && !clientNames.includes(n)) clientNames.push(n); });
+    }
     const uniqueClientNames = [...new Set(clientNames)];
 
     // Also check client_documents for slug-linked reports
-    const clientDocuments = (await db.get('client_documents')) || [];
     const slugLinkedReportIds = new Set(
       clientDocuments
-        .filter(d => d.active && d.serviceReportId && (d.slug === clientSlug || d.shareWithAll))
+        .filter(d => d.active && d.serviceReportId && (clientSlug && d.slug === clientSlug || d.shareWithAll))
         .map(d => d.serviceReportId)
     );
 
@@ -9956,12 +10052,12 @@ app.get('/api/client-portal/validation-progress', authenticateToken, async (req,
       const isOnsiteSubmitted = isValidationType && r.status === 'onsite_submitted';
       if (!((hasValidationStatus) || (isValidationType && hasValidationDates && isActiveStatus) || isAssignedValidation || isOnsiteSubmitted)) return false;
       // Primary: match by clientSlug (most reliable)
-      if (r.clientSlug && r.clientSlug === clientSlug) return true;
+      if (clientSlug && r.clientSlug && r.clientSlug === clientSlug) return true;
       // Match by company ID
       if (clientCompanyId && r.hubspotCompanyId && String(r.hubspotCompanyId) === String(clientCompanyId)) return true;
       // Match by slug cross-reference via client_documents
       if (slugLinkedReportIds.has(r.id)) return true;
-      // Fallback: bidirectional name matching
+      // Fallback: bidirectional name matching against all client name variants
       const reportClient = (r.clientFacilityName || '').toLowerCase().trim();
       if (reportClient && uniqueClientNames.some(name => reportClient.includes(name) || name.includes(reportClient))) return true;
       return false;
@@ -10019,12 +10115,34 @@ app.get('/api/projects/:projectId/active-validations', authenticateToken, async 
       return res.status(404).json({ error: 'Project not found' });
     }
 
-    const serviceReports = (await db.get('service_reports')) || [];
+    const [serviceReports, users] = await Promise.all([
+      db.get('service_reports').then(r => r || []),
+      db.get('users').then(u => u || [])
+    ]);
     const clientName = (project.clientName || '').toLowerCase().trim();
-    const companyId = project.hubspotRecordId || project.hubspotCompanyId || '';
+    // Use hubspotRecordId with correct type — only compare company IDs to company IDs
+    const projectCompanyId = project.hubspotRecordType === 'companies' ? (project.hubspotRecordId || '') : (project.hubspotCompanyId || '');
+    const projectDealId = project.hubspotRecordType === 'deals' ? (project.hubspotRecordId || '') : (project.hubspotDealId || '');
     const projectSlug = project.clientLinkSlug || '';
 
-    const projectDealId = project.hubspotDealId || '';
+    // Build a set of client user slugs that correspond to this project.
+    // r.clientSlug is the CLIENT USER's slug (from resolveClientSlug), which may differ
+    // from project.clientLinkSlug (the project's launch URL slug). Both are checked.
+    const projectClientSlugs = new Set();
+    if (projectSlug) projectClientSlugs.add(projectSlug);
+    const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT && u.slug);
+    clientUsers.forEach(u => {
+      // Match by assigned project ID (most precise)
+      if (Array.isArray(u.assignedProjects) && u.assignedProjects.map(String).includes(String(project.id))) {
+        projectClientSlugs.add(u.slug);
+        return;
+      }
+      // Match by practice name vs project client name
+      const practiceNameLower = (u.practiceName || '').toLowerCase().trim();
+      if (practiceNameLower && clientName && (practiceNameLower === clientName || practiceNameLower.includes(clientName) || clientName.includes(practiceNameLower))) {
+        projectClientSlugs.add(u.slug);
+      }
+    });
 
     const validations = serviceReports.filter(r => {
       // Include Validations-type reports that are active (not just validation_in_progress)
@@ -10035,10 +10153,11 @@ app.get('/api/projects/:projectId/active-validations', authenticateToken, async 
       // Also include onsite_submitted, signature_needed and submitted Validations for visibility
       const isValidationReport = isValidationType && ['assigned', 'in_progress', 'validation_in_progress', 'onsite_submitted', 'signature_needed', 'submitted'].includes(r.status);
       if (!((hasValidationStatus) || (isValidationType && hasValidationDates && isActiveStatus) || isValidationReport)) return false;
-      // Primary: match by clientSlug (most reliable)
-      if (r.clientSlug && projectSlug && r.clientSlug === projectSlug) return true;
-      if (companyId && r.hubspotCompanyId && String(r.hubspotCompanyId) === String(companyId)) return true;
-      // Match by deal ID
+      // Primary: match by clientSlug against project's clientLinkSlug or any associated client user's slug
+      if (r.clientSlug && projectClientSlugs.has(r.clientSlug)) return true;
+      // Match by HubSpot company ID (only for company-type projects or legacy hubspotCompanyId)
+      if (projectCompanyId && r.hubspotCompanyId && String(r.hubspotCompanyId) === String(projectCompanyId)) return true;
+      // Match by HubSpot deal ID (only for deal-type projects)
       if (projectDealId && r.hubspotDealId && String(r.hubspotDealId) === String(projectDealId)) return true;
       // Fallback: bidirectional name matching
       const reportClient = (r.clientFacilityName || '').toLowerCase().trim();

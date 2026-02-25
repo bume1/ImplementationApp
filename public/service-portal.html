@@ -311,6 +311,13 @@
           body: JSON.stringify(data)
         }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
+      saveDayProgress: (token, reportId, data) =>
+        fetch(`${API_URL}/api/service-reports/${reportId}/save-day-progress`, {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
       submitValidationReport: (token, reportId, formData) =>
         fetch(`${API_URL}/api/service-reports/${reportId}/submit-validation`, {
           method: 'PUT',
@@ -1956,10 +1963,22 @@
       const isServiceTechnician = (currentUser?.role === 'vendor' || currentUser?.hasServicePortalAccess) && !isManager;
       const canDeleteAny = isSuperAdmin || isManager || isServiceTechnician;
 
+      // Returns true if a validation report has day 1 log data saved by the technician
+      const validationHasDay1Data = (report) => {
+        const isValidationType = report.serviceType === 'Validations';
+        const hasSegments = Array.isArray(report.validationSegments) && report.validationSegments.length > 0;
+        const technicianStarted = ['validation_in_progress', 'onsite_submitted', 'signature_needed', 'submitted'].includes(report.status);
+        return isValidationType && (hasSegments || technicianStarted);
+      };
+
       // Check if current user can delete a specific report
       const canDeleteReport = (report) => {
         if (isSuperAdmin) return true;
-        if (isManager && String(report.assignedById) === String(currentUser?.id)) return true;
+        if (isManager && String(report.assignedById) === String(currentUser?.id)) {
+          // Managers cannot delete validation reports once technician has saved day 1 data
+          if (validationHasDay1Data(report)) return false;
+          return true;
+        }
         if (isServiceTechnician && report.technicianId === currentUser?.id) return true;
         return false;
       };
@@ -3411,7 +3430,10 @@
       const offsiteSegs = segments.filter(s => s.phase === 'offsite');
       const isOnsiteSubmitted = assignment.status === 'onsite_submitted';
       const isFullySubmitted = assignment.status === 'submitted';
-      const canEdit = !isFullySubmitted;
+      // Managers cannot edit after technician has saved day 1 log data
+      const hasDay1Data = segments.length > 0 || isOnsiteSubmitted;
+      const managerBlocked = user?.isManager && !isFullySubmitted && hasDay1Data;
+      const canEdit = !isFullySubmitted && !managerBlocked;
 
       const statusLabel = isFullySubmitted ? 'Completed' : isOnsiteSubmitted ? 'Off-Site In Progress' : 'On-Site In Progress';
       const statusColor = isFullySubmitted ? 'bg-green-100 text-green-700' : isOnsiteSubmitted ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700';
@@ -3564,7 +3586,9 @@
         analyzerSerialNumber: assignment.analyzerSerialNumber || '',
         materialsAvailable: ''
       });
-      const [onsiteDays, setOnsiteDays] = useState([]);
+      const [onsiteDays, setOnsiteDays] = useState(() =>
+        (assignment.validationSegments || []).filter(s => !s.phase || s.phase === 'onsite')
+      );
       const [showSignatures, setShowSignatures] = useState(false);
       const [submittingOnsite, setSubmittingOnsite] = useState(false);
 
@@ -3622,7 +3646,10 @@
           const r = await api.uploadTechnicianFiles(token, localAssignment.id, files);
           if (!r.error && Array.isArray(r)) attachments = [...attachments, ...r.map(f => ({...f, type: 'file'}))];
         }
-        setOnsiteDays(prev => [...prev, { ...dayData, attachments }]);
+        const savedDay = { ...dayData, attachments };
+        // Persist to server immediately so dashboard/launchboard/client portal show live progress
+        await api.saveDayProgress(token, localAssignment.id, { ...savedDay, phase: 'onsite' });
+        setOnsiteDays(prev => [...prev, savedDay]);
       };
 
       const handleOnsiteSubmit = async () => {
