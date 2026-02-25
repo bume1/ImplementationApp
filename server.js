@@ -8392,17 +8392,16 @@ app.get('/api/service-reports', authenticateToken, requireServiceAccess, async (
   try {
     let serviceReports = (await db.get('service_reports')) || [];
 
-    // For non-admin/manager users, compute the set of client slugs where they have
-    // a pending (status === 'assigned') assignment BEFORE query filters narrow the list.
-    // This lets them see the full report history for any client they're actively visiting.
-    // Also build a set from the user's assignedClients array so they can view service
-    // history for all clients they are permanently assigned to.
-    let pendingClientSlugs = new Set();
-    let assignedClientNames = new Set(req.user.assignedClients || []);
+    // For non-admin/manager users, compute the set of client facility names where they
+    // have an active (status === 'assigned') assignment BEFORE query filters narrow the
+    // list.  This grants access to the full report history for any client they are
+    // currently visiting.  Access is automatically revoked once they submit — status
+    // leaves 'assigned' — so no separate admin lever is required.
+    let pendingClientFacilityNames = new Set();
     if (req.user.role !== config.ROLES.ADMIN && !req.user.isManager) {
       serviceReports.forEach(r => {
-        if (String(r.assignedToId || '') === String(req.user.id) && r.status === 'assigned' && r.clientSlug) {
-          pendingClientSlugs.add(r.clientSlug);
+        if (String(r.assignedToId || '') === String(req.user.id) && r.status === 'assigned' && r.clientFacilityName) {
+          pendingClientFacilityNames.add(r.clientFacilityName);
         }
       });
     }
@@ -8442,17 +8441,15 @@ app.get('/api/service-reports', authenticateToken, requireServiceAccess, async (
       serviceReports = serviceReports.filter(r => r.technicianId === technicianId);
     }
 
-    // Scope non-admins/non-managers: show own reports, reports assigned to them, all
-    // reports for clients where they have a pending assignment (clientSlug match), and
-    // all reports for clients they are permanently assigned to (assignedClients match).
-    // The last condition is what enables technicians to search service history for their
-    // assigned clients even after completing a visit.
+    // Scope non-admins/non-managers to: their own submitted reports, any report
+    // directly assigned to them, and all historical reports for any client where they
+    // currently hold an active assignment.  The third condition collapses automatically
+    // once they submit (pendingClientFacilityNames will no longer contain that client).
     if (req.user.role !== config.ROLES.ADMIN && !req.user.isManager) {
       serviceReports = serviceReports.filter(r =>
         r.technicianId === req.user.id ||
         String(r.assignedToId || '') === String(req.user.id) ||
-        (r.clientSlug && pendingClientSlugs.has(r.clientSlug)) ||
-        (r.clientFacilityName && assignedClientNames.has(r.clientFacilityName))
+        (r.clientFacilityName && pendingClientFacilityNames.has(r.clientFacilityName))
       );
     }
 
@@ -8557,21 +8554,19 @@ app.get('/api/service-reports/:id', authenticateToken, requireServiceAccess, asy
     }
 
     // Non-admins/managers can access a report if:
-    // - they created it or were assigned to it, OR
-    // - the report belongs to a client where they have a pending (status === 'assigned') assignment, OR
-    // - the report belongs to a client in their assignedClients array (permanent assignment)
+    // - they created it or were directly assigned to it, OR
+    // - they have an active (status === 'assigned') assignment for the same client
+    //   facility name (grants history access during the visit; revoked on submission)
     if (req.user.role !== config.ROLES.ADMIN && !req.user.isManager) {
       const isOwnReport =
         report.technicianId === req.user.id ||
         String(report.assignedToId || '') === String(req.user.id);
 
-      const isAssignedClient = (req.user.assignedClients || []).includes(report.clientFacilityName);
-
-      if (!isOwnReport && !isAssignedClient) {
-        const hasPendingAssignment = report.clientSlug && serviceReports.some(r =>
+      if (!isOwnReport) {
+        const hasPendingAssignment = report.clientFacilityName && serviceReports.some(r =>
           String(r.assignedToId || '') === String(req.user.id) &&
           r.status === 'assigned' &&
-          r.clientSlug === report.clientSlug
+          r.clientFacilityName === report.clientFacilityName
         );
         if (!hasPendingAssignment) {
           return res.status(403).json({ error: 'Access denied' });
