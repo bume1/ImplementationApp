@@ -4,6 +4,27 @@
 
 ---
 
+### Version 3.16.0 - February 25, 2026
+
+#### New Features
+- Add a bug fix for a page crashing issue
+- Fix service report submitted view: reorder sections and add day labels to attachments
+
+#### Bug Fixes
+- Fix page crash by correcting syntax error in service portal
+- Fix day-over-day validation progress not showing in dashboard, launchboard, and client portal
+- Fix active validation display and restrict manager edits after day 1
+- Fix validation report completed date to use last logged day, not submission date
+- Fix technician service portal UX: button labels, edit button, and banner color
+- Fix service report status issues and assignment dropdown
+
+#### Changes
+- Tie service history access to active assignment, revoke on submission
+- Allow technicians to search full service history for their assigned clients
+- Allow technicians to edit on-site daily log entries before submission
+- Also merge PDF client files into service report download
+
+
 ### Version 3.15.0 - February 25, 2026
 
 #### New Features
