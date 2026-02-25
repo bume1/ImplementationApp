@@ -498,6 +498,16 @@
                   </p>
                 </div>
               </div>
+              {isVendor && user.assignedClients && user.assignedClients.length > 0 && (
+                <div className="mt-4 pt-4 border-t">
+                  <p className="text-gray-500 text-sm mb-2">Assigned Clients</p>
+                  <div className="flex flex-wrap gap-2">
+                    {user.assignedClients.map((client, idx) => (
+                      <span key={idx} className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm">{client}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </main>
 

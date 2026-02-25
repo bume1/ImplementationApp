@@ -4170,7 +4170,7 @@
 
       // Add Vendor Modal state
       const [showVendorModal, setShowVendorModal] = useState(false);
-      const [vendorFormData, setVendorFormData] = useState({ name: '', email: '', password: '' });
+      const [vendorFormData, setVendorFormData] = useState({ name: '', email: '', password: '', assignedClients: [] });
       const [vendorSaving, setVendorSaving] = useState(false);
       const [vendorError, setVendorError] = useState('');
 
@@ -4309,7 +4309,7 @@
 
           // Close modal and reset form
           setShowVendorModal(false);
-          setVendorFormData({ name: '', email: '', password: '' });
+          setVendorFormData({ name: '', email: '', password: '', assignedClients: [] });
           setSuccess('Vendor created successfully!');
           setTimeout(() => setSuccess(''), 3000);
         } catch (err) {
