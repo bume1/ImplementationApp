@@ -4,6 +4,12 @@
 
 ---
 
+### Version 3.15.0 - February 25, 2026
+
+#### New Features
+- Add a bug fix for a page crashing issue
+
+
 ### Version 3.14.4 - February 25, 2026
 
 #### Bug Fixes
