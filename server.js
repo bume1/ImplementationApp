@@ -9763,6 +9763,66 @@ app.put('/api/service-reports/:id/segment', authenticateToken, requireServiceAcc
   }
 });
 
+// Save a single day's progress without changing status (used by assigned-flow for live progress display)
+app.put('/api/service-reports/:id/save-day-progress', authenticateToken, requireServiceAccess, async (req, res) => {
+  try {
+    const serviceReports = (await db.get('service_reports')) || [];
+    const reportIndex = serviceReports.findIndex(r => r.id === req.params.id);
+    if (reportIndex === -1) return res.status(404).json({ error: 'Report not found' });
+
+    const report = serviceReports[reportIndex];
+
+    const isOwner = String(report.technicianId) === String(req.user.id) ||
+                    String(report.assignedToId) === String(req.user.id);
+    if (!isOwner && req.user.role !== config.ROLES.ADMIN && !req.user.isManager) {
+      return res.status(403).json({ error: 'Not authorized to update this report' });
+    }
+
+    const allowedStatuses = ['assigned', 'in_progress', 'validation_in_progress', 'onsite_submitted'];
+    if (!allowedStatuses.includes(report.status)) {
+      return res.status(400).json({ error: 'Cannot save day progress for a completed report' });
+    }
+
+    const { day, date, phase, testsPerformed, trainingCompleted, trainingReason, results, outstandingIssues, finalRecommendations, attachments } = req.body;
+    if (!testsPerformed) {
+      return res.status(400).json({ error: 'Tests performed is required' });
+    }
+
+    const segmentPhase = phase || 'onsite';
+    const newSegment = {
+      day: day,
+      phase: segmentPhase,
+      date: date || new Date().toISOString().split('T')[0],
+      testsPerformed,
+      trainingCompleted: trainingCompleted !== undefined ? trainingCompleted : true,
+      trainingReason: trainingReason || '',
+      results: results || '',
+      outstandingIssues: outstandingIssues || '',
+      finalRecommendations: finalRecommendations || '',
+      attachments: attachments || [],
+      status: 'complete',
+      submittedAt: new Date().toISOString()
+    };
+
+    const segments = Array.isArray(report.validationSegments) ? [...report.validationSegments] : [];
+    const existingIndex = segments.findIndex(s => s.day === newSegment.day && s.phase === newSegment.phase);
+    if (existingIndex >= 0) {
+      segments[existingIndex] = { ...segments[existingIndex], ...newSegment };
+    } else {
+      segments.push(newSegment);
+    }
+
+    serviceReports[reportIndex].validationSegments = segments;
+    serviceReports[reportIndex].updatedAt = new Date().toISOString();
+
+    await db.set('service_reports', serviceReports);
+    res.json(serviceReports[reportIndex]);
+  } catch (error) {
+    console.error('Save day progress error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Complete a multi-day validation (transition from validation_in_progress to submitted/signature_needed)
 app.put('/api/service-reports/:id/complete-validation', authenticateToken, requireServiceAccess, async (req, res) => {
   try {

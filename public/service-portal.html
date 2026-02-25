@@ -311,6 +311,13 @@
           body: JSON.stringify(data)
         }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
+      saveDayProgress: (token, reportId, data) =>
+        fetch(`${API_URL}/api/service-reports/${reportId}/save-day-progress`, {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
       submitValidationReport: (token, reportId, formData) =>
         fetch(`${API_URL}/api/service-reports/${reportId}/submit-validation`, {
           method: 'PUT',
@@ -3579,7 +3586,9 @@
         analyzerSerialNumber: assignment.analyzerSerialNumber || '',
         materialsAvailable: ''
       });
-      const [onsiteDays, setOnsiteDays] = useState([]);
+      const [onsiteDays, setOnsiteDays] = useState(() =>
+        (assignment.validationSegments || []).filter(s => !s.phase || s.phase === 'onsite')
+      );
       const [showSignatures, setShowSignatures] = useState(false);
       const [submittingOnsite, setSubmittingOnsite] = useState(false);
 
@@ -3637,7 +3646,10 @@
           const r = await api.uploadTechnicianFiles(token, localAssignment.id, files);
           if (!r.error && Array.isArray(r)) attachments = [...attachments, ...r.map(f => ({...f, type: 'file'}))];
         }
-        setOnsiteDays(prev => [...prev, { ...dayData, attachments }]);
+        const savedDay = { ...dayData, attachments };
+        // Persist to server immediately so dashboard/launchboard/client portal show live progress
+        await api.saveDayProgress(token, localAssignment.id, { ...savedDay, phase: 'onsite' });
+        setOnsiteDays(prev => [...prev, savedDay]);
       };
 
       const handleOnsiteSubmit = async () => {
