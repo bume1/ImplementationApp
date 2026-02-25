@@ -922,7 +922,7 @@
         hasImplementationsAccess: false, hasClientPortalAdminAccess: false,
         practiceName: '', isNewClient: false, existingPortalSlug: '',
         logo: '', hubspotCompanyId: '', hubspotDealId: '', hubspotContactId: '',
-        assignedProjects: [], projectAccessLevels: {}, assignedClients: [],
+        assignedProjects: [], projectAccessLevels: {},
         sendWelcomeEmail: true
       };
       const [formData, setFormData] = useState(defaultFormData);
@@ -1000,7 +1000,6 @@
           hubspotContactId: user.hubspotContactId || '',
           assignedProjects: user.assignedProjects || [],
           projectAccessLevels: user.projectAccessLevels || {},
-          assignedClients: user.assignedClients || [],
           existingPortalSlug: ''
         });
         setShowForm(true);
@@ -1132,7 +1131,6 @@
           'HubSpot Company ID': user.hubspotCompanyId || '',
           'HubSpot Deal ID': user.hubspotDealId || '',
           'HubSpot Contact ID': user.hubspotContactId || '',
-          'Assigned Clients': Array.isArray(user.assignedClients) ? user.assignedClients.join(', ') : '',
           'Created At': user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '',
           'User ID': user.id || ''
         }));
@@ -1356,34 +1354,7 @@
                   {formData.role === 'vendor' && (
                     <div className="border-t pt-4">
                       <h3 className="font-medium text-gray-800 mb-3">Vendor Settings</h3>
-                      <p className="text-sm text-gray-500 mb-3">Vendors can submit service reports and view reports for their assigned clients</p>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Assigned Clients</label>
-                        <div className="max-h-48 overflow-y-auto border rounded-lg p-2 space-y-2">
-                          {clients.length > 0 ? clients.map((client, idx) => {
-                            const isAssigned = (formData.assignedClients || []).includes(client.name || client.clientName);
-                            return (
-                              <div key={idx} className={`flex items-center p-2 rounded ${isAssigned ? 'bg-green-50' : 'bg-gray-50'}`}>
-                                <label className="flex items-center gap-2 cursor-pointer flex-1">
-                                  <input type="checkbox" checked={isAssigned}
-                                    onChange={() => {
-                                      const clientName = client.name || client.clientName;
-                                      const current = formData.assignedClients || [];
-                                      setFormData({
-                                        ...formData,
-                                        assignedClients: isAssigned
-                                          ? current.filter(c => c !== clientName)
-                                          : [...current, clientName]
-                                      });
-                                    }}
-                                    className="w-4 h-4 rounded border-gray-300 text-green-600 focus:ring-green-500" />
-                                  <span className="text-sm">{client.name || client.clientName}</span>
-                                </label>
-                              </div>
-                            );
-                          }) : <p className="text-sm text-gray-500 text-center py-4">No clients available</p>}
-                        </div>
-                      </div>
+                      <p className="text-sm text-gray-500">Vendors can submit service reports and access client history while they have an active assignment for that client.</p>
                     </div>
                   )}
 
@@ -1797,7 +1768,7 @@
       const [showVendorForm, setShowVendorForm] = useState(false);
       const [editingVendor, setEditingVendor] = useState(null);
       const [vendorFormData, setVendorFormData] = useState({
-        name: '', email: '', password: '', assignedClients: []
+        name: '', email: '', password: ''
       });
       const [vendorSaving, setVendorSaving] = useState(false);
       // Vendor Management is visible to Managers with Service Portal access
@@ -2079,8 +2050,7 @@
         setVendorFormData({
           name: vendor.name || '',
           email: vendor.email || '',
-          password: '',
-          assignedClients: vendor.assignedClients || []
+          password: ''
         });
         setShowVendorForm(true);
       };
@@ -2111,7 +2081,7 @@
           } else {
             setShowVendorForm(false);
             setEditingVendor(null);
-            setVendorFormData({ name: '', email: '', password: '', assignedClients: [] });
+            setVendorFormData({ name: '', email: '', password: '' });
             loadData();
           }
         } catch (err) {
@@ -2670,9 +2640,9 @@
                 <div className="flex justify-between items-center mb-6">
                   <div>
                     <h3 className="text-lg font-semibold text-gray-900">External Vendors</h3>
-                    <p className="text-sm text-gray-500">Manage service vendors and their client assignments</p>
+                    <p className="text-sm text-gray-500">Manage service vendor accounts and portal access</p>
                   </div>
-                  <button onClick={() => { setEditingVendor(null); setVendorFormData({ name: '', email: '', password: '', assignedClients: [] }); setShowVendorForm(true); }}
+                  <button onClick={() => { setEditingVendor(null); setVendorFormData({ name: '', email: '', password: '' }); setShowVendorForm(true); }}
                     className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 flex items-center gap-2">
                     {Icons.plus} Add Vendor
                   </button>
@@ -2702,34 +2672,6 @@
                           <input type="password" value={vendorFormData.password} onChange={(e) => setVendorFormData({...vendorFormData, password: e.target.value})}
                             className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500" {...(!editingVendor && { required: true })} />
                         </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Assigned Clients</label>
-                          <p className="text-xs text-gray-500 mb-2">Vendors can submit service reports and view reports for their assigned clients</p>
-                          <div className="max-h-48 overflow-y-auto border rounded-lg p-2 space-y-2">
-                            {allClients.length > 0 ? allClients.map((client, idx) => {
-                              const clientName = client.name || client.clientName;
-                              const isAssigned = (vendorFormData.assignedClients || []).includes(clientName);
-                              return (
-                                <div key={idx} className={`flex items-center p-2 rounded ${isAssigned ? 'bg-orange-50' : 'bg-gray-50'}`}>
-                                  <label className="flex items-center gap-2 cursor-pointer flex-1">
-                                    <input type="checkbox" checked={isAssigned}
-                                      onChange={() => {
-                                        const current = vendorFormData.assignedClients || [];
-                                        setVendorFormData({
-                                          ...vendorFormData,
-                                          assignedClients: isAssigned
-                                            ? current.filter(c => c !== clientName)
-                                            : [...current, clientName]
-                                        });
-                                      }}
-                                      className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500" />
-                                    <span className="text-sm">{clientName}</span>
-                                  </label>
-                                </div>
-                              );
-                            }) : <p className="text-sm text-gray-500 text-center py-4">No clients available</p>}
-                          </div>
-                        </div>
                         <div className="flex gap-3 pt-4">
                           <button type="button" onClick={() => { setShowVendorForm(false); setEditingVendor(null); }}
                             className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
@@ -2751,7 +2693,6 @@
                         <tr>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Vendor</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Email</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Assigned Clients</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Actions</th>
                         </tr>
                       </thead>
@@ -2767,20 +2708,6 @@
                               </div>
                             </td>
                             <td className="px-4 py-3 text-sm text-gray-600">{vendor.email}</td>
-                            <td className="px-4 py-3">
-                              {vendor.assignedClients?.length > 0 ? (
-                                <div className="flex flex-wrap gap-1">
-                                  {vendor.assignedClients.slice(0, 3).map((c, i) => (
-                                    <span key={i} className="px-2 py-0.5 bg-orange-50 text-orange-700 text-xs rounded">{c}</span>
-                                  ))}
-                                  {vendor.assignedClients.length > 3 && (
-                                    <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded">+{vendor.assignedClients.length - 3} more</span>
-                                  )}
-                                </div>
-                              ) : (
-                                <span className="text-sm text-gray-400">No clients assigned</span>
-                              )}
-                            </td>
                             <td className="px-4 py-3">
                               <div className="flex gap-2">
                                 <button onClick={() => handleEditVendor(vendor)} className="p-1 text-orange-600 hover:bg-orange-50 rounded" title="Edit">{Icons.edit}</button>

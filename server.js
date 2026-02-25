@@ -1505,29 +1505,6 @@ async function cascadeUserNameUpdate(userId, oldName, newName, oldPracticeName, 
     }
   }
 
-  // Update vendor assignedClients display names if this is a client user
-  if (oldPracticeName && newPracticeName && oldPracticeName !== newPracticeName) {
-    try {
-      const users = await getUsers();
-      let usersUpdated = false;
-      users.forEach(u => {
-        if (u.role === config.ROLES.VENDOR && Array.isArray(u.assignedClients)) {
-          // assignedClients stores client user IDs, but update any cached display names
-          if (u.assignedClientNames && Array.isArray(u.assignedClientNames)) {
-            const idx = u.assignedClientNames.indexOf(oldPracticeName);
-            if (idx !== -1) { u.assignedClientNames[idx] = newPracticeName; usersUpdated = true; }
-          }
-        }
-      });
-      if (usersUpdated) {
-        await db.set('users', users);
-        invalidateUsersCache();
-        changes.push('users (vendor assignedClientNames)');
-      }
-    } catch (err) {
-      console.error('Cascade update vendor assignedClients error:', err.message);
-    }
-  }
 
   // Update announcements that reference the old name
   if (oldName && newName && oldName !== newName) {
@@ -1707,8 +1684,6 @@ const authenticateToken = async (req, res, next) => {
         hasImplementationsAccess: freshUser.hasImplementationsAccess || false,
         // Managers automatically get client portal admin access
         hasClientPortalAdminAccess: freshUser.hasClientPortalAdminAccess || isManager || false,
-        // Vendor-specific: clients they can service
-        assignedClients: freshUser.assignedClients || [],
         // Client-specific fields
         isNewClient: freshUser.isNewClient || false,
         slug: freshUser.slug || null,
@@ -1977,7 +1952,7 @@ app.post('/api/users', authenticateToken, async (req, res) => {
     const {
       email, password, name, role, practiceName, isNewClient, assignedProjects, logo,
       hasServicePortalAccess, hasAdminHubAccess, hasImplementationsAccess, hasClientPortalAdminAccess,
-      isManager, assignedClients, hubspotCompanyId, hubspotDealId, hubspotContactId, projectAccessLevels,
+      isManager, hubspotCompanyId, hubspotDealId, hubspotContactId, projectAccessLevels,
       existingPortalSlug, phone, sendWelcomeEmail: shouldSendWelcome = true
     } = req.body;
 
@@ -2063,7 +2038,6 @@ app.post('/api/users', authenticateToken, async (req, res) => {
 
     // Vendor-specific fields
     if (role === config.ROLES.VENDOR) {
-      newUser.assignedClients = assignedClients || [];
       // Vendors automatically get service portal access
       newUser.hasServicePortalAccess = true;
     }
@@ -2100,7 +2074,6 @@ app.post('/api/users', authenticateToken, async (req, res) => {
       slug: newUser.slug,
       assignedProjects: newUser.assignedProjects,
       projectAccessLevels: newUser.projectAccessLevels,
-      assignedClients: newUser.assignedClients,
       logo: newUser.logo || '',
       createdAt: newUser.createdAt
     });
@@ -2189,7 +2162,6 @@ app.post('/api/auth/login', async (req, res) => {
       // Managers automatically get client portal admin access
       hasClientPortalAdminAccess: user.hasClientPortalAdminAccess || isManager || false,
       assignedProjects: user.assignedProjects || [],
-      assignedClients: user.assignedClients || [],
       // Password reset flag
       requirePasswordChange: user.requirePasswordChange || false
     };
@@ -2466,8 +2438,6 @@ app.get('/api/users', authenticateToken, async (req, res) => {
       // Team member fields
       assignedProjects: u.assignedProjects || [],
       projectAccessLevels: u.projectAccessLevels || {},
-      // Vendor-specific fields
-      assignedClients: u.assignedClients || [],
       // Client-specific fields
       practiceName: u.practiceName || null,
       isNewClient: u.isNewClient || false,
@@ -2491,7 +2461,7 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
       name, email, role, password, assignedProjects, projectAccessLevels,
       practiceName, isNewClient, logo, hubspotCompanyId, hubspotDealId, hubspotContactId,
       hasServicePortalAccess, hasAdminHubAccess, hasImplementationsAccess, hasClientPortalAdminAccess,
-      isManager, assignedClients, phone, accountStatus
+      isManager, phone, accountStatus
     } = req.body;
     const users = await getUsers();
     const idx = users.findIndex(u => u.id === userId);
@@ -2531,9 +2501,6 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
     if (hasClientPortalAdminAccess !== undefined) users[idx].hasClientPortalAdminAccess = hasClientPortalAdminAccess;
 
     // Account active status (no separate isActive - handled by accountStatus above)
-
-    // Vendor-specific: assigned clients
-    if (assignedClients !== undefined) users[idx].assignedClients = assignedClients;
 
     // Client-specific fields
     if (practiceName !== undefined) {
@@ -2601,7 +2568,6 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
       hasClientPortalAdminAccess: users[idx].hasClientPortalAdminAccess || false,
       assignedProjects: users[idx].assignedProjects || [],
       projectAccessLevels: users[idx].projectAccessLevels || {},
-      assignedClients: users[idx].assignedClients || [],
       practiceName: users[idx].practiceName || null,
       isNewClient: users[idx].isNewClient || false,
       slug: users[idx].slug || null,
@@ -8091,12 +8057,10 @@ app.get('/api/service-portal/data', authenticateToken, requireServiceAccess, asy
       // Super Admins and Managers with Service Portal access see all reports
       userReports = serviceReports;
     } else if (req.user.role === config.ROLES.VENDOR) {
-      // Vendors see their own reports + reports assigned to them + reports for their assigned clients
-      const assignedClients = req.user.assignedClients || [];
+      // Vendors see their own reports + reports assigned to them
       userReports = serviceReports.filter(r =>
         r.technicianId === req.user.id ||
-        r.assignedToId === req.user.id ||
-        assignedClients.includes(r.clientFacilityName)
+        r.assignedToId === req.user.id
       );
     } else {
       // Regular users with service access see their own reports + reports assigned to them
@@ -8176,12 +8140,6 @@ app.get('/api/service-portal/clients', authenticateToken, requireServiceAccess, 
     });
 
     let clientList = Array.from(clientMap.values());
-
-    // Vendors only see their assigned clients
-    if (req.user.role === config.ROLES.VENDOR) {
-      const assignedClients = req.user.assignedClients || [];
-      clientList = clientList.filter(c => assignedClients.includes(c.name) || assignedClients.includes(c.clientName));
-    }
 
     res.json(clientList);
   } catch (error) {
@@ -10419,8 +10377,7 @@ app.get('/api/service-portal/technicians', authenticateToken, async (req, res) =
       id: u.id,
       name: u.name,
       email: u.email,
-      role: u.role,
-      assignedClients: u.assignedClients || []
+      role: u.role
     }));
 
     res.json(technicians);
@@ -11049,7 +11006,6 @@ const optionalAuthenticateToken = async (req, res, next) => {
         hasAdminHubAccess: freshUser.hasAdminHubAccess || false,
         hasImplementationsAccess: freshUser.hasImplementationsAccess || false,
         hasClientPortalAdminAccess: freshUser.hasClientPortalAdminAccess || isManager || false,
-        assignedClients: freshUser.assignedClients || [],
         isNewClient: freshUser.isNewClient || false,
         slug: freshUser.slug || null,
         practiceName: freshUser.practiceName || null
