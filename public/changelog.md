@@ -4,6 +4,12 @@
 
 ---
 
+### Version 3.14.3 - February 25, 2026
+
+#### Bug Fixes
+- Fix crash: revert useLayoutEffect to useEffect, fix canvas ref in async callback
+
+
 ### Version 3.14.2 - February 24, 2026
 
 #### Bug Fixes
