@@ -4,6 +4,12 @@
 
 ---
 
+### Version 3.14.4 - February 25, 2026
+
+#### Bug Fixes
+- Fix Babel crash caused by malformed IIFE closing in ViewReportPage
+
+
 ### Version 3.14.3 - February 25, 2026
 
 #### Bug Fixes
