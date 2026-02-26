@@ -4425,7 +4425,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                 onClick={() => setViewMode('internal')}
                 className={`px-3 py-1.5 rounded-md text-sm ${
                   viewMode === 'internal'
-                    ? 'bg-gradient-to-r from-primary to-accent text-white'
+                    ? 'bg-primary text-white'
                     : 'bg-gray-200 text-gray-700'
                 }`}
               >
@@ -4435,7 +4435,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                 onClick={() => setViewMode('client')}
                 className={`px-3 py-1.5 rounded-md text-sm ${
                   viewMode === 'client'
-                    ? 'bg-gradient-to-r from-primary to-accent text-white'
+                    ? 'bg-primary text-white'
                     : 'bg-gray-200 text-gray-700'
                 }`}
               >
@@ -4448,7 +4448,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                 onClick={() => setViewType('list')}
                 className={`px-3 py-1.5 rounded-md text-sm ${
                   viewType === 'list'
-                    ? 'bg-gradient-to-r from-primary to-accent text-white'
+                    ? 'bg-primary text-white'
                     : 'bg-gray-200 text-gray-700'
                 }`}
               >
@@ -4458,7 +4458,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                 onClick={() => setViewType('timeline')}
                 className={`px-3 py-1.5 rounded-md text-sm ${
                   viewType === 'timeline'
-                    ? 'bg-gradient-to-r from-primary to-accent text-white'
+                    ? 'bg-primary text-white'
                     : 'bg-gray-200 text-gray-700'
                 }`}
               >
@@ -4468,7 +4468,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                 onClick={() => setViewType('calendar')}
                 className={`px-3 py-1.5 rounded-md text-sm ${
                   viewType === 'calendar'
-                    ? 'bg-gradient-to-r from-primary to-accent text-white'
+                    ? 'bg-primary text-white'
                     : 'bg-gray-200 text-gray-700'
                 }`}
               >
@@ -4481,7 +4481,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                   <button
                     onClick={handleCreateTemplate}
                     disabled={creatingTemplate || tasks.length === 0}
-                    className="px-3 py-1.5 rounded-md text-sm bg-gradient-to-r from-primary to-accent text-white hover:opacity-90 disabled:bg-gray-400"
+                    className="px-3 py-1.5 rounded-md text-sm bg-primary text-white hover:opacity-90 disabled:bg-gray-400"
                     title="Create a reusable template from this board's tasks"
                   >
                     {creatingTemplate ? 'Creating...' : 'Create Template'}
@@ -5197,7 +5197,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                               title={hasIncompleteDependencies(task) ? 'Complete dependencies first' : ''}
                             >
                               {task.completed ? (
-                                <div className="w-6 h-6 bg-gradient-to-r from-primary to-accent rounded-full flex items-center justify-center text-white text-sm">
+                                <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center text-white text-sm">
                                   ✓
                                 </div>
                               ) : hasIncompleteDependencies(task) ? (
@@ -5211,7 +5211,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                           ) : (
                             <div className="mt-1 flex-shrink-0">
                               {task.completed ? (
-                                <div className="w-6 h-6 bg-gradient-to-r from-primary to-accent rounded-full flex items-center justify-center text-white text-sm">
+                                <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center text-white text-sm">
                                   ✓
                                 </div>
                               ) : (
@@ -5223,7 +5223,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                         {viewMode === 'client' && (
                           <div className="mt-1 flex-shrink-0">
                             {task.completed ? (
-                              <div className="w-6 h-6 bg-gradient-to-r from-primary to-accent rounded-full flex items-center justify-center text-white text-sm">
+                              <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center text-white text-sm">
                                 ✓
                               </div>
                             ) : (
@@ -6721,7 +6721,7 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
                     <button
                       onClick={handleCreateTemplate}
                       disabled={saving}
-                      className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90 disabled:opacity-50"
+                      className="px-4 py-2 bg-primary text-white rounded-md hover:opacity-90 disabled:opacity-50"
                     >
                       {saving ? 'Creating...' : 'Create Template'}
                     </button>
