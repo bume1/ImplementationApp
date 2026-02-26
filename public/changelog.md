@@ -4,6 +4,12 @@
 
 ---
 
+### Version 3.17.1 - February 26, 2026
+
+#### Improvements
+- Update project tracker buttons to solid blue and checkboxes to green
+
+
 ### Version 3.17.0 - February 26, 2026
 
 #### New Features
