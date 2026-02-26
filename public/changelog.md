@@ -4,6 +4,22 @@
 
 ---
 
+### Version 3.17.0 - February 26, 2026
+
+#### New Features
+- Add Save Draft, chronological day numbering, and fix DayCard global days
+
+#### Bug Fixes
+- Fix PDF downloads hanging for older reports with unreachable external URLs
+- Fix portal milestone day labels to use global chronological day numbers
+- Fix Complete Report routing and signature name input focus loss
+- Fix validation report signature logic: require signature before marking submitted
+
+#### Changes
+- Make EditReportPage header sticky so save button stays visible while scrolling
+- Remove priority field from client support ticket submission form
+
+
 ### Version 3.16.0 - February 25, 2026
 
 #### New Features
