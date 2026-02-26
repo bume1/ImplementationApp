@@ -2846,6 +2846,23 @@ app.get('/api/team-members', authenticateToken, async (req, res) => {
         u.role === config.ROLES.ADMIN ||
         (u.assignedProjects && u.assignedProjects.includes(projectId))
       );
+
+      // Retroactive support: also include any client users who are already
+      // assigned as task owners in this project, even if not in assignedProjects
+      const tasks = await getRawTasks(projectId);
+      const ownerEmails = new Set();
+      tasks.forEach(t => {
+        if (t.owner) ownerEmails.add(t.owner);
+        if (t.secondaryOwner) ownerEmails.add(t.secondaryOwner);
+        (t.subtasks || []).forEach(st => { if (st.owner) ownerEmails.add(st.owner); });
+      });
+      const alreadyIncluded = new Set(filteredUsers.map(u => u.email));
+      const retroClients = users.filter(u =>
+        u.role === config.ROLES.CLIENT &&
+        ownerEmails.has(u.email) &&
+        !alreadyIncluded.has(u.email)
+      );
+      filteredUsers = [...filteredUsers, ...retroClients];
     }
 
     const teamMembers = filteredUsers.map(u => ({
