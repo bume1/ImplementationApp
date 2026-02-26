@@ -1019,6 +1019,16 @@
         loadData();
       };
 
+      const toggleEmailSubscription = async (user) => {
+        const willUnsubscribe = !user.emailUnsubscribed;
+        const action = willUnsubscribe ? 'unsubscribe' : 'resubscribe';
+        if (!confirm(`Are you sure you want to ${action} ${user.name} from automated emails?`)) return;
+        const result = await api.updateUser(token, user.id, { emailUnsubscribed: willUnsubscribe });
+        if (result.error) { setMessage(`Error: ${result.error}`); return; }
+        setMessage(`${user.name} has been ${willUnsubscribe ? 'unsubscribed from' : 'resubscribed to'} automated emails.`);
+        loadData();
+      };
+
       const toggleAccountStatus = async (user) => {
         if (user.role === 'admin') return;
         const currentlyActive = user.accountStatus !== 'inactive';
@@ -1718,6 +1728,14 @@
                             {user.practiceName && <div><span className="font-medium">Practice:</span> {user.practiceName}</div>}
                             {user.slug && <div><span className="font-medium">Slug:</span> {user.slug}</div>}
                             {user.assignedProjects?.length > 0 && <div><span className="font-medium">Projects:</span> {user.assignedProjects.length}</div>}
+                            {user.emailUnsubscribed && (
+                              <div className="mt-1">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700" title="This user has unsubscribed from automated emails">
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                                  Unsubscribed
+                                </span>
+                              </div>
+                            )}
                           </td>
                           <td className="px-4 py-4 text-center">
                             <button onClick={() => toggleAccountStatus(user)}
@@ -1729,6 +1747,13 @@
                           <td className="px-4 py-4">
                             <div className="flex gap-2">
                               <button onClick={() => handleEdit(user)} className="p-1 text-primary hover:bg-primary/10 rounded" title="Edit">{Icons.edit}</button>
+                              <button
+                                onClick={() => toggleEmailSubscription(user)}
+                                className={`p-1 rounded ${user.emailUnsubscribed ? 'text-orange-600 hover:bg-orange-50' : 'text-gray-400 hover:bg-gray-100'}`}
+                                title={user.emailUnsubscribed ? 'Resubscribe to emails' : 'Unsubscribe from emails'}
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                              </button>
                               <button onClick={() => handleDelete(user.id)} className="p-1 text-red-600 hover:bg-red-50 rounded" title="Delete">{Icons.trash}</button>
                             </div>
                           </td>
