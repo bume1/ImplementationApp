@@ -3545,37 +3545,46 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
   const getOwnerName = (email) => {
     if (!email) return 'Unassigned';
     const member = teamMembers.find(m => m.email === email);
-    return member ? member.name : email;
+    if (!member) return email;
+    return member.role === 'client' ? member.name + ' (Client)' : member.name;
   };
 
-  // Get all unique owners from tasks AND team members combined
+  // Get all unique owners from tasks AND team members combined (includes clients)
   const getAllOwners = () => {
     const ownerSet = new Set();
     const ownerList = [];
-    
-    // Add team members first
-    teamMembers.forEach(m => {
+
+    // Add internal team members (admin/user roles) first
+    teamMembers.filter(m => m.role !== 'client').forEach(m => {
       if (!ownerSet.has(m.email)) {
         ownerSet.add(m.email);
-        ownerList.push({ email: m.email, name: m.name });
+        ownerList.push({ email: m.email, name: m.name, role: m.role });
       }
     });
-    
-    // Add unique owners from tasks that aren't already in team members
+
+    // Add client users after team members (labeled with "(Client)")
+    teamMembers.filter(m => m.role === 'client').forEach(m => {
+      if (!ownerSet.has(m.email)) {
+        ownerSet.add(m.email);
+        ownerList.push({ email: m.email, name: m.name + ' (Client)', role: m.role });
+      }
+    });
+
+    // Add unique owners from tasks that aren't already in the list
     tasks.forEach(t => {
       if (t.owner && !ownerSet.has(t.owner)) {
         ownerSet.add(t.owner);
-        ownerList.push({ email: t.owner, name: t.owner });
+        ownerList.push({ email: t.owner, name: t.owner, role: '' });
       }
       // Also check subtask owners
       (t.subtasks || []).forEach(st => {
         if (st.owner && !ownerSet.has(st.owner)) {
           ownerSet.add(st.owner);
-          ownerList.push({ email: st.owner, name: st.owner });
+          ownerList.push({ email: st.owner, name: st.owner, role: '' });
         }
       });
     });
-    
+
     return ownerList;
   };
 

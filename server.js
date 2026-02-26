@@ -375,6 +375,7 @@ const BASE_HTML_EMAIL_WRAPPER = `
     {{ctaBlock}}
     <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 28px 0 16px;" />
     <p style="color: #9ca3af; font-size: 12px; margin: 0;">You are receiving this because you have an account with Thrive 365 Labs.</p>
+    {{unsubscribeBlock}}
   </div>
 </div>`;
 
@@ -415,12 +416,15 @@ function renderTemplate(templateStr, variables) {
 }
 
 // Build HTML email body: use custom htmlBody if provided, otherwise wrap plain body in base layout
-function buildHtmlEmail(body, htmlBody, ctaUrl, ctaLabel) {
+function buildHtmlEmail(body, htmlBody, ctaUrl, ctaLabel, unsubscribeUrl) {
   if (htmlBody) return htmlBody;
   const ctaBlock = (ctaUrl && ctaLabel)
     ? `<p style="margin-top: 20px;"><a href="${ctaUrl}" style="display: inline-block; background: #045E9F; color: #ffffff; padding: 10px 24px; border-radius: 6px; text-decoration: none; font-weight: 500; font-size: 14px;">${ctaLabel}</a></p>`
     : '';
-  return renderTemplate(BASE_HTML_EMAIL_WRAPPER, { content: body, ctaBlock });
+  const unsubscribeBlock = unsubscribeUrl
+    ? `<p style="color: #9ca3af; font-size: 11px; margin: 6px 0 0;"><a href="${unsubscribeUrl}" style="color: #9ca3af; text-decoration: underline;">Unsubscribe from these emails</a></p>`
+    : '';
+  return renderTemplate(BASE_HTML_EMAIL_WRAPPER, { content: body, ctaBlock, unsubscribeBlock });
 }
 
 // ============================================================
@@ -903,10 +907,14 @@ const scanAndQueueNotifications = async () => {
       const t = tpl(templateId);
       const renderedSubject = renderTemplate(t.subject, allVars);
       const renderedBody = renderTemplate(t.body, allVars);
+      // Generate a long-lived unsubscribe token for this recipient
+      const unsubToken = jwt.sign({ userId: recipientUser.id, purpose: 'email_unsubscribe' }, JWT_SECRET, { expiresIn: '365d' });
+      const unsubscribeUrl = `${appBaseUrl}/api/unsubscribe?token=${unsubToken}`;
       const renderedHtml = buildHtmlEmail(
         renderedBody,
         t.htmlBody ? renderTemplate(t.htmlBody, allVars) : null,
-        ctaUrl, ctaLabel
+        ctaUrl, ctaLabel,
+        unsubscribeUrl
       );
       await queueNotification(
         templateId,
@@ -930,7 +938,7 @@ const scanAndQueueNotifications = async () => {
 
         // Missing client signature
         if (report.status === 'signature_needed' || (!report.customerSignature && report.status !== 'submitted')) {
-          const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT && u.slug === report.clientSlug && u.email && u.accountStatus !== 'inactive');
+          const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT && u.slug === report.clientSlug && u.email && u.accountStatus !== 'inactive' && !u.emailUnsubscribed);
           for (const client of clientUsers) {
             const allVars = buildTemplateVars({ service_report: srVars }, client, appBaseUrl);
             const ctaUrl = srVars.portalLink;
@@ -940,7 +948,7 @@ const scanAndQueueNotifications = async () => {
 
         // Not reviewed by admin
         if (report.status && report.status !== 'submitted' && !report.adminReviewedAt) {
-          const admins = users.filter(u => u.role === config.ROLES.ADMIN && u.email && u.accountStatus !== 'inactive');
+          const admins = users.filter(u => u.role === config.ROLES.ADMIN && u.email && u.accountStatus !== 'inactive' && !u.emailUnsubscribed);
           for (const admin of admins) {
             const allVars = buildTemplateVars({ service_report: srVars }, admin, appBaseUrl);
             const ctaUrl = srVars.reportLink;
@@ -967,7 +975,7 @@ const scanAndQueueNotifications = async () => {
           const daysUntilDue = Math.floor((dueDate - now) / (1000 * 60 * 60 * 24));
 
           const owner = users.find(u => u.email === task.owner);
-          if (!owner) continue;
+          if (!owner || owner.emailUnsubscribed) continue;
 
           const taskVars = resolveTaskVars(task, project, appBaseUrl);
           const ctaUrl = taskVars.taskLink;
@@ -986,7 +994,7 @@ const scanAndQueueNotifications = async () => {
             // Escalate to admin after threshold
             const daysOverdue = Math.abs(daysUntilDue);
             if (daysOverdue >= escalationDays) {
-              const admins = users.filter(u => u.role === config.ROLES.ADMIN && u.email && u.accountStatus !== 'inactive');
+              const admins = users.filter(u => u.role === config.ROLES.ADMIN && u.email && u.accountStatus !== 'inactive' && !u.emailUnsubscribed);
               for (const admin of admins) {
                 const escVars = buildTemplateVars({ task: { ...taskVars, ownerName: owner.name }, project: projVars }, admin, appBaseUrl);
                 await renderAndQueue('task_overdue_escalation', admin, escVars, 'View Project', projVars.projectLink, task.id?.toString(), 'task');
@@ -1000,7 +1008,7 @@ const scanAndQueueNotifications = async () => {
     // --- Scenario C: Client Portal Activity Nudges ---
     if (!scenarios.clientActivityNudges || scenarios.clientActivityNudges.enabled !== false) {
       const inventoryDays = (scenarios.clientActivityNudges && scenarios.clientActivityNudges.inventoryReminderDays) || config.INVENTORY_REMINDER_DAYS;
-      const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT && u.slug && u.email && u.accountStatus !== 'inactive');
+      const clientUsers = users.filter(u => u.role === config.ROLES.CLIENT && u.slug && u.email && u.accountStatus !== 'inactive' && !u.emailUnsubscribed);
       const slugsSeen = new Set();
 
       for (const client of clientUsers) {
@@ -1047,7 +1055,7 @@ const scanAndQueueNotifications = async () => {
         for (const threshold of thresholds) {
           if (pct >= threshold && lastNotified < threshold) {
             const projectClients = users.filter(u =>
-              u.role === config.ROLES.CLIENT && u.email && u.accountStatus !== 'inactive' &&
+              u.role === config.ROLES.CLIENT && u.email && u.accountStatus !== 'inactive' && !u.emailUnsubscribed &&
               (u.assignedProjects || []).includes(project.id)
             );
             for (const client of projectClients) {
@@ -1072,11 +1080,11 @@ const scanAndQueueNotifications = async () => {
           const daysUntilGoLive = Math.floor((goLive - now) / (1000 * 60 * 60 * 24));
           if (daysUntilGoLive >= 0 && goLiveDaysBefore.includes(daysUntilGoLive)) {
             const projectClients = users.filter(u =>
-              u.role === config.ROLES.CLIENT && u.email && u.accountStatus !== 'inactive' &&
+              u.role === config.ROLES.CLIENT && u.email && u.accountStatus !== 'inactive' && !u.emailUnsubscribed &&
               (u.assignedProjects || []).includes(project.id)
             );
             const teamMembers = users.filter(u =>
-              (u.role === config.ROLES.USER || u.role === config.ROLES.ADMIN) && u.email && u.accountStatus !== 'inactive' &&
+              (u.role === config.ROLES.USER || u.role === config.ROLES.ADMIN) && u.email && u.accountStatus !== 'inactive' && !u.emailUnsubscribed &&
               (u.assignedProjects || []).includes(project.id)
             );
             for (const user of [...projectClients, ...teamMembers]) {
@@ -2005,6 +2013,8 @@ app.post('/api/users', authenticateToken, async (req, res) => {
       createdAt: new Date().toISOString(),
       // Account status — active accounts receive notifications, inactive do not
       accountStatus: 'active',
+      // Email subscription — false means user has unsubscribed from automated emails
+      emailUnsubscribed: false,
       // Contact
       phone: phone || '',
       // Notification preferences
@@ -2310,6 +2320,90 @@ app.post('/api/auth/forgot-password', async (req, res) => {
   }
 });
 
+// ============== EMAIL UNSUBSCRIBE / RESUBSCRIBE (public, token-based) ==============
+
+function renderUnsubscribePageHtml(message, isSuccess) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Email Preferences - Thrive 365 Labs</title>
+  <style>
+    body { font-family: Inter, -apple-system, sans-serif; background: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+    .card { background: #fff; border-radius: 10px; border: 1px solid #e5e7eb; padding: 40px 32px; max-width: 460px; width: 100%; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .logo { height: 40px; margin-bottom: 24px; }
+    .icon { font-size: 40px; margin-bottom: 12px; }
+    h2 { color: #00205A; margin: 0 0 12px; font-size: 20px; }
+    p { color: #6b7280; line-height: 1.6; margin: 0 0 20px; }
+    a.btn { display: inline-block; background: #045E9F; color: #fff; padding: 10px 24px; border-radius: 6px; text-decoration: none; font-weight: 500; font-size: 14px; }
+    a.link { color: #045E9F; text-decoration: underline; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <img class="logo" src="https://thrive365labs.live/thrive365-logo.webp" alt="Thrive 365 Labs" />
+    <div class="icon">${isSuccess ? '✅' : '❌'}</div>
+    <h2>Email Preferences</h2>
+    <p>${message}</p>
+    <a class="btn" href="/">Return to App</a>
+  </div>
+</body>
+</html>`;
+}
+
+// Unsubscribe from automated emails (clicked from email link — no login required)
+app.get('/api/unsubscribe', async (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.status(400).send(renderUnsubscribePageHtml('Invalid unsubscribe link. No token provided.', false));
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (decoded.purpose !== 'email_unsubscribe') throw new Error('Invalid token purpose');
+
+    const users = await getUsers();
+    const idx = users.findIndex(u => u.id === decoded.userId);
+    if (idx === -1) return res.status(404).send(renderUnsubscribePageHtml('User not found.', false));
+
+    users[idx].emailUnsubscribed = true;
+    await db.set('users', users);
+
+    // Generate a resubscribe token (same token works for both directions)
+    const resubToken = jwt.sign({ userId: decoded.userId, purpose: 'email_unsubscribe' }, JWT_SECRET, { expiresIn: '365d' });
+    const resubUrl = `/api/resubscribe?token=${encodeURIComponent(resubToken)}`;
+
+    res.send(renderUnsubscribePageHtml(
+      `You have been unsubscribed from automated emails. You will no longer receive task reminders, milestone updates, or other automated notifications.<br/><br/><a class="link" href="${resubUrl}">Changed your mind? Resubscribe</a>`,
+      true
+    ));
+  } catch (err) {
+    res.status(400).send(renderUnsubscribePageHtml('This unsubscribe link is invalid or has expired. Please contact your administrator if you need to update your email preferences.', false));
+  }
+});
+
+// Resubscribe to automated emails
+app.get('/api/resubscribe', async (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.status(400).send(renderUnsubscribePageHtml('Invalid resubscribe link. No token provided.', false));
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (decoded.purpose !== 'email_unsubscribe') throw new Error('Invalid token purpose');
+
+    const users = await getUsers();
+    const idx = users.findIndex(u => u.id === decoded.userId);
+    if (idx === -1) return res.status(404).send(renderUnsubscribePageHtml('User not found.', false));
+
+    users[idx].emailUnsubscribed = false;
+    await db.set('users', users);
+
+    res.send(renderUnsubscribePageHtml(
+      'You have been resubscribed to automated emails. You will now receive task reminders, milestone updates, and other automated notifications.',
+      true
+    ));
+  } catch (err) {
+    res.status(400).send(renderUnsubscribePageHtml('This resubscribe link is invalid or has expired. Please contact your administrator if you need to update your email preferences.', false));
+  }
+});
+
 // Get pending password reset requests (Admin only)
 app.get('/api/admin/password-reset-requests', authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -2450,6 +2544,7 @@ app.get('/api/users', authenticateToken, async (req, res) => {
       name: u.name,
       role: u.role,
       accountStatus: u.accountStatus || 'active',
+      emailUnsubscribed: u.emailUnsubscribed || false,
       createdAt: u.createdAt,
       // Manager flag
       isManager: u.isManager || false,
@@ -2486,13 +2581,14 @@ app.put('/api/users/:userId', authenticateToken, requireAdmin, async (req, res) 
       name, email, role, password, assignedProjects, projectAccessLevels,
       practiceName, isNewClient, logo, hubspotCompanyId, hubspotDealId, hubspotContactId,
       hasServicePortalAccess, hasAdminHubAccess, hasImplementationsAccess, hasClientPortalAdminAccess,
-      isManager, assignedClients, phone, accountStatus
+      isManager, assignedClients, phone, accountStatus, emailUnsubscribed
     } = req.body;
     const users = await getUsers();
     const idx = users.findIndex(u => u.id === userId);
     if (idx === -1) return res.status(404).json({ error: 'User not found' });
 
     if (phone !== undefined) users[idx].phone = phone;
+    if (emailUnsubscribed !== undefined) users[idx].emailUnsubscribed = emailUnsubscribed;
     if (accountStatus !== undefined) {
       // Prevent deactivating admin accounts (super admin lockout protection)
       if (accountStatus === 'inactive' && users[idx].role === 'admin') {
@@ -2737,17 +2833,21 @@ app.get('/api/team-members', authenticateToken, async (req, res) => {
   try {
     const { projectId } = req.query;
     const users = await getUsers();
-    
-    // Filter to team members (admins + users), exclude clients and vendors
-    let filteredUsers = users.filter(u => u.role === config.ROLES.ADMIN || u.role === config.ROLES.USER);
+
+    // Include admins, team members, and client users (clients can be assigned to tasks)
+    let filteredUsers = users.filter(u =>
+      u.role === config.ROLES.ADMIN ||
+      u.role === config.ROLES.USER ||
+      u.role === config.ROLES.CLIENT
+    );
     if (projectId) {
-      // Further filter to only users assigned to that project (or admins)
+      // Filter to users assigned to that project (admins always included)
       filteredUsers = filteredUsers.filter(u =>
         u.role === config.ROLES.ADMIN ||
         (u.assignedProjects && u.assignedProjects.includes(projectId))
       );
     }
-    
+
     const teamMembers = filteredUsers.map(u => ({
       email: u.email,
       name: u.name,
