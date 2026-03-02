@@ -4,6 +4,24 @@
 
 ---
 
+### Version 3.19.0 - March 2, 2026
+
+#### New Features
+- Add draft/published status to project launch boards
+
+#### Bug Fixes
+- Fix invisible Process Queue button in Notification Center
+- Fix email logo and View in App button using dynamic appUrl
+- Fix error that prevents the service portal from loading
+- Fix blank connections area by re-establishing GitHub link
+- Fix email logo rendering, preview button, and production URL in CTA links
+
+#### Changes
+- Remove "View in App" placeholder button from email template previews
+- Use getAppBaseUrl() for loginUrl and appUrl in email template previews
+- Make client task owner display retroactive for pre-existing assignments
+
+
 ### Version 3.18.1 - March 2, 2026
 
 #### Bug Fixes

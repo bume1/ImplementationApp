@@ -2262,26 +2262,6 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
                     <StatusBadge status={project.status || 'active'} />
                   </div>
                 </div>
-                {(() => {
-                  const isProjectAdmin = (user.projectAccessLevels || {})[project.id] === 'admin';
-                  const canManagePublish = user.role === 'admin' || isProjectAdmin;
-                  if (!canManagePublish) return null;
-                  return (
-                    <div className="flex items-center gap-2 mb-3">
-                      <PublishedStatusBadge publishedStatus={project.publishedStatus} />
-                      <button
-                        onClick={() => handleTogglePublishedStatus(project)}
-                        className={`text-xs px-2 py-0.5 rounded border font-medium transition-colors ${
-                          (project.publishedStatus || 'published') === 'draft'
-                            ? 'border-emerald-400 text-emerald-700 hover:bg-emerald-50'
-                            : 'border-amber-400 text-amber-700 hover:bg-amber-50'
-                        }`}
-                      >
-                        {(project.publishedStatus || 'published') === 'draft' ? 'Publish' : 'Unpublish'}
-                      </button>
-                    </div>
-                  );
-                })()}
                 <p className="text-gray-600 mb-3">{project.clientName}</p>
 
                 {/* Progress Bar */}
@@ -2375,6 +2355,26 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
                       </button>
                     )}
                   </div>
+                  {(() => {
+                    const isProjectAdmin = (user.projectAccessLevels || {})[project.id] === 'admin';
+                    const canManagePublish = user.role === 'admin' || isProjectAdmin;
+                    if (!canManagePublish) return null;
+                    return (
+                      <div className="flex items-center justify-end gap-2 mt-3">
+                        <PublishedStatusBadge publishedStatus={project.publishedStatus} />
+                        <button
+                          onClick={() => handleTogglePublishedStatus(project)}
+                          className={`text-xs px-2 py-0.5 rounded border font-medium transition-colors ${
+                            (project.publishedStatus || 'published') === 'draft'
+                              ? 'border-emerald-400 text-emerald-700 hover:bg-emerald-50'
+                              : 'border-amber-400 text-amber-700 hover:bg-amber-50'
+                          }`}
+                        >
+                          {(project.publishedStatus || 'published') === 'draft' ? 'Publish' : 'Unpublish'}
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             ))}
