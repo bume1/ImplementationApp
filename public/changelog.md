@@ -4,6 +4,12 @@
 
 ---
 
+### Version 3.22.0 - March 3, 2026
+
+#### New Features
+- Improve soft pilot checklist display and add portal notifications
+
+
 ### Version 3.21.1 - March 3, 2026
 
 #### Bug Fixes

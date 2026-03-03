@@ -3736,14 +3736,15 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
     const isAdmin = req.user.role === config.ROLES.ADMIN;
     if (!isAdmin) {
       const userAssignedProjects = req.user.assignedProjects || [];
-      projects = projects.filter(p => userAssignedProjects.includes(p.id));
+      // Include assigned projects and any projects the user created
+      projects = projects.filter(p => userAssignedProjects.includes(p.id) || p.createdBy === req.user.id);
 
-      // Non-admins only see published projects unless they have project-level admin access (managers)
+      // Non-admins only see published projects unless they created the board or have project-level admin access (managers)
       const accessLevels = req.user.projectAccessLevels || {};
       projects = projects.filter(p => {
         const pubStatus = p.publishedStatus || 'published';
         if (pubStatus === 'published') return true;
-        // Draft: only visible to project-level admins (managers)
+        if (p.createdBy === req.user.id) return true;
         return accessLevels[p.id] === 'admin';
       });
     }
@@ -3915,6 +3916,19 @@ app.get('/api/projects/:id', authenticateToken, async (req, res) => {
     // Check project access
     if (!canAccessProject(req.user, req.params.id)) {
       return res.status(403).json({ error: 'Access denied to this project' });
+    }
+
+    // Draft projects: only visible to admins, the creator, or project-level admins (managers)
+    const isAdmin = req.user.role === config.ROLES.ADMIN;
+    if (!isAdmin) {
+      const pubStatus = project.publishedStatus || 'published';
+      if (pubStatus === 'draft') {
+        const isCreator = project.createdBy === req.user.id;
+        const accessLevel = (req.user.projectAccessLevels || {})[project.id];
+        if (!isCreator && accessLevel !== 'admin') {
+          return res.status(403).json({ error: 'This project is in draft mode' });
+        }
+      }
     }
     
     const templates = await db.get('templates') || [];
