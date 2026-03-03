@@ -4467,7 +4467,25 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
             taskId: task.id,
             taskTitle: task.taskTitle,
             phase: task.phase,
-            stage: task.stage
+            stage: task.stage,
+            entryType: 'note'
+          });
+        });
+      }
+      if (task.files && task.files.length > 0) {
+        task.files.forEach(file => {
+          allNotes.push({
+            id: file.id,
+            content: file.name,
+            author: file.uploadedBy || 'System',
+            createdAt: file.uploadedAt,
+            taskId: task.id,
+            taskTitle: task.taskTitle,
+            phase: task.phase,
+            stage: task.stage,
+            entryType: 'file',
+            fileUrl: file.url,
+            fileName: file.name
           });
         });
       }
@@ -4476,7 +4494,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
   }, [tasks]);
   
   const tasksWithNotes = useMemo(() => {
-    return tasks.filter(t => t.notes && t.notes.length > 0).length;
+    return tasks.filter(t => (t.notes && t.notes.length > 0) || (t.files && t.files.length > 0)).length;
   }, [tasks]);
 
   const totalTasks = tasks.length;
@@ -6411,10 +6429,10 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
               
               <div className="px-4 py-3 bg-amber-50 border-b border-amber-100">
                 <p className="text-sm text-amber-800">
-                  Comprehensive log of all notes added to tasks in chronological order.
+                  Comprehensive log of all notes and file uploads in chronological order.
                 </p>
                 <p className="text-xs text-amber-600 mt-1">
-                  {aggregatedNotes.length} total notes across {tasksWithNotes} tasks
+                  {aggregatedNotes.length} total entries across {tasksWithNotes} tasks
                 </p>
               </div>
               
@@ -6430,16 +6448,29 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                 ) : (
                   <div className="space-y-4">
                     {aggregatedNotes.map((note, idx) => (
-                      <div key={note.id || idx} className="bg-gray-50 rounded-lg p-4 border border-gray-200 hover:border-amber-300 transition-colors">
+                      <div key={`${note.entryType}-${note.id || idx}`} className={`rounded-lg p-4 border transition-colors ${note.entryType === 'file' ? 'bg-blue-50 border-blue-200 hover:border-blue-400' : 'bg-gray-50 border-gray-200 hover:border-amber-300'}`}>
                         <div className="flex items-start justify-between gap-2 mb-2">
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium text-amber-700 truncate">{note.phase} • {note.stage}</p>
+                            <p className={`text-xs font-medium truncate ${note.entryType === 'file' ? 'text-blue-700' : 'text-amber-700'}`}>
+                              {note.phase} • {note.entryType === 'file' ? 'File Upload' : note.stage}
+                            </p>
                             <p className="text-sm font-semibold text-gray-800 truncate" title={note.taskTitle}>{note.taskTitle}</p>
                           </div>
                         </div>
-                        <div className="bg-white rounded p-3 border border-gray-100 mb-2">
-                          <p className="text-sm text-gray-700 whitespace-pre-wrap">{note.content}</p>
-                        </div>
+                        {note.entryType === 'file' ? (
+                          <div className="bg-white rounded p-3 border border-blue-100 mb-2 flex items-center gap-2">
+                            <span className="text-base flex-shrink-0">📎</span>
+                            {note.fileUrl ? (
+                              <a href={note.fileUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-700 hover:underline truncate">{note.fileName}</a>
+                            ) : (
+                              <span className="text-sm text-gray-700 truncate">{note.fileName}</span>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="bg-white rounded p-3 border border-gray-100 mb-2">
+                            <p className="text-sm text-gray-700 whitespace-pre-wrap">{note.content}</p>
+                          </div>
+                        )}
                         <div className="flex items-center justify-between text-xs text-gray-500">
                           <span className="font-medium">{note.author}</span>
                           <span>{new Date(note.createdAt).toLocaleString()}</span>
