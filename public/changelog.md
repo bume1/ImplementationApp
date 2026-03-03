@@ -4,6 +4,12 @@
 
 ---
 
+### Version 3.20.0 - March 3, 2026
+
+#### New Features
+- Add bulk editing for tasks and make soft pilot checklist client-facing
+
+
 ### Version 3.19.5 - March 3, 2026
 
 #### Improvements

@@ -1288,10 +1288,14 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
   const handleEditProject = async () => {
     if (!editingProject) return;
     
-    // Require Soft-Pilot Checklist submission before marking project as completed
-    if (editingProject.status === 'completed' && !editingProject.softPilotChecklistSubmitted) {
-      alert('The Soft-Pilot Checklist must be submitted before marking this project as completed. Please complete the checklist by clicking the Soft-Pilot Checklist button in the toolbar.');
-      return;
+    const originalProject = projects.find(p => p.id === editingProject.id);
+    const statusChangingToCompleted = editingProject.status === 'completed' && originalProject && originalProject.status !== 'completed';
+    if (statusChangingToCompleted && !editingProject.softPilotChecklistSubmitted) {
+      const hasSoftPilotTasks = (tasks || []).some(t => (t.tags || []).some(tag => tag.toLowerCase() === 'softpilot'));
+      if (hasSoftPilotTasks) {
+        alert('The Soft-Pilot Checklist must be submitted before marking this project as completed. Please complete the checklist by clicking the Soft-Pilot Checklist button in the toolbar.');
+        return;
+      }
     }
     
     try {
