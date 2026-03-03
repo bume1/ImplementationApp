@@ -8483,7 +8483,7 @@ const App = () => {
     localStorage.removeItem('user');
     localStorage.removeItem('unified_token');
     localStorage.removeItem('unified_user');
-    window.location.href = '/';
+    window.location.href = '/launch/login';
   };
 
   const handleSelectProject = (project, taskId = null) => {
