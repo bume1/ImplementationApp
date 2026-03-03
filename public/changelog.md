@@ -4,6 +4,13 @@
 
 ---
 
+### Version 3.19.4 - March 3, 2026
+
+#### Changes
+- Transitioned from Plan to Build mode
+- Send ticket category and submitter to correct HubSpot fields
+
+
 ### Version 3.19.3 - March 3, 2026
 
 #### Improvements

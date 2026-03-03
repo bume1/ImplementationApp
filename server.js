@@ -13,7 +13,7 @@ const googledrive = require('./googledrive');
 const pdfGenerator = require('./pdf-generator');
 const changelogGenerator = require('./changelog-generator');
 const config = require('./config');
-const { sendEmail, sendBulkEmail } = require('./email');
+const { sendEmail, sendBulkEmail, sendBatchEmails } = require('./email');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -314,30 +314,40 @@ const processNotificationQueue = async () => {
     let sentCount = 0;
     let failCount = 0;
 
+    const emailPayloads = [];
+    const queueIndices = [];
     for (const notification of toProcess) {
       const idx = queue.findIndex(n => n.id === notification.id);
       if (idx === -1) continue;
+      emailPayloads.push({
+        to: notification.recipientEmail,
+        subject: notification.templateData.subject,
+        text: notification.templateData.body,
+        html: notification.templateData.htmlBody
+      });
+      queueIndices.push(idx);
+    }
 
-      const result = await sendEmail(
-        notification.recipientEmail,
-        notification.templateData.subject,
-        notification.templateData.body,
-        { htmlBody: notification.templateData.htmlBody }
-      );
+    if (emailPayloads.length > 0) {
+      const batchResult = await sendBatchEmails(emailPayloads);
 
-      if (result.success) {
-        queue[idx].status = 'sent';
-        queue[idx].sentAt = new Date().toISOString();
-        sentCount++;
-      } else {
-        queue[idx].retryCount = (queue[idx].retryCount || 0) + 1;
-        queue[idx].failedAt = new Date().toISOString();
-        queue[idx].failureReason = result.error;
-        if (queue[idx].retryCount >= queue[idx].maxRetries) {
-          queue[idx].status = 'failed';
+      batchResult.results.forEach((result, i) => {
+        const idx = queueIndices[i];
+        if (idx === undefined) return;
+        if (result.success) {
+          queue[idx].status = 'sent';
+          queue[idx].sentAt = new Date().toISOString();
+          sentCount++;
+        } else {
+          queue[idx].retryCount = (queue[idx].retryCount || 0) + 1;
+          queue[idx].failedAt = new Date().toISOString();
+          queue[idx].failureReason = result.error;
+          if (queue[idx].retryCount >= queue[idx].maxRetries) {
+            queue[idx].status = 'failed';
+          }
+          failCount++;
         }
-        failCount++;
-      }
+      });
     }
 
     // Move sent/failed/cancelled notifications to log archive

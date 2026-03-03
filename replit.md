@@ -56,6 +56,7 @@ Preferred communication style: Simple, everyday language.
 ### Third-Party Services
 - **HubSpot**: CRM integration for deal pipeline, client profiles, and file uploads.
 - **Google Drive**: Storage for soft-pilot checklist uploads.
+- **Resend**: Email delivery service using Batch API (`resend.batch.send()`) for bulk sends and single API for individual emails.
 - **Replit Database**: Primary data persistence.
 
 ### NPM Packages
