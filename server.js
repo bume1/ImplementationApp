@@ -5156,19 +5156,22 @@ app.post('/api/client/submit-ticket', authenticateToken, async (req, res) => {
       hubspotTicketId: null
     };
 
-    // Attempt to create HubSpot ticket tagged External
+    // Attempt to create HubSpot ticket
     if (process.env.HUBSPOT_PRIVATE_APP_TOKEN) {
       try {
         const companyId = clientUser.hubspotCompanyId || null;
         const contactId = clientUser.hubspotContactId || null;
         const dealId = clientUser.hubspotDealId || null;
+        const ticketConfig = (await db.get('hubspot_ticket_config')) || {};
         const result = await hubspot.createTicket(
           {
             subject: ticketRecord.subject,
             description: ticketRecord.description,
             priority: ticketRecord.priority,
             submittedBy: ticketRecord.submittedBy,
-            issueCategory: ticketRecord.issueCategory
+            issueCategory: ticketRecord.issueCategory,
+            pipelineId: ticketConfig.pipelineId || '0',
+            stageId: ticketConfig.newStageId || '1'
           },
           companyId,
           contactId,
@@ -5191,6 +5194,30 @@ app.post('/api/client/submit-ticket', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error submitting client ticket:', error);
     res.status(500).json({ error: 'Failed to submit ticket' });
+  }
+});
+
+// ===== HubSpot Ticket Pipeline Config =====
+
+app.get('/api/admin/ticket-config', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const config = (await db.get('hubspot_ticket_config')) || {};
+    res.json(config);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch ticket config' });
+  }
+});
+
+app.put('/api/admin/ticket-config', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { pipelineId, newStageId } = req.body;
+    const config = (await db.get('hubspot_ticket_config')) || {};
+    if (pipelineId !== undefined) config.pipelineId = pipelineId;
+    if (newStageId !== undefined) config.newStageId = newStageId;
+    await db.set('hubspot_ticket_config', config);
+    res.json({ success: true, config });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update ticket config' });
   }
 });
 

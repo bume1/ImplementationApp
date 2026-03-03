@@ -4,6 +4,12 @@
 
 ---
 
+### Version 3.19.2 - March 3, 2026
+
+#### Changes
+- Move the publish/unpublish button to the project board header
+
+
 ### Version 3.19.1 - March 2, 2026
 
 #### Changes

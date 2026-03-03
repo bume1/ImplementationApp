@@ -1364,14 +1364,17 @@ async function createTicket(ticketData, companyId = null, contactId = null, deal
   const ticketProperties = {
     subject: ticketData.subject || 'Support Request',
     content: ticketData.description || '',
-    hs_pipeline: '0',
-    hs_pipeline_stage: '1',
-    hs_ticket_priority: priorityMap[ticketData.priority] || 'LOW',
-    internal_vs_external_ticket: 'External'
+    hs_pipeline: ticketData.pipelineId || '0',
+    hs_pipeline_stage: ticketData.stageId || '1',
+    hs_ticket_priority: priorityMap[ticketData.priority] || 'LOW'
   };
 
-  if (ticketData.issueCategory) ticketProperties.issue_category = ticketData.issueCategory;
-  if (ticketData.submittedBy) ticketProperties.submitted_by = ticketData.submittedBy;
+  if (ticketData.submittedBy) {
+    ticketProperties.content = `Submitted by: ${ticketData.submittedBy}\n\n${ticketProperties.content}`;
+  }
+  if (ticketData.issueCategory) {
+    ticketProperties.content = `Category: ${ticketData.issueCategory}\n${ticketProperties.content}`;
+  }
 
   const ticketInput = { properties: ticketProperties };
 
@@ -1396,12 +1399,18 @@ async function createTicket(ticketData, companyId = null, contactId = null, deal
   }
   if (associations.length > 0) ticketInput.associations = associations;
 
-  const response = await axios.post(
-    'https://api.hubapi.com/crm/v3/objects/tickets',
-    ticketInput,
-    { headers: { 'Authorization': `Bearer ${privateAppToken}`, 'Content-Type': 'application/json' } }
-  );
-  return { ticketId: response.data.id };
+  try {
+    const response = await axios.post(
+      'https://api.hubapi.com/crm/v3/objects/tickets',
+      ticketInput,
+      { headers: { 'Authorization': `Bearer ${privateAppToken}`, 'Content-Type': 'application/json' } }
+    );
+    return { ticketId: response.data.id };
+  } catch (err) {
+    const detail = err.response?.data?.message || err.response?.data || err.message;
+    console.error('HubSpot createTicket error detail:', JSON.stringify(detail));
+    throw new Error(`HubSpot ticket creation failed: ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`);
+  }
 }
 
 module.exports = {
