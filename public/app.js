@@ -8,7 +8,7 @@ const STANDARD_PHASES = {
     stages: ['Tasks']
   },
   'Phase 2': {
-    name: 'Phase 2: Billing, CLIA & Hiring',
+    name: 'Phase 2: Financials, CLIA & Hiring',
     stages: ['Tasks']
   },
   'Phase 3': {
@@ -1455,7 +1455,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
                   <h3 className="text-lg font-bold text-primary mb-3">Project Phases</h3>
                   <div className="space-y-2 text-gray-600 text-sm">
                     <div className="flex items-center gap-3"><div className="w-4 h-4 bg-blue-500 rounded"></div><span><strong>Phase 1:</strong> Contract & Initial Setup</span></div>
-                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-indigo-500 rounded"></div><span><strong>Phase 2:</strong> Billing, CLIA & Hiring</span></div>
+                    <div className="flex items-center gap-3"><div className="w-4 h-4 bg-indigo-500 rounded"></div><span><strong>Phase 2:</strong> Financials, CLIA & Hiring</span></div>
                     <div className="flex items-center gap-3"><div className="w-4 h-4 bg-cyan-500 rounded"></div><span><strong>Phase 3:</strong> Tech Infrastructure & LIS Integration</span></div>
                     <div className="flex items-center gap-3"><div className="w-4 h-4 bg-yellow-500 rounded"></div><span><strong>Phase 4:</strong> Inventory Forecasting & Procurement</span></div>
                     <div className="flex items-center gap-3"><div className="w-4 h-4 bg-green-500 rounded"></div><span><strong>Phase 5:</strong> Supply Orders & Logistics</span></div>
@@ -2597,7 +2597,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
 // ============== TIMELINE VIEW COMPONENT (Phase/Stage Grouped) ==============
 const phaseNames = {
   'Phase 1': 'Phase 1: Contract & Initial Setup',
-  'Phase 2': 'Phase 2: Billing, CLIA & Hiring',
+  'Phase 2': 'Phase 2: Financials, CLIA & Hiring',
   'Phase 3': 'Phase 3: Tech Infrastructure & LIS Integration',
   'Phase 4': 'Phase 4: Inventory Forecasting & Procurement',
   'Phase 5': 'Phase 5: Supply Orders & Logistics',
@@ -6151,7 +6151,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                       className="w-full px-3 py-2 border rounded-md"
                     >
                       <option value="Phase 1">Phase 1: Contract & Initial Setup</option>
-                      <option value="Phase 2">Phase 2: Billing, CLIA & Hiring</option>
+                      <option value="Phase 2">Phase 2: Financials, CLIA & Hiring</option>
                       <option value="Phase 3">Phase 3: Tech Infrastructure & LIS</option>
                       <option value="Phase 4">Phase 4: Inventory Forecasting</option>
                       <option value="Phase 5">Phase 5: Supply Orders & Logistics</option>

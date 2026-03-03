@@ -72,7 +72,7 @@ const SERVICE_REPORT_STATUSES = Object.freeze(['assigned', 'in_progress', 'valid
 // ---- Phases ----
 const STANDARD_PHASES = Object.freeze({
   'Phase 1': { name: 'Phase 1: Contract & Initial Setup', stages: ['Tasks'] },
-  'Phase 2': { name: 'Phase 2: Billing, CLIA & Hiring', stages: ['Tasks'] },
+  'Phase 2': { name: 'Phase 2: Financials, CLIA & Hiring', stages: ['Tasks'] },
   'Phase 3': { name: 'Phase 3: Tech Infrastructure & LIS Integration', stages: ['Tasks'] },
   'Phase 4': { name: 'Phase 4: Inventory Forecasting & Procurement', stages: ['Tasks'] },
   'Phase 5': { name: 'Phase 5: Supply Orders & Logistics', stages: ['Tasks'] },
