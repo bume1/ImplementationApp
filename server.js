@@ -3073,6 +3073,58 @@ app.put('/api/projects/:projectId/tasks/bulk-update', authenticateToken, async (
   }
 });
 
+// ============== BULK TASK EDIT (fields) ==============
+app.put('/api/projects/:projectId/tasks/bulk-edit', authenticateToken, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+
+    if (!canWriteProject(req.user, projectId)) {
+      return res.status(403).json({ error: 'Write access required for this project' });
+    }
+
+    const { taskIds, updates } = req.body;
+
+    if (!taskIds || !Array.isArray(taskIds) || taskIds.length === 0) {
+      return res.status(400).json({ error: 'taskIds array is required' });
+    }
+    if (!updates || typeof updates !== 'object') {
+      return res.status(400).json({ error: 'updates object is required' });
+    }
+
+    const allowedFields = ['owner', 'secondaryOwner', 'dueDate', 'phase', 'showToClient', 'tags'];
+    const fieldsToUpdate = {};
+    for (const field of allowedFields) {
+      if (updates[field] !== undefined) {
+        fieldsToUpdate[field] = updates[field];
+      }
+    }
+
+    if (Object.keys(fieldsToUpdate).length === 0) {
+      return res.status(400).json({ error: 'No valid fields provided in updates' });
+    }
+
+    const tasks = await getRawTasks(projectId);
+    let updatedCount = 0;
+
+    for (const taskId of taskIds) {
+      const idx = tasks.findIndex(t => t.id === parseInt(taskId) || String(t.id) === String(taskId));
+      if (idx !== -1) {
+        for (const [field, value] of Object.entries(fieldsToUpdate)) {
+          tasks[idx][field] = value;
+        }
+        updatedCount++;
+      }
+    }
+
+    await db.set(`tasks_${projectId}`, tasks);
+
+    res.json({ message: `${updatedCount} tasks updated`, updatedCount });
+  } catch (error) {
+    console.error('Bulk edit error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ============== BULK TASK DELETE ==============
 app.post('/api/projects/:projectId/tasks/bulk-delete', authenticateToken, async (req, res) => {
   try {
@@ -4454,6 +4506,207 @@ app.get('/api/client-portal/data', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Client portal data error:', error);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============== CLIENT PORTAL SOFT PILOT ==============
+
+app.get('/api/client-portal/soft-pilot', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== config.ROLES.CLIENT) {
+      return res.status(403).json({ error: 'Client access required' });
+    }
+
+    const projects = await getProjects();
+    const clientProjects = projects.filter(p =>
+      (req.user.assignedProjects || []).includes(p.id)
+    );
+
+    if (clientProjects.length === 0) {
+      return res.json({ tasks: [], responses: {}, submitted: null });
+    }
+
+    const project = clientProjects[0];
+    const allTasks = await getTasks(project.id);
+    const softPilotTasks = allTasks
+      .filter(t => (t.tags || []).some(tag => tag.toLowerCase() === 'softpilot'))
+      .map(t => ({
+        id: t.id,
+        title: t.title,
+        description: t.description || '',
+        completed: t.completed || false,
+        subtasks: (t.subtasks || []).map(st => ({
+          id: st.id,
+          title: st.title,
+          completed: st.completed || false,
+          notApplicable: st.notApplicable || false,
+          status: st.status || 'Pending'
+        }))
+      }));
+
+    res.json({
+      tasks: softPilotTasks,
+      responses: project.softPilotResponses || {},
+      submitted: project.softPilotChecklistSubmitted || null
+    });
+  } catch (error) {
+    console.error('Client portal soft-pilot GET error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.put('/api/client-portal/soft-pilot', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== config.ROLES.CLIENT) {
+      return res.status(403).json({ error: 'Client access required' });
+    }
+
+    const { responses } = req.body;
+    if (!responses || typeof responses !== 'object') {
+      return res.status(400).json({ error: 'Invalid responses object' });
+    }
+
+    const projects = await db.get('projects') || [];
+    const clientProjects = projects.filter(p =>
+      (req.user.assignedProjects || []).includes(p.id)
+    );
+
+    if (clientProjects.length === 0) {
+      return res.status(404).json({ error: 'No project found' });
+    }
+
+    const project = clientProjects[0];
+    const existing = project.softPilotResponses || {};
+
+    for (const [taskId, response] of Object.entries(responses)) {
+      existing[taskId] = {
+        ...(existing[taskId] || {}),
+        ...response,
+        subtasks: {
+          ...((existing[taskId] || {}).subtasks || {}),
+          ...(response.subtasks || {})
+        },
+        updatedAt: new Date().toISOString(),
+        updatedBy: req.user.email
+      };
+    }
+
+    project.softPilotResponses = existing;
+    await db.set('projects', projects);
+
+    res.json({ message: 'Responses saved', responses: existing });
+  } catch (error) {
+    console.error('Client portal soft-pilot PUT error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/client-portal/soft-pilot/submit', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== config.ROLES.CLIENT) {
+      return res.status(403).json({ error: 'Client access required' });
+    }
+
+    const { signature } = req.body;
+    if (!signature || !signature.name?.trim() || !signature.title?.trim() || !signature.date?.trim()) {
+      return res.status(400).json({ error: 'Name, title, and date are required in signature' });
+    }
+
+    const projects = await db.get('projects') || [];
+    const clientProjects = projects.filter(p =>
+      (req.user.assignedProjects || []).includes(p.id)
+    );
+
+    if (clientProjects.length === 0) {
+      return res.status(404).json({ error: 'No project found' });
+    }
+
+    const project = clientProjects[0];
+    const allTasks = await getTasks(project.id);
+    const softPilotTasks = allTasks.filter(t =>
+      (t.tags || []).some(tag => tag.toLowerCase() === 'softpilot')
+    );
+
+    const responses = project.softPilotResponses || {};
+    const taskLines = softPilotTasks.map(t => {
+      const r = responses[t.id] || {};
+      const status = r.status || (t.completed ? 'complete' : 'pending');
+      const notes = r.notes || '';
+      let line = `<tr><td style="padding:6px;border:1px solid #ddd;">${t.title}</td><td style="padding:6px;border:1px solid #ddd;">${status}</td><td style="padding:6px;border:1px solid #ddd;">${notes}</td></tr>`;
+      if (t.subtasks && t.subtasks.length > 0) {
+        for (const st of t.subtasks) {
+          const sr = (r.subtasks || {})[st.id] || {};
+          const stStatus = sr.status || st.status || 'Pending';
+          line += `<tr><td style="padding:6px 6px 6px 24px;border:1px solid #ddd;font-size:13px;">↳ ${st.title}</td><td style="padding:6px;border:1px solid #ddd;font-size:13px;">${stStatus}</td><td style="padding:6px;border:1px solid #ddd;font-size:13px;"></td></tr>`;
+        }
+      }
+      return line;
+    }).join('');
+
+    const checklistHtml = `<html><head><style>body{font-family:Arial,sans-serif;padding:20px;}table{border-collapse:collapse;width:100%;}th,td{text-align:left;}</style></head><body>
+      <h1>Virtual Soft Pilot Checklist</h1>
+      <p><strong>Client:</strong> ${project.clientName || project.name}</p>
+      <p><strong>Signed by:</strong> ${signature.name} — ${signature.title}</p>
+      <p><strong>Date:</strong> ${signature.date}</p>
+      <table><thead><tr><th style="padding:6px;border:1px solid #ddd;background:#f5f5f5;">Task</th><th style="padding:6px;border:1px solid #ddd;background:#f5f5f5;">Status</th><th style="padding:6px;border:1px solid #ddd;background:#f5f5f5;">Notes</th></tr></thead><tbody>${taskLines}</tbody></table>
+    </body></html>`;
+
+    const submissionCount = (project.softPilotChecklistSubmitted?.submissionCount || 0) + 1;
+    const isResubmission = submissionCount > 1;
+    let driveResult = null;
+
+    try {
+      driveResult = await googledrive.uploadSoftPilotChecklist(
+        project.name,
+        project.clientName,
+        checklistHtml
+      );
+      console.log('✅ Client soft-pilot checklist uploaded to Google Drive:', driveResult.webViewLink);
+    } catch (driveError) {
+      console.error('Google Drive upload failed:', driveError.message);
+    }
+
+    if (project.hubspotRecordId) {
+      try {
+        const noteDetails = isResubmission
+          ? `REVISED Soft-Pilot Checklist (Version ${submissionCount})\n\nUpdated by: ${signature.name}\nTitle: ${signature.title}\nDate: ${signature.date}\n\nThis is an updated version replacing the previous submission.`
+          : `Soft-Pilot Checklist Submitted\n\nSigned by: ${signature.name}\nTitle: ${signature.title}\nDate: ${signature.date}`;
+
+        const fullNote = driveResult
+          ? `${noteDetails}\n\nGoogle Drive Link: ${driveResult.webViewLink}`
+          : noteDetails;
+
+        await hubspot.logRecordActivity(
+          project.hubspotRecordId,
+          isResubmission ? 'Soft-Pilot Checklist Updated' : 'Soft-Pilot Checklist Submitted',
+          fullNote
+        );
+        console.log('✅ HubSpot note created for client soft-pilot checklist submission');
+      } catch (hubspotError) {
+        console.error('HubSpot note creation failed:', hubspotError.message);
+      }
+    }
+
+    project.softPilotChecklistSubmitted = {
+      submittedAt: new Date().toISOString(),
+      submittedBy: req.user.email,
+      signature,
+      submissionCount,
+      isRevision: isResubmission,
+      driveLink: driveResult?.webViewLink || null
+    };
+    await db.set('projects', projects);
+
+    res.json({
+      message: isResubmission
+        ? 'Soft-pilot checklist updated and saved to Google Drive'
+        : 'Soft-pilot checklist submitted and uploaded to Google Drive',
+      driveLink: driveResult?.webViewLink || null,
+      submissionCount
+    });
+  } catch (error) {
+    console.error('Client portal soft-pilot submit error:', error);
+    res.status(500).json({ error: error.message || 'Failed to submit checklist' });
   }
 });
 

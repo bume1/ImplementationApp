@@ -33,7 +33,8 @@ Preferred communication style: Simple, everyday language.
 - **Reporting**: Launch reports and inventory reports with charts and analytics.
 - **Admin Activity Logging**: Logs task completions, reopenings, and updates.
 - **Custom Domain & URL**: Support for custom domains for application and client portals.
-- **Soft-Pilot Checklist**: Generates HTML documents for Google Drive upload and HubSpot linking.
+- **Soft-Pilot Checklist**: Client-facing required form accessible from portal milestones (Phase 7) and Files section. Tasks tagged "softpilot" are included. Admins/managers can edit in the launch board. Generates HTML documents for Google Drive upload and HubSpot linking on submission.
+- **Bulk Task Editing**: Bulk select mode supports editing multiple task fields (owner, due date, phase, tags, client visibility) in addition to marking complete/incomplete/delete.
 - **Inventory Management System**: Quick Update Table with 79 items, batch tracking, custom items, weekly submissions with history tracking.
 - **Client File Uploads**: Clients can upload files directly to their project's HubSpot record.
 - **Admin Document Management**: Admins can add documents via cloud link or direct file upload.

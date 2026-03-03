@@ -363,6 +363,16 @@ const api = {
       body: JSON.stringify({ taskIds })
     }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
 
+  bulkEditTasks: (token, projectId, taskIds, updates) =>
+    fetch(`${API_URL}/api/projects/${projectId}/tasks/bulk-edit`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ taskIds, updates })
+    }).then(handleResponse).catch(err => ({ error: err.message || 'Network error' })),
+
   forgotPassword: (email) =>
     fetch(`${API_URL}/api/auth/forgot-password`, {
       method: 'POST',
@@ -1280,7 +1290,7 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
     
     // Require Soft-Pilot Checklist submission before marking project as completed
     if (editingProject.status === 'completed' && !editingProject.softPilotChecklistSubmitted) {
-      alert('The Soft-Pilot Checklist must be submitted before marking this project as completed. Please complete the checklist in the Sprint 3: Soft-Pilot stage first.');
+      alert('The Soft-Pilot Checklist must be submitted before marking this project as completed. Please complete the checklist by clicking the Soft-Pilot Checklist button in the toolbar.');
       return;
     }
     
@@ -3068,7 +3078,7 @@ const SoftPilotChecklist = ({ token, project, tasks, teamMembers, onClose, onSub
   const isResubmission = !!project.softPilotChecklistSubmitted;
   
   useEffect(() => {
-    const softPilotOnly = tasks.filter(t => t.stage === 'Sprint 3: Soft-Pilot');
+    const softPilotOnly = tasks.filter(t => (t.tags || []).some(tag => tag.toLowerCase() === 'softpilot'));
     setLocalTasks(JSON.parse(JSON.stringify(softPilotOnly)));
   }, [tasks]);
 
@@ -3176,7 +3186,7 @@ const SoftPilotChecklist = ({ token, project, tasks, teamMembers, onClose, onSub
   <p style="color: #6b7280; margin-bottom: 20px;"><strong>Client:</strong> ${project.clientName}</p>
   <p style="color: #6b7280;"><strong>Date Generated:</strong> ${new Date().toLocaleDateString()}</p>
 
-  <h2>Sprint 3: Soft-Pilot Tasks</h2>
+  <h2>Virtual Soft Pilot Tasks</h2>
   <table>
     <thead>
       <tr>
@@ -3285,7 +3295,7 @@ const SoftPilotChecklist = ({ token, project, tasks, teamMembers, onClose, onSub
           </div>
 
           <div className="mb-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Sprint 3: Soft-Pilot Tasks ({softPilotTasks.length})</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Virtual Soft Pilot Tasks ({softPilotTasks.length})</h3>
             <div className="space-y-2">
               {softPilotTasks.map(task => (
                 <div key={task.id} className="border rounded-lg p-3 hover:bg-gray-50">
@@ -3439,6 +3449,8 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
   const [teamMembers, setTeamMembers] = useState([]);
   const [selectedTasks, setSelectedTasks] = useState([]);
   const [bulkMode, setBulkMode] = useState(false);
+  const [showBulkEdit, setShowBulkEdit] = useState(false);
+  const [bulkEditFields, setBulkEditFields] = useState({});
   const [newSubtask, setNewSubtask] = useState({ taskId: null, title: '', owner: '', dueDate: '', showToClient: undefined });
   const [editingSubtask, setEditingSubtask] = useState(null);
   const [expandedSubtasksId, setExpandedSubtasksId] = useState(null);
@@ -3733,6 +3745,37 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
     } catch (err) {
       console.error('Failed to bulk delete tasks:', err);
       alert('Failed to delete tasks');
+    }
+  };
+
+  const handleBulkEdit = async () => {
+    if (selectedTasks.length === 0) return;
+    const updates = {};
+    if (bulkEditFields.ownerEnabled) updates.owner = bulkEditFields.owner || '';
+    if (bulkEditFields.secondaryOwnerEnabled) updates.secondaryOwner = bulkEditFields.secondaryOwner || '';
+    if (bulkEditFields.dueDateEnabled) updates.dueDate = bulkEditFields.dueDate || '';
+    if (bulkEditFields.phaseEnabled) updates.phase = bulkEditFields.phase || 'Phase 1';
+    if (bulkEditFields.showToClientEnabled) updates.showToClient = !!bulkEditFields.showToClient;
+    if (bulkEditFields.tagsEnabled) updates.tags = bulkEditFields.tags || [];
+    if (Object.keys(updates).length === 0) {
+      alert('Please select at least one field to update.');
+      return;
+    }
+    try {
+      const result = await api.bulkEditTasks(token, project.id, selectedTasks, updates);
+      if (result && result.error) {
+        alert(result.error);
+        return;
+      }
+      loadTasks();
+      setSelectedTasks([]);
+      setBulkMode(false);
+      setShowBulkEdit(false);
+      setBulkEditFields({});
+      alert(`Successfully updated ${result.updatedCount || selectedTasks.length} task(s).`);
+    } catch (err) {
+      console.error('Failed to bulk edit tasks:', err);
+      alert('Failed to bulk edit tasks');
     }
   };
 
@@ -4597,6 +4640,22 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                 Notes Log ({aggregatedNotes.length})
               </button>
               
+              {viewMode === 'internal' && tasks.some(t => (t.tags || []).some(tag => tag.toLowerCase() === 'softpilot')) && (
+                <>
+                  <div className="border-l border-gray-300 mx-2"></div>
+                  <button
+                    onClick={() => setShowSoftPilotChecklist(true)}
+                    className="px-3 py-1.5 rounded-md text-sm flex items-center gap-1.5 bg-gradient-to-r from-primary-500 to-accent text-white hover:opacity-90"
+                    title="View and complete the Soft-Pilot Checklist"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Soft-Pilot Checklist
+                  </button>
+                </>
+              )}
+              
               {canManagePublish && (
                 <>
                   <div className="border-l border-gray-300 mx-2"></div>
@@ -4940,6 +4999,15 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                           Delete {selectedTasks.length}
                         </button>
                       </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">&nbsp;</label>
+                        <button
+                          onClick={() => { setBulkEditFields({}); setShowBulkEdit(true); }}
+                          className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90 text-sm"
+                        >
+                          Edit {selectedTasks.length} Selected
+                        </button>
+                      </div>
                     </>
                   )}
                   {bulkMode && (
@@ -5239,14 +5307,6 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                               {stageTasks.every(t => selectedTasks.includes(t.id)) ? 'Deselect Stage' : 'Select Stage'}
                             </button>
                           </>
-                        )}
-                        {viewMode === 'internal' && stageName === 'Sprint 3: Soft-Pilot' && (
-                          <button
-                            onClick={() => setShowSoftPilotChecklist(true)}
-                            className="px-3 py-1 bg-gradient-to-r from-primary to-accent text-white text-sm rounded-md hover:opacity-90"
-                          >
-                            View & Complete Checklist
-                          </button>
                         )}
                         {viewMode === 'internal' && canEdit && (
                           <button
@@ -6216,6 +6276,96 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
           </div>
         )}
 
+        {showBulkEdit && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+              <div className="bg-gradient-to-r from-primary to-accent text-white px-6 py-4 rounded-t-lg flex items-center justify-between">
+                <h3 className="font-bold text-lg">Bulk Edit {selectedTasks.length} Task(s)</h3>
+                <button onClick={() => setShowBulkEdit(false)} className="text-white hover:text-gray-200 text-xl">&times;</button>
+              </div>
+              <div className="p-6 space-y-4">
+                <div className="flex items-start gap-3">
+                  <input type="checkbox" checked={!!bulkEditFields.ownerEnabled} onChange={(e) => setBulkEditFields({...bulkEditFields, ownerEnabled: e.target.checked})} className="mt-2" />
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Owner</label>
+                    <select disabled={!bulkEditFields.ownerEnabled} value={bulkEditFields.owner || ''} onChange={(e) => setBulkEditFields({...bulkEditFields, owner: e.target.value})} className="w-full px-3 py-2 border rounded-md text-sm disabled:opacity-50">
+                      <option value="">Unassigned</option>
+                      {teamMembers.map(m => <option key={m.id || m.name} value={m.name}>{m.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <input type="checkbox" checked={!!bulkEditFields.secondaryOwnerEnabled} onChange={(e) => setBulkEditFields({...bulkEditFields, secondaryOwnerEnabled: e.target.checked})} className="mt-2" />
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Secondary Owner</label>
+                    <select disabled={!bulkEditFields.secondaryOwnerEnabled} value={bulkEditFields.secondaryOwner || ''} onChange={(e) => setBulkEditFields({...bulkEditFields, secondaryOwner: e.target.value})} className="w-full px-3 py-2 border rounded-md text-sm disabled:opacity-50">
+                      <option value="">None</option>
+                      {teamMembers.map(m => <option key={m.id || m.name} value={m.name}>{m.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <input type="checkbox" checked={!!bulkEditFields.dueDateEnabled} onChange={(e) => setBulkEditFields({...bulkEditFields, dueDateEnabled: e.target.checked})} className="mt-2" />
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
+                    <input type="date" disabled={!bulkEditFields.dueDateEnabled} value={bulkEditFields.dueDate || ''} onChange={(e) => setBulkEditFields({...bulkEditFields, dueDate: e.target.value})} className="w-full px-3 py-2 border rounded-md text-sm disabled:opacity-50" />
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <input type="checkbox" checked={!!bulkEditFields.phaseEnabled} onChange={(e) => setBulkEditFields({...bulkEditFields, phaseEnabled: e.target.checked})} className="mt-2" />
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Phase</label>
+                    <select disabled={!bulkEditFields.phaseEnabled} value={bulkEditFields.phase || 'Phase 1'} onChange={(e) => setBulkEditFields({...bulkEditFields, phase: e.target.value})} className="w-full px-3 py-2 border rounded-md text-sm disabled:opacity-50">
+                      {PHASE_ORDER.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <input type="checkbox" checked={!!bulkEditFields.showToClientEnabled} onChange={(e) => setBulkEditFields({...bulkEditFields, showToClientEnabled: e.target.checked})} className="mt-2" />
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Client Visibility</label>
+                    <div className={`${!bulkEditFields.showToClientEnabled ? 'opacity-50' : ''}`}>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" disabled={!bulkEditFields.showToClientEnabled} checked={!!bulkEditFields.showToClient} onChange={(e) => setBulkEditFields({...bulkEditFields, showToClient: e.target.checked})} />
+                        <span className="text-sm text-gray-700">Show to client</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <input type="checkbox" checked={!!bulkEditFields.tagsEnabled} onChange={(e) => setBulkEditFields({...bulkEditFields, tagsEnabled: e.target.checked})} className="mt-2" />
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Tags</label>
+                    <div className={`${!bulkEditFields.tagsEnabled ? 'opacity-50' : ''}`}>
+                      <input type="text" disabled={!bulkEditFields.tagsEnabled} placeholder="Enter tags separated by commas" value={(bulkEditFields.tags || []).join(', ')} onChange={(e) => setBulkEditFields({...bulkEditFields, tags: e.target.value.split(',').map(t => t.trim()).filter(t => t)})} className="w-full px-3 py-2 border rounded-md text-sm disabled:opacity-50" />
+                      {getUniqueTags().length > 0 && bulkEditFields.tagsEnabled && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {getUniqueTags().map(tag => (
+                            <button key={tag} type="button" onClick={() => {
+                              const current = bulkEditFields.tags || [];
+                              if (current.includes(tag)) {
+                                setBulkEditFields({...bulkEditFields, tags: current.filter(t => t !== tag)});
+                              } else {
+                                setBulkEditFields({...bulkEditFields, tags: [...current, tag]});
+                              }
+                            }} className={`text-xs px-2 py-1 rounded ${(bulkEditFields.tags || []).includes(tag) ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800 hover:bg-blue-200'}`}>
+                              {tag}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="px-6 py-4 border-t flex justify-end gap-3">
+                <button onClick={() => setShowBulkEdit(false)} className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 text-sm">Cancel</button>
+                <button onClick={handleBulkEdit} className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-md hover:opacity-90 text-sm">Apply Changes</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {showSoftPilotChecklist && (
           <SoftPilotChecklist
             token={token}
@@ -6509,7 +6659,6 @@ const TemplateManagement = ({ token, user, onBack, onLogout }) => {
     'Launch Data & Systems Prep',
     'Sprint 1: Core System Setups',
     'Sprint 2: Lab & QUA Pilot Prep',
-    'Sprint 3: Soft-Pilot',
     'Training/Validation',
     'Go-Live',
     'KPIs',

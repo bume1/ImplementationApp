@@ -4,6 +4,12 @@
 
 ---
 
+### Version 3.19.5 - March 3, 2026
+
+#### Improvements
+- Improve email sending by using a batch API
+
+
 ### Version 3.19.4 - March 3, 2026
 
 #### Changes
