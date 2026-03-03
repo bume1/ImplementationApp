@@ -4,6 +4,12 @@
 
 ---
 
+### Version 3.22.3 - March 3, 2026
+
+#### Changes
+- Restrict draft project visibility to only the creator
+
+
 ### Version 3.22.2 - March 3, 2026
 
 #### Changes
