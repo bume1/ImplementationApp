@@ -4065,7 +4065,9 @@
       const adminDocs = (documents || []).filter(doc => doc.uploadedBy !== 'client');
       const clientUploads = (documents || []).filter(doc => doc.uploadedBy === 'client');
       
-      const groupedAdminDocs = adminDocs.reduce((acc, doc) => {
+      const onboardingAdminDocs = adminDocs.filter(doc => (doc.category || '').toLowerCase() === 'onboarding');
+      const nonOnboardingAdminDocs = adminDocs.filter(doc => (doc.category || '').toLowerCase() !== 'onboarding');
+      const groupedAdminDocs = nonOnboardingAdminDocs.reduce((acc, doc) => {
         const cat = doc.category || 'General';
         if (!acc[cat]) acc[cat] = [];
         acc[cat].push(doc);
@@ -4249,6 +4251,7 @@
                 (task.files || []).filter(f => f.url).forEach(file => {
                   taskAttachments.push({
                     ...file,
+                    _source: 'task',
                     taskName: task.clientName || task.taskTitle || task.title || 'Task',
                     taskId: task.id,
                     projectName: project.name || project.clientName
@@ -4256,14 +4259,42 @@
                 });
               });
             });
-            if (taskAttachments.length === 0) return null;
+            const hasOnboardingContent = onboardingAdminDocs.length > 0 || taskAttachments.length > 0;
+            if (!hasOnboardingContent) return null;
             return (
               <div className="bg-white p-6 rounded-xl shadow-sm">
                 <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
                   <span>📎</span> Onboarding Documents
                 </h2>
-                <p className="text-sm text-gray-500 mb-4">Documents attached to your onboarding tasks</p>
+                <p className="text-sm text-gray-500 mb-4">Documents and files for your onboarding</p>
                 <div className="space-y-2">
+                  {onboardingAdminDocs.map(doc => {
+                    const isCloudLink = !doc.isUploadedFile && doc.url && doc.url.startsWith('http');
+                    return (
+                      <a
+                        key={doc.id}
+                        href={doc.url || '#'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 p-3 rounded-lg border hover:bg-gray-50 transition group cursor-pointer"
+                      >
+                        <span className="text-2xl">📄</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-gray-800 group-hover:text-primary truncate">{doc.title}</p>
+                          {doc.description && <p className="text-sm text-gray-500">{doc.description}</p>}
+                        </div>
+                        <span className="text-primary text-sm font-medium flex items-center gap-1 flex-shrink-0">
+                          {isCloudLink ? (
+                            <><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                            View & Download</>
+                          ) : (
+                            <><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                            Download</>
+                          )}
+                        </span>
+                      </a>
+                    );
+                  })}
                   {taskAttachments.map(file => (
                     <a
                       key={file.id}
@@ -4272,7 +4303,7 @@
                       rel="noopener noreferrer"
                       className="flex items-center gap-3 p-3 rounded-lg border hover:bg-gray-50 transition group cursor-pointer"
                     >
-                      <span className="text-2xl">📄</span>
+                      <span className="text-2xl">📎</span>
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-gray-800 group-hover:text-primary truncate">{file.name}</p>
                         <p className="text-sm text-gray-500">From task: {file.taskName}</p>

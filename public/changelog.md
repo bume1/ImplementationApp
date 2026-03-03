@@ -4,6 +4,12 @@
 
 ---
 
+### Version 3.20.2 - March 3, 2026
+
+#### Improvements
+- Improve client portal and task management features
+
+
 ### Version 3.20.1 - March 3, 2026
 
 #### Improvements
