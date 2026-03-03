@@ -4,6 +4,12 @@
 
 ---
 
+### Version 3.19.3 - March 3, 2026
+
+#### Improvements
+- Improve HubSpot ticket integration by adding configurable pipelines and enhancing error handling
+
+
 ### Version 3.19.2 - March 3, 2026
 
 #### Changes

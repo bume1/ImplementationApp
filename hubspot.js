@@ -1369,12 +1369,8 @@ async function createTicket(ticketData, companyId = null, contactId = null, deal
     hs_ticket_priority: priorityMap[ticketData.priority] || 'LOW'
   };
 
-  if (ticketData.submittedBy) {
-    ticketProperties.content = `Submitted by: ${ticketData.submittedBy}\n\n${ticketProperties.content}`;
-  }
-  if (ticketData.issueCategory) {
-    ticketProperties.content = `Category: ${ticketData.issueCategory}\n${ticketProperties.content}`;
-  }
+  if (ticketData.issueCategory) ticketProperties.issue_category = ticketData.issueCategory;
+  if (ticketData.submittedBy) ticketProperties.submitted_by = ticketData.submittedBy;
 
   const ticketInput = { properties: ticketProperties };
 
