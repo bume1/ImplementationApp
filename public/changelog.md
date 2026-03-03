@@ -4,6 +4,12 @@
 
 ---
 
+### Version 3.22.1 - March 3, 2026
+
+#### Improvements
+- Improve draft project visibility for creators and authorized users
+
+
 ### Version 3.22.0 - March 3, 2026
 
 #### New Features

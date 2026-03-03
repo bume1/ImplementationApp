@@ -1302,7 +1302,11 @@ const ProjectList = ({ token, user, onSelectProject, onLogout, onManageTemplates
       if (user.role === 'admin' || isProjectAdmin) {
         updates.publishedStatus = editingProject.publishedStatus || 'draft';
       }
-      await api.updateProject(token, editingProject.id, updates);
+      const result = await api.updateProject(token, editingProject.id, updates);
+      if (result && result.error) {
+        alert(result.error);
+        return;
+      }
       setEditingProject(null);
       loadProjects();
     } catch (err) {
@@ -6635,7 +6639,7 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                 <button
                   onClick={async () => {
                     try {
-                      await api.updateProject(token, project.id, {
+                      const result = await api.updateProject(token, project.id, {
                         name: project.name,
                         clientName: project.clientName,
                         projectManager: project.projectManager,
@@ -6643,6 +6647,10 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                         status: project.status,
                         goLiveDate: project.goLiveDate || ''
                       });
+                      if (result && result.error) {
+                        alert(result.error);
+                        return;
+                      }
                       await refreshProject();
                       setShowEditProject(false);
                       alert('Project updated successfully!');
