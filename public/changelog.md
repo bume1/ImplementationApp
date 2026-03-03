@@ -4,6 +4,15 @@
 
 ---
 
+### Version 3.21.1 - March 3, 2026
+
+#### Bug Fixes
+- Fix invisible soft pilot button by correcting color gradient
+
+#### Changes
+- Hide unpublished and completed projects from client portal view
+
+
 ### Version 3.21.0 - March 3, 2026
 
 #### New Features

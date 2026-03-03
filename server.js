@@ -4808,12 +4808,13 @@ app.get('/api/client-portal/soft-pilot', authenticateToken, async (req, res) => 
       .filter(t => (t.tags || []).some(tag => tag.toLowerCase() === 'softpilot'))
       .map(t => ({
         id: t.id,
-        title: t.title,
+        title: t.taskTitle || t.title || '',
         description: t.description || '',
         completed: t.completed || false,
+        dueDate: t.dueDate || '',
         subtasks: (t.subtasks || []).map(st => ({
           id: st.id,
-          title: st.title,
+          title: st.title || '',
           completed: st.completed || false,
           notApplicable: st.notApplicable || false,
           status: st.status || 'Pending'
