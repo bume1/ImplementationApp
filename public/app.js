@@ -5295,61 +5295,42 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                     );
                   })()
                 )}
-                {Object.entries(groupedByPhase[phase] || {}).map(([stageName, stageTasks]) => (
-                  <div key={stageName} className={`bg-white rounded-lg shadow-sm overflow-hidden border-l-4 ${getPhaseColor(phase)}`}>
-                    {stageName !== 'Tasks' && (
-                    <div className="bg-gray-50 p-3 border-b flex justify-between items-center">
-                      <div>
-                        <h3 className="font-semibold text-gray-700">{stageName}</h3>
-                        <p className="text-xs text-gray-500">
-                          {stageTasks.filter(t => t.completed).length} of {stageTasks.length} complete
-                        </p>
-                      </div>
+                {(() => {
+                  const phaseTasks = Object.values(groupedByPhase[phase] || {}).flat().sort((a, b) => {
+                    const aDate = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+                    const bDate = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+                    if (aDate !== bDate) return aDate - bDate;
+                    return (a.stageOrder || a._originalIdx + 1) - (b.stageOrder || b._originalIdx + 1);
+                  });
+                  return (
+                  <div className={`bg-white rounded-lg shadow-sm overflow-hidden border-l-4 ${getPhaseColor(phase)}`}>
+                    {viewMode === 'internal' && (
+                    <div className="bg-gray-50 p-2 border-b flex justify-between items-center">
                       <div className="flex items-center gap-2">
-                        {viewMode === 'internal' && bulkMode && stageTasks.length > 0 && (
-                          <>
-                            <button
-                              onClick={() => {
-                                const stageTaskIds = stageTasks.map(t => t.id);
-                                const allSelected = stageTaskIds.every(id => selectedTasks.includes(id));
-                                if (allSelected) {
-                                  setSelectedTasks(selectedTasks.filter(id => !stageTaskIds.includes(id)));
-                                } else {
-                                  setSelectedTasks([...new Set([...selectedTasks, ...stageTaskIds])]);
-                                }
-                              }}
-                              className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded hover:bg-blue-200"
-                            >
-                              {stageTasks.every(t => selectedTasks.includes(t.id)) ? 'Deselect Stage' : 'Select Stage'}
-                            </button>
-                          </>
-                        )}
-                        {viewMode === 'internal' && canEdit && (
+                        {bulkMode && phaseTasks.length > 0 && (
                           <button
                             onClick={() => {
-                              setNewTask({
-                                ...newTask,
-                                phase: phase,
-                                stage: stageName
-                              });
-                              setShowAddTask(true);
+                              const phaseTaskIds = phaseTasks.map(t => t.id);
+                              const allSelected = phaseTaskIds.every(id => selectedTasks.includes(id));
+                              if (allSelected) {
+                                setSelectedTasks(selectedTasks.filter(id => !phaseTaskIds.includes(id)));
+                              } else {
+                                setSelectedTasks([...new Set([...selectedTasks, ...phaseTaskIds])]);
+                              }
                             }}
-                            className="text-primary hover:text-accent text-sm font-medium"
+                            className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded hover:bg-blue-200"
                           >
-                            + Add Task
+                            {phaseTasks.every(t => selectedTasks.includes(t.id)) ? 'Deselect All' : 'Select All'}
                           </button>
                         )}
                       </div>
-                    </div>
-                    )}
-                    {stageName === 'Tasks' && viewMode === 'internal' && canEdit && (
-                      <div className="bg-gray-50 p-2 border-b flex justify-end">
+                      {canEdit && (
                         <button
                           onClick={() => {
                             setNewTask({
                               ...newTask,
                               phase: phase,
-                              stage: stageName
+                              stage: 'Tasks'
                             });
                             setShowAddTask(true);
                           }}
@@ -5357,12 +5338,13 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                         >
                           + Add Task
                         </button>
-                      </div>
+                      )}
+                    </div>
                     )}
                     <div className="divide-y divide-gray-200">
-                      {stageTasks.length === 0 ? (
-                        <div className="p-4 text-gray-400 text-sm italic">No tasks in this stage</div>
-                      ) : stageTasks.map(task => (
+                      {phaseTasks.length === 0 ? (
+                        <div className="p-4 text-gray-400 text-sm italic">No tasks in this phase</div>
+                      ) : phaseTasks.map(task => (
                     <div key={task.id} id={`task-${task.id}`} className={`p-3 sm:p-4 overflow-hidden ${viewMode === 'internal' && isOverdue(task) ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'} ${selectedTasks.includes(task.id) ? 'bg-blue-50' : ''}`}>
                       <div className="flex items-start gap-2 sm:gap-4">
                         {viewMode === 'internal' && bulkMode && (
@@ -6141,7 +6123,8 @@ const ProjectTracker = ({ token, user, project: initialProject, scrollToTaskId, 
                   ))}
                     </div>
                   </div>
-                ))}
+                  );
+                })()}
                 </>
                 )}
               </div>
