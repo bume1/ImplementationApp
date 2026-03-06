@@ -212,26 +212,6 @@ In addition to roles, individual permission flags control access to specific por
 - View activity log and audit trail
 - Process feedback and bug reports from the Inbox
 
-### API Endpoint Groups
-
-| Group | Prefix | Coverage |
-|-------|--------|----------|
-| Authentication | `/api/auth/*` | Login, password reset, change password (8 endpoints) |
-| Projects | `/api/projects/*` | CRUD, clone, export/import (9 endpoints) |
-| Tasks | `/api/projects/:id/tasks/*` | Task management, files, notes, subtasks (15+ endpoints) |
-| Templates | `/api/templates/*` | Template CRUD and apply (8 endpoints) |
-| Users | `/api/users/*` | User management (5 endpoints) |
-| Admin | `/api/admin/*` | Admin operations, bulk actions (12+ endpoints) |
-| HubSpot | `/api/hubspot/*` | Sync, pipelines, tickets, webhooks (7 endpoints) |
-| Client Portal | `/api/client-portal/*` | Portal data and settings (3 endpoints) |
-| Announcements | `/api/announcements/*` | CRUD (4 endpoints) |
-| Client Documents | `/api/client-documents/*` | Document management (5 endpoints) |
-| Service Reports | `/api/service-reports/*` | Field reports (5 endpoints) |
-| Validation Reports | `/api/validation-reports/*` | Validation assignments and tracking (4 endpoints) |
-| Inventory | `/api/inventory/*` | Submissions and templates (8 endpoints) |
-| Service Portal | `/api/service-portal/*` | Portal configuration (2 endpoints) |
-| Changelog | `/api/changelog/*` | Version history management (6 endpoints) |
-
 ---
 
 ## Open Source Licenses
