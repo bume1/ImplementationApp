@@ -4,6 +4,12 @@
 
 ---
 
+### Version 3.22.5 - March 3, 2026
+
+#### Changes
+- Make completed service reports visible in the client portal
+
+
 ### Version 3.22.4 - March 3, 2026
 
 #### Changes
